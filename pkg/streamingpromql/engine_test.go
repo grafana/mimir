@@ -182,7 +182,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	prometheus := q.Exec(context.Background())
 	q.Close()
 
-	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
+	testutils.RequireEqualResults(t, expr, prometheus, mimir, false, false)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
@@ -1228,7 +1228,7 @@ func TestSubqueries(t *testing.T) {
 				require.NoError(t, err)
 
 				res := qry.Exec(context.Background())
-				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
+				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false, false)
 				qry.Close()
 			}
 
@@ -1965,7 +1965,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					if len(results) == 2 {
 						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
 						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false, false)
 					}
 				})
 			}
@@ -2909,7 +2909,12 @@ func getMixedMetricsForTests(includeClassicHistograms bool) ([]string, int, stri
 	return labelsToUse, pointsPerSeries, samples
 }
 
-func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries int, samples string, skipAnnotationComparison bool) {
+type expressionCheck struct {
+	expr                string
+	skipValueComparison bool
+}
+
+func runMixedMetricsTests(t *testing.T, expressions []expressionCheck, pointsPerSeries int, samples string, skipAnnotationComparison bool) {
 	// Although most tests are covered with the promql test files (both ours and upstream),
 	// there is a lot of repetition around a few edge cases.
 	// This is not intended to be comprehensive, but instead check for some common edge cases
@@ -2948,17 +2953,17 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 			// We run so many combinations that calling t.Run() for each of them has a noticeable performance impact.
 			// So we instead just log the test case before we run it.
 			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
-			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr.expr, start, end, tr.interval)
 			require.NoError(t, err)
 			defer q.Close()
 			prometheusResults := q.Exec(context.Background())
 
-			q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr.expr, start, end, tr.interval)
 			require.NoError(t, err)
 			defer q.Close()
 			mimirResults := q.Exec(context.Background())
 
-			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
+			testutils.RequireEqualResults(t, expr.expr, prometheusResults, mimirResults, skipAnnotationComparison, expr.skipValueComparison)
 		}
 	}
 }
@@ -2973,22 +2978,22 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
 
-	expressions := []string{}
+	expressions := []expressionCheck{}
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		expressions = append(expressions, fmt.Sprintf(`histogram_avg(series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_count(series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(-5, 5, series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(0, scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(scalar(series{label="i"}), 2, series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(scalar(series{label="i"}), scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(0.8, series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_stddev(series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_stdvar(series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`histogram_sum(series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`timestamp(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_avg(series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_count(series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_fraction(-5, 5, series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_fraction(0, scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_fraction(scalar(series{label="i"}), 2, series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_fraction(scalar(series{label="i"}), scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_quantile(0.8, series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_quantile(scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_stddev(series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_stdvar(series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`histogram_sum(series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`timestamp(series{label=~"(%s)"})`, labelRegex)})
 	}
 
 	// We skip comparing the annotation results as Prometheus does not output any series name
@@ -3006,7 +3011,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	labelCombinations := testutils.Combinations(labelsToUse, 2)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 
-	expressions := []string{}
+	expressions := []expressionCheck{}
 
 	for _, labels := range labelCombinations {
 		for _, op := range []string{"+", "-", "*", "/", "and", "unless", "or"} {
@@ -3014,7 +3019,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 			for _, label := range labels[1:] {
 				expr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
 			}
-			expressions = append(expressions, expr)
+			expressions = append(expressions, expressionCheck{expr: expr})
 
 			// Same thing again, this time with grouping.
 			expr = fmt.Sprintf(`series{label="%s"}`, labels[0])
@@ -3030,7 +3035,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 			if len(labels) > 2 {
 				expr += ")"
 			}
-			expressions = append(expressions, expr)
+			expressions = append(expressions, expressionCheck{expr: expr})
 		}
 
 		// Similar thing again, this time with group_left
@@ -3047,7 +3052,7 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 		if len(labels) > 2 {
 			expr += ")"
 		}
-		expressions = append(expressions, expr)
+		expressions = append(expressions, expressionCheck{expr: expr})
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
@@ -3065,7 +3070,7 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
-	expressions := []string{}
+	expressions := []expressionCheck{}
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
@@ -3074,16 +3079,16 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 		// fixing an inconsistency in the Prometheus' engine where if a native histogram is the first sample
 		// loaded, it is incorrectly treated as a 0 float point.
 		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum"} {
-			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex)})
 		}
 		// NOTE(jhesketh): We do not test a changing quantile factor here as prometheus currently
 		// does not support it (https://github.com/prometheus/prometheus/issues/15971)
-		expressions = append(expressions, fmt.Sprintf(`quantile (0.9, series{label=~"(%s)"})`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`quantile by (group) (0.9, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`quantile (0.9, series{label=~"(%s)"})`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`quantile by (group) (0.9, series{label=~"(%s)"})`, labelRegex)})
 
-		expressions = append(expressions, fmt.Sprintf(`count_values("value", series{label="%s"})`, labelRegex))
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`count_values("value", series{label="%s"})`, labelRegex)})
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
@@ -3094,7 +3099,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
-	expressions := []string{}
+	expressions := []expressionCheck{}
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -3104,7 +3109,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 	// The different validation errors is occurred due to the range vector of the series being computed against values are skipped for the native histograms until it gets to a value where it has a float.
 	// That aligns with a different scalar value for the argument and thus gives a different error.
 	for _, labels := range labelCombinations {
-		expressions = append(expressions, fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], scalar(series{label="f"}),  scalar(series{label="i"}))`, labels))
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], scalar(series{label="f"}),  scalar(series{label="i"}))`, labels), skipValueComparison: true})
 	}
 
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
@@ -3114,14 +3119,14 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 		labelRegex := strings.Join(labels, "|")
 		// FIXME: irate() is temporarily disabled here due to https://github.com/prometheus/prometheus/pull/16199
 		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "idelta", "delta", "deriv", "stddev_over_time", "stdvar_over_time"} {
-			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex)})
 		}
 
-		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex))
-		expressions = append(expressions, fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], 0.01, 0.1)`, labelRegex))
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex)})
+		expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], 0.01, 0.1)`, labelRegex)})
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
@@ -3137,26 +3142,26 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f", etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
 
-	expressions := []string{}
+	expressions := []expressionCheck{}
 
 	for _, labels := range labelCombinations {
 		allLabelsRegex := strings.Join(labels, "|")
 		for _, op := range []string{"==", "!=", ">", "<", ">=", "<="} {
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s 10`, allLabelsRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`1 %s series{label=~"(%s)"}`, op, allLabelsRegex))
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s Inf`, allLabelsRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`-Inf %s series{label=~"(%s)"}`, op, allLabelsRegex))
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool -10`, allLabelsRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`-1 %s bool series{label=~"(%s)"}`, op, allLabelsRegex))
-			expressions = append(expressions, fmt.Sprintf(`series{label=~"(%s)"} %s bool Inf`, allLabelsRegex, op))
-			expressions = append(expressions, fmt.Sprintf(`-Inf %s bool series{label=~"(%s)"}`, op, allLabelsRegex))
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`series{label=~"(%s)"} %s 10`, allLabelsRegex, op)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`1 %s series{label=~"(%s)"}`, op, allLabelsRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`series{label=~"(%s)"} %s Inf`, allLabelsRegex, op)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`-Inf %s series{label=~"(%s)"}`, op, allLabelsRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`series{label=~"(%s)"} %s bool -10`, allLabelsRegex, op)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`-1 %s bool series{label=~"(%s)"}`, op, allLabelsRegex)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`series{label=~"(%s)"} %s bool Inf`, allLabelsRegex, op)})
+			expressions = append(expressions, expressionCheck{expr: fmt.Sprintf(`-Inf %s bool series{label=~"(%s)"}`, op, allLabelsRegex)})
 
 			// vector / vector cases
 			vectorExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for _, label := range labels[1:] {
 				vectorExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
 			}
-			expressions = append(expressions, vectorExpr)
+			expressions = append(expressions, expressionCheck{expr: vectorExpr})
 		}
 	}
 
