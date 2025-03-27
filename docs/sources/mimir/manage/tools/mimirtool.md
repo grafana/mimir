@@ -310,10 +310,10 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag                              | Description                                                  |
-| --------------------------------- | ------------------------------------------------------------ |
-| `--auth-token`                    | Authentication token for bearer token or JWT auth.           |
-| `--enable-experimental-functions` | Enable parsing experimental PromQL functions (e.g. `sort()`) |
+| Flag                              | Description                                                 |
+| --------------------------------- | ----------------------------------------------------------- |
+| `--auth-token`                    | Authentication token for bearer token or JWT authentication.|
+| `--enable-experimental-functions` | If set, enables parsing experimental PromQL functions.      |
 
 #### List rules
 
