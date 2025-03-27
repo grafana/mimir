@@ -874,7 +874,7 @@ func calculateDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.F
 		estimatedTrend = fHead[1].F - fHead[0].F
 	}
 
-	firstPointAfterInit := false
+	firstPointAfterInit := true
 	accumulate := func(samples []promql.FPoint) {
 		var x, y float64
 
@@ -882,12 +882,11 @@ func calculateDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.F
 			// Scale the raw value against the smoothing factor.
 			x = smoothingFactor * sample.F
 
-			// Scale the last smoothed value for all samples except the first two points (point at actualPointIndex 0 and 1),
-			// regardless whether they are in head or tail.
+			// Scale the last smoothed value for all samples after second point regardless whether they are in head or tail.
 			if firstPointAfterInit {
-				estimatedTrend = trendFactor*(smooth1-smooth0) + (1-trendFactor)*estimatedTrend
+				firstPointAfterInit = false
 			} else {
-				firstPointAfterInit = true
+				estimatedTrend = trendFactor*(smooth1-smooth0) + (1-trendFactor)*estimatedTrend
 			}
 			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
 
