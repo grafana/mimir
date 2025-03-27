@@ -1203,6 +1203,27 @@ func (db *DB) run(ctx context.Context) {
 	}
 }
 
+// HeadInitialized returns true if the Head has been initialized with a starting time.
+func (db *DB) HeadInitialized() bool {
+	return db.head.initialized()
+}
+
+// InitializeHead the Head with a starting time.
+// After Initialize() is called for the first time, Initialized() is always true.
+func (db *DB) InitializeHead(t int64) {
+	db.head.initTime(t)
+}
+
+// BatchAppender returns a storage.BatchAppender, it requires the head to be initialized.
+// If the Head is not initialized, it returns nil and false.
+func (db *DB) BatchAppender(ctx context.Context) (storage.BatchAppender, bool) {
+	app, ok := db.head.batchAppender(ctx)
+	if ok {
+		return batchDBAppender{BatchAppender: app, dba: dbAppender{Appender: app, db: db}}, true
+	}
+	return nil, false
+}
+
 // Appender opens a new appender against the database.
 func (db *DB) Appender(ctx context.Context) storage.Appender {
 	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
@@ -1301,6 +1322,21 @@ func (a dbAppender) Commit() error {
 		}
 	}
 	return err
+}
+
+var _ storage.BatchAppender = batchDBAppender{}
+
+type batchDBAppender struct {
+	storage.BatchAppender
+	dba dbAppender
+}
+
+func (a batchDBAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	return a.dba.GetRef(lset, hash)
+}
+
+func (a batchDBAppender) Commit() error {
+	return a.dba.Commit()
 }
 
 // waitingForCompactionDelay returns true if the DB is waiting for the Head compaction delay.

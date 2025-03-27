@@ -972,7 +972,7 @@ func (i *Ingester) updateLimitMetrics() {
 
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
-	storage.Appender
+	storage.BatchAppender
 	storage.GetRef
 }
 
@@ -1337,8 +1337,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		)
 	)
 
-	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
+	if err := i.ensureHeadInitialized(db, spanlog, req); err != nil {
+		return err
+	}
+
+	batchAppender, ok := db.BatchAppender(ctx)
+	if !ok {
+		return errors.New("failed to get batch appender, but db was initialized")
+	}
+	app := batchAppender.(extendedAppender)
 	spanlog.DebugLog("event", "got appender for timeseries", "series", len(req.Timeseries))
 
 	var activeSeries *activeseries.ActiveSeries
@@ -1402,6 +1409,30 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	return nil
 }
 
+func (i *Ingester) ensureHeadInitialized(db *userTSDB, spanlog *spanlogger.SpanLogger, req *mimirpb.WriteRequest) error {
+	if !db.HeadInitialized() {
+		spanlog.DebugLog("event", "head is not initialized, finding a sample to initialize it")
+		for _, ts := range req.Timeseries {
+			if len(ts.Samples) > 0 {
+				spanlog.DebugLog("event", "initializing head from a sample", "ts", ts.Samples[0].TimestampMs)
+				db.InitializeHead(ts.Samples[0].TimestampMs)
+				break
+			} else if len(ts.Exemplars) > 0 {
+				spanlog.DebugLog("event", "initializing head from an exemplar", "ts", ts.Exemplars[0].TimestampMs)
+				db.InitializeHead(ts.Exemplars[0].TimestampMs)
+				break
+			} else if len(ts.Histograms) > 0 {
+				spanlog.DebugLog("event", "initializing head from a histogram", "ts", ts.Histograms[0].Timestamp)
+				db.InitializeHead(ts.Histograms[0].Timestamp)
+			}
+		}
+		if !db.HeadInitialized() {
+			return errors.New("failed to initialize head, no samples found")
+		}
+	}
+	return nil
+}
+
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
 	if stats.sampleTimestampTooOldCount > 0 {
 		discarded.sampleTimestampTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTimestampTooOldCount))
@@ -1438,6 +1469,12 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	}
 }
 
+var (
+	nonCopiedLabelsPool = &sync.Pool{New: func() any { return new([]labels.Labels) }}
+	labelBuildersPool   = &sync.Pool{New: func() any { return new([]labels.ScratchBuilder) }}
+	seriesWithRefsPool  = &sync.Pool{New: func() any { return new([]storage.SeriesWithRef) }}
+)
+
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned. Errors handled by updateFirstPartial
 // must be of type softError.
@@ -1454,14 +1491,47 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
 	}
 
-	var builder labels.ScratchBuilder
-	var nonCopiedLabels labels.Labels
+	// Reuse builders, nonCopiedLabels and series slices to avoid allocations.
+	var builders []labels.ScratchBuilder
+	var nonCopiedLabels []labels.Labels
+	var series []storage.SeriesWithRef
+	{
+		buildersPointer := labelBuildersPool.Get().(*[]labels.ScratchBuilder)
+		builders = reuseOrMake(buildersPointer, len(timeseries), len(timeseries))
+		defer func() {
+			for _, b := range builders {
+				b.Reset()
+			}
+			labelBuildersPool.Put(buildersPointer) // reuseOrMake already updated the pointer with the allocated slice, if any.
+		}()
+
+		nonCopiedLabelsPointer := nonCopiedLabelsPool.Get().(*[]labels.Labels)
+		nonCopiedLabels = reuseOrMake(nonCopiedLabelsPointer, len(timeseries), len(timeseries))
+		defer func() {
+			clear(nonCopiedLabels)
+			nonCopiedLabelsPool.Put(nonCopiedLabelsPointer) // reuseOrMake already updated the pointer with the allocated slice, if any.
+		}()
+
+		seriesPointer := seriesWithRefsPool.Get().(*[]storage.SeriesWithRef)
+		series = reuseOrMake(seriesPointer, len(timeseries), len(timeseries))
+		defer func() {
+			clear(series)
+			seriesWithRefsPool.Put(seriesPointer) // reuseOrMake already updated the pointer with the allocated slice, if any.
+		}()
+	}
+
+	for i, ts := range timeseries {
+		// MUST BE COPIED before being retained.
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builders[i], ts.Labels, &nonCopiedLabels[i])
+		// series will hold COPIED Labels.
+		series = app.BatchSeriesRefs(nonCopiedLabels, series)
+	}
 
 	// idx is used to decrease active series count in case of error for cost attribution.
 	idx := i.getTSDB(userID).Head().MustIndex()
 	defer idx.Close()
 
-	for _, ts := range timeseries {
+	for tsi, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -1507,12 +1577,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 		}
 
-		// MUST BE COPIED before being retained.
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		hash := nonCopiedLabels.Hash()
-		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
-		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
-		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+		ref, copiedLabels := series[tsi].Ref, series[tsi].Labels
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
@@ -1536,8 +1601,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					continue
 				}
 			} else {
+				// If ref was 0, it means that BatchSeriesRefs couldn't create the series.
+				// We don't really expect to create the series here, but we have to try individually to see what's the error.
+
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels[tsi])
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -1586,7 +1654,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels[tsi])
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
@@ -1618,7 +1686,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, idx)
+			activeSeries.UpdateSeries(nonCopiedLabels[tsi], ref, startAppend, numNativeHistogramBuckets, idx)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -4235,4 +4303,16 @@ func createManagerThenStartAndAwaitHealthy(ctx context.Context, srvs ...services
 	}
 
 	return manager, nil
+}
+
+// reuseOrMake will try to reuse the reusable slice if it has enough capacity, setting it to the desired len.
+// If it can't be reused, it will make a new slice with the desired length and capacity.
+// If a new slice is allocated, it will update the reusable slice to point to the new slice.
+func reuseOrMake[T any](reusable *[]T, desiredLen, desiredCap int) []T {
+	if cap(*reusable) < desiredCap {
+		allocated := make([]T, desiredLen, desiredCap)
+		*reusable = allocated[:0]
+		return allocated
+	}
+	return (*reusable)[:desiredLen]
 }

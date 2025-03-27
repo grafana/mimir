@@ -395,6 +395,22 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 	return nil
 }
 
+// AddBatch adds a batch of postings to the postings index.
+func (p *MemPostings) AddBatch(batch []storage.SeriesWithRef) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	for i, b := range batch {
+		if i > 0 && i%512 == 0 {
+			p.unlockWaitAndLockAgain()
+		}
+		b.Labels.Range(func(l labels.Label) {
+			p.addFor(b.Ref, l)
+		})
+		p.addFor(b.Ref, allPostingsKey)
+	}
+}
+
 // Add a label set to the postings index.
 func (p *MemPostings) Add(id storage.SeriesRef, lset labels.Labels) {
 	p.mtx.Lock()
