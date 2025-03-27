@@ -65,6 +65,22 @@ func (c *CollapseConstants) apply(expr parser.Expr) parser.Expr {
 		return expr
 	case *parser.UnaryExpr:
 		expr.Expr = c.apply(expr.Expr)
+
+		if e, ok := expr.Expr.(*parser.NumberLiteral); ok {
+			switch expr.Op {
+			case parser.SUB:
+				// Apply the negation directly and drop the outer UnaryExpr.
+				e.Val = -e.Val
+
+				return e
+			case parser.ADD:
+				// Drop the outer UnaryExpr, unary addition is a no-op.
+				return e
+			default:
+				// Should never happen, but if it does, return the expression as-is.
+			}
+		}
+
 		return expr
 	case *parser.ParenExpr:
 		expr.Expr = c.apply(expr.Expr)
