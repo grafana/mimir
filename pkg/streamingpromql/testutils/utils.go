@@ -21,7 +21,7 @@ import (
 func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool) {
 	require.Equal(t, expected.Err, actual.Err)
 
-	if expected.Err != nil && actual.Err != nil && expected.Err.Error() == actual.Err.Error() {
+	if expected.Err != nil {
 		require.Nil(t, expected.Value)
 		require.Nil(t, actual.Value)
 		return
