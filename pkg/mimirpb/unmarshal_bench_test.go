@@ -15,8 +15,9 @@ import (
 )
 
 // Measure unmarshal performance between Remote Write 1.0 and 2.0.
+// Testing with large data sets, use "-benchtime 5s" to get more accurate results.
 func BenchmarkUnMarshal(b *testing.B) {
-	const numSeries = 1000
+	const numSeries = 10000
 
 	const numFamilies = 100 // Number of unique metric families.
 
@@ -51,6 +52,7 @@ func BenchmarkUnMarshal(b *testing.B) {
 	for i := 0; i < numFamilies; i++ {
 		rw1Request.Metadata[i].MetricFamilyName = fmt.Sprintf("metric_%d", i)
 		rw1Request.Metadata[i].Help = fmt.Sprintf("help_%d", i)
+		rw1Request.Metadata[i].Unit = fmt.Sprintf("unit_%d", i)
 		rw1Request.Metadata[i].Type = rw1.MetricMetadata_COUNTER
 	}
 
@@ -79,12 +81,13 @@ func BenchmarkUnMarshal(b *testing.B) {
 			rw2Ts.Exemplars = append(rw2Ts.Exemplars, rw2Exemplar)
 		}
 		rw2Ts.Metadata.Type = rw2.Metadata_METRIC_TYPE_COUNTER
-		rw2Ts.Metadata.HelpRef = symBuilder.GetSymbol(rw1Request.Metadata[i/numFamilies].Help)
-		rw2Ts.Metadata.UnitRef = symBuilder.GetSymbol(rw1Request.Metadata[i/numFamilies].Unit)
+		rw2Ts.Metadata.HelpRef = symBuilder.GetSymbol(rw1Request.Metadata[i%numFamilies].Help)
+		rw2Ts.Metadata.UnitRef = symBuilder.GetSymbol(rw1Request.Metadata[i%numFamilies].Unit)
 
 		rw2Request.Timeseries = append(rw2Request.Timeseries, rw2Ts)
 	}
 	rw2Request.Symbols = symBuilder.GetSymbols()
+	require.Len(b, rw2Request.Symbols, numCommonLabels*2+numSeries*numUniqueLabels*2+numFamilies*2+numExemplarLabels*numSeries*numExemplars*2)
 
 	rw1Data, err := rw1Request.Marshal()
 	require.NoError(b, err)
@@ -124,10 +127,11 @@ func generateLabels(prefix string, seriesNumber, numCommonLabels, numUniqueLabel
 		labels[i].Name = prefix + "common_label_" + strconv.Itoa(i)
 		labels[i].Value = prefix + "common_value_" + strconv.Itoa(i)
 	}
-	for i := numCommonLabels; i < numCommonLabels+numUniqueLabels; i++ {
-		uid := seriesNumber*(numCommonLabels+numUniqueLabels) + i
-		labels[i].Name = prefix + "unique_label_" + strconv.Itoa(uid)
-		labels[i].Value = prefix + "unique_value_" + strconv.Itoa(uid)
+	for i := 0; i < numUniqueLabels; i++ {
+		idx := numCommonLabels + i
+		uid := seriesNumber*(numUniqueLabels) + i
+		labels[idx].Name = prefix + "unique_label_" + strconv.Itoa(uid)
+		labels[idx].Value = prefix + "unique_value_" + strconv.Itoa(uid)
 	}
 	return labels
 }
