@@ -4055,7 +4055,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
 # (experimental) Optionally specify OTel resource attributes to promote to
-# labels. Coma separated list of resource attributes.
+# labels. Comma-separated list of resource attributes.
 # Example: "service.instance.id, service.name, service.namespace,
 # service.version, cloud.availability_zone, cloud.region, container.name,
 # deployment.environment, deployment.environment.name, k8s.cluster.name,
