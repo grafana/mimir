@@ -2952,7 +2952,7 @@ func runMixedMetricsTests(t *testing.T, expressions []expressionCheck, pointsPer
 		for _, expr := range expressions {
 			// We run so many combinations that calling t.Run() for each of them has a noticeable performance impact.
 			// So we instead just log the test case before we run it.
-			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
+			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr.expr, start.Unix(), end.Unix(), tr.interval)
 			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr.expr, start, end, tr.interval)
 			require.NoError(t, err)
 			defer q.Close()
