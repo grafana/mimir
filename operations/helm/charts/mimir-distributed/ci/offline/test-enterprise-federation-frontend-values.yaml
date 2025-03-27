@@ -9,11 +9,11 @@ federation_frontend:
   replicas: 2
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
     limits:
-      cpu: 1
-      memory: 256Mi
+      cpu: "1"
+      memory: "256Mi"
 
 mimir:
   structuredConfig:

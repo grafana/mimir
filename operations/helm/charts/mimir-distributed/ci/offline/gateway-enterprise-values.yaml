@@ -6,8 +6,8 @@ enterprise:
 gateway:
   resources:
     requests:
-      memory: 10Mi
-      cpu: 100m
+      memory: "10Mi"
+      cpu: "100m"
   ingress:
     enabled: true
   autoscaling:

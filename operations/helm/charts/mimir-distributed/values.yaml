@@ -606,8 +606,8 @@ alertmanager:
 
   resources:
     requests:
-      cpu: 10m
-      memory: 32Mi
+      cpu: "10m"
+      memory: "32Mi"
 
   # -- Fallback config for alertmanager.
   # When a tenant doesn't have an Alertmanager configuration, the Grafana Mimir Alertmanager uses the fallback configuration.
@@ -888,8 +888,8 @@ distributor:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: "100m"
+      memory: "512Mi"
 
   # Additional distributor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -995,8 +995,8 @@ ingester:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: "100m"
+      memory: "512Mi"
 
   # Additional ingester container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1282,8 +1282,8 @@ overrides_exporter:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   terminationGracePeriodSeconds: 30
 
@@ -1352,8 +1352,8 @@ ruler:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional ruler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1479,8 +1479,8 @@ ruler_querier:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional ruler-querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1596,8 +1596,8 @@ ruler_query_frontend:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional ruler-query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1690,8 +1690,8 @@ ruler_query_scheduler:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional ruler-query-scheduler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1828,8 +1828,8 @@ querier:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -1947,8 +1947,8 @@ query_frontend:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -2042,8 +2042,8 @@ query_scheduler:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   # Additional query-scheduler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -2145,8 +2145,8 @@ store_gateway:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: "100m"
+      memory: "512Mi"
 
   # Additional store-gateway container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -2369,8 +2369,8 @@ compactor:
 
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: "100m"
+      memory: "512Mi"
 
   # Additional compactor container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
@@ -2992,8 +2992,8 @@ minio:
     size: 5Gi
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
   rootPassword: supersecret
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
@@ -4277,8 +4277,8 @@ admin_api:
 
   resources:
     requests:
-      cpu: 10m
-      memory: 32Mi
+      cpu: "10m"
+      memory: "32Mi"
 
   terminationGracePeriodSeconds: 60
 
@@ -4402,8 +4402,8 @@ graphite:
     # -- Resources for graphite-querier pods
     resources:
       requests:
-        cpu: 100m
-        memory: 128Mi
+        cpu: "100m"
+        memory: "128Mi"
 
     # -- Additional graphite-querier container arguments, e.g. log level (debug, info, warn, error)
     extraArgs: {}
@@ -4484,8 +4484,8 @@ graphite:
     # -- Resources for graphite-write-proxy pods
     resources:
       requests:
-        cpu: 100m
-        memory: 128Mi
+        cpu: "100m"
+        memory: "128Mi"
 
     # -- Additional graphite-write-proxy container arguments, e.g. log level (debug, info, warn, error)
     extraArgs: {}
@@ -4714,8 +4714,8 @@ federation_frontend:
   # -- Resource requests and limits for the federation-frontend
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
   initContainers: []
 
@@ -4886,10 +4886,10 @@ continuous_test:
   # -- Kubernetes resource requests and limits for continuous test
   resources:
     limits:
-      memory: 1Gi
+      memory: "1Gi"
     requests:
       cpu: "1"
-      memory: 512Mi
+      memory: "512Mi"
   # -- Security context for the continuous test Deployment
   securityContext: {}
   # -- Service for monitoring continuous test

@@ -29,11 +29,11 @@ alertmanager:
   replicas: 2
   resources:
     limits:
-      cpu: 1.4
-      memory: 1.4Gi
+      cpu: "1.4"
+      memory: "1.4Gi"
     requests:
-      cpu: 1.4
-      memory: 1.4Gi
+      cpu: "1.4"
+      memory: "1.4Gi"
   statefulSet:
     enabled: true
 
@@ -42,21 +42,21 @@ compactor:
     size: 20Gi
   resources:
     limits:
-      cpu: 1.4
-      memory: 2.1Gi
+      cpu: "1.4"
+      memory: "2.1Gi"
     requests:
-      cpu: 1.4
-      memory: 2.1Gi
+      cpu: "1.4"
+      memory: "2.1Gi"
 
 distributor:
   replicas: 2
   resources:
     limits:
-      cpu: 3.5
-      memory: 5.7Gi
+      cpu: "3.5"
+      memory: "5.7Gi"
     requests:
-      cpu: 3.5
-      memory: 5.7Gi
+      cpu: "3.5"
+      memory: "5.7Gi"
 
 ingester:
   persistentVolume:
@@ -64,11 +64,11 @@ ingester:
   replicas: 3
   resources:
     limits:
-      cpu: 5
-      memory: 12Gi
+      cpu: "5"
+      memory: "12Gi"
     requests:
-      cpu: 5
-      memory: 12Gi
+      cpu: "5"
+      memory: "12Gi"
   topologySpreadConstraints: {}
   affinity:
     podAntiAffinity:
@@ -116,41 +116,41 @@ overrides_exporter:
   replicas: 1
   resources:
     limits:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
 querier:
   replicas: 1
   resources:
     limits:
-      cpu: 2.8
-      memory: 5.6Gi
+      cpu: "2.8"
+      memory: "5.6Gi"
     requests:
-      cpu: 2.8
-      memory: 5.6Gi
+      cpu: "2.8"
+      memory: "5.6Gi"
 
 query_frontend:
   replicas: 1
   resources:
     limits:
-      cpu: 2.8
-      memory: 2.8Gi
+      cpu: "2.8"
+      memory: "2.8Gi"
     requests:
-      cpu: 2.8
-      memory: 2.8Gi
+      cpu: "2.8"
+      memory: "2.8Gi"
 
 ruler:
   replicas: 1
   resources:
     limits:
-      cpu: 1.4
-      memory: 2.8Gi
+      cpu: "1.4"
+      memory: "2.8Gi"
     requests:
-      cpu: 1.4
-      memory: 2.8Gi
+      cpu: "1.4"
+      memory: "2.8Gi"
 
 store_gateway:
   persistentVolume:
@@ -158,11 +158,11 @@ store_gateway:
   replicas: 3
   resources:
     limits:
-      cpu: 1.4
-      memory: 2.1Gi
+      cpu: "1.4"
+      memory: "2.1Gi"
     requests:
-      cpu: 1.4
-      memory: 2.1Gi
+      cpu: "1.4"
+      memory: "2.1Gi"
   topologySpreadConstraints: {}
   affinity:
     podAntiAffinity:
@@ -190,29 +190,29 @@ nginx:
   replicas: 1
   resources:
     limits:
-      cpu: 1.4
-      memory: 731Mi
+      cpu: "1.4"
+      memory: "731Mi"
     requests:
-      cpu: 1.4
-      memory: 731Mi
+      cpu: "1.4"
+      memory: "731Mi"
 
 # Grafana Enterprise Metrics feature related
 admin_api:
   replicas: 1
   resources:
     limits:
-      cpu: 200m
-      memory: 128Mi
+      cpu: "200m"
+      memory: "128Mi"
     requests:
-      cpu: 200m
-      memory: 128Mi
+      cpu: "200m"
+      memory: "128Mi"
 
 gateway:
   replicas: 1
   resources:
     limits:
-      cpu: 1.4
-      memory: 731Mi
+      cpu: "1.4"
+      memory: "731Mi"
     requests:
-      cpu: 1.4
-      memory: 731Mi
+      cpu: "1.4"
+      memory: "731Mi"

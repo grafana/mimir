@@ -18,4 +18,4 @@ nginx:
     enabled: true
   resources:
     requests:
-      cpu: 1
+      cpu: "1"

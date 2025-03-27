@@ -29,10 +29,10 @@ alertmanager:
   replicas: 2
   resources:
     limits:
-      memory: 1.4Gi
+      memory: "1.4Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   statefulSet:
     enabled: true
 
@@ -41,19 +41,19 @@ compactor:
     size: 20Gi
   resources:
     limits:
-      memory: 2.1Gi
+      memory: "2.1Gi"
     requests:
-      cpu: 1
-      memory: 1.5Gi
+      cpu: "1"
+      memory: "1.5Gi"
 
 distributor:
   replicas: 2
   resources:
     limits:
-      memory: 5.7Gi
+      memory: "5.7Gi"
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "4Gi"
 
 ingester:
   persistentVolume:
@@ -61,10 +61,10 @@ ingester:
   replicas: 3
   resources:
     limits:
-      memory: 12Gi
+      memory: "12Gi"
     requests:
-      cpu: 3.5
-      memory: 8Gi
+      cpu: "3.5"
+      memory: "8Gi"
   topologySpreadConstraints: {}
   affinity:
     podAntiAffinity:
@@ -115,37 +115,37 @@ overrides_exporter:
   replicas: 1
   resources:
     limits:
-      memory: 128Mi
+      memory: "128Mi"
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "100m"
+      memory: "128Mi"
 
 querier:
   replicas: 1
   resources:
     limits:
-      memory: 5.6Gi
+      memory: "5.6Gi"
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "4Gi"
 
 query_frontend:
   replicas: 1
   resources:
     limits:
-      memory: 2.8Gi
+      memory: "2.8Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
 
 ruler:
   replicas: 1
   resources:
     limits:
-      memory: 2.8Gi
+      memory: "2.8Gi"
     requests:
-      cpu: 1
-      memory: 2Gi
+      cpu: "1"
+      memory: "2Gi"
 
 store_gateway:
   persistentVolume:
@@ -153,10 +153,10 @@ store_gateway:
   replicas: 3
   resources:
     limits:
-      memory: 2.1Gi
+      memory: "2.1Gi"
     requests:
-      cpu: 1
-      memory: 1.5Gi
+      cpu: "1"
+      memory: "1.5Gi"
   topologySpreadConstraints: {}
   affinity:
     podAntiAffinity:
@@ -183,26 +183,26 @@ nginx:
   replicas: 1
   resources:
     limits:
-      memory: 731Mi
+      memory: "731Mi"
     requests:
-      cpu: 1
-      memory: 512Mi
+      cpu: "1"
+      memory: "512Mi"
 
 # Grafana Enterprise Metrics feature related
 admin_api:
   replicas: 1
   resources:
     limits:
-      memory: 128Mi
+      memory: "128Mi"
     requests:
-      cpu: 100m
-      memory: 64Mi
+      cpu: "100m"
+      memory: "64Mi"
 
 gateway:
   replicas: 1
   resources:
     limits:
-      memory: 731Mi
+      memory: "731Mi"
     requests:
-      cpu: 1
-      memory: 512Mi
+      cpu: "1"
+      memory: "512Mi"
