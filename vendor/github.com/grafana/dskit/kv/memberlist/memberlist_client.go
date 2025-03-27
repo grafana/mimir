@@ -555,7 +555,7 @@ func (m *KV) running(ctx context.Context) error {
 		case <-obsoleteEntriesTickerChan:
 			// cleanupObsoleteEntries is normally called during push/pull, but if there are no other
 			// nodes to push/pull with, we can call it periodically to make sure we remove unused entries from memory.
-			level.Info(m.logger).Log("msg", "initiating cleanup of obsolete entries")
+			level.Debug(m.logger).Log("msg", "initiating cleanup of obsolete entries")
 			m.cleanupObsoleteEntries()
 
 		case <-ctx.Done():
