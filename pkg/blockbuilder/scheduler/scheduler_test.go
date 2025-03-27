@@ -67,8 +67,6 @@ func TestStartup(t *testing.T) {
 		require.ErrorContains(t, err, "observation period not complete")
 	}
 
-	now := time.Now()
-
 	// Some jobs that ostensibly exist, but scheduler doesn't know about.
 	j1 := job[schedulerpb.JobSpec]{
 		key: jobKey{
@@ -79,7 +77,6 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   64,
 			StartOffset: 1000,
-			CommitRecTs: now.Add(-1 * time.Hour),
 		},
 	}
 	j2 := job[schedulerpb.JobSpec]{
@@ -91,7 +88,6 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   65,
 			StartOffset: 256,
-			CommitRecTs: now.Add(-2 * time.Hour),
 		},
 	}
 	j3 := job[schedulerpb.JobSpec]{
@@ -103,7 +99,6 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   66,
 			StartOffset: 57,
-			CommitRecTs: now.Add(-3 * time.Hour),
 		},
 	}
 
@@ -149,7 +144,6 @@ func TestStartup(t *testing.T) {
 		Partition:   65,
 		StartOffset: 256,
 		EndOffset:   9111,
-		CommitRecTs: now.Add(-1 * time.Hour),
 	})
 
 	a1key, a1spec, err := sched.assignJob("w0")
@@ -216,10 +210,9 @@ func TestObservations(t *testing.T) {
 		clientData = append(clientData, observation{
 			key: jobKey{id: id, epoch: epoch},
 			spec: schedulerpb.JobSpec{
-				Topic:       "ingest",
-				Partition:   partition,
-				CommitRecTs: commitRecTs,
-				EndOffset:   endOffset,
+				Topic:     "ingest",
+				Partition: partition,
+				EndOffset: endOffset,
 			},
 			workerID:  worker,
 			complete:  isComplete,
@@ -321,7 +314,6 @@ func TestOffsetMovement(t *testing.T) {
 	spec := schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
-		CommitRecTs: time.Unix(200, 0),
 		StartOffset: 5000,
 		EndOffset:   6000,
 	}
@@ -422,14 +414,6 @@ func TestMonitor(t *testing.T) {
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
-}
-
-func TestLessThan(t *testing.T) {
-	now := time.Now()
-	oneHourAgo := now.Add(-1 * time.Hour)
-	assert.True(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: oneHourAgo}, schedulerpb.JobSpec{CommitRecTs: now}))
-	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: oneHourAgo}))
-	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: now}))
 }
 
 type timeOffset struct {

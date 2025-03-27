@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"slices"
 	"strings"
 	"sync"
@@ -193,19 +194,15 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	}
 }
 
-type topicPartition struct {
-	topic     string
-	partition int32
-}
-
 type partitionOffsets struct {
-	start int64
-	end   int64
+	topic      string
+	partition  int32
+	start, end int64
 }
 
 // consumptionOffsets returns the resumption and end offsets for each partition, falling back to the
 // fallbackTime if there is no committed offset for a partition.
-func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, committed kadm.Offsets, fallbackTime time.Time) (map[topicPartition]partitionOffsets, error) {
+func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, committed kadm.Offsets, fallbackTime time.Time) ([]partitionOffsets, error) {
 	startOffsets, err := s.adminClient.ListStartOffsets(ctx, topic)
 	if err != nil {
 		return nil, fmt.Errorf("list start offsets: %w", err)
@@ -219,9 +216,8 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 		return nil, fmt.Errorf("list fallback offsets: %w", err)
 	}
 
-	offs := make(map[topicPartition]partitionOffsets, len(startOffsets.Offsets()))
+	offs := []partitionOffsets{}
 
-	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffsetMillis points at.
 	for t, pt := range startOffsets.Offsets() {
 		if t != topic {
 			continue
@@ -256,13 +252,17 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition, "start", startOffset.At, "end", end.Offset, "consumeOffset", consumeOffset)
 
-			offs[topicPartition{t, partition}] = partitionOffsets{
-				start: consumeOffset,
-				end:   end.Offset,
-			}
-
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+
+			if consumeOffset < end.Offset {
+				offs = append(offs, partitionOffsets{
+					topic:     t,
+					partition: partition,
+					start:     consumeOffset,
+					end:       end.Offset,
+				})
+			}
 		}
 	}
 
@@ -285,10 +285,15 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 	minScanTime := time.Now().Add(-s.cfg.MaxScanAge)
 	jobs := []*schedulerpb.JobSpec{}
 
-	for tp, off := range consumeOffs {
-		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", tp.topic, "partition", tp.partition, "start", off.start, "end", off.end, "boundary", boundary)
+	// randomize partition order to make job ordering fairer until we have a reliable sort mechanism.
+	rand.Shuffle(len(consumeOffs), func(i, j int) {
+		consumeOffs[i], consumeOffs[j] = consumeOffs[j], consumeOffs[i]
+	})
 
-		pj, err := computePartitionJobs(ctx, of, tp.topic, tp.partition,
+	for _, off := range consumeOffs {
+		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", off.topic, "partition", off.partition, "start", off.start, "end", off.end, "boundary", boundary)
+
+		pj, err := computePartitionJobs(ctx, of, off.topic, off.partition,
 			off.start, off.end, boundary, s.cfg.JobSize, minScanTime)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
@@ -691,7 +696,8 @@ var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
 
 // specLessThan determines whether spec a should come before b in job scheduling.
 func specLessThan(a, b schedulerpb.JobSpec) bool {
-	return a.CommitRecTs.Before(b.CommitRecTs)
+	// Don't have an ordering criteria for now.
+	return true
 }
 
 type limitPerPartitionJobCreationPolicy struct {
