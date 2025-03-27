@@ -589,7 +589,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 
 	if !doneObserving {
 		var empty schedulerpb.JobSpec
-		return jobKey{}, empty, status.Error(codes.Unavailable, "observation period not complete")
+		return jobKey{}, empty, status.Error(codes.FailedPrecondition, "observation period not complete")
 	}
 
 	return s.jobs.assign(workerID)
