@@ -1134,3 +1134,115 @@ func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
 
 	return client
 }
+
+func BenchmarkRecordSerializer(b *testing.B) {
+	// Generate a WriteRequest.
+	req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, 10000)}
+	for i := 0; i < len(req.Timeseries); i++ {
+		req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+	}
+
+	v2s := remoteWriteV2RecordSerializer{}
+	v1s := protoWriteRequestRecordSerializer{}
+
+	b.Run("v2 serialize", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := v2s.serialize(req, req.Size())
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 -> v2 convert", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			rwv2 := mimirpb.FromWriteRequestToWriteRequestV2(req)
+			if len(rwv2.Timeseries) == 0 {
+				b.Fatal("unexpectedly empty")
+			}
+		}
+	})
+
+	b.Run("v1 serialize", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := v1s.serialize(req, req.Size())
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	/*b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024, protoWriteRequestRecordSerializer{})
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(records) != 1 {
+				b.Fatalf("expected 1 record but got %d", len(records))
+			}
+		}
+	})
+
+	b.Run("WriteRequest.Marshal()", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_, err := req.Marshal()
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})*/
+}
+
+func BenchmarkRecordDeserializer(b *testing.B) {
+	// Generate a WriteRequest.
+	req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, 10000)}
+	for i := 0; i < len(req.Timeseries); i++ {
+		req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+	}
+
+	// Serialize it to v1
+	v1s := protoWriteRequestRecordSerializer{}
+	v1bytes, err := v1s.serialize(req, req.Size())
+	if err != nil {
+		b.Fatal(err)
+	}
+	v1r := record{
+		ctx:      context.Background(),
+		tenantID: "user-1",
+		content:  v1bytes,
+	}
+
+	// Serialize it to v2
+	v2s := remoteWriteV2RecordSerializer{}
+	v2bytes, err := v2s.serialize(req, req.Size())
+	if err != nil {
+		b.Fatal(err)
+	}
+	v2r := record{
+		ctx:      context.Background(),
+		tenantID: "user-1",
+		content:  v2bytes,
+	}
+
+	v1d := protoWriteRequestRecordDeserializer{}
+	v2d := rw1and2RecordDeserializer{}
+
+	b.Run("deser v1", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_ = v1d.deserialize(v1r, 1)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("deser v2", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			_ = v2d.deserialize(v2r, 1)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
