@@ -1960,6 +1960,9 @@ type WriteRequestRW2 struct {
 	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
 	// Skip label count validation.
 	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
+
+	// Skip unmarshaling of exemplars.
+	skipUnmarshalingExemplars bool
 }
 
 func (m *WriteRequestRW2) Reset()      { *m = WriteRequestRW2{} }
@@ -2059,6 +2062,9 @@ type TimeSeriesRW2 struct {
 	// Zero value means value not set. If you need to use exactly zero value for
 	// the timestamp, use 1 millisecond before or after.
 	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
+
+	// Skip unmarshaling of exemplars.
+	skipUnmarshalingExemplars bool
 }
 
 func (m *TimeSeriesRW2) Reset()      { *m = TimeSeriesRW2{} }
@@ -10997,7 +11003,7 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Timeseries = append(m.Timeseries, TimeSeriesRW2{})
+			m.Timeseries = append(m.Timeseries, TimeSeriesRW2{skipUnmarshalingExemplars: m.skipUnmarshalingExemplars})
 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -11265,9 +11271,11 @@ func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Exemplars = append(m.Exemplars, ExemplarRW2{})
-			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
+			if !m.skipUnmarshalingExemplars {
+				m.Exemplars = append(m.Exemplars, ExemplarRW2{})
+				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+					return err
+				}
 			}
 			iNdEx = postIndex
 		case 5:

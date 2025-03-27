@@ -85,6 +85,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 // UnmarshalRW2 unmarshals the given remote write 2.0 data and converts it to a WriteRequest.
 func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 	rw2req := &WriteRequestRW2{}
+	rw2req.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	if err := rw2req.Unmarshal(data); err != nil {
 		return err
 	}
@@ -102,7 +103,7 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		}
 		p.Timeseries[len(p.Timeseries)-1].TimeSeries.Samples = ts.Samples
 		p.Timeseries[len(p.Timeseries)-1].TimeSeries.Histograms = ts.Histograms
-		if !p.SkipUnmarshalingExemplars {
+		if len(ts.Exemplars) > 0 {
 			p.Timeseries[len(p.Timeseries)-1].TimeSeries.Exemplars = make([]Exemplar, 0, len(ts.Exemplars))
 			for i := range ts.Exemplars {
 				lbls, err := labelRefsToLabelAdapter(ts.Exemplars[i].LabelsRefs, rw2req.Symbols)

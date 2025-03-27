@@ -16,7 +16,7 @@ import (
 
 // Measure unmarshal performance between Remote Write 1.0 and 2.0.
 func BenchmarkUnMarshal(b *testing.B) {
-	const numSeries = 10000
+	const numSeries = 1000
 
 	const numFamilies = 100 // Number of unique metric families.
 
@@ -96,18 +96,20 @@ func BenchmarkUnMarshal(b *testing.B) {
 
 	for _, skipExemplars := range []bool{true, false} {
 		b.Run(fmt.Sprintf("RW/skipExemplars=%v", skipExemplars), func(b *testing.B) {
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				pw := PreallocWriteRequest{}
-				pw.skipUnmarshalingExemplars = skipExemplars
+				pw.SkipUnmarshalingExemplars = skipExemplars
 				err := pw.Unmarshal(rw1Data)
 				require.NoError(b, err)
 			}
 		})
 
 		b.Run(fmt.Sprintf("RW2/skipExemplars=%v", skipExemplars), func(b *testing.B) {
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				pw := PreallocWriteRequest{}
-				pw.skipUnmarshalingExemplars = skipExemplars
+				pw.SkipUnmarshalingExemplars = skipExemplars
 				pw.UnmarshalFromRW2 = true
 				err := pw.Unmarshal(rw2Data)
 				require.NoError(b, err)
