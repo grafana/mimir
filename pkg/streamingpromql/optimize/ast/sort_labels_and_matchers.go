@@ -21,15 +21,15 @@ func (s *SortLabelsAndMatchers) Name() string {
 	return "Sort labels and matchers"
 }
 
-// TODO: tests
 func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
-			// Note that VectorSelectors sort their labels when pretty printing, so this change may not be visible when printing as PromQL.
+			// Note that VectorSelectors sort their matchers when pretty printing, so this change may not be visible when printing as PromQL.
 			slices.SortFunc(expr.LabelMatchers, compareMatchers)
 
 		case *parser.MatrixSelector:
+			// Note that MatrixSelector sort their matchers when pretty printing, so this change may not be visible when printing as PromQL.
 			slices.SortFunc(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers, compareMatchers)
 
 		case *parser.BinaryExpr:
@@ -58,9 +58,9 @@ func compareMatchers(a, b *labels.Matcher) int {
 		return strings.Compare(a.Name, b.Name)
 	}
 
-	if a.Value != b.Value {
-		return strings.Compare(a.Value, b.Value)
+	if a.Type != b.Type {
+		return int(a.Type - b.Type)
 	}
 
-	return int(a.Type - b.Type)
+	return strings.Compare(a.Value, b.Value)
 }
