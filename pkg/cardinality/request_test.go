@@ -16,6 +16,7 @@ import (
 )
 
 func TestDecodeLabelNamesRequest(t *testing.T) {
+	t.Parallel()
 	var (
 		params = url.Values{
 			"selector":     []string{`{second!="2",first="1"}`},
@@ -34,6 +35,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 	)
 
 	t.Run("errors if limit parameter is greater than 500", func(t *testing.T) {
+		t.Parallel()
 		p := url.Values{
 			"selector": []string{`{fruit="mango"}`},
 			"limit":    []string{"501"},
@@ -47,6 +49,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 	})
 
 	t.Run("DecodeLabelNamesRequest() with GET request", func(t *testing.T) {
+		t.Parallel()
 		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
 		require.NoError(t, err)
 
@@ -57,6 +60,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 	})
 
 	t.Run("DecodeLabelNamesRequest() with POST request", func(t *testing.T) {
+		t.Parallel()
 		req, err := http.NewRequest("POST", "http://localhost/", strings.NewReader(params.Encode()))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -68,6 +72,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 	})
 
 	t.Run("DecodeLabelNamesRequestFromValues()", func(t *testing.T) {
+		t.Parallel()
 		actual, err := DecodeLabelNamesRequestFromValues(params)
 		require.NoError(t, err)
 
@@ -76,6 +81,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 }
 
 func TestLabelNamesRequest_String(t *testing.T) {
+	t.Parallel()
 	req := &LabelNamesRequest{
 		Matchers: []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
@@ -344,6 +350,7 @@ func TestDecodeLabelValuesRequestFromValues(t *testing.T) {
 }
 
 func TestLabelValuesRequest_String(t *testing.T) {
+	t.Parallel()
 	req := &LabelValuesRequest{
 		LabelNames: []model.LabelName{"foo", "bar"},
 		Matchers: []*labels.Matcher{
@@ -358,6 +365,7 @@ func TestLabelValuesRequest_String(t *testing.T) {
 }
 
 func TestActiveSeriesRequest_String(t *testing.T) {
+	t.Parallel()
 	req := &ActiveSeriesRequest{
 		Matchers: []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
