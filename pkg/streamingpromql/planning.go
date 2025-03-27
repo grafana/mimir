@@ -4,11 +4,16 @@ package streamingpromql
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
+	"net/http"
 	"slices"
+	"strconv"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -17,10 +22,39 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+type QueryPlanner struct {
+	features                 Features
+	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	astOptimizationPasses    []optimize.ASTOptimizationPass
+	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
+}
+
+func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
+	return &QueryPlanner{
+		features:                 opts.Features,
+		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+	}
+}
+
+// RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
+//
+// This method is not thread-safe and must not be called concurrently with any other method on this type.
+func (p *QueryPlanner) RegisterASTOptimizationPass(o optimize.ASTOptimizationPass) {
+	p.astOptimizationPasses = append(p.astOptimizationPasses, o)
+}
+
+// RegisterQueryPlanOptimizationPass registers a query plan optimization pass used with this engine.
+//
+// This method is not thread-safe and must not be called concurrently with any other method on this type.
+func (p *QueryPlanner) RegisterQueryPlanOptimizationPass(o optimize.QueryPlanOptimizationPass) {
+	p.planOptimizationPasses = append(p.planOptimizationPasses, o)
+}
 
 type PlanningObserver interface {
 	OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error
@@ -29,7 +63,7 @@ type PlanningObserver interface {
 	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error
 }
 
-func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
 	expr, err := runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -49,7 +83,7 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		return nil, err
 	}
 
-	for _, o := range e.astOptimizationPasses {
+	for _, o := range p.astOptimizationPasses {
 		expr, err = runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
 
 		if err != nil {
@@ -62,7 +96,7 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 	}
 
 	plan, err := runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
-		root, err := e.nodeFromExpr(expr)
+		root, err := p.nodeFromExpr(expr)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +115,7 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		return nil, err
 	}
 
-	for _, o := range e.planOptimizationPasses {
+	for _, o := range p.planOptimizationPasses {
 		plan, err = runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
 
 		if err != nil {
@@ -128,7 +162,7 @@ func runPlanningStage(stageName string, observer PlanningObserver, stage func() 
 	return plan, nil
 }
 
-func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
+func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
@@ -157,7 +191,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.AggregateExpr:
-		inner, err := e.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +199,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		var param planning.Node
 
 		if expr.Param != nil {
-			param, err = e.nodeFromExpr(expr.Param)
+			param, err = p.nodeFromExpr(expr.Param)
 			if err != nil {
 				return nil, err
 			}
@@ -188,12 +222,12 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := e.nodeFromExpr(expr.LHS)
+		lhs, err := p.nodeFromExpr(expr.LHS)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := e.nodeFromExpr(expr.RHS)
+		rhs, err := p.nodeFromExpr(expr.RHS)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +251,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	case *parser.Call:
 		// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
 		// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
-		if _, found := slices.BinarySearch(e.features.DisabledFunctions, expr.Func.Name); found {
+		if _, found := slices.BinarySearch(p.features.DisabledFunctions, expr.Func.Name); found {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
 
@@ -228,7 +262,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		args := make([]planning.Node, 0, len(expr.Args))
 
 		for _, arg := range expr.Args {
-			node, err := e.nodeFromExpr(arg)
+			node, err := p.nodeFromExpr(arg)
 			if err != nil {
 				return nil, err
 			}
@@ -251,7 +285,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return f, nil
 
 	case *parser.SubqueryExpr:
-		inner, err := e.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +293,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		step := expr.Step
 
 		if step == 0 {
-			step = time.Duration(e.noStepSubqueryIntervalFn(expr.Range.Milliseconds())) * time.Millisecond
+			step = time.Duration(p.noStepSubqueryIntervalFn(expr.Range.Milliseconds())) * time.Millisecond
 		}
 
 		return &core.Subquery{
@@ -274,7 +308,7 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.UnaryExpr:
-		inner, err := e.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -314,11 +348,11 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.ParenExpr:
-		return e.nodeFromExpr(expr.Expr)
+		return p.nodeFromExpr(expr.Expr)
 
 	case *parser.StepInvariantExpr:
 		// FIXME: make use of the fact the expression is step invariant
-		return e.nodeFromExpr(expr.Expr)
+		return p.nodeFromExpr(expr.Expr)
 
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
@@ -403,9 +437,9 @@ type PlanningStage struct {
 }
 
 // Analyze performs query planning and produces a report on the query planning process.
-func (e *Engine) Analyze(ctx context.Context, qs string, timeRange types.QueryTimeRange) (*AnalysisResult, error) {
-	observer := NewAnalysisPlanningObserver(qs, timeRange, e)
-	_, err := e.NewQueryPlan(ctx, qs, timeRange, observer)
+func (p *QueryPlanner) Analyze(ctx context.Context, qs string, timeRange types.QueryTimeRange) (*AnalysisResult, error) {
+	observer := NewAnalysisPlanningObserver(qs, timeRange)
+	_, err := p.NewQueryPlan(ctx, qs, timeRange, observer)
 	if err != nil {
 		return nil, err
 	}
@@ -437,16 +471,14 @@ func (n NoopPlanningObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) e
 
 type AnalysisPlanningObserver struct {
 	Result *AnalysisResult
-	Engine *Engine
 }
 
-func NewAnalysisPlanningObserver(expr string, timeRange types.QueryTimeRange, engine *Engine) *AnalysisPlanningObserver {
+func NewAnalysisPlanningObserver(expr string, timeRange types.QueryTimeRange) *AnalysisPlanningObserver {
 	return &AnalysisPlanningObserver{
 		Result: &AnalysisResult{
 			OriginalExpression: expr,
 			TimeRange:          timeRange,
 		},
-		Engine: engine,
 	}
 }
 
@@ -506,4 +538,112 @@ func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planni
 	})
 
 	return nil
+}
+
+func AnalysisHandler(planner *QueryPlanner) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, status, err := handleAnalysis(w, r, planner)
+		w.WriteHeader(status)
+
+		if err != nil {
+			// TODO: return a Prometheus-style JSON error payload
+			_, _ = w.Write([]byte(err.Error()))
+			return
+		}
+
+		_, _ = w.Write(body)
+	})
+}
+
+func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanner) ([]byte, int, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, http.StatusBadRequest, fmt.Errorf("could not parse request: %w", err)
+	}
+
+	qs := r.Form.Get("query")
+	if qs == "" {
+		return nil, http.StatusBadRequest, errors.New("missing 'query' parameter")
+	}
+
+	var timeRange types.QueryTimeRange
+
+	// TODO: check we don't have both 'time' and any of 'start', 'end', 'step'
+
+	if r.Form.Has("time") {
+		t, err := parseTime(r.Form.Get("time"))
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'time' parameter: %w", err)
+		}
+
+		timeRange = types.NewInstantQueryTimeRange(t)
+	} else if r.Form.Has("start") && r.Form.Has("end") && r.Form.Has("step") {
+		start, err := parseTime(r.Form.Get("start"))
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'start' parameter: %w", err)
+		}
+
+		end, err := parseTime(r.Form.Get("end"))
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'end' parameter: %w", err)
+		}
+
+		step, err := parseDuration(r.Form.Get("step"))
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("could not parse 'step' parameter: %w", err)
+		}
+
+		if end.Before(start) {
+			return nil, http.StatusBadRequest, errors.New("end time must be greater than start time")
+		}
+
+		if step <= 0 {
+			return nil, http.StatusBadRequest, errors.New("step must be greater than 0")
+		}
+
+		timeRange = types.NewRangeQueryTimeRange(start, end, step)
+	} else {
+		return nil, http.StatusBadRequest, errors.New("missing 'time' parameter for instant query or 'start', 'end' and 'step' parameters for range query")
+	}
+
+	result, err := planner.Analyze(r.Context(), qs, timeRange)
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("analysis failed: %w", err)
+	}
+
+	b, err := jsoniter.Marshal(result)
+	if err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("could not marshal response: %w", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+	return b, http.StatusOK, nil
+}
+
+// Based on Prometheus' web/api/v1/api.go
+func parseTime(s string) (time.Time, error) {
+	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		s, ns := math.Modf(t)
+		ns = math.Round(ns*1000) / 1000
+		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
+}
+
+func parseDuration(s string) (time.Duration, error) {
+	if d, err := strconv.ParseFloat(s, 64); err == nil {
+		ts := d * float64(time.Second)
+		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
+			return 0, fmt.Errorf("cannot parse %q to a valid duration. It overflows int64", s)
+		}
+		return time.Duration(ts), nil
+	}
+	if d, err := model.ParseDuration(s); err == nil {
+		return time.Duration(d), nil
+	}
+	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
 }

@@ -19,13 +19,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (*Engine, error) {
+func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, logger log.Logger) (*Engine, error) {
 	lookbackDelta := opts.CommonOpts.LookbackDelta
 	if lookbackDelta == 0 {
 		lookbackDelta = defaultLookbackDelta
@@ -50,6 +49,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	// We must sort DisabledFunctions as we use a binary search on it later.
 	slices.Sort(opts.Features.DisabledFunctions)
 
+	if opts.UseQueryPlanning && planner == nil {
+		return nil, errors.New("query planning enabled but no planner provided")
+	}
+
 	return &Engine{
 		lookbackDelta:            lookbackDelta,
 		timeout:                  opts.CommonOpts.Timeout,
@@ -68,6 +71,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 		pedantic:         opts.Pedantic,
 		useQueryPlanning: opts.UseQueryPlanning,
+		planner:          planner,
 	}, nil
 }
 
@@ -88,23 +92,8 @@ type Engine struct {
 	// (indicating something was not returned to a pool).
 	pedantic bool
 
-	useQueryPlanning       bool
-	astOptimizationPasses  []optimize.ASTOptimizationPass
-	planOptimizationPasses []optimize.QueryPlanOptimizationPass
-}
-
-// RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
-//
-// This method is not thread-safe and must not be called concurrently with any other method on this type.
-func (e *Engine) RegisterASTOptimizationPass(o optimize.ASTOptimizationPass) {
-	e.astOptimizationPasses = append(e.astOptimizationPasses, o)
-}
-
-// RegisterQueryPlanOptimizationPass registers a query plan optimization pass used with this engine.
-//
-// This method is not thread-safe and must not be called concurrently with any other method on this type.
-func (e *Engine) RegisterQueryPlanOptimizationPass(o optimize.QueryPlanOptimizationPass) {
-	e.planOptimizationPasses = append(e.planOptimizationPasses, o)
+	useQueryPlanning bool
+	planner          *QueryPlanner
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -132,7 +121,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 }
 
 func (e *Engine) newQueryFromPlanner(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
-	plan, err := e.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
