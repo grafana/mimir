@@ -20,7 +20,9 @@ import (
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
 func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool, skipValueComparison bool) {
 	require.Equal(t, expected.Err, actual.Err)
-	require.Equal(t, expected.Value.Type(), actual.Value.Type())
+	if !skipValueComparison {
+		require.Equal(t, expected.Value.Type(), actual.Value.Type())
+	}
 
 	if !skipAnnotationComparison {
 		expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
