@@ -3101,6 +3101,8 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	// We tried to have this test with 2 labels, but it was failing due to the inconsistent ordering of prometheus processing matchers that result in multiples series, e.g series{label=~"(c|e)"}.
 	// Prometheus might process series c first or e first which will trigger different validation errors for second and third parameter of double_exponential_smoothing.
+	// The different validation errors is occured due to the range vector of the series being computed against values are skipped for the native histograms until it gets to a value where it has a float.
+	// That aligns with a different scalar value for the argument and thus gives a different error.
 	for _, labels := range labelCombinations {
 		expressions = append(expressions, fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], scalar(series{label="f"}),  scalar(series{label="i"}))`, labels))
 	}
