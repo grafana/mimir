@@ -16,7 +16,6 @@ func (c *CollapseConstants) Name() string {
 	return "Collapse constants"
 }
 
-// TODO: tests
 func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
 	return c.apply(expr), nil
 }
