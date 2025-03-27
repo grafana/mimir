@@ -624,14 +624,6 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 		return nil
 	}
 
-	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.Partition); ok {
-		if j.EndOffset <= c.At {
-			// Update of a completed/committed job. Ignore.
-			level.Debug(logger).Log("msg", "ignored historical job")
-			return nil
-		}
-	}
-
 	if complete {
 		if err := s.jobs.completeJob(key, workerID); err != nil {
 			// job not found is fine, as clients will be re-informing us.
@@ -645,6 +637,15 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
+
+		if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.Partition); ok {
+			if j.EndOffset <= c.At {
+				// Update of a completed/committed job. Ignore.
+				level.Debug(logger).Log("msg", "ignored historical job")
+				return nil
+			}
+		}
+
 		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
