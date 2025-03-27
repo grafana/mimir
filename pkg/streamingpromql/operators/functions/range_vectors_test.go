@@ -92,7 +92,8 @@ func Test_runDoubleExponentialSmoothing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotFloat, gotHasFloat, _, _ := calculateDoubleExponentialSmoothing(tt.args.fHead, tt.args.fTail, tt.args.smoothingFactor, tt.args.trendFactor)
+			gotFloat, gotHasFloat, _, err := calculateDoubleExponentialSmoothing(tt.args.fHead, tt.args.fTail, tt.args.smoothingFactor, tt.args.trendFactor)
+			require.NoError(t, err)
 			require.Equal(t, tt.wantFloat, gotFloat)
 			require.Equal(t, tt.wantHasFloat, gotHasFloat)
 		})
