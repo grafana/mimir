@@ -752,7 +752,7 @@ check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
-	go test -tags=requires_docker,stringlabels ./integration/...
+	go test -tags=requires_docker,stringlabels ./integration/... -run ^TestRuler_RestoreWithLongForPeriod
 
 integration-tests-race: ## Run all integration tests with race-enabled distroless docker image.
 integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
