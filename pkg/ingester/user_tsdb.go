@@ -144,6 +144,18 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 }
 
+func (u *userTSDB) HeadInitialized() bool {
+	return u.db.HeadInitialized()
+}
+
+func (u *userTSDB) InitializeHead(ts int64) {
+	u.db.InitializeHead(ts)
+}
+
+func (u *userTSDB) BatchAppender(ctx context.Context) (storage.BatchAppender, bool) {
+	return u.db.BatchAppender(ctx)
+}
+
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }

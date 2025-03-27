@@ -1803,6 +1803,66 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 	return s, true, nil
 }
 
+type getOrCreateSeries struct {
+	lset labels.Labels
+	hash uint64
+	ref  storage.SeriesRef
+}
+
+var seriesWithRefsPool = sync.Pool{New: func() any { return new([]storage.SeriesWithRef) }}
+
+// getOrCreateBatch will attempt to create a batch of series.
+// It will copy the labels before trying to insert them into the storage.
+// It will set the ref field of the successfully created series (or leave it 0 if unsuccessful)
+// If series are successfully created, or already existed, it will set the lset field of the batch input
+// to the one persisted.
+func (h *Head) getOrCreateBatch(batch []getOrCreateSeries) {
+	createdEntriesPointer := seriesWithRefsPool.Get().(*[]storage.SeriesWithRef)
+	createdEntries := reuseOrMake(createdEntriesPointer, 0, len(batch))
+	defer func() {
+		clear(createdEntries)
+		seriesWithRefsPool.Put(createdEntriesPointer)
+	}()
+
+	for i, b := range batch {
+		lset := b.lset.Copy()
+		s, created, err := h.series.getOrSet(b.hash, lset, func() *memSeries {
+			shardHash := uint64(0)
+			if h.opts.EnableSharding {
+				shardHash = labels.StableHash(lset)
+			}
+
+			id := chunks.HeadSeriesRef(h.lastSeriesID.Inc())
+			return newMemSeries(lset, id, shardHash, h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		})
+		if err != nil {
+			continue
+		}
+		if created {
+			createdEntries = append(createdEntries, storage.SeriesWithRef{
+				Labels: b.lset,
+				Ref:    storage.SeriesRef(s.ref),
+			})
+		}
+
+		// Whether it's created or not, store the reference for the caller.
+		batch[i].ref = storage.SeriesRef(s.ref)
+		batch[i].lset = s.lset
+	}
+
+	h.metrics.seriesCreated.Add(float64(len(createdEntries)))
+	h.numSeries.Add(uint64(len(createdEntries)))
+
+	h.postings.AddBatch(createdEntries)
+
+	// Adding the series in the postings marks the creation of series
+	// as any further calls to this and the read methods would return that series.
+	// We could do this in a separate goroutine while h.postings.AddBatch() is running, if we want to optimize this method's speed.
+	for _, e := range createdEntries {
+		h.opts.SeriesCallback.PostCreation(e.Labels)
+	}
+}
+
 // mmapHeadChunks will iterate all memSeries stored on Head and call mmapHeadChunks() on each of them.
 //
 // There are two types of chunks that store samples for each memSeries:

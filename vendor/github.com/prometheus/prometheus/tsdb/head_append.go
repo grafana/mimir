@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -145,6 +146,15 @@ func (a *initAppender) Rollback() error {
 		return nil
 	}
 	return a.app.Rollback()
+}
+
+// batchAppender returns a storage.BatchAppender, it requires the head to be initialized.
+// If the Head is not initialized, it returns nil and false.
+func (h *Head) batchAppender(_ context.Context) (app storage.BatchAppender, ok bool) {
+	if h.initialized() {
+		return h.appender(), true
+	}
+	return nil, false
 }
 
 // Appender returns a new Appender on the database.
@@ -337,6 +347,73 @@ type headAppender struct {
 
 func (a *headAppender) SetOptions(opts *storage.AppendOptions) {
 	a.hints = opts
+}
+
+var (
+	getOrCreateSeriesPool    = sync.Pool{New: func() any { return new([]getOrCreateSeries) }}
+	missingSeriesIndexesPool = sync.Pool{New: func() any { return new([]int) }}
+)
+
+func (a *headAppender) BatchSeriesRefs(batch []labels.Labels, buf []storage.SeriesWithRef) (entries []storage.SeriesWithRef) {
+	// missing is the slice of getOrCreateSeries that we're going to pass to getOrCreateBulk
+	missingPointer := getOrCreateSeriesPool.Get().(*[]getOrCreateSeries)
+	missing := reuseOrMake(missingPointer, 0, len(batch))
+	defer func() {
+		clear(missing)
+		getOrCreateSeriesPool.Put(missingPointer)
+	}()
+
+	// missingSeriesIndexes is the slice of indexes of the series that are missing.
+	// We use this to track where the missing series go in the entries slice.
+	missingSeriesIndexesPointer := missingSeriesIndexesPool.Get().(*[]int)
+	missingSeriesIndexes := reuseOrMake(missingSeriesIndexesPointer, 0, len(batch))
+	defer func() {
+		clear(missingSeriesIndexes)
+		missingSeriesIndexesPool.Put(missingSeriesIndexesPointer)
+	}()
+
+	entries = reuseOrMake(&buf, len(batch), len(batch))
+
+	// Go through the batch, try to getByHash, or note the missing ones.
+	for i, lset := range batch {
+		// Ensure no empty labels have gotten through.
+		lset = lset.WithoutEmpty()
+		if lset.IsEmpty() {
+			entries[i] = storage.SeriesWithRef{}
+			continue
+		}
+		if _, dup := lset.HasDuplicateLabelNames(); dup {
+			entries[i] = storage.SeriesWithRef{}
+			continue
+		}
+		hash := lset.Hash()
+		s := a.head.series.getByHash(hash, lset)
+		if s != nil {
+			entries[i] = storage.SeriesWithRef{Labels: s.lset, Ref: storage.SeriesRef(s.ref)}
+		} else {
+			missing = append(missing, getOrCreateSeries{hash: hash, lset: lset})
+			missingSeriesIndexes = append(missingSeriesIndexes, i)
+		}
+	}
+
+	// If we have missing series, do a second pass and try to create them.
+	if len(missing) > 0 {
+		a.head.getOrCreateBatch(missing)
+		// Extend a.series capacity to hold missing.
+		if cap(a.series) < len(a.series)+len(missing) {
+			a.series = append(make([]record.RefSeries, 0, len(a.series)+len(missing)), a.series...)
+		}
+		for i := range missing {
+			entries[missingSeriesIndexes[i]].Ref = missing[i].ref
+			entries[missingSeriesIndexes[i]].Labels = missing[i].lset
+			a.series = append(a.series, record.RefSeries{
+				Ref:    chunks.HeadSeriesRef(missing[i].ref),
+				Labels: missing[i].lset,
+			})
+		}
+	}
+
+	return entries
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -2017,4 +2094,16 @@ func (a *headAppender) Rollback() (err error) {
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
 	return a.log()
+}
+
+// reuseOrMake will try to reuse the reusable slice if it has enough capacity, setting it to the desired len.
+// If it can't be reused, it will make a new slice with the desired length and capacity.
+// If a new slice is allocated, it will update the reusable slice to point to the new slice.
+func reuseOrMake[T any](reusable *[]T, desiredLen, desiredCap int) []T {
+	if cap(*reusable) < desiredCap {
+		allocated := make([]T, desiredLen, desiredCap)
+		*reusable = allocated[:0]
+		return allocated
+	}
+	return (*reusable)[:desiredLen]
 }
