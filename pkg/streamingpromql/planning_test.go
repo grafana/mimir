@@ -31,7 +31,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	planner := NewQueryPlanner(opts)
 
 	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
-	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1}
+	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
 
