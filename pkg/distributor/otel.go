@@ -27,8 +27,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -459,7 +459,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: prometheustranslator.BuildCompliantMetricName(metric, "", addSuffixes),
+					MetricFamilyName: otlptranslator.BuildCompliantMetricName(metric, "", addSuffixes),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}

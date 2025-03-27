@@ -2198,7 +2198,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "ingestion rate limit",
+			expectedErr: "ingestion burst size limit",
 		},
 		"too many labels limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -2406,7 +2406,10 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					b.ResetTimer()
 
 					for n := 0; n < b.N; n++ {
-						_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+						b.StopTimer()
+						rw := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
+						b.StartTimer()
+						_, err := distributor.Push(ctx, rw)
 
 						if testData.expectedErr == "" && err != nil {
 							b.Fatalf("no error expected but got %v", err)

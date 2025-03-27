@@ -123,12 +123,18 @@
           alert: $.alertName('IngesterFailsToProcessRecordsFromKafka'),
           'for': '5m',
           expr: |||
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
-                # This is the old metric name. We're keeping support for backward compatibility.
-              rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
-              or
-              rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
-            ) > 0
+            (
+              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                  # This is the old metric name. We're keeping support for backward compatibility.
+                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+                or
+                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+              ) > 0
+            )
+
+            # Tolerate failures during the forced TSDB head compaction, because samples older than the
+            # new "head min time" will fail to be appended while the forced compaction is running.
+            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
           ||| % $._config,
           labels: {
             severity: 'critical',
