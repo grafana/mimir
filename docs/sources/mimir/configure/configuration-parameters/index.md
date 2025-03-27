@@ -4183,6 +4183,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
+  # The maximum amount of time a Kafka broker waits for some records before a
+  # Fetch response is returned.
+  # CLI flag: -ingest-storage.kafka.fetch-max-wait
+  [fetch_max_wait: <duration> | default = 5s]
+
   # The maximum number of concurrent fetch requests that the ingester makes when
   # reading data from Kafka during startup. Concurrent fetch requests are issued
   # only when there is sufficient backlog of records to consume. 0 to disable.

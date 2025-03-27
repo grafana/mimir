@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
-
 	"github.com/prometheus/common/promslog"
 
 	"github.com/prometheus/prometheus/model/labels"
