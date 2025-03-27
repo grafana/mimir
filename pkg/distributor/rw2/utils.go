@@ -3,8 +3,6 @@
 package rw2
 
 import (
-	"fmt"
-
 	"github.com/prometheus/prometheus/model/labels"
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
@@ -46,7 +44,6 @@ func AddFloatSeries(
 		Exemplars:        exemplars,
 		CreatedTimestamp: createdTimestamp,
 	}
-	fmt.Printf("KRAJO: AddFloatSeries: %v\n", ts.Metadata)
 	req.Timeseries = append(req.Timeseries, ts)
 
 	return req

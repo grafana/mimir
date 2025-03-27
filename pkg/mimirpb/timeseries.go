@@ -89,11 +89,7 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		return err
 	}
 
-	// For debugging.
-	metadataReceived := 0
-	metadataBytes := 0
 	metricFamilies := map[string]*MetricMetadata{}
-	symbolsInMeta := map[uint32]struct{}{}
 
 	for _, ts := range rw2req.Timeseries {
 		p.Timeseries = append(p.Timeseries, PreallocTimeseries{})
@@ -133,24 +129,9 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		help, _ := getSymbol(ts.Metadata.HelpRef, rw2req.Symbols)
 		unit, _ := getSymbol(ts.Metadata.UnitRef, rw2req.Symbols)
 
-		{
-			// Debugging.
-			buffer := make([]byte, 64*1024)
-			s, _ := ts.Metadata.MarshalToSizedBuffer(buffer)
-			metadataBytes += s
-
-			symbolsInMeta[ts.Metadata.HelpRef] = struct{}{}
-			symbolsInMeta[ts.Metadata.UnitRef] = struct{}{}
-		}
-
 		if ts.Metadata.Type == METRIC_TYPE_UNSPECIFIED && help == "" && unit == "" {
 			// Nothing to do here.
 			continue
-		}
-
-		{
-			// Debugging.
-			metadataReceived++
 		}
 
 		metricFamilies[metricFamily] = &MetricMetadata{
@@ -165,23 +146,6 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 	p.Metadata = make([]*MetricMetadata, 0, len(metricFamilies))
 	for _, metadata := range metricFamilies {
 		p.Metadata = append(p.Metadata, metadata)
-	}
-
-	{
-		// Debugging
-		familyBytes := 0
-		for metricFamily, metadata := range metricFamilies {
-			familyBytes += len(metricFamily)
-			familyBytes += 4 // type
-			familyBytes += len(metadata.Help)
-			familyBytes += len(metadata.Unit)
-		}
-
-		for symbol := range symbolsInMeta {
-			metadataBytes += len(rw2req.Symbols[symbol])
-		}
-
-		fmt.Printf("KRAJO: RW2 timeseries=%v, metadata=%v, series meta=%v bytes, family meta=%v bytes\n", len(p.Timeseries), metadataReceived, metadataBytes, familyBytes)
 	}
 
 	return nil
