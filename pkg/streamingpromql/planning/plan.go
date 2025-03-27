@@ -107,11 +107,12 @@ func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
 		StartT:               t.StartT,
 		EndT:                 t.EndT,
 		IntervalMilliseconds: t.IntervalMilliseconds,
+		IsInstant:            t.IsInstant,
 	}
 }
 
 func fromEncodedTimeRange(e EncodedQueryTimeRange) types.QueryTimeRange {
-	if e.StartT == e.EndT && e.IntervalMilliseconds == 1 {
+	if e.IsInstant {
 		return types.NewInstantQueryTimeRange(timestamp.Time(e.StartT))
 	}
 

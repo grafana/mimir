@@ -28,6 +28,9 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+// Replaced during testing to ensure timing produces consistent results.
+var timeSince = time.Since
+
 type QueryPlanner struct {
 	features                 Features
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
@@ -137,7 +140,7 @@ func runASTStage(stageName string, observer PlanningObserver, stage func() (pars
 		return nil, err
 	}
 
-	duration := time.Since(start)
+	duration := timeSince(start)
 
 	if err := observer.OnASTStageComplete(stageName, expr, duration); err != nil {
 		return nil, err
@@ -153,7 +156,7 @@ func runPlanningStage(stageName string, observer PlanningObserver, stage func() 
 		return nil, err
 	}
 
-	duration := time.Since(start)
+	duration := timeSince(start)
 
 	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
 		return nil, err
@@ -543,14 +546,14 @@ func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planni
 func AnalysisHandler(planner *QueryPlanner) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, status, err := handleAnalysis(w, r, planner)
-		w.WriteHeader(status)
 
 		if err != nil {
-			// TODO: return a Prometheus-style JSON error payload
-			_, _ = w.Write([]byte(err.Error()))
-			return
+			body = []byte(err.Error())
+			w.Header().Set("Content-Type", "text/plain")
 		}
 
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	})
 }
@@ -567,7 +570,9 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanne
 
 	var timeRange types.QueryTimeRange
 
-	// TODO: check we don't have both 'time' and any of 'start', 'end', 'step'
+	if r.Form.Has("time") && (r.Form.Has("start") || r.Form.Has("end") || r.Form.Has("step")) {
+		return nil, http.StatusBadRequest, errors.New("cannot provide a mixture of parameters for instant query ('time') and range query ('start', 'end' and 'step')")
+	}
 
 	if r.Form.Has("time") {
 		t, err := parseTime(r.Form.Get("time"))
@@ -593,7 +598,7 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanne
 		}
 
 		if end.Before(start) {
-			return nil, http.StatusBadRequest, errors.New("end time must be greater than start time")
+			return nil, http.StatusBadRequest, errors.New("end time must be not be before start time")
 		}
 
 		if step <= 0 {
@@ -607,6 +612,11 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanne
 
 	result, err := planner.Analyze(r.Context(), qs, timeRange)
 	if err != nil {
+		var perr parser.ParseErrors
+		if errors.As(err, &perr) {
+			return nil, http.StatusBadRequest, fmt.Errorf("parsing expression failed: %w", perr)
+		}
+
 		return nil, http.StatusInternalServerError, fmt.Errorf("analysis failed: %w", err)
 	}
 
@@ -616,7 +626,6 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanne
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 	return b, http.StatusOK, nil
 }
 
