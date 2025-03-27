@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/distributor/rw2"
+	rw2util "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributor(t *testing.T) {
@@ -385,7 +385,7 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 	}{
 		"no special features": {
 			inRemoteWrite: []*promRW2.Request{
-				rw2.AddFloatSeries(
+				rw2util.AddFloatSeries(
 					nil,
 					labels.FromStrings("__name__", "foobar"),
 					[]promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
