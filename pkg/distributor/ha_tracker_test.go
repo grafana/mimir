@@ -927,8 +927,9 @@ func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 func TestHATrackerFindHALabels(t *testing.T) {
 	replicaLabel, clusterLabel := "replica", "cluster"
 	type expectedOutput struct {
-		cluster string
-		replica string
+		cluster    string
+		replica    string
+		metricName string
 	}
 	cases := []struct {
 		labelsIn []mimirpb.LabelAdapter
@@ -941,7 +942,7 @@ func TestHATrackerFindHALabels(t *testing.T) {
 				{Name: "sample", Value: "1"},
 				{Name: replicaLabel, Value: "1"},
 			},
-			expectedOutput{cluster: "", replica: "1"},
+			expectedOutput{cluster: "", replica: "1", metricName: "foo"},
 		},
 		{
 			[]mimirpb.LabelAdapter{
@@ -950,7 +951,7 @@ func TestHATrackerFindHALabels(t *testing.T) {
 				{Name: "sample", Value: "1"},
 				{Name: clusterLabel, Value: "cluster-2"},
 			},
-			expectedOutput{cluster: "cluster-2", replica: ""},
+			expectedOutput{cluster: "cluster-2", replica: "", metricName: "foo"},
 		},
 		{
 			[]mimirpb.LabelAdapter{
@@ -960,14 +961,15 @@ func TestHATrackerFindHALabels(t *testing.T) {
 				{Name: replicaLabel, Value: "3"},
 				{Name: clusterLabel, Value: "cluster-3"},
 			},
-			expectedOutput{cluster: "cluster-3", replica: "3"},
+			expectedOutput{cluster: "cluster-3", replica: "3", metricName: "foo"},
 		},
 	}
 
 	for _, c := range cases {
-		cluster, replica := findHALabels(replicaLabel, clusterLabel, c.labelsIn)
+		cluster, replica, metricName := findHALabels(replicaLabel, clusterLabel, c.labelsIn)
 		assert.Equal(t, c.expected.cluster, cluster)
 		assert.Equal(t, c.expected.replica, replica)
+		assert.Equal(t, c.expected.metricName, metricName)
 	}
 }
 

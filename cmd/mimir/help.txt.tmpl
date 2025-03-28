@@ -373,6 +373,8 @@ Usage of ./cmd/mimir/mimir:
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
+  -distributor.ha-tracker.track-failures
+    	Flag to enable detailed tracking of failures with metrics and logs for HA Prometheus setups.
   -distributor.ingestion-burst-size int
     	Per-tenant allowed ingestion burst size (in number of samples). (default 200000)
   -distributor.ingestion-rate-limit float
