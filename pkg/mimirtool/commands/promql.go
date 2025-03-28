@@ -17,6 +17,7 @@ type PromQLCommand struct {
 
 func (c *PromQLCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	promqlCmd := app.Command("promql", "PromQL formatting and editing for Grafana Mimir.")
+	promqlCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
 
 	// PromQL Format Query Command
 	promqlFormatCmd := promqlCmd.Command("format", "Format PromQL query with Prometheus' string formatter; wrap query in quotes for CLI parsing.").Action(c.formatQuery)

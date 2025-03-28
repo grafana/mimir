@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 5.7.0-rc.0
 
+* [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Tokengen: Added k8s secret storage for the admin token. #5237
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
