@@ -83,6 +83,10 @@ type Config struct {
 	ExtraPropagateHeaders []string `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
+
+	DynamicStepEnabled bool `yaml:"dynamic_step_enabled" category:"experimental"`
+
+	DynamicStepComplexityThreshold float64 `yaml:"dynamic_step_complexity_threshold" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -98,6 +102,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.BoolVar(&cfg.DynamicStepEnabled, "query-frontend.dynamic-step-enabled", false, "Set to true to enable dynamic step adjustment based on the query's complexity.")
+	f.Float64Var(&cfg.DynamicStepComplexityThreshold, "query-frontend.dynamic-step-complexity-threshold", complexityThreshold, "Complexity threshold for dynamic step adjustment ( Only taken into consideration if dynamic step is enabled ).")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -375,6 +381,18 @@ func newQueryMiddlewares(
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
+
+	if cfg.DynamicStepEnabled {
+		dynamicStepMiddleware := newDynamicStepMiddleware(cfg.DynamicStepComplexityThreshold, log, registerer)
+		cardinalityEstimationMiddleware := newCardinalityEstimationMiddleware(cacheClient, log, registerer)
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
+			newInstrumentMiddleware("cardinality_estimation", metrics),
+			cardinalityEstimationMiddleware,
+			newInstrumentMiddleware("dynamic_step", metrics),
+			dynamicStepMiddleware,
+		)
+	}
 
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(

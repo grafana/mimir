@@ -246,6 +246,9 @@ func (r *remoteReadQueryRequest) GetStep() int64 {
 	return 0
 }
 
+func (r *remoteReadQueryRequest) SetStep(newStep int64) {
+}
+
 func (r *remoteReadQueryRequest) GetID() int64 {
 	return 0
 }
