@@ -83,6 +83,10 @@ ruler_storage:
     bucket_name: mimir-ruler
 ```
 
+{{< admonition type="note" >}}
+The endpoint value must not be prefixed with your bucket name (e.g., if your bucket is "my-storage-bucket", the endpoint cannot be "my-storage-bucket.s3.amazonaws.com").
+{{< /admonition >}}
+
 ### GCS
 
 ```yaml
