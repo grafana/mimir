@@ -14,6 +14,7 @@
 * [ENHANCEMENT] Added `-ingest-storage.kafka.fetch-max-wait` configuration option to configure the maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. #11012
 * [ENHANCEMENT] Ingester: Add `cortex_ingester_tsdb_forced_compactions_in_progress` metric reporting a value of 1 when there's a forced TSDB head compaction in progress. #11006
 * [ENHANCEMENT] Ingester: Add `cortex_ingest_storage_reader_records_batch_fetch_max_bytes` metric reporting the distribution of `MaxBytes` specified in the Fetch requests sent to Kafka. #11014
+* [ENHANCEMENT] Query Frontend: Optimize the case where the `-query-frontend.instant-queries-with-subquery-spin-off` flag is set to `.*`. In that case, the feature is enabled for all queries. #11038
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
