@@ -546,8 +546,9 @@ kedaAutoscaling:
   unsafeSsl: false
 
   # If your metrics are stored in a datasource with multiple mimir instances extra labels to filter the data are required to get the right metric.
-  toPromQLLabelSelector: {}
-  #  cluster: "my-cluster-name"
+  toPromQLLabelSelector:
+  #  - cluster!="eu-west"
+  #  - app="foobar"
 
   # --KEDA trigger authentication settings.
   # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
