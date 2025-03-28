@@ -297,7 +297,8 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 	const labelValuesURL = "/label_values"
 	seriesCountTotal := uint64(100)
-	nameMatcher, _ := labels.NewMatcher(labels.MatchEqual, "__name__", "test_1")
+	nameMatcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_1")
+	require.NoError(t, err)
 
 	tests := map[string]struct {
 		getRequestParams       string
@@ -666,6 +667,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 }
 
 func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
+	t.Parallel()
 	distributor := mockDistributorLabelValuesCardinality(
 		[]model.LabelName{},
 		[]*labels.Matcher(nil),
@@ -701,6 +703,14 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				url:                  "/label_values?label_names[]=hello&selector=foo&selector=bar",
 				expectedErrorMessage: "multiple 'selector' params are not allowed",
 			},
+			"selector param is invalid": {
+				url:                  "/label_values?label_names[]=hello&selector=!!!!",
+				expectedErrorMessage: "failed to parse selector: 1:1: parse error: unexpected character after '!': '!'\n",
+			},
+			"multiple limit params are provided": {
+				url:                  "/label_values?label_names[]=hello&selector=foo&limit=5&limit=10",
+				expectedErrorMessage: "multiple 'limit' params are not allowed",
+			},
 			"limit param is not a number": {
 				url:                  "/label_values?label_names[]=hello&limit=foo",
 				expectedErrorMessage: "strconv.Atoi: parsing \"foo\": invalid syntax",
@@ -709,13 +719,18 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				url:                  "/label_values?label_names[]=hello&limit=-20",
 				expectedErrorMessage: "'limit' param cannot be less than '0'",
 			},
-			"limit param exceeds the maximum limit parameter": {
-				url:                  "/label_values?label_names[]=hello&limit=501",
-				expectedErrorMessage: "'limit' param cannot be greater than '500'",
+			"limit param is out of range": {
+				url:                  "/label_values?label_names[]=hello&limit=9999999999999999999999999999",
+				expectedErrorMessage: "strconv.Atoi: parsing \"9999999999999999999999999999\": value out of range\n",
+			},
+			"count_method param is invalid": {
+				url:                  "/label_values?label_names[]=hello&count_method=pineapple",
+				expectedErrorMessage: "invalid 'count_method' param 'pineapple'. valid options are: [active,inmemory]\n",
 			},
 		}
 		for testName, testData := range tests {
 			t.Run(testName, func(t *testing.T) {
+				t.Parallel()
 				request, err := http.NewRequestWithContext(ctx, "GET", testData.url, http.NoBody)
 				require.NoError(t, err)
 				recorder := httptest.NewRecorder()
