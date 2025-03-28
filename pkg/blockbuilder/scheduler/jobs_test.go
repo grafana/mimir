@@ -3,9 +3,6 @@
 package scheduler
 
 import (
-	"container/heap"
-	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -19,12 +16,8 @@ type testSpec struct {
 	commitRecTs time.Time
 }
 
-func testSpecLess(a, b testSpec) bool {
-	return a.commitRecTs.Before(b.commitRecTs)
-}
-
 func TestAssign(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
 	j0, j0spec, err := s.assign("w0")
 	require.Empty(t, j0.id)
@@ -52,7 +45,7 @@ func TestAssign(t *testing.T) {
 }
 
 func TestAssignComplete(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
 	{
 		err := s.completeJob(jobKey{"rando job", 965}, "w0")
@@ -96,7 +89,7 @@ func TestAssignComplete(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
@@ -137,7 +130,7 @@ func TestLease(t *testing.T) {
 // TestImportJob tests the importJob method - the method that is called to learn
 // about jobs in-flight from a previous scheduler instance.
 func TestImportJob(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 	spec := testSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
 	require.NoError(t, s.importJob(jobKey{"job1", 122}, "w0", spec))
 	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
@@ -156,7 +149,7 @@ func TestImportJob(t *testing.T) {
 // TestJobCreationPolicies tests the behavior of different job creation policies.
 func TestJobCreationPolicies(t *testing.T) {
 	t.Run("noOpJobCreationPolicy", func(t *testing.T) {
-		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
+		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
 		// noOp policy should always allow job creation
 		s.addOrUpdate("job1", testSpec{topic: "topic1"})
@@ -169,7 +162,7 @@ func TestJobCreationPolicies(t *testing.T) {
 	})
 
 	t.Run("allowNone", func(t *testing.T) {
-		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, allowNoneJobCreationPolicy[testSpec]{})
+		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), allowNoneJobCreationPolicy[testSpec]{})
 
 		// allowNone policy should never allow job creation
 		s.addOrUpdate("job1", testSpec{topic: "topic1"})
@@ -190,43 +183,3 @@ func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool
 }
 
 var _ jobCreationPolicy[any] = (*allowNoneJobCreationPolicy[any])(nil)
-
-func TestMinHeap(t *testing.T) {
-	n := 517
-	jobs := make([]*job[testSpec], n)
-	order := make([]int, n)
-	for i := 0; i < n; i++ {
-		jobs[i] = &job[testSpec]{
-			key: jobKey{
-				id:    fmt.Sprintf("job%d", i),
-				epoch: 0,
-			},
-			spec: testSpec{topic: "hello", commitRecTs: time.Unix(int64(i), 0)},
-		}
-		order[i] = i
-	}
-
-	// Push them in random order.
-	r := rand.New(rand.NewSource(9900))
-	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
-
-	h := jobHeap[*job[testSpec]]{
-		less: func(a, b *job[testSpec]) bool {
-			return testSpecLess(a.spec, b.spec)
-		},
-	}
-
-	for _, j := range order {
-		heap.Push(&h, jobs[j])
-	}
-
-	require.Equal(t, n, h.Len())
-
-	for i := 0; i < len(jobs); i++ {
-		p := heap.Pop(&h).(*job[testSpec])
-		println(i)
-		require.Equal(t, jobs[i], p, "pop order should be in increasing commitRecTs")
-	}
-
-	require.Zero(t, h.Len())
-}

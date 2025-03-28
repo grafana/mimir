@@ -3,7 +3,7 @@
 package scheduler
 
 import (
-	"container/heap"
+	"container/list"
 	"errors"
 	"sync"
 	"time"
@@ -27,24 +27,17 @@ type jobQueue[T any] struct {
 	mu         sync.Mutex
 	epoch      int64
 	jobs       map[string]*job[T]
-	unassigned jobHeap[*job[T]]
+	unassigned *list.List
 }
 
-func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, lessFunc func(T, T) bool, jobCreationPolicy jobCreationPolicy[T]) *jobQueue[T] {
+func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, jobCreationPolicy jobCreationPolicy[T]) *jobQueue[T] {
 	return &jobQueue[T]{
 		leaseExpiry:    leaseExpiry,
 		logger:         logger,
 		creationPolicy: jobCreationPolicy,
 
-		jobs: make(map[string]*job[T]),
-
-		unassigned: jobHeap[*job[T]]{
-			h: make([]*job[T], 0),
-			less: func(a, b *job[T]) bool {
-				// Call into the provided lessFunc to compare the job specs.
-				return lessFunc(a.spec, b.spec)
-			},
-		},
+		jobs:       make(map[string]*job[T]),
+		unassigned: list.New(),
 	}
 }
 
@@ -62,7 +55,9 @@ func (s *jobQueue[T]) assign(workerID string) (jobKey, T, error) {
 		return jobKey{}, empty, errNoJobAvailable
 	}
 
-	j := heap.Pop(&s.unassigned).(*job[T])
+	next := s.unassigned.Front()
+	j := s.unassigned.Remove(next).(*job[T])
+
 	j.key.epoch = s.epoch
 	s.epoch++
 	j.assignee = workerID
@@ -153,7 +148,8 @@ func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 		spec:        spec,
 	}
 	s.jobs[id] = j
-	heap.Push(&s.unassigned, j)
+
+	s.unassigned.PushBack(j)
 
 	level.Info(s.logger).Log("msg", "created job", "job_id", id)
 }
@@ -231,7 +227,8 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 			priorAssignee := j.assignee
 			j.assignee = ""
 			j.failCount++
-			heap.Push(&s.unassigned, j)
+
+			s.unassigned.PushBack(j)
 
 			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee)
 		}
@@ -255,30 +252,6 @@ type jobKey struct {
 	// have knowledge of the same job.
 	epoch int64
 }
-
-type jobHeap[T any] struct {
-	h    []T
-	less func(T, T) bool
-}
-
-// Implement the heap.Interface for jobHeap's `h` field.
-func (h jobHeap[T]) Len() int           { return len(h.h) }
-func (h jobHeap[T]) Less(i, j int) bool { return h.less(h.h[i], h.h[j]) }
-func (h jobHeap[T]) Swap(i, j int)      { h.h[i], h.h[j] = h.h[j], h.h[i] }
-
-func (h *jobHeap[T]) Push(x any) {
-	h.h = append(h.h, x.(T))
-}
-
-func (h *jobHeap[T]) Pop() any {
-	old := h.h
-	n := len(old)
-	x := old[n-1]
-	h.h = old[0 : n-1]
-	return x
-}
-
-var _ heap.Interface = (*jobHeap[int])(nil)
 
 type jobCreationPolicy[T any] interface {
 	canCreateJob(jobKey, *T, []*T) bool

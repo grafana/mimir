@@ -168,7 +168,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 		policy = noOpJobCreationPolicy[schedulerpb.JobSpec]{}
 	}
 
-	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, specLessThan, policy)
+	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, policy)
 	s.finalizeObservations()
 	s.observations = nil
 	s.observationComplete = true
@@ -708,12 +708,6 @@ type observation struct {
 }
 
 var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
-
-// specLessThan determines whether spec a should come before b in job scheduling.
-func specLessThan(a, b schedulerpb.JobSpec) bool {
-	// Don't have an ordering criteria for now.
-	return true
-}
 
 type limitPerPartitionJobCreationPolicy struct {
 	partitionLimit int

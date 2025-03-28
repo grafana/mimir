@@ -187,7 +187,7 @@ func TestObservations(t *testing.T) {
 	}
 
 	{
-		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t), specLessThan, noOpJobCreationPolicy[schedulerpb.JobSpec]{})
+		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[schedulerpb.JobSpec]{})
 		sched.jobs = nq
 		sched.finalizeObservations()
 		require.Len(t, nq.jobs, 0, "No observations, no jobs")
