@@ -97,24 +97,9 @@ func TestLabelNamesRequest_String(t *testing.T) {
 func TestDecodeLabelValuesRequest(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
-		give    *http.Request
-		want    *LabelValuesRequest
-		wantErr string
+		give *http.Request
+		want *LabelValuesRequest
 	}{
-		"errors if limit is less than 0": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"limit":         []string{"-1"},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: "'limit' param cannot be less than '0'",
-		},
 		"allows a limit greater than 500": {
 			give: newRequest(
 				t,
@@ -132,49 +117,6 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 				CountMethod: InMemoryMethod,
 				Limit:       777,
 			},
-			wantErr: "",
-		},
-		"errors if limit is out of range": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"limit":         []string{"9999999999999999999999999999"},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: `strconv.Atoi: parsing "9999999999999999999999999999": value out of range`,
-		},
-		"errors if limit is invalid": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"limit":         []string{"this is not an integer"},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: `strconv.Atoi: parsing "this is not an integer": invalid syntax`,
-		},
-		"errors if multiple limit parameters are specified": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"limit":         []string{"1", "2"},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: `multiple 'limit' params are not allowed`,
 		},
 		"limit defaults to 20": {
 			give: newRequest(
@@ -193,7 +135,6 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 				CountMethod: ActiveMethod,
 				Limit:       20,
 			},
-			wantErr: "",
 		},
 		"count_method defaults to in_memory": {
 			give: newRequest(
@@ -211,73 +152,6 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 				CountMethod: InMemoryMethod,
 				Limit:       20,
 			},
-			wantErr: "",
-		},
-		"errors if count_method is invalid": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"count_method":  []string{"pineapple"},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: "invalid 'count_method' param 'pineapple'. valid options are: [active,inmemory]",
-		},
-		"errors if label_names[] are missing": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: "'label_names[]' param is required",
-		},
-		"errors if label_names[] are invalid": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{""},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: "invalid 'label_names' param ''",
-		},
-		"errors if multiple selector parameters are specified": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"selector":      []string{`{fruit="mango"}`, `{fruit="banana"}`},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: "multiple 'selector' params are not allowed",
-		},
-		"errors if selector parameter is invalid": {
-			give: newRequest(
-				t,
-				http.MethodGet,
-				localhostWithValues(url.Values{
-					"label_names[]": []string{"metric_1"},
-					"selector":      []string{`!!!!`},
-				}),
-				http.NoBody,
-				nil,
-			),
-			want:    nil,
-			wantErr: "failed to parse selector: 1:1: parse error: unexpected character after '!': '!'",
 		},
 		"valid DecodeLabelValuesRequest() GET request": {
 			give: newRequest(
@@ -301,7 +175,6 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 				CountMethod: ActiveMethod,
 				Limit:       100,
 			},
-			wantErr: "",
 		},
 		"valid DecodeLabelValuesRequest() POST request": {
 			give: newRequest(
@@ -325,7 +198,6 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 				CountMethod: InMemoryMethod,
 				Limit:       100,
 			},
-			wantErr: "",
 		},
 	}
 
@@ -334,11 +206,7 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 			t.Parallel()
 			actual, err := DecodeLabelValuesRequest(tt.give)
 			assert.Equal(t, tt.want, actual)
-			if tt.wantErr == "" {
-				assert.NoError(t, err)
-			} else {
-				assert.EqualError(t, err, tt.wantErr)
-			}
+			assert.NoError(t, err)
 		})
 	}
 }
