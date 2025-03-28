@@ -115,19 +115,38 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 			want:    nil,
 			wantErr: "'limit' param cannot be less than '0'",
 		},
-		"errors if limit is greater than 500": {
+		"allows a limit greater than 500": {
 			give: newRequest(
 				t,
 				http.MethodGet,
 				localhostWithValues(url.Values{
 					"label_names[]": []string{"metric_1"},
-					"limit":         []string{"501"},
+					"limit":         []string{"777"},
+				}),
+				http.NoBody,
+				nil,
+			),
+			want: &LabelValuesRequest{
+				LabelNames:  []model.LabelName{"metric_1"},
+				Matchers:    nil,
+				CountMethod: InMemoryMethod,
+				Limit:       777,
+			},
+			wantErr: "",
+		},
+		"errors if limit is out of range": {
+			give: newRequest(
+				t,
+				http.MethodGet,
+				localhostWithValues(url.Values{
+					"label_names[]": []string{"metric_1"},
+					"limit":         []string{"9999999999999999999999999999"},
 				}),
 				http.NoBody,
 				nil,
 			),
 			want:    nil,
-			wantErr: "'limit' param cannot be greater than '500'",
+			wantErr: `strconv.Atoi: parsing "9999999999999999999999999999": value out of range`,
 		},
 		"errors if limit is invalid": {
 			give: newRequest(

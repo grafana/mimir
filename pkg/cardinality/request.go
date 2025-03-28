@@ -85,7 +85,7 @@ func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, e
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values)
+	parsed.Limit, err = extractLimit(values, intPtr(maxLimit))
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest,
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values)
+	parsed.Limit, err = extractLimit(values, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 }
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
-func extractLimit(values url.Values) (limit int, err error) {
+func extractLimit(values url.Values, maxLimit *int) (limit int, err error) {
 	limitParams := values["limit"]
 	if len(limitParams) == 0 {
 		return defaultLimit, nil
@@ -231,8 +231,9 @@ func extractLimit(values url.Values) (limit int, err error) {
 	if limit < minLimit {
 		return 0, fmt.Errorf("'limit' param cannot be less than '%v'", minLimit)
 	}
-	if limit > maxLimit {
-		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", maxLimit)
+	enforceLimit := maxLimit != nil
+	if enforceLimit && limit > *maxLimit {
+		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", *maxLimit)
 	}
 	return limit, nil
 }
@@ -338,4 +339,8 @@ func (r *ActiveSeriesRequest) String() string {
 	}
 
 	return b.String()
+}
+
+func intPtr(i int) *int {
+	return &i
 }
