@@ -114,6 +114,36 @@ func newSpinOffSubqueriesMiddleware(
 	})
 }
 
+func (s *spinOffSubqueriesMiddleware) isEnabled(ctx context.Context, req MetricsQueryRequest) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	for _, tenantID := range tenantIDs {
+		patterns := s.limits.InstantQueriesWithSubquerySpinOff(tenantID)
+
+		// This is a special case where we enable subquery spin-off for all queries.
+		// No need to compile this regex.
+		if len(patterns) == 1 && patterns[0] == ".*" {
+			return true, nil
+		}
+
+		for _, pattern := range patterns {
+			matcher, err := labels.NewFastRegexMatcher(pattern)
+			if err != nil {
+				return false, apierror.New(apierror.TypeBadData, err.Error())
+			}
+
+			if matcher.MatchString(req.GetQuery()) {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
 func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
@@ -121,35 +151,12 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	// For now, the feature is completely opt-in
-	// So we check that the given query is allowed to be spun off
-	tenantIDs, err := tenant.TenantIDs(ctx)
+	enabled, err := s.isEnabled(ctx, req)
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
+		return nil, err
 	}
 
-	matched := false
-	for _, tenantID := range tenantIDs {
-		patterns := s.limits.InstantQueriesWithSubquerySpinOff(tenantID)
-
-		for _, pattern := range patterns {
-			matcher, err := labels.NewFastRegexMatcher(pattern)
-			if err != nil {
-				return nil, apierror.New(apierror.TypeBadData, err.Error())
-			}
-
-			if matcher.MatchString(req.GetQuery()) {
-				matched = true
-				break
-			}
-		}
-
-		if matched {
-			break
-		}
-	}
-
-	if !matched {
+	if !enabled {
 		spanLog.DebugLog("msg", "expression did not match any configured subquery spin-off patterns, so subquery spin-off is disabled for this query")
 		return s.next.Do(ctx, req)
 	}
