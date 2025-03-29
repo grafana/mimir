@@ -84,6 +84,11 @@ linters-settings:
       # See https://golangci-lint.run/usage/linters/#gocritic for possible checks.
       - dupImport
 
+  revive:
+    rules:
+      - name: redefines-builtin-id
+        disabled: true
+
 run:
   timeout: 10m
 

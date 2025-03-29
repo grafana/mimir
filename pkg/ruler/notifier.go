@@ -84,11 +84,12 @@ type rulerNotifier struct {
 }
 
 func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {
-	sdCtx, sdCancel := context.WithCancelCause(context.Background())
 	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(o.Registerer)
 	if err != nil {
 		return nil, err
 	}
+
+	sdCtx, sdCancel := context.WithCancelCause(context.Background())
 	sl := util_log.SlogFromGoKit(l)
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, sl),
