@@ -10,6 +10,8 @@ import (
 	io "io"
 	"slices"
 	"sync"
+	"unique"
+	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -38,6 +40,11 @@ var (
 	queryStreamSeriesChunksPool = sync.Pool{
 		New: func() any {
 			return &QueryStreamSeriesChunks{}
+		},
+	}
+	labelHandlesPool = sync.Pool{
+		New: func() any {
+			return map[string]unique.Handle[string]{}
 		},
 	}
 )
@@ -97,6 +104,8 @@ func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 
 type CustomTimeSeriesChunk struct {
 	*TimeSeriesChunk
+
+	labelHandles map[string]unique.Handle[string]
 }
 
 // Release back to pool.
@@ -110,12 +119,18 @@ func (m *CustomTimeSeriesChunk) Release() {
 	m.Chunks = m.Chunks[:0]
 	timeSeriesChunkPool.Put(m.TimeSeriesChunk)
 	m.TimeSeriesChunk = nil
+
+	clear(m.labelHandles)
+	labelHandlesPool.Put(m.labelHandles)
+	m.labelHandles = nil
 }
 
 func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 	m.TimeSeriesChunk = timeSeriesChunkPool.Get().(*TimeSeriesChunk)
 	m.Labels = m.Labels[:0]
 	m.Chunks = m.Chunks[:0]
+	m.labelHandles = labelHandlesPool.Get().(map[string]unique.Handle[string])
+	clear(m.labelHandles)
 
 	l := len(data)
 	index := 0
@@ -240,7 +255,7 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 			}
 
 			var la mimirpb.LabelAdapter
-			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex], m.labelHandles); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)
@@ -305,7 +320,7 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 	return nil
 }
 
-func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
+func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte, labelHandles map[string]unique.Handle[string]) error {
 	l := len(data)
 	index := 0
 	for index < l {
@@ -363,8 +378,12 @@ func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			// TODO: Consider using a pool: Get byte slice from pool, copy the data to it, and take a yoloString.
-			la.Name = string(data[index:postIndex])
+			// Make takes a copy of its argument, so yoloString is safe.
+			name := yoloString(data[index:postIndex])
+			if _, ok := labelHandles[name]; !ok {
+				labelHandles[name] = unique.Make(name)
+			}
+			la.Name = labelHandles[name].Value()
 			index = postIndex
 		case 2:
 			if wireType != 2 {
@@ -395,8 +414,12 @@ func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			// TODO: Consider using a pool: Get byte slice from pool, copy the data to it, and take a yoloString.
-			la.Value = string(data[index:postIndex])
+			// Make takes a copy of its argument, so yoloString is safe.
+			value := yoloString(data[index:postIndex])
+			if _, ok := labelHandles[value]; !ok {
+				labelHandles[value] = unique.Make(value)
+			}
+			la.Value = labelHandles[value].Value()
 			index = postIndex
 		default:
 			index = preIndex
@@ -674,6 +697,8 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 
 type CustomQueryStreamSeries struct {
 	*QueryStreamSeries
+
+	labelHandles map[string]unique.Handle[string]
 }
 
 // Release back to pool.
@@ -681,11 +706,17 @@ func (m *CustomQueryStreamSeries) Release() {
 	m.Labels = m.Labels[:0]
 	queryStreamSeriesPool.Put(m.QueryStreamSeries)
 	m.QueryStreamSeries = nil
+
+	clear(m.labelHandles)
+	labelHandlesPool.Put(m.labelHandles)
+	m.labelHandles = nil
 }
 
 func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 	m.QueryStreamSeries = queryStreamSeriesPool.Get().(*QueryStreamSeries)
 	m.Labels = m.Labels[:0]
+	m.labelHandles = labelHandlesPool.Get().(map[string]unique.Handle[string])
+	clear(m.labelHandles)
 
 	l := len(data)
 	index := 0
@@ -745,7 +776,7 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var la mimirpb.LabelAdapter
-			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex], m.labelHandles); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)
@@ -963,4 +994,8 @@ func (m *ExemplarQueryResponse) Release() {
 func ReleaseChunk(chk Chunk) {
 	//nolint:staticcheck
 	chunkDataPool.Put(chk.Data[:0])
+}
+
+func yoloString(buf []byte) string {
+	return unsafe.String(unsafe.SliceData(buf), len(buf)) // nolint:gosec
 }
