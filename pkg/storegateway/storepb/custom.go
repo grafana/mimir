@@ -10,6 +10,8 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"unique"
+	"unsafe"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
@@ -179,10 +181,17 @@ var (
 			return []mimirpb.LabelAdapter{}
 		},
 	}
+	labelHandlesPool = sync.Pool{
+		New: func() any {
+			return map[string]unique.Handle[string]{}
+		},
+	}
 )
 
 type CustomSeries struct {
 	*Series
+
+	labelHandles map[string]unique.Handle[string]
 }
 
 // Release back to pool.
@@ -196,12 +205,18 @@ func (m *CustomSeries) Release() {
 	m.Chunks = m.Chunks[:0]
 	seriesPool.Put(m.Series)
 	m.Series = nil
+
+	clear(m.labelHandles)
+	labelHandlesPool.Put(m.labelHandles)
+	m.labelHandles = nil
 }
 
 func (m *CustomSeries) Unmarshal(data []byte) error {
 	m.Series = seriesPool.Get().(*Series)
 	m.Labels = m.Labels[:0]
 	m.Chunks = m.Chunks[:0]
+	m.labelHandles = labelHandlesPool.Get().(map[string]unique.Handle[string])
+	clear(m.labelHandles)
 	l := len(data)
 	index := 0
 	for index < l {
@@ -266,7 +281,7 @@ func (m *CustomSeries) Unmarshal(data []byte) error {
 			}
 
 			var la mimirpb.LabelAdapter
-			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex], m.labelHandles); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)
@@ -352,7 +367,7 @@ func (m *SeriesResponse) GetStreamingSeries() *CustomStreamingSeriesBatch {
 	return nil
 }
 
-func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
+func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte, labelHandles map[string]unique.Handle[string]) error {
 	l := len(data)
 	index := 0
 	for index < l {
@@ -410,8 +425,12 @@ func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			// TODO: Consider using a pool: Get byte slice from pool, copy the data to it, and take a yoloString.
-			la.Name = string(data[index:postIndex])
+			// Make takes a copy of its argument, so yoloString is safe.
+			name := yoloString(data[index:postIndex])
+			if _, ok := labelHandles[name]; !ok {
+				labelHandles[name] = unique.Make(name)
+			}
+			la.Name = labelHandles[name].Value()
 			index = postIndex
 		case 2:
 			if wireType != 2 {
@@ -442,8 +461,12 @@ func unmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			// TODO: Consider using a pool: Get byte slice from pool, copy the data to it, and take a yoloString.
-			la.Value = string(data[index:postIndex])
+			// Make takes a copy of its argument, so yoloString is safe.
+			value := yoloString(data[index:postIndex])
+			if _, ok := labelHandles[value]; !ok {
+				labelHandles[value] = unique.Make(value)
+			}
+			la.Value = labelHandles[value].Value()
 			index = postIndex
 		default:
 			index = preIndex
@@ -809,6 +832,8 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 
 type CustomStreamingSeriesBatch struct {
 	*StreamingSeriesBatch
+
+	labelHandles map[string]unique.Handle[string]
 }
 
 // Release back to pool.
@@ -821,11 +846,17 @@ func (m *CustomStreamingSeriesBatch) Release() {
 	m.Series = m.Series[:0]
 	streamingSeriesBatchPool.Put(m.StreamingSeriesBatch)
 	m.StreamingSeriesBatch = nil
+
+	clear(m.labelHandles)
+	labelHandlesPool.Put(m.labelHandles)
+	m.labelHandles = nil
 }
 
 func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 	m.StreamingSeriesBatch = streamingSeriesBatchPool.Get().(*StreamingSeriesBatch)
 	m.Series = m.Series[:0]
+	m.labelHandles = labelHandlesPool.Get().(map[string]unique.Handle[string])
+	clear(m.labelHandles)
 
 	l := len(data)
 	index := 0
@@ -885,7 +916,7 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var ss StreamingSeries
-			if err := unmarshalStreamingSeries(&ss, data[index:postIndex]); err != nil {
+			if err := m.unmarshalStreamingSeries(&ss, data[index:postIndex]); err != nil {
 				return err
 			}
 			m.Series = append(m.Series, &ss)
@@ -935,8 +966,8 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 	return nil
 }
 
-func unmarshalStreamingSeries(m *StreamingSeries, data []byte) error {
-	m.Labels = labelAdaptersPool.Get().([]mimirpb.LabelAdapter)[:0]
+func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSeries, data []byte) error {
+	ss.Labels = labelAdaptersPool.Get().([]mimirpb.LabelAdapter)[:0]
 
 	l := len(data)
 	index := 0
@@ -996,10 +1027,10 @@ func unmarshalStreamingSeries(m *StreamingSeries, data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var la mimirpb.LabelAdapter
-			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex], m.labelHandles); err != nil {
 				return err
 			}
-			m.Labels = append(m.Labels, la)
+			ss.Labels = append(ss.Labels, la)
 			index = postIndex
 		default:
 			index = preIndex
@@ -1250,4 +1281,8 @@ func unmarshalStreamingChunks(m *StreamingChunks, data []byte) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
+}
+
+func yoloString(buf []byte) string {
+	return unsafe.String(unsafe.SliceData(buf), len(buf)) // nolint:gosec
 }
