@@ -20,7 +20,7 @@ import (
 // Absent is an operator that implements the absent() function.
 type Absent struct {
 	TimeRange                types.QueryTimeRange
-	ArgExpressions           parser.Expr
+	Labels                   labels.Labels
 	Inner                    types.InstantVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
@@ -32,11 +32,11 @@ type Absent struct {
 var _ types.InstantVectorOperator = &Absent{}
 
 // NewAbsent creates a new Absent.
-func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
+func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
 	return &Absent{
 		TimeRange:                timeRange,
 		Inner:                    inner,
-		ArgExpressions:           innerExpr,
+		Labels:                   labels,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
@@ -59,7 +59,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.ArgExpressions),
+		Labels: a.Labels,
 	})
 
 	for range innerMetadata {
@@ -113,10 +113,10 @@ func (a *Absent) Close() {
 	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
 }
 
-// createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
-// in a given expression. It is used in the absent functions.
-// This function is copied from Prometheus
-func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
+// CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
+// in a given expression. It is used for the absent and absent_over_time functions.
+// This function is copied from Prometheus.
+func CreateLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	b := labels.NewBuilder(labels.EmptyLabels())
 
 	var lm []*labels.Matcher

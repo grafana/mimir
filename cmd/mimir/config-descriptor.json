@@ -2042,105 +2042,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "enable_aggregation_operations",
-              "required": false,
-              "desc": "Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-aggregation-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_binary_logical_operations",
-              "required": false,
-              "desc": "Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-binary-logical-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_one_to_many_and_many_to_one_binary_operations",
-              "required": false,
-              "desc": "Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_scalars",
-              "required": false,
-              "desc": "Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-scalars",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_scalar_scalar_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_subqueries",
-              "required": false,
-              "desc": "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-subqueries",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_vector_scalar_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_vector_vector_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "disabled_aggregations",
-              "required": false,
-              "desc": "Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.mimir-query-engine.disabled-aggregations",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "disabled_functions",
               "required": false,
               "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
@@ -4439,17 +4340,6 @@
         },
         {
           "kind": "field",
-          "name": "ooo_native_histograms_ingestion_enabled",
-          "required": false,
-          "desc": "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "ingester.ooo-native-histograms-ingestion-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
           "desc": "Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero.",
@@ -5132,6 +5022,17 @@
           "fieldFlag": "compactor.max-lookback",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_max_per_block_upload_concurrency",
+          "required": false,
+          "desc": "Maximum number of TSDB segment files that the compactor can upload concurrently per block.",
+          "fieldValue": null,
+          "fieldDefaultValue": 8,
+          "fieldFlag": "compactor.max-per-block-upload-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -6546,28 +6447,6 @@
                 },
                 {
                   "kind": "field",
-                  "name": "write_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "query-frontend.results-cache.memcached.write-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "read_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "query-frontend.results-cache.memcached.read-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
                   "name": "min_idle_connections_headroom_percentage",
                   "required": false,
                   "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
@@ -7407,6 +7286,16 @@
               "fieldValue": null,
               "fieldDefaultValue": 20000000000,
               "fieldFlag": "ingest-storage.kafka.wait-strong-read-consistency-timeout",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ingest-storage.kafka.fetch-max-wait",
               "fieldType": "duration"
             },
             {
@@ -8711,28 +8600,6 @@
                     },
                     {
                       "kind": "field",
-                      "name": "write_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.write-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.read-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
                       "name": "min_idle_connections_headroom_percentage",
                       "required": false,
                       "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
@@ -9293,28 +9160,6 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout",
                       "fieldType": "duration"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.write-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.read-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -9902,28 +9747,6 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout",
                       "fieldType": "duration"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.write-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.read-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -15210,17 +15033,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "rule_group_enabled",
-              "required": false,
-              "desc": "Enabling caching of rule group contents if a cache backend is configured.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "ruler-storage.cache.rule-group-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "backend",
               "required": false,
               "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
@@ -15275,28 +15087,6 @@
                   "fieldDefaultValue": 200000000,
                   "fieldFlag": "ruler-storage.cache.memcached.connect-timeout",
                   "fieldType": "duration"
-                },
-                {
-                  "kind": "field",
-                  "name": "write_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "ruler-storage.cache.memcached.write-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "read_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "ruler-storage.cache.memcached.read-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -18109,6 +17899,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "memberlist.message-history-buffer-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "watch_prefix_buffer_size",
+          "required": false,
+          "desc": "Size of the buffered channel for the WatchPrefix function.",
+          "fieldValue": null,
+          "fieldDefaultValue": 128,
+          "fieldFlag": "memberlist.watch-prefix-buffer-size",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },

@@ -34,7 +34,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/regexp"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2900,7 +2901,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	var w *wlog.WL
 	var err error
 	if opts.WithWAL {
-		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), wlog.CompressionSnappy)
+		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), compression.Snappy)
 		assert.NoError(t, err)
 	} else {
 		assert.NoError(t, os.MkdirAll(filepath.Join(opts.TSDBDir, "wal"), os.ModePerm))

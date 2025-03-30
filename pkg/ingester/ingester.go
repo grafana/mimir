@@ -31,7 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -633,8 +633,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.reactiveLimiter != nil {
-		servs = append(servs, i.reactiveLimiter)
+	if i.reactiveLimiter.service != nil {
+		servs = append(servs, i.reactiveLimiter.service)
 	}
 
 	if i.ingestPartitionLifecycler != nil {
@@ -944,11 +944,6 @@ func (i *Ingester) applyTSDBSettings() {
 			db.db.EnableNativeHistograms()
 		} else {
 			db.db.DisableNativeHistograms()
-		}
-		if i.limits.OOONativeHistogramsIngestionEnabled(userID) {
-			db.db.EnableOOONativeHistograms()
-		} else {
-			db.db.DisableOOONativeHistograms()
 		}
 	}
 }
@@ -1302,14 +1297,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				cast.IncrementDiscardedSamples(labels, 1, reasonPerMetricSeriesLimit, startAppend)
 				updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.sampleOutOfOrderCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonSampleOutOfOrder, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
-					return e
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
@@ -2822,7 +2809,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
-		EnableOOONativeHistograms:             i.limits.OOONativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
 	if err != nil {
@@ -3265,6 +3251,13 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		defer i.metrics.forcedCompactionInProgress.Set(0)
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil

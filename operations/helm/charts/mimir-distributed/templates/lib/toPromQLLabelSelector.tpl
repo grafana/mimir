@@ -1,15 +1,16 @@
 {{/*
-Convert a dictionary of labels into a PromQL label selector string.: key1=value1, key2=value2, ...
+Convert a list of filter expressions into a PromQL label selector string: expression1, expression2, ...
 Example:
-    cluster: "my-cluster-name"
+    - cluster!="eu-west"
+    - app="my-app"
 becomes:
-    cluster="my-cluster-name"
+    cluster!="eu-west",app="my-app"
 */}}
 {{- define "toPromQLLabelSelector" -}}
   {{- if . }}
     {{- $labels := "" }}
-    {{- range $key, $value := . }}
-      {{- $labels = printf "%s%s=\"%s\"," $labels $key $value }}
+    {{- range $expression := . }}
+      {{- $labels = printf "%s%s," $labels $expression }}
     {{- end }}
     {{- trimSuffix "," $labels -}}
   {{- end }}

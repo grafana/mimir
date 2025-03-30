@@ -8,11 +8,13 @@ package rules
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -95,13 +97,36 @@ func ParseBytes(content []byte) ([]RuleNamespace, []error) {
 			return nil, []error{err}
 		}
 
-		if errs := ns.Validate(); len(errs) > 0 {
-			return nil, errs
-		}
-
 		nss = append(nss, ns)
 	}
+
+	// And now validate the rule groups, but first parse again, this time to YAML nodes so we have position information for error messages emitted by Validate.
+	// See https://github.com/prometheus/prometheus/pull/16252 for more explanation for why we do this.
+	decoder = yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(false)
+
+	for i := range nss {
+		ns := &nss[i]
+
+		var node ruleNamespaceNode
+		err := decoder.Decode(&node)
+		if errors.Is(err, io.EOF) {
+			return nil, []error{fmt.Errorf("received unexpected EOF while parsing rules a second time for namespace %v", i)}
+		}
+		if err != nil {
+			return nil, []error{err}
+		}
+
+		if errs := ns.Validate(node.GroupNodes); len(errs) > 0 {
+			return nil, errs
+		}
+	}
+
 	return nss, nil
+}
+
+type ruleNamespaceNode struct {
+	GroupNodes []rulefmt.RuleGroupNode `yaml:"groups"`
 }
 
 func loadFile(filename string) ([]byte, error) {

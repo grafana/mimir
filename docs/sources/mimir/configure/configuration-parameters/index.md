@@ -1672,53 +1672,6 @@ store_gateway_client:
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
-  # (experimental) Enable support for aggregation operations in the Mimir query
-  # engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
-  [enable_aggregation_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for binary logical operations in the Mimir
-  # query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
-  [enable_binary_logical_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for one-to-many and many-to-one binary
-  # operations (group_left/group_right) in the Mimir query engine. Only applies
-  # if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
-  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for scalars in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalars
-  [enable_scalars: <boolean> | default = true]
-
-  # (experimental) Enable support for binary comparison operations between two
-  # scalars in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for subqueries in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-subqueries
-  [enable_subqueries: <boolean> | default = true]
-
-  # (experimental) Enable support for binary comparison operations between a
-  # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
-  # use.
-  # CLI flag: -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
-  [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for binary comparison operations between two
-  # vectors in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
-
-  # (experimental) Comma-separated list of aggregations to disable support for.
-  # Only applies if MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.disabled-aggregations
-  [disabled_aggregations: <string> | default = ""]
-
   # (experimental) Comma-separated list of function names to disable support
   # for. Only applies if MQE is in use.
   # CLI flag: -querier.mimir-query-engine.disabled-functions
@@ -2375,11 +2328,6 @@ local:
   [directory: <string> | default = ""]
 
 cache:
-  # (experimental) Enabling caching of rule group contents if a cache backend is
-  # configured.
-  # CLI flag: -ruler-storage.cache.rule-group-enabled
-  [rule_group_enabled: <boolean> | default = false]
-
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
@@ -3284,6 +3232,10 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.message-history-buffer-bytes
 [message_history_buffer_bytes: <int> | default = 0]
 
+# (advanced) Size of the buffered channel for the WatchPrefix function.
+# CLI flag: -memberlist.watch-prefix-buffer-size
+[watch_prefix_buffer_size: <int> | default = 128]
+
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
@@ -3550,13 +3502,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # -query-frontend.query-result-response-format to 'protobuf'.
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
-
-# (experimental) Enable experimental out-of-order native histogram ingestion.
-# This only takes effect if the `-ingester.out-of-order-time-window` value is
-# greater than zero and if `-ingester.native-histograms-ingestion-enabled =
-# true`
-# CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
-[ooo_native_histograms_ingestion_enabled: <boolean> | default = true]
 
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
@@ -3967,6 +3912,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
 
+# (advanced) Maximum number of TSDB segment files that the compactor can upload
+# concurrently per block.
+# CLI flag: -compactor.max-per-block-upload-concurrency
+[compactor_max_per_block_upload_concurrency: <int> | default = 8]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.
@@ -4232,6 +4182,11 @@ kafka:
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+  # The maximum amount of time a Kafka broker waits for some records before a
+  # Fetch response is returned.
+  # CLI flag: -ingest-storage.kafka.fetch-max-wait
+  [fetch_max_wait: <duration> | default = 5s]
 
   # The maximum number of concurrent fetch requests that the ingester makes when
   # reading data from Kafka during startup. Concurrent fetch requests are issued
@@ -5198,16 +5153,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # The connection timeout.
 # CLI flag: -<prefix>.memcached.connect-timeout
 [connect_timeout: <duration> | default = 200ms]
-
-# (experimental) The size of the write buffer (in bytes). The buffer is
-# allocated for each connection to memcached.
-# CLI flag: -<prefix>.memcached.write-buffer-size-bytes
-[write_buffer_size_bytes: <int> | default = 4096]
-
-# (experimental) The size of the read buffer (in bytes). The buffer is allocated
-# for each connection to memcached.
-# CLI flag: -<prefix>.memcached.read-buffer-size-bytes
-[read_buffer_size_bytes: <int> | default = 4096]
 
 # (advanced) The minimum number of idle connections to keep open as a percentage
 # (0-100) of the number of recently used idle connections. If negative, idle

@@ -459,8 +459,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
-  -blocks-storage.bucket-store.chunks-cache.memcached.read-buffer-size-bytes int
-    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path string
@@ -479,8 +477,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -blocks-storage.bucket-store.chunks-cache.memcached.write-buffer-size-bytes int
-    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size int
     	[deprecated] Maximum number of connections in the pool. (default 100)
   -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout duration
@@ -567,8 +563,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
-  -blocks-storage.bucket-store.index-cache.memcached.read-buffer-size-bytes int
-    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.tls-ca-path string
@@ -587,8 +581,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -blocks-storage.bucket-store.index-cache.memcached.write-buffer-size-bytes int
-    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.index-cache.redis.connection-pool-size int
     	[deprecated] Maximum number of connections in the pool. (default 100)
   -blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout duration
@@ -693,8 +685,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
-  -blocks-storage.bucket-store.metadata-cache.memcached.read-buffer-size-bytes int
-    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path string
@@ -713,8 +703,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -blocks-storage.bucket-store.metadata-cache.memcached.write-buffer-size-bytes int
-    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
     	How long to cache attributes of the block metafile. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
@@ -1221,6 +1209,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.
   -compactor.max-opening-blocks-concurrency int
     	Number of goroutines opening blocks before compaction. (default 1)
+  -compactor.max-per-block-upload-concurrency int
+    	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.no-blocks-file-cleanup-enabled
@@ -1553,6 +1543,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
+  -ingest-storage.kafka.fetch-max-wait duration
+    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
   -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
@@ -1679,8 +1671,6 @@ Usage of ./cmd/mimir/mimir:
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
-  -ingester.ooo-native-histograms-ingestion-enabled
-    	[experimental] Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true` (default true)
   -ingester.out-of-order-blocks-external-label-enabled
     	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration
@@ -2029,6 +2019,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -memberlist.transport-debug
     	Log debug transport messages. Note: global log.level must be at debug level as well.
+  -memberlist.watch-prefix-buffer-size int
+    	Size of the buffered channel for the WatchPrefix function. (default 128)
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
@@ -2199,26 +2191,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
-  -querier.mimir-query-engine.disabled-aggregations comma-separated-list-of-strings
-    	[experimental] Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.
   -querier.mimir-query-engine.disabled-functions comma-separated-list-of-strings
     	[experimental] Comma-separated list of function names to disable support for. Only applies if MQE is in use.
-  -querier.mimir-query-engine.enable-aggregation-operations
-    	[experimental] Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-binary-logical-operations
-    	[experimental] Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
-    	[experimental] Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-scalars
-    	[experimental] Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-subqueries
-    	[experimental] Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -2449,8 +2423,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
-  -query-frontend.results-cache.memcached.read-buffer-size-bytes int
-    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.results-cache.memcached.tls-ca-path string
@@ -2469,8 +2441,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.results-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -query-frontend.results-cache.memcached.write-buffer-size-bytes int
-    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -query-frontend.results-cache.redis.connection-pool-size int
     	[deprecated] Maximum number of connections in the pool. (default 100)
   -query-frontend.results-cache.redis.connection-pool-timeout duration
@@ -2721,8 +2691,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -ruler-storage.cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
-  -ruler-storage.cache.memcached.read-buffer-size-bytes int
-    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -ruler-storage.cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -ruler-storage.cache.memcached.tls-ca-path string
@@ -2741,8 +2709,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler-storage.cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
-  -ruler-storage.cache.memcached.write-buffer-size-bytes int
-    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -ruler-storage.cache.redis.connection-pool-size int
     	[deprecated] Maximum number of connections in the pool. (default 100)
   -ruler-storage.cache.redis.connection-pool-timeout duration
@@ -2795,8 +2761,6 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] Username to use when connecting to Redis.
   -ruler-storage.cache.redis.write-timeout duration
     	[deprecated] Client write timeout. (default 3s)
-  -ruler-storage.cache.rule-group-enabled
-    	[experimental] Enabling caching of rule group contents if a cache backend is configured.
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string

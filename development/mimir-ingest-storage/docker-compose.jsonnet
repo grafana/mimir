@@ -12,6 +12,7 @@ std.manifestYamlDoc({
     self.kafka_1 +
     self.kafka_2 +
     self.kafka_3 +
+    self.redpanda_console +
     self.jaeger +
     self.blockbuilder +
     self.blockbuilderscheduler +
@@ -212,6 +213,17 @@ std.manifestYamlDoc({
         timeout: '1s',
         retries: '30',
       },
+    },
+  },
+  redpanda_console:: {
+    redpanda_console: {
+      image: 'docker.redpanda.com/redpandadata/console:latest',
+      environment: [
+        'KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092',
+      ],
+      ports: [
+        '8090:8080',
+      ],
     },
   },
 

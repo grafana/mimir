@@ -88,8 +88,6 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
-  - Cache rule group contents.
-    - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -133,8 +131,7 @@ The following features are currently experimental:
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Out-of-order samples ingestion (`-ingester.ooo-native-histograms-ingestion-enabled`)
-  - Out-of-order native histogram samples ingestion (`-ingester.out-of-order-time-window`)
+  - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`

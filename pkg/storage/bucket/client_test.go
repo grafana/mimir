@@ -6,11 +6,11 @@
 package bucket
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"testing"
 
@@ -193,7 +193,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
 		require.NoError(t, err)
 
-		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
+		err = client.Upload(ctx, "file", strings.NewReader("content"))
 		assert.NoError(t, err)
 
 		_, err = client.Get(ctx, "file")
@@ -221,7 +221,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 
 		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
 		require.NoError(t, err)
-		err = client.Upload(ctx, "file", bytes.NewBufferString("content"))
+		err = client.Upload(ctx, "file", strings.NewReader("content"))
 		require.NoError(t, err)
 
 		_, err = client.Get(ctx, "file")

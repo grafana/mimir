@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"

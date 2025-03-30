@@ -67,7 +67,7 @@ func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sampl
 		if err != nil {
 			return &ChunkSeriesEntry{
 				Lset: lset,
-				ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
+				ChunkIteratorFn: func(_ chunks.Iterator) chunks.Iterator {
 					return errChunksIterator{err: err}
 				},
 			}
