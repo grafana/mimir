@@ -1627,7 +1627,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 							shallowCopy := *mockClient
 							if streaming {
 								// Convert the storegateway response to streaming response.
-								shallowCopy.mockedSeriesResponses = generateStreamingResponses(shallowCopy.mockedSeriesResponses)
+								shallowCopy.mockedSeriesResponses = generateStreamingResponses(t, shallowCopy.mockedSeriesResponses)
 							}
 							newMap[&shallowCopy] = v
 						}
@@ -1955,14 +1955,16 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 	})
 }
 
-func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
+func generateStreamingResponses(t *testing.T, seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
+	t.Helper()
+
 	chunksEstimate := 0
 	var series, chunks, others, final []*storepb.SeriesResponse
 	for i, mr := range seriesResponses {
 		s := mr.GetSeries()
 		if s != nil {
 			chunksEstimate += len(s.Chunks)
-			series = append(series, mockStreamingSeriesBatchResponse(false, s.Labels))
+			series = append(series, mockStreamingSeriesBatchResponse(t, false, s.Labels))
 			chunks = append(chunks, mockStreamingSeriesChunksResponse(uint64(len(series)-1), s.Chunks))
 			continue
 		}
@@ -1973,7 +1975,7 @@ func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*st
 	final = append(final, series...)
 	final = append(final, others...)
 	// End of stream response goes after the hints and stats.
-	final = append(final, mockStreamingSeriesBatchResponse(true))
+	final = append(final, mockStreamingSeriesBatchResponse(t, true))
 	final = append(final, storepb.NewStreamingChunksEstimate(uint64(chunksEstimate)))
 	final = append(final, chunks...)
 	return final
@@ -2904,8 +2906,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: append(testData.storeGateway1Responses, mockHintsResponse(block1))}
 					gateway2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: append(testData.storeGateway2Responses, mockHintsResponse(block2))}
 					if streaming {
-						gateway1.mockedSeriesResponses = generateStreamingResponses(gateway1.mockedSeriesResponses)
-						gateway2.mockedSeriesResponses = generateStreamingResponses(gateway2.mockedSeriesResponses)
+						gateway1.mockedSeriesResponses = generateStreamingResponses(t, gateway1.mockedSeriesResponses)
+						gateway2.mockedSeriesResponses = generateStreamingResponses(t, gateway2.mockedSeriesResponses)
 					}
 
 					stores := &blocksStoreSetMock{
@@ -3250,7 +3252,9 @@ func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChun
 	}
 }
 
-func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelAdapter) *storepb.SeriesResponse {
+func mockStreamingSeriesBatchResponse(t *testing.T, endOfStream bool, lbls ...[]mimirpb.LabelAdapter) *storepb.SeriesResponse {
+	t.Helper()
+
 	res := &storepb.CustomStreamingSeriesBatch{
 		StreamingSeriesBatch: &storepb.StreamingSeriesBatch{},
 	}
@@ -3258,6 +3262,11 @@ func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelA
 		res.Series = append(res.Series, &storepb.StreamingSeries{Labels: l})
 	}
 	res.IsEndOfSeriesStream = endOfStream
+	// Marshal and unmarshal res, so memory pooling is used, and it can be safely released.
+	data, err := res.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, res.Unmarshal(data))
+
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_StreamingSeries{
 			StreamingSeries: res,

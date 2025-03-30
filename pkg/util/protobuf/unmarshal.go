@@ -5,11 +5,47 @@ package protobuf
 import (
 	"fmt"
 	"io"
+	"slices"
+	"sync"
+	"unsafe"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func UnmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
+var (
+	labelBufferPool = sync.Pool{
+		New: func() any {
+			return []byte{}
+		},
+	}
+)
+
+type LabelBuffer struct {
+	buf []byte
+}
+
+func NewLabelBuffer() LabelBuffer {
+	return LabelBuffer{
+		buf: labelBufferPool.Get().([]byte)[:0],
+	}
+}
+
+func (b *LabelBuffer) Add(data []byte) string {
+	oldLen := len(b.buf)
+	newLen := oldLen + len(data)
+	b.buf = slices.Grow(b.buf, newLen)[0:newLen]
+	copy(b.buf[oldLen:newLen], data)
+
+	return yoloString(b.buf[oldLen:newLen])
+}
+
+func (b *LabelBuffer) Release() {
+	//nolint:staticcheck
+	labelBufferPool.Put(b.buf[:0])
+	b.buf = nil
+}
+
+func UnmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte, buf *LabelBuffer) error {
 	l := len(data)
 	index := 0
 	for index < l {
@@ -67,7 +103,7 @@ func UnmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			la.Name = string(data[index:postIndex])
+			la.Name = buf.Add(data[index:postIndex])
 			index = postIndex
 		case 2:
 			if wireType != 2 {
@@ -98,7 +134,7 @@ func UnmarshalLabelAdapter(la *mimirpb.LabelAdapter, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			la.Value = string(data[index:postIndex])
+			la.Value = buf.Add(data[index:postIndex])
 			index = postIndex
 		default:
 			index = preIndex
@@ -229,4 +265,8 @@ func skipMimir(data []byte) (n int, err error) {
 		}
 	}
 	panic("unreachable")
+}
+
+func yoloString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b)) // nolint:gosec
 }
