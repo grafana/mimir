@@ -78,10 +78,10 @@ func (r *Resolver) InitialState(s resolver.State) {
 func (r *Resolver) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	// Call BuildCallback after locking to avoid a race when UpdateState
-	// or ReportError is called before Build returns.
+	// Call BuildCallback after locking to avoid a race when UpdateState or CC
+	// is called before Build returns.
 	r.BuildCallback(target, cc, opts)
-	r.CC = cc
+	r.cc = cc
 	if r.lastSeenState != nil {
 		err := r.cc.UpdateState(*r.lastSeenState)
 		go r.UpdateStateCallback(err)
