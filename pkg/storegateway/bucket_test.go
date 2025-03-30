@@ -29,6 +29,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
@@ -66,6 +68,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/protobuf"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -3071,7 +3074,7 @@ func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, 
 							}
 						}
 					} else {
-						assert.Equal(t, c.ExpectedSeries, seriesSet)
+						assert.Equal(t, "", cmp.Diff(c.ExpectedSeries, seriesSet, cmpopts.IgnoreTypes(protobuf.LabelBuffer{})))
 					}
 
 					assert.Equal(t, c.ExpectedHints, hints)
