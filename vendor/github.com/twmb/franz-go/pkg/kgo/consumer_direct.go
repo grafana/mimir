@@ -5,7 +5,7 @@ type directConsumer struct {
 	tps    *topicsPartitions           // data for topics that the user assigned
 	using  mtmps                       // topics we are currently using
 	m      mtmps                       // mirrors cfg.topics and cfg.partitions, but can change with Purge or Add
-	ps     map[string]map[int32]Offset // mirrors cfg.partitions, changed in Purge or Add, for direct partition consuming
+	ps     map[string]map[int32]Offset // mirrors cfg.partitions, changed in Purge or Add
 	reSeen map[string]bool             // topics we evaluated against regex, and whether we want them or not
 }
 
@@ -65,11 +65,29 @@ func (*directConsumer) getSetAssigns(setOffsets map[string]map[int32]EpochOffset
 func (d *directConsumer) findNewAssignments() map[string]map[int32]Offset {
 	topics := d.tps.load()
 
+	var rns reNews
+	if d.cfg.regex {
+		defer rns.log(d.cfg)
+	}
+
 	toUse := make(map[string]map[int32]Offset, 10)
 	for topic, topicPartitions := range topics {
 		var useTopic bool
 		if d.cfg.regex {
-			useTopic = d.reSeen[topic]
+			want, seen := d.reSeen[topic]
+			if !seen {
+				for rawRe, re := range d.cfg.topics {
+					if want = re.MatchString(topic); want {
+						rns.add(rawRe, topic)
+						break
+					}
+				}
+				if !want {
+					rns.skip(topic)
+				}
+				d.reSeen[topic] = want
+			}
+			useTopic = want
 		} else {
 			useTopic = d.m.onlyt(topic)
 		}
@@ -86,7 +104,7 @@ func (d *directConsumer) findNewAssignments() map[string]map[int32]Offset {
 			}
 			toUseTopic := make(map[int32]Offset, len(partitions.partitions))
 			for partition := range partitions.partitions {
-				toUseTopic[int32(partition)] = d.cfg.startOffset
+				toUseTopic[int32(partition)] = d.cfg.resetOffset
 			}
 			toUse[topic] = toUseTopic
 		}

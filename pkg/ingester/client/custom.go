@@ -98,6 +98,8 @@ func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 
 type CustomTimeSeriesChunk struct {
 	*TimeSeriesChunk
+
+	labelBuf protobuf.LabelBuffer
 }
 
 // Release back to pool.
@@ -111,12 +113,14 @@ func (m *CustomTimeSeriesChunk) Release() {
 	m.Chunks = m.Chunks[:0]
 	timeSeriesChunkPool.Put(m.TimeSeriesChunk)
 	m.TimeSeriesChunk = nil
+	m.labelBuf.Release()
 }
 
 func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 	m.TimeSeriesChunk = timeSeriesChunkPool.Get().(*TimeSeriesChunk)
 	m.Labels = m.Labels[:0]
 	m.Chunks = m.Chunks[:0]
+	m.labelBuf = protobuf.NewLabelBuffer()
 
 	l := len(data)
 	index := 0
@@ -241,7 +245,7 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 			}
 
 			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)
@@ -451,6 +455,8 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 
 type CustomQueryStreamSeries struct {
 	*QueryStreamSeries
+
+	labelBuf protobuf.LabelBuffer
 }
 
 // Release back to pool.
@@ -458,11 +464,13 @@ func (m *CustomQueryStreamSeries) Release() {
 	m.Labels = m.Labels[:0]
 	queryStreamSeriesPool.Put(m.QueryStreamSeries)
 	m.QueryStreamSeries = nil
+	m.labelBuf.Release()
 }
 
 func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 	m.QueryStreamSeries = queryStreamSeriesPool.Get().(*QueryStreamSeries)
 	m.Labels = m.Labels[:0]
+	m.labelBuf = protobuf.NewLabelBuffer()
 
 	l := len(data)
 	index := 0
@@ -522,7 +530,7 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)

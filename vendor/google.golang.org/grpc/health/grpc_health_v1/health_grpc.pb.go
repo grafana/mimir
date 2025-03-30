@@ -105,6 +105,16 @@ func (c *healthClient) Check(ctx context.Context, in *HealthCheckRequest, opts .
 	return out, nil
 }
 
+func (c *healthClient) List(ctx context.Context, in *HealthListRequest, opts ...grpc.CallOption) (*HealthListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthListResponse)
+	err := c.cc.Invoke(ctx, Health_List_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *healthClient) Watch(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HealthCheckResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &Health_ServiceDesc.Streams[0], Health_Watch_FullMethodName, cOpts...)
@@ -179,6 +189,9 @@ type UnimplementedHealthServer struct{}
 
 func (UnimplementedHealthServer) Check(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Check not implemented")
+}
+func (UnimplementedHealthServer) List(context.Context, *HealthListRequest) (*HealthListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
 }
 func (UnimplementedHealthServer) Watch(*HealthCheckRequest, grpc.ServerStreamingServer[HealthCheckResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method Watch not implemented")

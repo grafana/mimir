@@ -270,3 +270,34 @@ func (mn *MetricNamer) buildMetricName(name, unit string, metricType MetricType)
 	}
 	return name
 }
+
+// buildUnitSuffixes builds the main and per unit suffixes for the specified unit
+// but doesn't do any special character transformation to accommodate Prometheus naming conventions.
+// Removing trailing underscores or appending suffixes is done in the caller.
+func buildUnitSuffixes(unit string) (mainUnitSuffix, perUnitSuffix string) {
+	// Split unit at the '/' if any
+	unitTokens := strings.SplitN(unit, "/", 2)
+
+	if len(unitTokens) > 0 {
+		// Main unit
+		// Update if not blank and doesn't contain '{}'
+		mainUnitOTel := strings.TrimSpace(unitTokens[0])
+		if mainUnitOTel != "" && !strings.ContainsAny(mainUnitOTel, "{}") {
+			mainUnitSuffix = unitMapGetOrDefault(mainUnitOTel)
+		}
+
+		// Per unit
+		// Update if not blank and doesn't contain '{}'
+		if len(unitTokens) > 1 && unitTokens[1] != "" {
+			perUnitOTel := strings.TrimSpace(unitTokens[1])
+			if perUnitOTel != "" && !strings.ContainsAny(perUnitOTel, "{}") {
+				perUnitSuffix = perUnitMapGetOrDefault(perUnitOTel)
+			}
+			if perUnitSuffix != "" {
+				perUnitSuffix = "per_" + perUnitSuffix
+			}
+		}
+	}
+
+	return mainUnitSuffix, perUnitSuffix
+}

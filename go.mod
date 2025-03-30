@@ -1,10 +1,10 @@
 module github.com/grafana/mimir
 
-go 1.23.7
+go 1.23.8
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
-toolchain go1.24.1
+toolchain go1.24.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
@@ -46,11 +46,11 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.36.0
-	golang.org/x/net v0.37.0
-	golang.org/x/sync v0.12.0
+	golang.org/x/crypto v0.38.0
+	golang.org/x/net v0.40.0
+	golang.org/x/sync v0.14.0
 	golang.org/x/time v0.11.0
-	google.golang.org/grpc v1.71.0
+	google.golang.org/grpc v1.72.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -125,6 +125,8 @@ require (
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/cncf/xds/go v0.0.0-20250121191232-2f005788dc42 // indirect
 	github.com/ebitengine/purego v0.8.1 // indirect
+	github.com/envoyproxy/go-control-plane/envoy v1.32.4 // indirect
+	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect

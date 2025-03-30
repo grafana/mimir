@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2018 gRPC authors.
+ * Copyright 2023 gRPC authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,13 @@
  *
  */
 
-package grpc
+package xdsresource
 
-// Version is the current grpc version.
-const Version = "1.72.1"
+import (
+	"google.golang.org/grpc/grpclog"
+	internalgrpclog "google.golang.org/grpc/internal/grpclog"
+)
+
+const prefix = "[xds-resource] "
+
+var logger = internalgrpclog.NewPrefixLogger(grpclog.Component("xds"), prefix)

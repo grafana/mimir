@@ -184,6 +184,8 @@ var (
 
 type CustomSeries struct {
 	*Series
+
+	labelBuf protobuf.LabelBuffer
 }
 
 // Release back to pool.
@@ -197,12 +199,14 @@ func (m *CustomSeries) Release() {
 	m.Chunks = m.Chunks[:0]
 	seriesPool.Put(m.Series)
 	m.Series = nil
+	m.labelBuf.Release()
 }
 
 func (m *CustomSeries) Unmarshal(data []byte) error {
 	m.Series = seriesPool.Get().(*Series)
 	m.Labels = m.Labels[:0]
 	m.Chunks = m.Chunks[:0]
+	m.labelBuf = protobuf.NewLabelBuffer()
 	l := len(data)
 	index := 0
 	for index < l {
@@ -267,7 +271,7 @@ func (m *CustomSeries) Unmarshal(data []byte) error {
 			}
 
 			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)
@@ -586,6 +590,8 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 
 type CustomStreamingSeriesBatch struct {
 	*StreamingSeriesBatch
+
+	labelBuf protobuf.LabelBuffer
 }
 
 // Release back to pool.
@@ -598,11 +604,13 @@ func (m *CustomStreamingSeriesBatch) Release() {
 	m.Series = m.Series[:0]
 	streamingSeriesBatchPool.Put(m.StreamingSeriesBatch)
 	m.StreamingSeriesBatch = nil
+	m.labelBuf.Release()
 }
 
 func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 	m.StreamingSeriesBatch = streamingSeriesBatchPool.Get().(*StreamingSeriesBatch)
 	m.Series = m.Series[:0]
+	m.labelBuf = protobuf.NewLabelBuffer()
 
 	l := len(data)
 	index := 0
@@ -662,7 +670,7 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var ss StreamingSeries
-			if err := unmarshalStreamingSeries(&ss, data[index:postIndex]); err != nil {
+			if err := m.unmarshalStreamingSeries(&ss, data[index:postIndex]); err != nil {
 				return err
 			}
 			m.Series = append(m.Series, &ss)
@@ -712,8 +720,8 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 	return nil
 }
 
-func unmarshalStreamingSeries(m *StreamingSeries, data []byte) error {
-	m.Labels = labelAdaptersPool.Get().([]mimirpb.LabelAdapter)[:0]
+func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSeries, data []byte) error {
+	ss.Labels = labelAdaptersPool.Get().([]mimirpb.LabelAdapter)[:0]
 
 	l := len(data)
 	index := 0
@@ -773,10 +781,10 @@ func unmarshalStreamingSeries(m *StreamingSeries, data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
 				return err
 			}
-			m.Labels = append(m.Labels, la)
+			ss.Labels = append(ss.Labels, la)
 			index = postIndex
 		default:
 			index = preIndex
