@@ -32,7 +32,14 @@ const (
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
 	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
 	GetBufferSize = 5
+
+	// ConsistencyQuorum is the default consistency level.
+	ConsistencyQuorum        ConsistencyLevel = 0
+	ConsistencyAny           ConsistencyLevel = 1
+	ConsistencyRelaxedQuorum ConsistencyLevel = 2
 )
+
+type ConsistencyLevel int
 
 // Options are the result of Option instances that can be used to modify Ring.GetWithOptions behavior.
 type Options struct {
@@ -140,6 +147,19 @@ type ReadRing interface {
 	ZonesCount() int
 }
 
+// ReadRingWithPerTenantConsistency is a ReadRing with per-tenant consistency level.
+type ReadRingWithPerTenantConsistency interface {
+	ReadRing
+
+	// ShuffleShardWithConsistency returns a subring for the provided identifier (eg. a tenant ID)
+	// and size (number of instances) with the given consistency level.
+	ShuffleShardWithConsistency(identifier string, size int, consistencyLevel ConsistencyLevel) ReadRing
+
+	// ShuffleShardWithLookbackAndConsistency is like ShuffleShardWithConsistency() but the returned subring includes
+	// all instances that have been part of the identifier's shard since "now - lookbackPeriod" with the given consistency level.
+	ShuffleShardWithLookbackAndConsistency(identifier string, size int, lookbackPeriod time.Duration, now time.Time, consistencyLevel ConsistencyLevel) ReadRing
+}
+
 var (
 	// Write operation that also extends replica set, if instance state is not ACTIVE.
 	Write = NewOp([]InstanceState{ACTIVE}, func(s InstanceState) bool {
@@ -212,6 +232,20 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.ExcludedZones, prefix+"distributor.excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.")
 }
 
+// ConvertConsistencyLevel converts a string representation of a consistency level into its corresponding ConsistencyLevel.
+func ConvertConsistencyLevel(s string) (ConsistencyLevel, error) {
+	switch s {
+	case "", "quorum":
+		return ConsistencyQuorum, nil
+	case "any":
+		return ConsistencyAny, nil
+	case "relaxed_quorum":
+		return ConsistencyRelaxedQuorum, nil
+	default:
+		return -1, fmt.Errorf("Invalid ring consistency level '%s'", s)
+	}
+}
+
 type instanceInfo struct {
 	InstanceID string
 	Zone       string
@@ -278,13 +312,16 @@ type Ring struct {
 	totalTokensGauge        prometheus.Gauge
 	oldestTimestampGaugeVec *prometheus.GaugeVec
 
+	consistencyLevel ConsistencyLevel
+
 	logger log.Logger
 }
 
 type subringCacheKey struct {
-	identifier     string
-	shardSize      int
-	lookbackPeriod time.Duration
+	identifier       string
+	shardSize        int
+	lookbackPeriod   time.Duration
+	consistencyLevel ConsistencyLevel
 }
 
 type cachedSubringWithLookback[R any] struct {
@@ -670,8 +707,16 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 		// RF/2 failing zones. However, we need to protect from the case the ring currently
 		// contains instances in a number of zones < RF.
 		numReplicatedZones := min(len(r.ringZones), r.cfg.ReplicationFactor)
-		minSuccessZones := (numReplicatedZones / 2) + 1
-		maxUnavailableZones = minSuccessZones - 1
+		minSuccessZones := (numReplicatedZones / 2) + (numReplicatedZones & 1)
+		if r.consistencyLevel == ConsistencyAny {
+			minSuccessZones = 1
+		}
+		maxUnavailableZones = numReplicatedZones - minSuccessZones
+
+		if len(zoneFailures) > maxUnavailableZones && len(zoneFailures) < numReplicatedZones && r.consistencyLevel == ConsistencyRelaxedQuorum {
+			// at least all available zones need to succeed
+			maxUnavailableZones = len(zoneFailures)
+		}
 
 		if len(zoneFailures) > maxUnavailableZones {
 			return ReplicationSet{}, ErrTooManyUnhealthyInstances
@@ -812,21 +857,21 @@ func (r *Ring) updateRingMetrics() {
 // set of instances, with a reduced number of overlapping instances between two identifiers.
 //
 // Subring returned by this method does not contain instances that have read-only field set.
-func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
-	if cached := r.getCachedShuffledSubring(identifier, size); cached != nil {
+func (r *Ring) ShuffleShardWithConsistency(identifier string, size int, consistencyLevel ConsistencyLevel) ReadRing {
+	if cached := r.getCachedShuffledSubring(identifier, size, consistencyLevel); cached != nil {
 		return cached
 	}
 
 	var result *Ring
 	if size <= 0 {
-		result = r.filterOutReadOnlyInstances(0, time.Now())
+		result = r.filterOutReadOnlyInstances(0, time.Now(), consistencyLevel)
 	} else {
-		result = r.shuffleShard(identifier, size, 0, time.Now())
+		result = r.shuffleShard(identifier, size, 0, time.Now(), consistencyLevel)
 	}
 	// Only cache subring if it is different from this ring, to avoid deadlocks in getCachedShuffledSubring,
 	// when we update the cached ring.
 	if result != r {
-		r.setCachedShuffledSubring(identifier, size, result)
+		r.setCachedShuffledSubring(identifier, size, consistencyLevel, result)
 	}
 	return result
 }
@@ -842,26 +887,34 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 //
 // Subring returned by this method does not contain read-only instances that have changed their state
 // before the lookback period.
-func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
-	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
+func (r *Ring) ShuffleShardWithLookbackAndConsistency(identifier string, size int, lookbackPeriod time.Duration, now time.Time, consistencyLevel ConsistencyLevel) ReadRing {
+	if cached := r.getCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now, consistencyLevel); cached != nil {
 		return cached
 	}
 
 	var result *Ring
 	if size <= 0 {
-		result = r.filterOutReadOnlyInstances(lookbackPeriod, now)
+		result = r.filterOutReadOnlyInstances(lookbackPeriod, now, consistencyLevel)
 	} else {
-		result = r.shuffleShard(identifier, size, lookbackPeriod, now)
+		result = r.shuffleShard(identifier, size, lookbackPeriod, now, consistencyLevel)
 	}
 
 	if result != r {
-		r.setCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now, result)
+		r.setCachedShuffledSubringWithLookback(identifier, size, lookbackPeriod, now, consistencyLevel, result)
 	}
 
 	return result
 }
 
-func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *Ring {
+func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
+	return r.ShuffleShardWithConsistency(identifier, size, r.consistencyLevel)
+}
+
+func (r *Ring) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) ReadRing {
+	return r.ShuffleShardWithLookbackAndConsistency(identifier, size, lookbackPeriod, now, r.consistencyLevel)
+}
+
+func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time, consistencyLevel ConsistencyLevel) *Ring {
 	lookbackUntil := now.Add(-lookbackPeriod).Unix()
 
 	r.mtx.RLock()
@@ -876,7 +929,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	//
 	// Even if some instances are read-only, they must have changed their read-only status within lookback window
 	// (because they were all registered within lookback window), so they would be included in the result.
-	if lookbackPeriod > 0 && r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil {
+	if lookbackPeriod > 0 && r.oldestRegisteredTimestamp > 0 && r.oldestRegisteredTimestamp >= lookbackUntil && consistencyLevel == r.consistencyLevel {
 		return r
 	}
 
@@ -986,7 +1039,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		}
 	}
 
-	return r.buildRingForTheShard(shard)
+	return r.buildRingForTheShard(shard, consistencyLevel)
 }
 
 // shouldIncludeReadonlyInstanceInTheShard returns true if instance is not read-only, or when it is read-only and should be included in the shuffle shard.
@@ -1007,19 +1060,19 @@ func shouldIncludeReadonlyInstanceInTheShard(instance InstanceDesc, lookbackPeri
 }
 
 // filterOutReadOnlyInstances removes all read-only instances from the ring, and returns the resulting ring.
-func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time.Time) *Ring {
+func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time.Time, consistencyLevel ConsistencyLevel) *Ring {
 	lookbackUntil := now.Add(-lookbackPeriod).Unix()
 
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
 	// If there are no read-only instances, there's no need to do any filtering.
-	if r.readOnlyInstances != nil && *r.readOnlyInstances == 0 {
+	if r.readOnlyInstances != nil && *r.readOnlyInstances == 0 && r.consistencyLevel == consistencyLevel {
 		return r
 	}
 
 	// If all readOnlyUpdatedTimestamp values are within lookback window, we can return the ring without any filtering.
-	if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp != nil && *r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil {
+	if lookbackPeriod > 0 && r.oldestReadOnlyUpdatedTimestamp != nil && *r.oldestReadOnlyUpdatedTimestamp >= lookbackUntil && r.consistencyLevel == consistencyLevel {
 		return r
 	}
 
@@ -1031,18 +1084,30 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 		}
 	}
 
-	return r.buildRingForTheShard(shard)
+	return r.buildRingForTheShard(shard, consistencyLevel)
 }
 
 // buildRingForTheShard builds read-only ring for the shard (this ring won't be updated in the future).
-func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc) *Ring {
+func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc, consistencyLevel ConsistencyLevel) *Ring {
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)
+	strategy := r.strategy
+	if consistencyLevel != r.consistencyLevel {
+		withConsistency, err := withConsistency(strategy, consistencyLevel)
+		// unlikely to happen, but better to handle it
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "failed to apply consistency level", "error", err)
+		}
+		if withConsistency != nil {
+			strategy = withConsistency
+		}
+	}
 
 	return &Ring{
 		cfg:                                     r.cfg,
-		strategy:                                r.strategy,
+		strategy:                                strategy,
+		consistencyLevel:                        consistencyLevel,
 		ringDesc:                                shardDesc,
 		ringTokens:                              shardTokens,
 		ringTokensByZone:                        shardTokensByZone,
@@ -1156,7 +1221,7 @@ func (r *Ring) HasInstance(instanceID string) bool {
 	return ok
 }
 
-func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
+func (r *Ring) getCachedShuffledSubring(identifier string, size int, consistencyLevel ConsistencyLevel) *Ring {
 	if r.cfg.SubringCacheDisabled {
 		return nil
 	}
@@ -1165,7 +1230,7 @@ func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
 	defer r.mtx.RUnlock()
 
 	// if shuffledSubringCache map is nil, reading it returns default value (nil pointer).
-	cached := r.shuffledSubringCache[subringCacheKey{identifier: identifier, shardSize: size}]
+	cached := r.shuffledSubringCache[subringCacheKey{identifier: identifier, shardSize: size, consistencyLevel: consistencyLevel}]
 	if cached == nil {
 		return nil
 	}
@@ -1189,7 +1254,7 @@ func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
 	return cached
 }
 
-func (r *Ring) setCachedShuffledSubring(identifier string, size int, subring *Ring) {
+func (r *Ring) setCachedShuffledSubring(identifier string, size int, consistencyLevel ConsistencyLevel, subring *Ring) {
 	if subring == nil || r.cfg.SubringCacheDisabled {
 		return
 	}
@@ -1201,11 +1266,11 @@ func (r *Ring) setCachedShuffledSubring(identifier string, size int, subring *Ri
 	// (which can happen between releasing the read lock and getting read-write lock).
 	// Note that shuffledSubringCache can be only nil when set by test.
 	if r.shuffledSubringCache != nil && r.lastTopologyChange.Equal(subring.lastTopologyChange) {
-		r.shuffledSubringCache[subringCacheKey{identifier: identifier, shardSize: size}] = subring
+		r.shuffledSubringCache[subringCacheKey{identifier: identifier, shardSize: size, consistencyLevel: consistencyLevel}] = subring
 	}
 }
 
-func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) *Ring {
+func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time, consistencyLevel ConsistencyLevel) *Ring {
 	if r.cfg.SubringCacheDisabled {
 		return nil
 	}
@@ -1246,7 +1311,7 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 	return cachedSubring
 }
 
-func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time, subring *Ring) {
+func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time, consistencyLevel ConsistencyLevel, subring *Ring) {
 	if subring == nil || r.cfg.SubringCacheDisabled {
 		return
 	}
@@ -1280,7 +1345,7 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	// Only update cache if subring's lookback window starts later than the previously cached subring for this identifier,
 	// if there is one. This prevents cache thrashing due to different calls competing if their lookback windows start
 	// before and after the time of an instance registering.
-	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}
+	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod, consistencyLevel: consistencyLevel}
 
 	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
 		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback[*Ring]{
