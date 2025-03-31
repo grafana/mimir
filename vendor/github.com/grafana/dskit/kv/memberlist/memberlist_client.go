@@ -154,12 +154,13 @@ type KVConfig struct {
 	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled" category:"advanced"`
 
 	// List of members to join
-	JoinMembers      flagext.StringSlice `yaml:"join_members"`
-	MinJoinBackoff   time.Duration       `yaml:"min_join_backoff" category:"advanced"`
-	MaxJoinBackoff   time.Duration       `yaml:"max_join_backoff" category:"advanced"`
-	MaxJoinRetries   int                 `yaml:"max_join_retries" category:"advanced"`
-	AbortIfJoinFails bool                `yaml:"abort_if_cluster_join_fails"`
-	RejoinInterval   time.Duration       `yaml:"rejoin_interval" category:"advanced"`
+	JoinMembers          flagext.StringSlice `yaml:"join_members"`
+	MinJoinBackoff       time.Duration       `yaml:"min_join_backoff" category:"advanced"`
+	MaxJoinBackoff       time.Duration       `yaml:"max_join_backoff" category:"advanced"`
+	MaxJoinRetries       int                 `yaml:"max_join_retries" category:"advanced"`
+	AbortIfFastJoinFails bool                `yaml:"abort_if_cluster_fast_join_fails" category:"advanced"`
+	AbortIfJoinFails     bool                `yaml:"abort_if_cluster_join_fails"`
+	RejoinInterval       time.Duration       `yaml:"rejoin_interval" category:"advanced"`
 
 	// Remove LEFT ingesters from ring after this timeout.
 	LeftIngestersTimeout   time.Duration `yaml:"left_ingesters_timeout" category:"advanced"`
@@ -181,6 +182,10 @@ type KVConfig struct {
 
 	// Codecs to register. Codecs need to be registered before joining other members.
 	Codecs []codec.Codec `yaml:"-"`
+
+	// The backoff configuration used by retries when discovering memberlist members via DNS.
+	// This useful to override it in tests.
+	discoverMembersBackoff backoff.Config `yaml:"-"`
 }
 
 // RegisterFlagsWithPrefix registers flags.
@@ -196,7 +201,8 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.MinJoinBackoff, prefix+"memberlist.min-join-backoff", 1*time.Second, "Min backoff duration to join other cluster members.")
 	f.DurationVar(&cfg.MaxJoinBackoff, prefix+"memberlist.max-join-backoff", 1*time.Minute, "Max backoff duration to join other cluster members.")
 	f.IntVar(&cfg.MaxJoinRetries, prefix+"memberlist.max-join-retries", 10, "Max number of retries to join other cluster members.")
-	f.BoolVar(&cfg.AbortIfJoinFails, prefix+"memberlist.abort-if-join-fails", cfg.AbortIfJoinFails, "If this node fails to join memberlist cluster, abort.")
+	f.BoolVar(&cfg.AbortIfFastJoinFails, prefix+"memberlist.abort-if-fast-join-fails", false, "Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.")
+	f.BoolVar(&cfg.AbortIfJoinFails, prefix+"memberlist.abort-if-join-fails", cfg.AbortIfJoinFails, "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.")
 	f.DurationVar(&cfg.RejoinInterval, prefix+"memberlist.rejoin-interval", 0, "If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.")
 	f.DurationVar(&cfg.LeftIngestersTimeout, prefix+"memberlist.left-ingesters-timeout", 5*time.Minute, "How long to keep LEFT ingesters in the ring.")
 	f.DurationVar(&cfg.ObsoleteEntriesTimeout, prefix+"memberlist.obsolete-entries-timeout", mlDefaults.PushPullInterval, "How long to keep obsolete entries in the KV store.")
@@ -217,6 +223,12 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.IntVar(&cfg.WatchPrefixBufferSize, prefix+"memberlist.watch-prefix-buffer-size", watchPrefixBufferSize, "Size of the buffered channel for the WatchPrefix function.")
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
+
+	cfg.discoverMembersBackoff = backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 5 * time.Second,
+		MaxRetries: 10,
+	}
 }
 
 func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
@@ -502,7 +514,13 @@ func (m *KV) starting(ctx context.Context) error {
 
 	// Try to fast-join memberlist cluster in Starting state, so that we don't start with empty KV store.
 	if len(m.cfg.JoinMembers) > 0 {
-		m.fastJoinMembersOnStartup(ctx)
+		if err := m.fastJoinMembersOnStartup(ctx); err != nil {
+			level.Error(m.logger).Log("msg", "failed to fast-join the memberlist cluster at startup", "err", err)
+
+			if m.cfg.AbortIfFastJoinFails {
+				return fmt.Errorf("failed to fast-join the memberlist cluster at startup: %w", err)
+			}
+		}
 	}
 
 	return nil
@@ -586,10 +604,15 @@ func (m *KV) JoinMembers(members []string) (int, error) {
 }
 
 // fastJoinMembersOnStartup attempts to reach small subset of nodes (computed as RetransmitMult * log10(number of discovered members + 1)).
-func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
+func (m *KV) fastJoinMembersOnStartup(ctx context.Context) error {
 	startTime := time.Now()
 
-	nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
+	nodes, err := m.discoverMembersWithRetries(ctx, m.cfg.JoinMembers)
+	if err != nil && len(nodes) == 0 {
+		return err
+	}
+
+	// Shuffle the node addresses to randomize the ones picked for the fast join.
 	math_rand.Shuffle(len(nodes), func(i, j int) {
 		nodes[i], nodes[j] = nodes[j], nodes[i]
 	})
@@ -612,12 +635,13 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 		nodes = nodes[1:]
 	}
 
-	l := level.Info(m.logger)
-	// Warn, if we didn't join any node.
 	if totalJoined == 0 {
-		l = level.Warn(m.logger)
+		level.Warn(m.logger).Log("msg", "memberlist fast-join failed because no node has been successfully reached", "elapsed_time", time.Since(startTime))
+		return fmt.Errorf("no memberlist node reached during fast-join procedure")
 	}
-	l.Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
+
+	level.Info(m.logger).Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
+	return nil
 }
 
 // The joinMembersOnStartup method resolves the addresses of the given join_members hosts and asks memberlist to join to them.
@@ -688,7 +712,10 @@ func (m *KV) joinMembersInBatches(ctx context.Context) (int, error) {
 		// Rediscover nodes and try to join a subset of them with each batch.
 		// When the list of nodes is large by the time we reach the end of the list some of the
 		// IPs can be unreachable.
-		newlyResolved := m.discoverMembers(ctx, m.cfg.JoinMembers)
+		//
+		// Ignores any DNS resolution error because it's not really actionable in this
+		// context.
+		newlyResolved, _ := m.discoverMembersWithRetries(ctx, m.cfg.JoinMembers)
 		if len(newlyResolved) > 0 {
 			// If the resolution fails we keep using the nodes list from the last resolution.
 			// If that failed too, then we fail the join attempt.
@@ -746,10 +773,11 @@ func (m *KV) joinMembersBatch(ctx context.Context, nodes []string) (successfully
 	return successfullyJoined, lastErr
 }
 
-// Provides a dns-based member disovery to join a memberlist cluster w/o knowning members' addresses upfront.
-func (m *KV) discoverMembers(ctx context.Context, members []string) []string {
+// Provides a dns-based member discovery to join a memberlist cluster w/o knowning members' addresses upfront.
+// May both return some addresses and an error in case of a partial resolution.
+func (m *KV) discoverMembers(ctx context.Context, members []string) ([]string, error) {
 	if len(members) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var ms, resolve []string
@@ -765,12 +793,34 @@ func (m *KV) discoverMembers(ctx context.Context, members []string) []string {
 
 	err := m.provider.Resolve(ctx, resolve)
 	if err != nil {
-		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","), "err", err)
+		level.Warn(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","), "err", err)
 	}
 
 	ms = append(ms, m.provider.Addresses()...)
 
-	return ms
+	return ms, err
+}
+
+// Like discoverMembers() but retries (up to 10 times) on error.
+func (m *KV) discoverMembersWithRetries(ctx context.Context, members []string) ([]string, error) {
+	boff := backoff.New(ctx, m.cfg.discoverMembersBackoff)
+
+	var (
+		lastErr   error
+		lastAddrs []string
+	)
+
+	for boff.Ongoing() {
+		lastAddrs, lastErr = m.discoverMembers(ctx, members)
+		if lastErr == nil {
+			return lastAddrs, nil
+		}
+
+		boff.Wait()
+	}
+
+	// We may have both some addresses and error, in case of a partial resolution.
+	return lastAddrs, lastErr
 }
 
 // While Stopping, we try to leave memberlist cluster and then shutdown memberlist client.
