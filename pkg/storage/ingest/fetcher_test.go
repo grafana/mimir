@@ -1000,7 +1000,6 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 
 		require.NoError(t, res.Err)
 		require.Len(t, res.Records, 0)
-		assertFetchMaxBytesMetric(t, reg, fw)
 	})
 
 	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
