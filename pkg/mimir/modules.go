@@ -860,17 +860,17 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
-	if !t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		return nil, nil
+	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
+		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+
+		t.QueryPlanner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+		t.QueryPlanner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 	}
 
-	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
-	planner := streamingpromql.NewQueryPlanner(mqeOpts)
-
-	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-
-	analysisHandler := streamingpromql.AnalysisHandler(planner)
+	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
+	// error message in this case, indicating that query planning is disabled.
+	analysisHandler := streamingpromql.AnalysisHandler(t.QueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil

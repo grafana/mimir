@@ -559,6 +559,11 @@ func AnalysisHandler(planner *QueryPlanner) http.Handler {
 }
 
 func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *QueryPlanner) ([]byte, int, error) {
+	if planner == nil {
+		// Handle the case where query planning is disabled.
+		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
+	}
+
 	if err := r.ParseForm(); err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("could not parse request: %w", err)
 	}

@@ -1308,6 +1308,21 @@ func TestAnalysisHandler(t *testing.T) {
 	}
 }
 
+func TestAnalysisHandler_PlanningDisabled(t *testing.T) {
+	handler := AnalysisHandler(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	body := resp.Body.String()
+
+	require.Equal(t, "query planning is disabled, analysis is not available", body)
+	require.Equal(t, "text/plain", resp.Header().Get("Content-Type"))
+	require.Equal(t, http.StatusNotFound, resp.Code)
+	require.Equal(t, strconv.Itoa(len(body)), resp.Header().Get("Content-Length"))
+}
+
 func TestDecodingInvalidPlan(t *testing.T) {
 	testCases := map[string]struct {
 		input         *planning.EncodedQueryPlan
