@@ -27,7 +27,7 @@ require (
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
 	github.com/json-iterator/go v1.1.12
-	github.com/minio/minio-go/v7 v7.0.88
+	github.com/minio/minio-go/v7 v7.0.89
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing-contrib/go-grpc v0.1.1
@@ -66,7 +66,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20250310104713-16b885f1c79e
+	github.com/grafana/alerting v0.0.0-20250325165008-58ba6c617ff0
 	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.16.0
@@ -76,14 +76,14 @@ require (
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250320144820-d800c8b0eb07
+	github.com/prometheus/otlptranslator v0.0.0-20250327120010-71240eaf1a23
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250320172111-35ab5e5f5327
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250328061601-0a757d1a4731
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -95,7 +95,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.30.0
 	google.golang.org/api v0.227.0
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
@@ -256,7 +256,7 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/klauspost/compress v1.18.0
-	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -305,7 +305,7 @@ require (
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
