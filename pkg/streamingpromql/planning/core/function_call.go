@@ -51,6 +51,7 @@ func (f *FunctionCall) EquivalentTo(other planning.Node) bool {
 	otherFunctionCall, ok := other.(*FunctionCall)
 
 	return ok &&
+		f.FunctionName == otherFunctionCall.FunctionName &&
 		slices.EqualFunc(f.Args, otherFunctionCall.Args, func(a, b planning.Node) bool {
 			return a.EquivalentTo(b)
 		}) &&
