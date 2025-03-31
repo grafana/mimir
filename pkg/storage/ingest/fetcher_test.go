@@ -986,7 +986,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an empty non-error response if context is canceled", func(t *testing.T) {
-		fetchers, _, ctx, reg := setup(t)
+		fetchers, _, ctx, _ := setup(t)
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
 
