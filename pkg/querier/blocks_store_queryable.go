@@ -329,6 +329,9 @@ type blocksStoreQuerier struct {
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
+
+	streamReadersMtx sync.Mutex
+	streamReaders    []*storeGatewayStreamReader
 }
 
 // Select implements storage.Querier interface.
@@ -432,6 +435,13 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints
 }
 
 func (q *blocksStoreQuerier) Close() error {
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	for _, r := range q.streamReaders {
+		r.FreeBuffer()
+	}
+
 	return nil
 }
 
@@ -445,7 +455,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 		resSeriesSets     = []storage.SeriesSet(nil)
 		resWarnings       annotations.Annotations
-		streamStarters    []func()
+		resStreamReaders  []*storeGatewayStreamReader
 		chunkEstimators   []func() int
 		queryLimiter      = limiter.QueryLimiterFromContextWithFallback(ctx)
 	)
@@ -456,14 +466,14 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	}
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, startStreamingChunks, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, streamReaders, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
 
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings.Merge(warnings)
-		streamStarters = append(streamStarters, startStreamingChunks)
+		resStreamReaders = append(resStreamReaders, streamReaders...)
 		chunkEstimators = append(chunkEstimators, chunkEstimator)
 
 		return queriedBlocks, nil
@@ -474,12 +484,16 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		return storage.ErrSeriesSet(err)
 	}
 
-	if len(streamStarters) > 0 {
+	if len(resStreamReaders) > 0 {
 		spanLog.DebugLog("msg", "starting streaming")
 
+		q.streamReadersMtx.Lock()
+		q.streamReaders = append(q.streamReaders, resStreamReaders...)
+		q.streamReadersMtx.Unlock()
+
 		// If this was a streaming call, start fetching streaming chunks here.
-		for _, ss := range streamStarters {
-			ss()
+		for _, r := range resStreamReaders {
+			r.StartBuffering()
 		}
 
 		spanLog.DebugLog("msg", "streaming started, waiting for chunks estimates")
@@ -735,7 +749,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // In case of a successful run, fetchSeriesFromStores returns a startStreamingChunks function to start streaming
 // chunks for the fetched series iff it was a streaming call for series+chunks. startStreamingChunks must be called
 // before iterating on the series.
-func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, startStreamingChunks func(), estimateChunks func() int, _ error) {
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, streamReaders []*storeGatewayStreamReader, estimateChunks func() int, _ error) {
 	var (
 		// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
 		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
@@ -749,7 +763,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
-		streamReaders []*storeGatewayStreamReader
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
@@ -917,12 +930,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return nil, nil, nil, nil, nil, err
 	}
 
-	startStreamingChunks = func() {
-		for _, sr := range streamReaders {
-			sr.StartBuffering()
-		}
-	}
-
 	estimateChunks = func() int {
 		totalChunks := 0
 
@@ -933,7 +940,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return totalChunks
 	}
 
-	return seriesSets, queriedBlocks, warnings, startStreamingChunks, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
+	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
 func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
