@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"slices"
 	"sort"
 
 	"github.com/go-kit/log"
@@ -156,7 +155,8 @@ type storeGatewayStreamReader struct {
 	log                 log.Logger
 
 	chunkCountEstimateChan chan int
-	seriesChunksChan       chan *storepb.StreamingChunksBatch
+	seriesMessageChan      chan *storepb.SeriesResponse
+	lastMessage            *storepb.SeriesResponse
 	chunksBatch            []*storepb.StreamingChunks
 	errorChan              chan error
 	err                    error
@@ -174,11 +174,23 @@ func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.Stor
 	}
 }
 
-// Close cleans up all resources associated with this storeGatewayStreamReader.
-// This method should only be called if StartBuffering is not called.
+// Close cleans up all resources associated with this SeriesChunksStreamReader, except any
+// values previously returned by GetChunks.
+// This method should only be directly called if StartBuffering is not called,
+// otherwise StartBuffering will call it once done.
 func (s *storeGatewayStreamReader) Close() {
 	if err := util.CloseAndExhaust[*storepb.SeriesResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing store-gateway client stream failed", "err", err)
+	}
+}
+
+// FreeBuffer frees any buffers held by this SeriesChunksStreamReader.
+// Any values previously returned by GetChunks must not be used after calling FreeBuffer.
+// It is safe to call FreeBuffer multiple times, or to alternate GetChunks and FreeBuffer calls.
+func (s *storeGatewayStreamReader) FreeBuffer() {
+	if s.lastMessage != nil {
+		s.lastMessage.FreeBuffer()
+		s.lastMessage = nil
 	}
 }
 
@@ -190,7 +202,7 @@ func (s *storeGatewayStreamReader) Close() {
 func (s *storeGatewayStreamReader) StartBuffering() {
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
-	s.seriesChunksChan = make(chan *storepb.StreamingChunksBatch, 1)
+	s.seriesMessageChan = make(chan *storepb.SeriesResponse, 1)
 	s.chunkCountEstimateChan = make(chan int, 1)
 
 	go func() {
@@ -199,7 +211,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 		defer func() {
 			s.Close()
 			close(s.chunkCountEstimateChan)
-			close(s.seriesChunksChan)
+			close(s.seriesMessageChan)
 			close(s.errorChan)
 			log.Finish()
 		}()
@@ -302,30 +314,18 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		s.stats.AddFetchedChunks(uint64(numChunks))
 		s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
 
-		// Memory safe copy.
-		safeSeries := make([]*storepb.StreamingChunks, 0, len(batch.Series))
-		for _, s := range batch.Series {
-			safe := *s
-			safe.Chunks = slices.Clone(s.Chunks)
-			for i, c := range safe.Chunks {
-				safe.Chunks[i].Raw.Data = slices.Clone(c.Raw.Data)
-			}
-			safeSeries = append(safeSeries, &safe)
-		}
-		batch.Series = safeSeries
-		msg.FreeBuffer()
-
-		if err := s.sendBatch(batch); err != nil {
+		if err := s.sendBatch(msg); err != nil {
 			return err
 		}
 	}
 }
 
-func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) error {
+func (s *storeGatewayStreamReader) sendBatch(c *storepb.SeriesResponse) error {
 	if err := s.ctx.Err(); err != nil {
 		// If the context is already cancelled, stop now for the same reasons as below.
 		// We do this extra check here to ensure that we don't get unlucky and continue to send to seriesChunksChan even if
 		// the context is cancelled because the consumer of the stream is reading faster than we can read new batches.
+		c.FreeBuffer()
 		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 	}
 
@@ -343,8 +343,9 @@ func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) er
 		// the stream's underlying ClientConn is closed, which can happen if the querier decides that the store-gateway is no
 		// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
 		// a generic 'context canceled' error.
+		c.FreeBuffer()
 		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
-	case s.seriesChunksChan <- c:
+	case s.seriesMessageChan <- c:
 		// Batch enqueued successfully, nothing else to do for this batch.
 		return nil
 	}
@@ -362,6 +363,7 @@ func (s *storeGatewayStreamReader) sendChunksEstimate(chunksEstimate uint64) err
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
+// Any values previously returned by GetChunks must not be used after calling FreeBuffer.
 func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) (_ []storepb.AggrChunk, err error) {
 	if s.err != nil {
 		// Why not just return s.err?
@@ -412,7 +414,12 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) (_ []storepb.Ag
 }
 
 func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
-	chks, channelOpen := <-s.seriesChunksChan
+	if s.lastMessage != nil {
+		s.lastMessage.FreeBuffer()
+		s.lastMessage = nil
+	}
+
+	msg, channelOpen := <-s.seriesMessageChan
 
 	if !channelOpen {
 		// If there's an error, report it.
@@ -430,7 +437,8 @@ func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
 		return fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 	}
 
-	s.chunksBatch = chks.Series
+	s.lastMessage = msg
+	s.chunksBatch = msg.GetStreamingChunks().Series
 	return nil
 }
 
