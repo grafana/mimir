@@ -41,7 +41,7 @@ func (s *StringLiteral) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *StringLiteral) Equivalent(other planning.Node) bool {
+func (s *StringLiteral) EquivalentTo(other planning.Node) bool {
 	otherLiteral, ok := other.(*StringLiteral)
 
 	return ok && s.Value == otherLiteral.Value

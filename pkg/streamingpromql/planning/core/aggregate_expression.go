@@ -75,14 +75,14 @@ func (a *AggregateExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (a *AggregateExpression) Equivalent(other planning.Node) bool {
+func (a *AggregateExpression) EquivalentTo(other planning.Node) bool {
 	otherAggregateExpression, ok := other.(*AggregateExpression)
 
 	return ok &&
 		a.Op == otherAggregateExpression.Op &&
-		a.Inner.Equivalent(otherAggregateExpression.Inner) &&
+		a.Inner.EquivalentTo(otherAggregateExpression.Inner) &&
 		((a.Param == nil && otherAggregateExpression.Param == nil) ||
-			(a.Param != nil && otherAggregateExpression.Param != nil && a.Param.Equivalent(otherAggregateExpression.Param))) &&
+			(a.Param != nil && otherAggregateExpression.Param != nil && a.Param.EquivalentTo(otherAggregateExpression.Param))) &&
 		slices.Equal(a.Grouping, otherAggregateExpression.Grouping) &&
 		a.Without == otherAggregateExpression.Without
 }
