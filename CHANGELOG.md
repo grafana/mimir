@@ -51,7 +51,7 @@
 
 ### Tools
 
-## 2.16.0-rc.0
+## 2.16.0
 
 ### Grafana Mimir
 
