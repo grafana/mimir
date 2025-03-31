@@ -1737,7 +1737,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, ubkt.Close()) }()
-	
+
 	bkt := objstore.WithNoopInstr(ubkt)
 
 	logger := log.NewNopLogger()
