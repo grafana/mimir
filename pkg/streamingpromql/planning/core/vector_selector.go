@@ -35,7 +35,7 @@ func (v *VectorSelector) Children() []planning.Node {
 
 func (v *VectorSelector) SetChildren(children []planning.Node) error {
 	if len(children) != 0 {
-		return fmt.Errorf("node of type VectorSelector supports 0 children, but got %d", len(children))
+		return fmt.Errorf("node of type VectorSelector expects 0 children, but got %d", len(children))
 	}
 
 	return nil

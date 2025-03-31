@@ -243,7 +243,7 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 
 	nodeFactory, exists := knownNodeTypes[name]
 	if !exists {
-		return nil, fmt.Errorf("unregistered node type: %s", name)
+		return nil, fmt.Errorf("unknown node type: %s", name)
 	}
 
 	node := nodeFactory()

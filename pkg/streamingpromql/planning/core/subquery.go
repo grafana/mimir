@@ -102,7 +102,7 @@ func (s *Subquery) Children() []planning.Node {
 
 func (s *Subquery) SetChildren(children []planning.Node) error {
 	if len(children) != 1 {
-		return fmt.Errorf("node of type Subquery supports 1 child, but got %d", len(children))
+		return fmt.Errorf("node of type Subquery expects 1 child, but got %d", len(children))
 	}
 
 	s.Inner = children[0]

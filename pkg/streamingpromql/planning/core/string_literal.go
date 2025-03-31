@@ -35,7 +35,7 @@ func (s *StringLiteral) Children() []planning.Node {
 
 func (s *StringLiteral) SetChildren(children []planning.Node) error {
 	if len(children) != 0 {
-		return fmt.Errorf("node of type StringLiteral supports 0 children, but got %d", len(children))
+		return fmt.Errorf("node of type StringLiteral expects 0 children, but got %d", len(children))
 	}
 
 	return nil

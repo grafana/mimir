@@ -22,6 +22,16 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+func marshalDetails(m proto.Message) *prototypes.Any {
+	a, err := prototypes.MarshalAny(m)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return a
+}
+
 func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.NoStepSubqueryIntervalFn = func(_ int64) int64 {
@@ -34,12 +44,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
 	rangeQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 3000, EndT: 5000, IntervalMilliseconds: 1000}
-
-	marshalDetails := func(m proto.Message) *prototypes.Any {
-		a, err := prototypes.MarshalAny(m)
-		require.NoError(t, err)
-		return a
-	}
 
 	testCases := map[string]struct {
 		expr      string
@@ -1300,6 +1304,145 @@ func TestAnalysisHandler(t *testing.T) {
 
 			require.Equal(t, testCase.expectedStatusCode, resp.Code)
 			require.Equal(t, strconv.Itoa(len(body)), resp.Header().Get("Content-Length"))
+		})
+	}
+}
+
+func TestDecodingInvalidPlan(t *testing.T) {
+	testCases := map[string]struct {
+		input         *planning.EncodedQueryPlan
+		expectedError string
+	}{
+		"unknown node type": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           0,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: &prototypes.Any{
+							TypeUrl: "type.googleapis.com/planning.Foo",
+							Value:   []byte("foo"),
+						},
+					},
+				},
+			},
+			expectedError: "unknown node type: planning.Foo",
+		},
+		"root node index out of range": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           1,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 5,
+						}),
+					},
+				},
+			},
+			expectedError: "root node index 1 out of range with 1 nodes in plan",
+		},
+		"negative root node index": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           -1,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 5,
+						}),
+					},
+				},
+			},
+			expectedError: "root node index -1 out of range with 1 nodes in plan",
+		},
+		"child node index out of range": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           0,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: marshalDetails(&core.FunctionCallDetails{
+							FunctionName: "abs",
+						}),
+						Children: []int64{1},
+					},
+				},
+			},
+			expectedError: "node index 1 out of range with 1 nodes in plan",
+		},
+		"negative child node index": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           0,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: marshalDetails(&core.FunctionCallDetails{
+							FunctionName: "abs",
+						}),
+						Children: []int64{-1},
+					},
+				},
+			},
+			expectedError: "node index -1 out of range with 1 nodes in plan",
+		},
+		"too many children for node": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           0,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op: core.BINARY_ADD,
+						}),
+						Children: []int64{1, 2, 3},
+					},
+					{
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 5,
+						}),
+					},
+					{
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 5,
+						}),
+					},
+					{
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 5,
+						}),
+					},
+				},
+			},
+			expectedError: "node of type BinaryExpression expects 2 children, but got 3",
+		},
+		"not enough children for node": {
+			input: &planning.EncodedQueryPlan{
+				OriginalExpression: "foo",
+				RootNode:           0,
+				Nodes: []*planning.EncodedNode{
+					{
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op: core.BINARY_ADD,
+						}),
+						Children: []int64{1},
+					},
+					{
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value: 5,
+						}),
+					},
+				},
+			},
+			expectedError: "node of type BinaryExpression expects 2 children, but got 1",
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			output, err := testCase.input.ToDecodedPlan()
+			require.EqualError(t, err, testCase.expectedError)
+			require.Nil(t, output)
 		})
 	}
 }

@@ -69,7 +69,7 @@ func (a *AggregateExpression) SetChildren(children []planning.Node) error {
 	case 2:
 		a.Inner, a.Param = children[0], children[1]
 	default:
-		return fmt.Errorf("node of type AggregateExpression supports 1 or 2 children, but got %d", len(children))
+		return fmt.Errorf("node of type AggregateExpression expects 1 or 2 children, but got %d", len(children))
 	}
 
 	return nil

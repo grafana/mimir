@@ -90,7 +90,7 @@ func (b *BinaryExpression) Children() []planning.Node {
 
 func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	if len(children) != 2 {
-		return fmt.Errorf("node of type BinaryExpression supports 2 children, but got %d", len(children))
+		return fmt.Errorf("node of type BinaryExpression expects 2 children, but got %d", len(children))
 	}
 
 	b.LHS, b.RHS = children[0], children[1]
