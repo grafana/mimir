@@ -3,10 +3,12 @@
 package core
 
 import (
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"testing"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
-	"testing"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestFunctionCall_Describe(t *testing.T) {
