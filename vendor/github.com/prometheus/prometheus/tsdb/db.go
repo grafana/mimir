@@ -1281,12 +1281,20 @@ type dbAppender struct {
 }
 
 var _ storage.GetRef = dbAppender{}
+var _ storage.BatchSeriesReferencer = dbAppender{}
 
 func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
 	}
 	return 0, labels.EmptyLabels()
+}
+
+func (a dbAppender) BatchSeriesRefs(series []labels.Labels, buf []storage.SeriesWithRef) []storage.SeriesWithRef {
+	if r, ok := a.Appender.(storage.BatchSeriesReferencer); ok {
+		return r.BatchSeriesRefs(series, buf)
+	}
+	return unknownBatchSeriesRefs(series, buf)
 }
 
 func (a dbAppender) Commit() error {
