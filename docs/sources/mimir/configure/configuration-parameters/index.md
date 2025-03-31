@@ -777,6 +777,23 @@ cluster_validation:
     # Can be enabled only together with server.cluster-validation.grpc.enabled
     # CLI flag: -server.cluster-validation.grpc.soft-validation
     [soft_validation: <boolean> | default = false]
+
+  http:
+    # (experimental) When enabled, cluster label validation is executed:
+    # configured cluster validation label is compared with the cluster
+    # validation label received through the requests.
+    # CLI flag: -server.cluster-validation.http.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) When enabled, soft cluster label validation is executed.
+    # Can be enabled only together with server.cluster-validation.http.enabled
+    # CLI flag: -server.cluster-validation.http.soft-validation
+    [soft_validation: <boolean> | default = false]
+
+    # (experimental) Comma-separated list of url paths that are excluded from
+    # the cluster validation check.
+    # CLI flag: -server.cluster-validation.http.excluded-paths
+    [excluded_paths: <string> | default = ""]
 ```
 
 ### distributor
@@ -1842,6 +1859,11 @@ results_cache:
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -query-frontend.client-cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### query_scheduler
