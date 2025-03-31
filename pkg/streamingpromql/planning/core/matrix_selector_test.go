@@ -8,6 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
 func TestMatrixSelector_Describe(t *testing.T) {
@@ -79,6 +81,231 @@ func TestMatrixSelector_Describe(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			actual := testCase.node.Describe()
 			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestMatrixSelector_Equivalence(t *testing.T) {
+	testCases := map[string]struct {
+		a                planning.Node
+		b                planning.Node
+		expectEquivalent bool
+	}{
+		"identical": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: true,
+		},
+		"different expression position": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 3, End: 4},
+				},
+			},
+			expectEquivalent: true,
+		},
+		"different type": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b:                numberLiteralOf(12),
+			expectEquivalent: false,
+		},
+		"different range": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              2 * time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"different offset": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					Offset:             time.Hour,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"one with timestamp, one without": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					Timestamp:          &Timestamp{Timestamp: 123},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"both with different timestamps": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					Timestamp:          &Timestamp{Timestamp: 123},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					Timestamp:          &Timestamp{Timestamp: 456},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"selectors with different name": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name_2__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"selectors with different type": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"selectors with different value": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "bar"},
+					},
+					Range:              time.Minute,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+
+			require.True(t, testCase.a.EquivalentTo(testCase.a))
+			require.True(t, testCase.b.EquivalentTo(testCase.b))
 		})
 	}
 }
