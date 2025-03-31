@@ -110,7 +110,7 @@ func (s *Subquery) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *Subquery) Equals(other planning.Node) bool {
+func (s *Subquery) Equivalent(other planning.Node) bool {
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&

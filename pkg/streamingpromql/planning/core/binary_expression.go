@@ -98,13 +98,13 @@ func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (b *BinaryExpression) Equals(other planning.Node) bool {
+func (b *BinaryExpression) Equivalent(other planning.Node) bool {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 
 	return ok &&
 		b.Op == otherBinaryExpression.Op &&
-		b.LHS.Equals(otherBinaryExpression.LHS) &&
-		b.RHS.Equals(otherBinaryExpression.RHS) &&
+		b.LHS.Equivalent(otherBinaryExpression.LHS) &&
+		b.RHS.Equivalent(otherBinaryExpression.RHS) &&
 		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }

@@ -47,13 +47,14 @@ func (f *FunctionCall) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (f *FunctionCall) Equals(other planning.Node) bool {
+func (f *FunctionCall) Equivalent(other planning.Node) bool {
 	otherFunctionCall, ok := other.(*FunctionCall)
 
 	return ok &&
 		slices.EqualFunc(f.Args, otherFunctionCall.Args, func(a, b planning.Node) bool {
-			return a.Equals(b)
-		})
+			return a.Equivalent(b)
+		}) &&
+		slices.Equal(f.AbsentLabels, otherFunctionCall.AbsentLabels)
 }
 
 func (f *FunctionCall) ChildrenLabels() []string {

@@ -41,7 +41,7 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) Equals(other planning.Node) bool {
+func (m *MatrixSelector) Equivalent(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&

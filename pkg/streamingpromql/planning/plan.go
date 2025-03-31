@@ -46,11 +46,11 @@ type Node interface {
 	// Calling SetChildren(Children()) is a no-op.
 	SetChildren(children []Node) error
 
-	// Equals returns true if other represents the same operation as this node.
+	// Equivalent returns true if other represents the same operation as this node.
 	//
 	// Information such as the position of the corresponding expression in the original query string
 	// should be ignored.
-	Equals(other Node) bool
+	Equivalent(other Node) bool
 
 	// Describe returns a human-readable representation of this node.
 	//

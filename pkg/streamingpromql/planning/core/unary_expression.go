@@ -45,12 +45,12 @@ func (u *UnaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (u *UnaryExpression) Equals(other planning.Node) bool {
+func (u *UnaryExpression) Equivalent(other planning.Node) bool {
 	otherUnaryExpression, ok := other.(*UnaryExpression)
 
 	return ok &&
 		u.Op == otherUnaryExpression.Op &&
-		u.Inner.Equals(otherUnaryExpression.Inner)
+		u.Inner.Equivalent(otherUnaryExpression.Inner)
 }
 
 func (u *UnaryExpression) ChildrenLabels() []string {
