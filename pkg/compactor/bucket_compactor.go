@@ -445,7 +445,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			break
 		}
 
-		// no-op...
+		// instrument filesystem.Bucket to objstore.InstrumentedBucket
 		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
 		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 			blockToUpload := blocksToUpload[idx]
