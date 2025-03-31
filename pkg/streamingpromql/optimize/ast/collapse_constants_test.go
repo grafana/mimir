@@ -30,9 +30,10 @@ func TestCollapseConstants(t *testing.T) {
 		"sum(vector(2 + 3))":   "sum(vector(5))",
 		"topk(2 + 3, metric)":  "topk(5, metric)",
 
-		"foo * 2":   "foo * 2",
-		"2 * foo":   "2 * foo",
-		"bar * foo": "bar * foo",
+		"foo * 2":    "foo * 2",
+		"2 * foo":    "2 * foo",
+		"bar * foo":  "bar * foo",
+		"2 > bool 3": "2 > bool 3",
 
 		"metric":        "metric",
 		"(metric)":      "(metric)",

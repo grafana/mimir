@@ -29,7 +29,7 @@ func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr) (pars
 			slices.SortFunc(expr.LabelMatchers, compareMatchers)
 
 		case *parser.MatrixSelector:
-			// Note that MatrixSelector sort their matchers when pretty printing, so this change may not be visible when printing as PromQL.
+			// Note that MatrixSelectors sort their matchers when pretty printing, so this change may not be visible when printing as PromQL.
 			slices.SortFunc(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers, compareMatchers)
 
 		case *parser.BinaryExpr:
