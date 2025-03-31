@@ -35,7 +35,7 @@ func describeSelector(matchers []*LabelMatcher, ts *Timestamp, offset time.Durat
 		builder.WriteString(" @ ")
 		builder.WriteString(strconv.FormatInt(ts.Timestamp, 10))
 		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(ts.Timestamp).Format(time.RFC3339))
+		builder.WriteString(timestamp.Time(ts.Timestamp).Format(time.RFC3339Nano))
 		builder.WriteRune(')')
 	}
 
