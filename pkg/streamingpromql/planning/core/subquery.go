@@ -34,7 +34,7 @@ func (s *Subquery) Describe() string {
 		builder.WriteString(" @ ")
 		builder.WriteString(strconv.FormatInt(s.Timestamp.Timestamp, 10))
 		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(s.Timestamp.Timestamp).Format(time.RFC3339))
+		builder.WriteString(timestamp.Time(s.Timestamp.Timestamp).Format(time.RFC3339Nano))
 		builder.WriteRune(')')
 	}
 
