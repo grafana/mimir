@@ -2612,7 +2612,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs),
-		kgo.WithLogger(NewKafkaLogger(mimirtest.NewTestingLogger(t))),
+		kgo.WithLogger(NewKafkaLogger(testingLogger.WithT(t))),
 		// We will choose the partition of each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)
