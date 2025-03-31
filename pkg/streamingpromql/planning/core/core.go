@@ -44,5 +44,3 @@ func init() {
 // So the rule is:
 // - if it's a reference to a Node instance, it needs to be declared here
 // - if it's anything else, it can go in the Protobuf message definition
-
-// TODO: tests for equality edge cases

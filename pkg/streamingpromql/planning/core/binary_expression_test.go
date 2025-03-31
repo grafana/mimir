@@ -7,6 +7,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
 func TestBinaryExpression_Describe(t *testing.T) {
@@ -157,6 +159,293 @@ func TestBinaryExpression_Describe(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			actual := testCase.node.Describe()
 			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestBinaryExpression_Equivalence(t *testing.T) {
+	testCases := map[string]struct {
+		a                planning.Node
+		b                planning.Node
+		expectEquivalent bool
+	}{
+		"identical, without vector matching": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: true,
+		},
+		"identical, has vector matching": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					VectorMatching:     &VectorMatching{},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					VectorMatching:     &VectorMatching{},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: true,
+		},
+		"different expression position": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 3, End: 4},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: true,
+		},
+		"different operation": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_SUB,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"different type": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b:                numberLiteralOf(12),
+			expectEquivalent: false,
+		},
+		"different left-hand side": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(13),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"different right-hand side": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(13),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"one with 'bool', one without": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ReturnBool:         true,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"one with vector matching, one without": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op:                 BINARY_ADD,
+					VectorMatching:     &VectorMatching{},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"different cardinality": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						Card: parser.CardManyToOne,
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						Card: parser.CardManyToMany,
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"different matching labels": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						MatchingLabels: []string{"foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						MatchingLabels: []string{"bar"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"one with 'on', one with 'ignoring'": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On: true,
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						On: false,
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+		"different included labels": {
+			a: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						Include: []string{"foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			b: &BinaryExpression{
+				BinaryExpressionDetails: &BinaryExpressionDetails{
+					Op: BINARY_ADD,
+					VectorMatching: &VectorMatching{
+						Include: []string{"bar"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				LHS: numberLiteralOf(12),
+				RHS: numberLiteralOf(14),
+			},
+			expectEquivalent: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+
+			require.True(t, testCase.a.EquivalentTo(testCase.a))
+			require.True(t, testCase.b.EquivalentTo(testCase.b))
 		})
 	}
 }
