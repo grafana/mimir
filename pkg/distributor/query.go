@@ -329,6 +329,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
 	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
+	streamReaderCount := 0
 
 	for _, res := range results {
 		// Accumulate any chunk series
@@ -365,6 +366,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Start buffering chunks for streaming series
 		if res.streamingSeries.StreamReader != nil {
 			res.streamingSeries.StreamReader.StartBuffering()
+			streamReaderCount++
 		}
 	}
 
@@ -373,12 +375,18 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
+		StreamReaders:   make([]*ingester_client.SeriesChunksStreamReader, 0, streamReaderCount),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
 	}
 	for _, series := range hashToTimeSeries {
 		resp.Timeseries = append(resp.Timeseries, series)
+	}
+	for _, res := range results {
+		if res.streamingSeries.StreamReader != nil {
+			resp.StreamReaders = append(resp.StreamReaders, res.streamingSeries.StreamReader)
+		}
 	}
 
 	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
