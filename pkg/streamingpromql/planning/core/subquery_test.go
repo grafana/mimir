@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
 func TestSubquery_Describe(t *testing.T) {
@@ -60,6 +62,193 @@ func TestSubquery_Describe(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			actual := testCase.node.Describe()
 			require.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestSubquery_Equivalence(t *testing.T) {
+	testCases := map[string]struct {
+		a                planning.Node
+		b                planning.Node
+		expectEquivalent bool
+	}{
+		"identical": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: true,
+		},
+		"different expression position": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 3, End: 4},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: true,
+		},
+		"different type": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b:                numberLiteralOf(12),
+			expectEquivalent: false,
+		},
+		"different inner node": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(13),
+			},
+			expectEquivalent: false,
+		},
+		"different range": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              2 * time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: false,
+		},
+		"different step": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               10 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: false,
+		},
+		"different offset": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					Offset:             time.Hour,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: false,
+		},
+		"one with timestamp, one without": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					Timestamp:          &Timestamp{Timestamp: 123},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: false,
+		},
+		"both with different timestamps": {
+			a: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					Timestamp:          &Timestamp{Timestamp: 123},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			b: &Subquery{
+				SubqueryDetails: &SubqueryDetails{
+					Range:              time.Minute,
+					Step:               20 * time.Second,
+					Timestamp:          &Timestamp{Timestamp: 456},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+				Inner: numberLiteralOf(12),
+			},
+			expectEquivalent: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expectEquivalent, testCase.a.EquivalentTo(testCase.b))
+			require.Equal(t, testCase.expectEquivalent, testCase.b.EquivalentTo(testCase.a))
+
+			require.True(t, testCase.a.EquivalentTo(testCase.a))
+			require.True(t, testCase.b.EquivalentTo(testCase.b))
 		})
 	}
 }

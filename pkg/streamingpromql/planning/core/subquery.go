@@ -117,7 +117,8 @@ func (s *Subquery) EquivalentTo(other planning.Node) bool {
 		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Timestamp == otherSubquery.Timestamp.Timestamp)) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
-		s.Step == otherSubquery.Step
+		s.Step == otherSubquery.Step &&
+		s.Inner.EquivalentTo(otherSubquery.Inner)
 }
 
 func (s *Subquery) ChildrenLabels() []string {
