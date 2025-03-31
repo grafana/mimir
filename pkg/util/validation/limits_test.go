@@ -267,6 +267,38 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	}
 }
 
+func TestLargestPositiveNonZeroDurationPerTenant(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxPartialQueryLength: model.Duration(time.Hour),
+		},
+		"tenant-b": {
+			MaxPartialQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+
+	defaults := Limits{
+		MaxPartialQueryLength: 0,
+	}
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b", "tenant-c"}, expLimit: 4 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, LargestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
+	}
+}
+
 func TestMinDurationPerTenant(t *testing.T) {
 	defaults := Limits{ResultsCacheTTLForCardinalityQuery: 0}
 	tenantLimits := map[string]*Limits{
