@@ -122,7 +122,7 @@ func TestSubquery_Equivalence(t *testing.T) {
 			b:                numberLiteralOf(12),
 			expectEquivalent: false,
 		},
-		"different inner node": {
+		"different child node": {
 			a: &Subquery{
 				SubqueryDetails: &SubqueryDetails{
 					Range:              time.Minute,

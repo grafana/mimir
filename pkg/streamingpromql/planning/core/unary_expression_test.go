@@ -78,7 +78,7 @@ func TestUnaryExpression_Equivalence(t *testing.T) {
 			b:                numberLiteralOf(12),
 			expectEquivalent: false,
 		},
-		"different inner node": {
+		"different child node": {
 			a: &UnaryExpression{
 				UnaryExpressionDetails: &UnaryExpressionDetails{
 					Op:                 UNARY_SUB,
