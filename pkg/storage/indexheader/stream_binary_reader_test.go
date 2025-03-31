@@ -82,11 +82,12 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 				tmpDir := t.TempDir()
 				ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 				require.NoError(t, err)
+				bkt := objstore.WithNoopInstr(ubkt)
+
 				t.Cleanup(func() {
 					require.NoError(t, bkt.Close())
 					require.NoError(t, ubkt.Close())
 				})
-				bkt := objstore.WithNoopInstr(ubkt)
 
 				blockID, err := block.CreateBlock(ctx, tmpDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
 				require.NoError(t, err)
