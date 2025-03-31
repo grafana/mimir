@@ -1340,17 +1340,13 @@ func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string)
 // many limits a value of 0 means unlimited so the method will return 0 only if
 // all inputs have a limit of 0 or an empty tenant list is given.
 func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
-	var result *time.Duration
+	result := time.Duration(0)
 	for _, tenantID := range tenantIDs {
-		v := f(tenantID)
-		if v > 0 && (result == nil || v > *result) {
-			result = &v
+		if v := f(tenantID); v > result {
+			result = v
 		}
 	}
-	if result == nil {
-		return 0
-	}
-	return *result
+	return result
 }
 
 // MinDurationPerTenant is returning the minimum duration per tenant. Without
