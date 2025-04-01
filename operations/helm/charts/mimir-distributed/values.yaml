@@ -2513,7 +2513,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.15.1
+    tag: v0.15.2
     pullPolicy: IfNotPresent
 
   resources:

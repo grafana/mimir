@@ -2289,6 +2289,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
+  -query-frontend.client-cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
@@ -3171,6 +3173,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
   -server.cluster-validation.grpc.soft-validation
     	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.grpc.enabled
+  -server.cluster-validation.http.enabled
+    	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
+  -server.cluster-validation.http.excluded-paths comma-separated-list-of-strings
+    	[experimental] Comma-separated list of url paths that are excluded from the cluster validation check.
+  -server.cluster-validation.http.soft-validation
+    	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled
   -server.cluster-validation.label string
     	[experimental] Optionally define the cluster validation label.
   -server.graceful-shutdown-timeout duration

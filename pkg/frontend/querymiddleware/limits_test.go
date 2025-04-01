@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -277,6 +279,100 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 				assert.InDelta(t, util.TimeToMillis(testData.expectedTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart(), delta)
 				assert.InDelta(t, util.TimeToMillis(testData.expectedTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
 			}
+		})
+	}
+}
+
+func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
+	const (
+		day        = 24 * time.Hour
+		tenDays    = 10 * 24 * time.Hour
+		twentyDays = 20 * 24 * time.Hour
+		thirtyDays = 30 * 24 * time.Hour
+		fortyDays  = 40 * 24 * time.Hour
+	)
+
+	defaults := validation.Limits{
+		MaxQueryLookback:               0,
+		CompactorBlocksRetentionPeriod: 0,
+	}
+
+	tenantLimits := map[string]*validation.Limits{
+		// tenant-a has no overrides
+
+		// Tenants with no blocks retention period configured.
+		"tenant-b": {MaxQueryLookback: model.Duration(tenDays), CompactorBlocksRetentionPeriod: 0},
+		"tenant-c": {MaxQueryLookback: model.Duration(twentyDays), CompactorBlocksRetentionPeriod: 0},
+
+		// Tenants with no max query lookback configured.
+		"tenant-d": {MaxQueryLookback: 0, CompactorBlocksRetentionPeriod: model.Duration(thirtyDays)},
+		"tenant-e": {MaxQueryLookback: 0, CompactorBlocksRetentionPeriod: model.Duration(fortyDays)},
+
+		// Tenants with both max query lookback and blocks retention period configured.
+		"tenant-f": {MaxQueryLookback: model.Duration(tenDays), CompactorBlocksRetentionPeriod: model.Duration(thirtyDays)},
+		"tenant-g": {MaxQueryLookback: model.Duration(twentyDays), CompactorBlocksRetentionPeriod: model.Duration(fortyDays)},
+	}
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		reqTenants        []string
+		reqStartTime      time.Time
+		reqEndTime        time.Time
+		expectedStartTime time.Time
+		expectedEndTime   time.Time
+	}{
+		"should enforce the smallest 'max query lookback' to not allow any tenant to query past their configured max lookback": {
+			reqTenants:        []string{"tenant-a", "tenant-b", "tenant-c"},
+			reqStartTime:      now.Add(-365 * day),
+			reqEndTime:        now,
+			expectedStartTime: now.Add(-tenDays),
+			expectedEndTime:   now,
+		},
+		"should enforce the largest 'block retention period' to allow any tenant to query up their full retention period": {
+			reqTenants:        []string{"tenant-a", "tenant-d", "tenant-e"},
+			reqStartTime:      now.Add(-365 * day),
+			reqEndTime:        now,
+			expectedStartTime: now.Add(-fortyDays),
+			expectedEndTime:   now,
+		},
+		"should enforce the smallest between the 'smallest max query lookback' and 'largest block retention period'": {
+			reqTenants:        []string{"tenant-a", "tenant-f", "tenant-g"},
+			reqStartTime:      now.Add(-365 * day),
+			reqEndTime:        now,
+			expectedStartTime: now.Add(-tenDays),
+			expectedEndTime:   now,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits, err := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
+			require.NoError(t, err)
+
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+			innerRes := newEmptyPrometheusResponse()
+			inner := &mockHandler{}
+			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+			ctx := user.InjectOrgID(context.Background(), tenant.JoinTenantIDs(testData.reqTenants))
+			outer := middleware.Wrap(inner)
+
+			req := &PrometheusRangeQueryRequest{
+				start: util.TimeToMillis(testData.reqStartTime),
+				end:   util.TimeToMillis(testData.reqEndTime),
+			}
+
+			_, err = outer.Do(ctx, req)
+			require.NoError(t, err)
+
+			// Assert on the time range of the request passed to the inner handler (5s delta).
+			delta := float64(5000)
+			require.Len(t, inner.Calls, 1)
+
+			assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart(), delta)
+			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
 		})
 	}
 }

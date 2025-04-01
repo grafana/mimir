@@ -612,7 +612,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250310104713-16b885f1c79e
+# github.com/grafana/alerting v0.0.0-20250325165008-58ba6c617ff0
 ## explicit; go 1.22
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -649,7 +649,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20250327164020-60d867ec8153
+# github.com/grafana/dskit v0.0.0-20250331145333-b4cab947037e
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -848,8 +848,8 @@ github.com/klauspost/compress/s2
 github.com/klauspost/compress/zlib
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/klauspost/cpuid/v2 v2.2.9
-## explicit; go 1.20
+# github.com/klauspost/cpuid/v2 v2.2.10
+## explicit; go 1.22
 github.com/klauspost/cpuid/v2
 # github.com/knadh/koanf/maps v0.1.1
 ## explicit; go 1.18
@@ -896,8 +896,8 @@ github.com/minio/crc64nvme
 # github.com/minio/md5-simd v1.1.2
 ## explicit; go 1.14
 github.com/minio/md5-simd
-# github.com/minio/minio-go/v7 v7.0.88
-## explicit; go 1.22
+# github.com/minio/minio-go/v7 v7.0.89
+## explicit; go 1.23.0
 github.com/minio/minio-go/v7
 github.com/minio/minio-go/v7/pkg/cors
 github.com/minio/minio-go/v7/pkg/credentials
@@ -1091,7 +1091,7 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.14.0
 ## explicit; go 1.22
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/otlptranslator v0.0.0-20250320144820-d800c8b0eb07
+# github.com/prometheus/otlptranslator v0.0.0-20250327120010-71240eaf1a23
 ## explicit; go 1.23.0
 github.com/prometheus/otlptranslator
 # github.com/prometheus/procfs v0.15.1
@@ -1265,7 +1265,7 @@ github.com/twmb/franz-go/pkg/sasl/plain
 # github.com/twmb/franz-go/pkg/kadm v1.14.0
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250320172111-35ab5e5f5327
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250328061601-0a757d1a4731
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.9.0
@@ -1604,7 +1604,7 @@ google.golang.org/genproto/googleapis/type/expr
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/httpbody
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463
 ## explicit; go 1.23.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
@@ -1679,8 +1679,8 @@ google.golang.org/grpc/stats
 google.golang.org/grpc/status
 google.golang.org/grpc/tap
 google.golang.org/grpc/test/bufconn
-# google.golang.org/protobuf v1.36.5
-## explicit; go 1.21
+# google.golang.org/protobuf v1.36.6
+## explicit; go 1.22
 google.golang.org/protobuf/encoding/protodelim
 google.golang.org/protobuf/encoding/protojson
 google.golang.org/protobuf/encoding/prototext
