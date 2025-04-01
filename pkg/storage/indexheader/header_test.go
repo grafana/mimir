@@ -211,6 +211,11 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			bkt := objstore.WithNoopInstr(ubkt)
 
+			defer func() {
+				require.NoError(t, ubkt.Close())
+				require.NoError(t, bkt.Close())
+			}()
+
 			ctx := context.Background()
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 

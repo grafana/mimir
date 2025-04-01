@@ -1053,6 +1053,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 	bkt := objstore.WithNoopInstr(ubkt)
 
 	tb.Cleanup(func() {
+		assert.NoError(tb, ubkt.Close())
 		assert.NoError(tb, bkt.Close())
 	})
 
@@ -1736,9 +1737,12 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, ubkt.Close()) }()
-
 	bkt := objstore.WithNoopInstr(ubkt)
+
+	defer func() {
+		assert.NoError(t, ubkt.Close())
+		assert.NoError(t, bkt.Close())
+	}()
 
 	logger := log.NewNopLogger()
 	thanosMeta := block.ThanosMeta{

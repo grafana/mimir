@@ -152,6 +152,7 @@ func prepareReaderPool(t *testing.T) (context.Context, string, objstore.Instrume
 
 	require.NoError(t, err)
 	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
 		require.NoError(t, bkt.Close())
 	})
 

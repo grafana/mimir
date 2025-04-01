@@ -43,7 +43,10 @@ func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) 
 	bkt := objstore.WithNoopInstr(ubkt)
 
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, _ *LazyBinaryReader, err error) {
 		require.Error(t, err)
@@ -186,7 +189,10 @@ func initBucketAndBlocksForTest(t testing.TB) (string, objstore.InstrumentedBuck
 	bkt := objstore.WithNoopInstr(ubkt)
 
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	// Create block.
 	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
