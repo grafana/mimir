@@ -284,6 +284,22 @@ type Appender interface {
 	CreatedTimestampAppender
 }
 
+type SeriesWithRef struct {
+	Labels labels.Labels
+	Ref    SeriesRef
+}
+
+type BatchSeriesReferencer interface {
+	// BatchSeriesRefs will attempt to, for each one of the series provided:
+	// - If it does not exist, clone the labels and create a new series, returning the reference and the cloned labels.
+	// - If it does exist, return the reference and the labels stored in the TSDB.
+	// The result will contain the references and labels for each series in the same order as the input.
+	// If the reference is 0, it means that series was not created,
+	// this could happen because the input was not valid (e.g. empty labels),
+	// or because the implementation does not support this feature (for example, initAppender when head is not initialized yet).
+	BatchSeriesRefs(series []labels.Labels, buf []SeriesWithRef) []SeriesWithRef
+}
+
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
