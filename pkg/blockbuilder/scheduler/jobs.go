@@ -51,11 +51,10 @@ func (s *jobQueue[T]) assign(workerID string) (jobKey, T, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.unassigned.Len() == 0 {
+	next := s.unassigned.Front()
+	if next == nil {
 		return jobKey{}, empty, errNoJobAvailable
 	}
-
-	next := s.unassigned.Front()
 	j := s.unassigned.Remove(next).(*job[T])
 
 	j.key.epoch = s.epoch
