@@ -1739,10 +1739,10 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	assert.NoError(t, err)
 	bkt := objstore.WithNoopInstr(ubkt)
 
-	defer func() {
-		assert.NoError(t, ubkt.Close())
-		assert.NoError(t, bkt.Close())
-	}()
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	logger := log.NewNopLogger()
 	thanosMeta := block.ThanosMeta{
