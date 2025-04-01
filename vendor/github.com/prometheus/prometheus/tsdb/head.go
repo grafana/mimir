@@ -1840,7 +1840,7 @@ func (h *Head) getOrCreateBatch(batch []getOrCreateSeries) {
 		}
 		if created {
 			createdEntries = append(createdEntries, storage.SeriesWithRef{
-				Labels: b.lset,
+				Labels: s.lset,
 				Ref:    storage.SeriesRef(s.ref),
 			})
 		}

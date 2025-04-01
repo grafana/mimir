@@ -39,8 +39,10 @@ type initAppender struct {
 	head *Head
 }
 
-var _ storage.GetRef = &initAppender{}
-var _ storage.BatchSeriesReferencer = &initAppender{}
+var (
+	_ storage.GetRef                = &initAppender{}
+	_ storage.BatchSeriesReferencer = &initAppender{}
+)
 
 func (a *initAppender) SetOptions(opts *storage.AppendOptions) {
 	if a.app != nil {
