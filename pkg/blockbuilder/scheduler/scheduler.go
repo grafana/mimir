@@ -584,15 +584,28 @@ func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.As
 // assignJob returns an assigned job for the given workerID, if one is available.
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.JobSpec, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	doneObserving := s.observationComplete
-	s.mu.Unlock()
 
 	if !doneObserving {
 		var empty schedulerpb.JobSpec
 		return jobKey{}, empty, status.Error(codes.FailedPrecondition, "observation period not complete")
 	}
 
-	return s.jobs.assign(workerID)
+	for {
+		k, spec, err := s.jobs.assign(workerID)
+		if err != nil {
+			return k, spec, err
+		}
+
+		off, ok := s.committed.Lookup(spec.Topic, spec.Partition)
+		if !ok || spec.StartOffset >= off.At {
+			return k, spec, nil
+		}
+
+		// Job is before the committed offset. Remove it.
+		s.jobs.removeJob(k)
+	}
 }
 
 // UpdateJob takes a job update from the client and records it, if necessary.

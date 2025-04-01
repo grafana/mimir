@@ -235,6 +235,33 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 	}
 }
 
+// removeJob removes a job from both the jobs map and unassigned list.
+func (s *jobQueue[T]) removeJob(key jobKey) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	j, ok := s.jobs[key.id]
+	if !ok {
+		return
+	}
+
+	// Remove from jobs map
+	delete(s.jobs, key.id)
+
+	// If the job is in the unassigned list, remove it
+	if j.assignee == "" {
+		// Find and remove the job from the unassigned list
+		for e := s.unassigned.Front(); e != nil; e = e.Next() {
+			if e.Value.(*job[T]).key.id == key.id {
+				s.unassigned.Remove(e)
+				break
+			}
+		}
+	}
+
+	level.Debug(s.logger).Log("msg", "removed job", "job_id", key.id, "epoch", key.epoch)
+}
+
 type job[T any] struct {
 	key jobKey
 
