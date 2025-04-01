@@ -308,7 +308,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", off.topic, "partition", off.partition, "start", off.start, "end", off.end, "boundary", boundary)
 
 		pj, err := computePartitionJobs(ctx, of, off.topic, off.partition,
-			off.start, off.end, boundary, s.cfg.JobSize, minScanTime)
+			off.start, off.end, boundary, s.cfg.JobSize, minScanTime, s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue
@@ -389,7 +389,7 @@ var _ offsetStore = (*offsetFinder)(nil)
 // computePartitionJobs returns the ranges of offsets that should be consumed
 // for the given topic and partition.
 func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
-	committed int64, partEnd int64, boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time) ([]*schedulerpb.JobSpec, error) {
+	committed int64, partEnd int64, boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*schedulerpb.JobSpec, error) {
 
 	if committed >= partEnd {
 		// No new data to consume.

@@ -672,7 +672,7 @@ func TestConsumptionRanges(t *testing.T) {
 			println(name)
 
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.partEnd}
-			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.boundary, tt.jobSize, tt.minScanTime)
+			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.boundary, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 
 			// Convert offsetRange to JobSpec.
