@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
+	"github.com/grafana/dskit/server"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -79,11 +80,26 @@ func (c *storeGatewayClient) RemoteAddress() string {
 	return c.conn.Target()
 }
 
-func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
+func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, serverCfg server.Config, logger log.Logger, reg prometheus.Registerer) *client.Pool {
+	const (
+		defaultMaxRecvMsgSize = 100 << 20
+		defaultMaxSendMsgSize = 16 << 20
+	)
+
+	maxRecvSize := defaultMaxRecvMsgSize
+	if serverCfg.GRPCServerMaxRecvMsgSize > 0 {
+		maxRecvSize = serverCfg.GRPCServerMaxRecvMsgSize
+	}
+
+	maxSendSize := defaultMaxSendMsgSize
+	if serverCfg.GRPCServerMaxSendMsgSize > 0 {
+		maxSendSize = serverCfg.GRPCServerMaxSendMsgSize
+	}
+
 	// We prefer sane defaults instead of exposing further config options.
 	clientCfg := grpcclient.Config{
-		MaxRecvMsgSize:      100 << 20,
-		MaxSendMsgSize:      16 << 20,
+		MaxRecvMsgSize:      maxRecvSize,
+		MaxSendMsgSize:      maxSendSize,
 		GRPCCompression:     "",
 		RateLimit:           0,
 		RateLimitBurst:      0,
