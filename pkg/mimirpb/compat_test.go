@@ -879,6 +879,109 @@ func TestMetricMetadataConversion(t *testing.T) {
 	}
 }
 
+func TestExemplarConversion(t *testing.T) {
+	symbols := writev2.NewSymbolTable()
+	// Pre-populate symbols table with some common values
+	symbols.Symbolize("trace_id")
+	symbols.Symbolize("abc123")
+	symbols.Symbolize("span_id")
+	symbols.Symbolize("def456")
+
+	tests := []struct {
+		name string
+		v1   []Exemplar
+		v2   []ExemplarV2
+	}{
+		{
+			name: "empty exemplars",
+			v1:   []Exemplar{},
+			v2:   []ExemplarV2{},
+		},
+		{
+			name: "single exemplar with trace and span",
+			v1: []Exemplar{
+				{
+					Labels: []LabelAdapter{
+						{Name: "trace_id", Value: "abc123"},
+						{Name: "span_id", Value: "def456"},
+					},
+					Value:       42.5,
+					TimestampMs: 1234567890,
+				},
+			},
+			v2: []ExemplarV2{
+				{
+					LabelsRefs:  []uint32{1, 2, 3, 4}, // References to "trace_id", "abc123", "span_id", "def456"
+					Value:       42.5,
+					TimestampMs: 1234567890,
+				},
+			},
+		},
+		{
+			name: "multiple exemplars",
+			v1: []Exemplar{
+				{
+					Labels: []LabelAdapter{
+						{Name: "trace_id", Value: "abc123"},
+					},
+					Value:       42.5,
+					TimestampMs: 1234567890,
+				},
+				{
+					Labels: []LabelAdapter{
+						{Name: "span_id", Value: "def456"},
+					},
+					Value:       43.5,
+					TimestampMs: 1234567891,
+				},
+			},
+			v2: []ExemplarV2{
+				{
+					LabelsRefs:  []uint32{1, 2}, // References to "trace_id", "abc123"
+					Value:       42.5,
+					TimestampMs: 1234567890,
+				},
+				{
+					LabelsRefs:  []uint32{3, 4}, // References to "span_id", "def456"
+					Value:       43.5,
+					TimestampMs: 1234567891,
+				},
+			},
+		},
+		{
+			name: "exemplar with zero value and timestamp",
+			v1: []Exemplar{
+				{
+					Labels: []LabelAdapter{
+						{Name: "trace_id", Value: "abc123"},
+					},
+					Value:       0,
+					TimestampMs: 0,
+				},
+			},
+			v2: []ExemplarV2{
+				{
+					LabelsRefs:  []uint32{1, 2}, // References to "trace_id", "abc123"
+					Value:       0,
+					TimestampMs: 0,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test V1 -> V2 conversion
+			gotV2 := FromExemplarsToExemplarsV2(tt.v1, &symbols)
+			require.Equal(t, tt.v2, gotV2)
+
+			// Test V2 -> V1 conversion
+			gotV1 := FromExemplarsV2ToExemplars(tt.v2, symbols.Symbols())
+			require.Equal(t, tt.v1, gotV1)
+		})
+	}
+}
+
 func TestV1MarshallsToEmptyV2(t *testing.T) {
 	req := &WriteRequest{
 		Source:              RULE,
@@ -924,7 +1027,7 @@ func TestV2MarshallsToEmptyV1(t *testing.T) {
 			{
 				LabelsRefs: []uint32{0, 1, 2, 3},
 				Samples:    []Sample{{TimestampMs: 20}},
-				Exemplars:  []Exemplar{{TimestampMs: 30}},
+				Exemplars:  []ExemplarV2{{TimestampMs: 30}},
 				Histograms: []Histogram{{Timestamp: 10}},
 			},
 			{
@@ -994,7 +1097,7 @@ func TestDetectV2Timeseries(t *testing.T) {
 				{
 					LabelsRefs: []uint32{0, 1, 2, 3},
 					Samples:    []Sample{{TimestampMs: 20}},
-					Exemplars:  []Exemplar{{TimestampMs: 30}},
+					Exemplars:  []ExemplarV2{{TimestampMs: 30}},
 					Histograms: []Histogram{{Timestamp: 10}},
 				},
 				{

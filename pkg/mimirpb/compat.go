@@ -691,11 +691,13 @@ func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
 		buf := make([]uint32, len(ts.Labels)*2)
 		labelRefs := symbols.SymbolizeLabels(FromLabelAdaptersToLabels(ts.Labels), buf)
 
+		exemplars := FromExemplarsToExemplarsV2(ts.Exemplars, &symbols)
+
 		timeseries = append(timeseries, TimeSeriesV2{
 			LabelsRefs:       labelRefs,
 			Samples:          ts.Samples,
 			Histograms:       ts.Histograms,
-			Exemplars:        ts.Exemplars,
+			Exemplars:        exemplars,
 			CreatedTimestamp: 0, // This field is not present in V1, defaulting to 0
 		})
 	}
@@ -741,11 +743,13 @@ func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 			refs[i*2+1] = symbols.Symbolize(ts.Labels[i].Value)
 		}
 
+		exemplars := FromExemplarsToExemplarsV2(ts.Exemplars, &symbols)
+
 		timeseries = append(timeseries, TimeSeriesV2{
 			LabelsRefs:       refs,
 			Samples:          ts.Samples,
 			Histograms:       ts.Histograms,
-			Exemplars:        ts.Exemplars,
+			Exemplars:        exemplars,
 			CreatedTimestamp: 0, // This field is not present in V1, defaulting to 0
 		})
 	}
@@ -806,12 +810,14 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 			mtd.MetricFamilyName = metricName
 		}
 
+		exemplars := FromExemplarsV2ToExemplars(ts.Exemplars, symbols)
+
 		tsv1 := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
 				Labels:     adps,
 				Samples:    ts.Samples,
 				Histograms: ts.Histograms,
-				Exemplars:  ts.Exemplars,
+				Exemplars:  exemplars,
 			},
 		}
 		timeseries = append(timeseries, tsv1)
@@ -827,6 +833,39 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 		SkipLabelValidation:      req.SkipLabelValidation,
 		SkipLabelCountValidation: req.SkipLabelCountValidation,
 	}
+}
+
+func FromExemplarsToExemplarsV2(exemplars []Exemplar, symbols *writev2.SymbolsTable) []ExemplarV2 {
+	result := make([]ExemplarV2, 0, len(exemplars))
+	for _, ex := range exemplars {
+		refs := make([]uint32, len(ex.Labels)*2)
+		for i := range ex.Labels {
+			refs[i*2] = symbols.Symbolize(ex.Labels[i].Name)
+			refs[i*2+1] = symbols.Symbolize(ex.Labels[i].Value)
+		}
+
+		exv2 := ExemplarV2{
+			LabelsRefs:  refs,
+			Value:       ex.Value,
+			TimestampMs: ex.TimestampMs,
+		}
+		result = append(result, exv2)
+	}
+	return result
+}
+
+func FromExemplarsV2ToExemplars(exemplars []ExemplarV2, symbols []string) []Exemplar {
+	result := make([]Exemplar, 0, len(exemplars))
+	for _, ex := range exemplars {
+		lbls, _ := desymbolizeLabelsDirect(ex.LabelsRefs, symbols)
+		exv1 := Exemplar{
+			Labels:      lbls,
+			Value:       ex.Value,
+			TimestampMs: ex.TimestampMs,
+		}
+		result = append(result, exv1)
+	}
+	return result
 }
 
 func FromMetricMetadataToMetricMetadataV2(metadata *MetricMetadata, symbols *writev2.SymbolsTable) MetricMetadataV2 {

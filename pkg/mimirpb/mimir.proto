@@ -91,10 +91,11 @@ message TimeSeriesV2 {
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
 
   // TODO: Deviating a bit for these two, faster testing and using the V1 equivalents.
-  // Histograms is _nearly_ compatible with v1. Not enough to skew results.
+  // Histograms is _nearly_ compatible with v1.
+  // It's missing a new field added in V2 (custom_values) but is a subset otherwise.
   repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
-  // TODO: Exemplars has a labelset that can be turned to ref's. V2 me.
-  repeated Exemplar exemplars = 4 [(gogoproto.nullable) = false];
+
+  repeated ExemplarV2 exemplars = 4 [(gogoproto.nullable) = false];
 
   MetricMetadataV2 metadata = 5 [(gogoproto.nullable) = false];
   int64 created_timestamp = 6;
@@ -158,6 +159,12 @@ message Metric {
 message Exemplar {
   // Exemplar labels, different than series labels
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  double value = 2;
+  int64 timestamp_ms = 3;
+}
+
+message ExemplarV2 {
+  repeated uint32 labels_refs = 1 [(gogoproto.nullable) = false];
   double value = 2;
   int64 timestamp_ms = 3;
 }
