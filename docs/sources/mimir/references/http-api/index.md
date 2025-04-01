@@ -742,7 +742,7 @@ The query-frontend can return a stale response fetched from the query results ca
 
 - **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
 - **count_method** - _optional_ - specifies which series counting method will be used. (default="inmemory", available options=["inmemory", "active"])
-- **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
+- **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0)
 
 #### Response schema
 

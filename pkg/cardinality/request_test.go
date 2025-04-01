@@ -34,20 +34,6 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 		}
 	)
 
-	t.Run("errors if limit parameter is greater than 500", func(t *testing.T) {
-		t.Parallel()
-		p := url.Values{
-			"selector": []string{`{fruit="mango"}`},
-			"limit":    []string{"501"},
-		}
-		req, err := http.NewRequest("GET", "http://localhost?"+p.Encode(), nil)
-		require.NoError(t, err)
-
-		actual, err := DecodeLabelNamesRequest(req)
-		assert.EqualError(t, err, "'limit' param cannot be greater than '500'")
-		assert.Nil(t, actual)
-	})
-
 	t.Run("DecodeLabelNamesRequest() with GET request", func(t *testing.T) {
 		t.Parallel()
 		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
