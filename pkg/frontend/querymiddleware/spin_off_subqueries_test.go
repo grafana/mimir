@@ -376,3 +376,78 @@ cortex_frontend_subquery_spinoff_successes_total %d
 		})
 	}
 }
+
+func BenchmarkSpinOffSubqueriesMiddleware_IsEnabled(b *testing.B) {
+	// Create various test patterns
+	patterns := []struct {
+		name     string
+		patterns []string
+	}{
+		{
+			name:     "no patterns",
+			patterns: []string{},
+		},
+		{
+			name:     "match all",
+			patterns: []string{".*"},
+		},
+		{
+			name:     "simple pattern",
+			patterns: []string{"rate.*"},
+		},
+		{
+			name:     "multiple patterns",
+			patterns: []string{".*nomatch.*", "sum(notmatch)", ".*rate(.+).*"},
+		},
+	}
+
+	// Create various test queries
+	queries := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "simple rate",
+			query: `rate(http_requests_total[5m])`,
+		},
+		{
+			name:  "simple sum",
+			query: `sum(rate(http_requests_total[5m]))`,
+		},
+		{
+			name:  "complex query",
+			query: `sum(rate(http_requests_total[5m])) by (status) / sum(rate(http_requests_total[5m]))`,
+		},
+	}
+
+	// Create a mock request that implements MetricsQueryRequest
+	mockReq := &PrometheusInstantQueryRequest{
+		path: "/api/v1/query",
+	}
+
+	// Create context with tenant
+	ctx := context.Background()
+	ctx = user.InjectOrgID(ctx, "test-tenant")
+
+	// Run benchmarks for each combination of patterns and queries
+	for _, pattern := range patterns {
+		for _, query := range queries {
+			b.Run(pattern.name+"_"+query.name, func(b *testing.B) {
+				// Create middleware with current patterns
+				middleware := &spinOffSubqueriesMiddleware{
+					limits: mockLimits{instantQueriesWithSubquerySpinOff: pattern.patterns},
+				}
+
+				// Set the query for this iteration
+				req, err := mockReq.WithQuery(query.query)
+				require.NoError(b, err)
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					_, err := middleware.isEnabled(ctx, req)
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
+}
