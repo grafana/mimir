@@ -910,6 +910,26 @@ func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapt
 	return las, name
 }
 
+// this didn't prove useful as it seems the compiler already performs this optimization.
+// ensuring the strings remain interned even when deduplicated.
+func desymbolizeLabelsEvenMoreDirect(labelRefs []uint32, symbols []string) ([]LabelAdapter, string) {
+	name := ""
+	las := make([]LabelAdapter, len(labelRefs)/2)
+	for i := 0; i < len(labelRefs); i += 2 {
+		keyPtr := unsafe.StringData(symbols[labelRefs[i]])
+		keyLen := len(symbols[labelRefs[i]])
+		valPtr := unsafe.StringData(symbols[labelRefs[i+1]])
+		valLen := len(symbols[labelRefs[i]])
+
+		las[i/2].Name = unsafe.String(keyPtr, keyLen)
+		las[i/2].Value = unsafe.String(valPtr, valLen)
+		if las[i/2].Name == labels.MetricName {
+			name = las[i/2].Value
+		}
+	}
+	return las, name
+}
+
 func DetectV2Timeseries(marshalled []byte) (bool, error) {
 	l := len(marshalled)
 	index := 0
