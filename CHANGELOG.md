@@ -22,6 +22,7 @@
 * [ENHANCEMENT] Query-frontend: Add experimental support to include the cluster validation label in HTTP requests headers via `-query-frontend.client-cluster-validation.label` configuration option. When cluster validation is enabled on HTTP server side, the cluster validation label from HTTP requests is compared with the HTTP server's cluster validation label. #11010
   * By setting `-<grpc-client-config-path>.cluster-validation.label`, you configure the cluster validation label of _a single_ gRPC client, whose `grpcclient.Config` object is configurable through `-<grpc-client-config-path>`.
   * By setting `-common.client-cluster-validation.label`, you configure the cluster validation label of _all_ gRPC clients.
+* [ENHANCEMENT] Querier: Allow configuring all gRPC options for store-gateway client, similar to other gRPC clients. #11074
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
