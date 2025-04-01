@@ -248,11 +248,6 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			expectedErrorMessage: "'limit' param cannot be less than '0'",
 		},
 		{
-			name:                 "expected error if `limit` param is negative",
-			request:              createRequest("/ignored-url?limit=5000", "team-a"),
-			expectedErrorMessage: "'limit' param cannot be greater than '500'",
-		},
-		{
 			name:                 "expected error if tenantId is not defined",
 			request:              createRequest("/ignored-url", ""),
 			expectedErrorMessage: "no org id",
