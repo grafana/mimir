@@ -165,6 +165,10 @@ func (c *BucketConfig) ToBucket(ctx context.Context) (Bucket, error) {
 	}
 }
 
+func (c *BucketConfig) Backend() string {
+	return c.backend
+}
+
 type CopyBucketConfig struct {
 	clientSideCopy bool
 	source         BucketConfig
