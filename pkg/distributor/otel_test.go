@@ -320,6 +320,13 @@ func TestConvertOTelHistograms(t *testing.T) {
 		"service.name":        "service name",
 		"service.namespace":   "service namespace",
 		"service.instance.id": "service ID",
+		"existent-attr":       "resource value",
+		// This one is for testing conflict with metric attribute.
+		"metric-attr": "resource value",
+		// This one is for testing conflict with auto-generated job attribute.
+		"job": "resource value",
+		// This one is for testing conflict with auto-generated instance attribute.
+		"instance": "resource value",
 	}
 
 	md := pmetric.NewMetrics()
@@ -344,7 +351,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 		dp.Attributes().PutStr("metric-attr", "metric value")
 	}
 
-	for _, convertHistogramsToNHCB := range []bool{true} {
+	for _, convertHistogramsToNHCB := range []bool{false, true} {
 		converter := newOTLPMimirConverter()
 		mimirTS, dropped, err := otelMetricsToTimeseries(
 			context.Background(),
