@@ -4585,12 +4585,14 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
 					require.Eventually(t, func() bool {
 						seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
-						if !assert.NoError(t, err) {
+						if err != nil {
 							return false
 						}
-						if !assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal) {
+						if testData.expectedSeriesCountTotal != seriesCountTotal {
+							// Not all ingesters have received the series yet.
 							return false
 						}
+
 						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
 							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
 						})
