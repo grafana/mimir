@@ -3151,7 +3151,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.max-join-retries
 [max_join_retries: <int> | default = 10]
 
-# If this node fails to join memberlist cluster, abort.
+# (advanced) Abort if this node fails the fast memberlist cluster joining
+# procedure at startup. When enabled, it's guaranteed that other services,
+# depending on memberlist, have an updated view over the cluster state when
+# they're started.
+# CLI flag: -memberlist.abort-if-fast-join-fails
+[abort_if_cluster_fast_join_fails: <boolean> | default = false]
+
+# Abort if this node fails to join memberlist cluster at startup. When enabled,
+# it's not guaranteed that other services are started only after the cluster
+# state has been successfully updated; use 'abort-if-fast-join-fails' instead.
 # CLI flag: -memberlist.abort-if-join-fails
 [abort_if_cluster_join_fails: <boolean> | default = false]
 

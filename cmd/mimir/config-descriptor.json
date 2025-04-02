@@ -18056,9 +18056,20 @@
         },
         {
           "kind": "field",
+          "name": "abort_if_cluster_fast_join_fails",
+          "required": false,
+          "desc": "Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.abort-if-fast-join-fails",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "abort_if_cluster_join_fails",
           "required": false,
-          "desc": "If this node fails to join memberlist cluster, abort.",
+          "desc": "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "memberlist.abort-if-join-fails",
