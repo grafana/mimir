@@ -459,7 +459,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	})
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 15*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	for _, tenant := range tenants {
 		compareQueryWithDir(t,

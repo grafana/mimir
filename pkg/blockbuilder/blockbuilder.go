@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -543,6 +544,39 @@ func (b *BlockBuilder) consumePartitionSection(
 	level.Info(logger).Log("msg", "start consuming")
 
 	var (
+		done     = make(chan struct{})
+		fetchesC = make(chan kgo.Fetches, 100)
+		wg       sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				// Put a timeout on PollFetches to avoid indefinite blocking when we reach the
+				// end of partitions.
+				pollCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				fetches := b.kafkaClient.PollFetches(pollCtx)
+				cancel()
+
+				select {
+				case <-done:
+					return
+				case <-ctx.Done():
+					return
+				case fetchesC <- fetches:
+				}
+			}
+		}
+	}()
+
+	var (
 		firstRec  *kgo.Record
 		lastRec   *kgo.Record
 		commitRec *kgo.Record
@@ -554,62 +588,70 @@ consumerLoop:
 			return PartitionState{}, err
 		}
 
-		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
-		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
-		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
-		// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
-		fetches.EachError(func(_ string, _ int32, err error) {
-			if !errors.Is(err, context.Canceled) {
-				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
-				b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
+		for fetches := range fetchesC {
+			// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
+			// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
+			// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
+			// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
+			fetches.EachError(func(_ string, _ int32, err error) {
+				if !errors.Is(err, context.Canceled) {
+					level.Error(logger).Log("msg", "failed to fetch records", "err", err)
+					b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
+				}
+			})
+			for recIter := fetches.RecordIter(); !recIter.Done(); {
+				rec := recIter.Next()
+				recOffset = rec.Offset
+
+				if firstRec == nil {
+					firstRec = rec
+				}
+
+				// Stop consuming after we reached the sectionEndTime marker.
+				// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
+				if rec.Timestamp.After(sectionEndTime) {
+					break consumerLoop
+				}
+
+				recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
+				allSamplesProcessed, err := builder.Process(
+					ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(),
+					recordAlreadyProcessed, b.cfg.NoPartiallyConsumedRegion)
+				if err != nil {
+					// All "non-terminal" errors are handled by the TSDBBuilder.
+					return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
+				}
+				if !allSamplesProcessed {
+					if lastRec == nil {
+						// The first record was not fully processed, meaning the record before this is the commit point.
+						// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
+						// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
+						commitRec = &kgo.Record{
+							Topic:     state.Commit.Topic,
+							Partition: state.Commit.Partition,
+							// This offset points at the previous commit's offset-1, meaning on commit, we will store the offset-1+1 (minus-one-plus-one),
+							// which is the offset of the previous commit itself (details https://github.com/grafana/mimir/pull/9199#discussion_r1772979364).
+							Offset:      state.Commit.At - 1,
+							Timestamp:   state.CommitRecordTimestamp,
+							LeaderEpoch: state.Commit.LeaderEpoch,
+						}
+					} else if commitRec == nil {
+						// The commit offset should be the last record that was fully processed and not the first record that was not fully processed.
+						commitRec = lastRec
+					}
+				}
+				lastRec = rec
+
 			}
-		})
 
-		for recIter := fetches.RecordIter(); !recIter.Done(); {
-			rec := recIter.Next()
-			recOffset = rec.Offset
-
-			if firstRec == nil {
-				firstRec = rec
-			}
-
-			// Stop consuming after we reached the sectionEndTime marker.
-			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
-			if rec.Timestamp.After(sectionEndTime) {
+			if recOffset >= cycleEndOffset-1 {
 				break consumerLoop
 			}
-
-			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
-			allSamplesProcessed, err := builder.Process(
-				ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(),
-				recordAlreadyProcessed, b.cfg.NoPartiallyConsumedRegion)
-			if err != nil {
-				// All "non-terminal" errors are handled by the TSDBBuilder.
-				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
-			}
-			if !allSamplesProcessed {
-				if lastRec == nil {
-					// The first record was not fully processed, meaning the record before this is the commit point.
-					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
-					// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
-					commitRec = &kgo.Record{
-						Topic:     state.Commit.Topic,
-						Partition: state.Commit.Partition,
-						// This offset points at the previous commit's offset-1, meaning on commit, we will store the offset-1+1 (minus-one-plus-one),
-						// which is the offset of the previous commit itself (details https://github.com/grafana/mimir/pull/9199#discussion_r1772979364).
-						Offset:      state.Commit.At - 1,
-						Timestamp:   state.CommitRecordTimestamp,
-						LeaderEpoch: state.Commit.LeaderEpoch,
-					}
-				} else if commitRec == nil {
-					// The commit offset should be the last record that was fully processed and not the first record that was not fully processed.
-					commitRec = lastRec
-				}
-			}
-			lastRec = rec
 		}
 	}
+
+	close(done)
+	wg.Wait()
 
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
