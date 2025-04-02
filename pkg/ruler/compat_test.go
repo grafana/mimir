@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -457,6 +458,35 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	_, _ = qf(context.Background(), "rate(test)", time.Now())
 	require.LessOrEqual(t, float64(6), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
 	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+}
+
+func TestRecordAndReportRuleQueryMetrics_Logging(t *testing.T) {
+	queryTime := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+	zeroFetchedSeriesCount := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+
+	innerQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
+		v := promql.Vector{
+			{T: 1, F: 10, Metric: labels.FromStrings("env", "prod")},
+			{T: 1, F: 20, Metric: labels.FromStrings("env", "test")},
+		}
+
+		return v, nil
+	}
+
+	buffer := &bytes.Buffer{}
+	logger := log.NewLogfmtLogger(buffer)
+	queryFunc := RecordAndReportRuleQueryMetrics(innerQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
+
+	_, err := queryFunc(context.Background(), "test", time.Now())
+	require.NoError(t, err)
+
+	logMessages := strings.Split(strings.TrimSuffix(buffer.String(), "\n"), "\n")
+	require.Len(t, logMessages, 1, "expected exactly one log message")
+
+	logMessage := logMessages[0]
+	require.Contains(t, logMessage, `msg="query stats"`)
+	require.Contains(t, logMessage, `query=test`)
+	require.Contains(t, logMessage, `result_series_count=2`)
 }
 
 // TestDefaultManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants

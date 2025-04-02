@@ -267,6 +267,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
+		var result promql.Vector
 		var err error
 		defer func() {
 			// Update stats wall time based on the timer created above.
@@ -300,10 +301,15 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 				"sharded_queries", shardedQueries,
 				"query", qs,
 			}
+
+			if err == nil {
+				logMessage = append(logMessage, "result_series_count", len(result))
+			}
+
 			level.Info(util_log.WithContext(ctx, logger)).Log(logMessage...)
 		}()
 
-		result, err := qf(ctx, qs, t)
+		result, err = qf(ctx, qs, t)
 		return result, err
 	}
 }
