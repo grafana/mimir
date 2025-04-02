@@ -2327,7 +2327,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
 				limits.CostAttributionLabels = []string{"team"}
-				limits.MaxCostAttributionCardinalityPerUser = 100
+				limits.MaxCostAttributionCardinality = 100
 			},
 		},
 	}

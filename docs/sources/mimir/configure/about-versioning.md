@@ -50,7 +50,7 @@ The following features are currently experimental:
   - Configure labels for cost attribution
     - `-validation.cost-attribution-labels`
   - Configure cost attribution limits, such as cardinality:
-    - `-validation.max-cost-attribution-cardinality-per-user`
+    - `-validation.max-cost-attribution-cardinality`
   - Configure cooldown periods and eviction intervals for cost attribution
     - `-validation.cost-attribution-cooldown`
     - `-cost-attribution.eviction-interval`
