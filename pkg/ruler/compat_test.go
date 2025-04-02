@@ -423,7 +423,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
-	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), log.NewNopLogger())
+	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), false, log.NewNopLogger())
 
 	// Ensure we start with counters at 0.
 	require.LessOrEqual(t, float64(0), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
@@ -461,32 +461,50 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 }
 
 func TestRecordAndReportRuleQueryMetrics_Logging(t *testing.T) {
-	queryTime := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-	zeroFetchedSeriesCount := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+	for _, remoteQuerier := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remoteQuerier=%v", remoteQuerier), func(t *testing.T) {
+			queryTime := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			zeroFetchedSeriesCount := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
-	innerQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
-		v := promql.Vector{
-			{T: 1, F: 10, Metric: labels.FromStrings("env", "prod")},
-			{T: 1, F: 20, Metric: labels.FromStrings("env", "test")},
-		}
+			innerQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
+				v := promql.Vector{
+					{T: 1, F: 10, Metric: labels.FromStrings("env", "prod")},
+					{T: 1, F: 20, Metric: labels.FromStrings("env", "test")},
+				}
 
-		return v, nil
+				return v, nil
+			}
+
+			buffer := &bytes.Buffer{}
+			logger := log.NewLogfmtLogger(buffer)
+			queryFunc := RecordAndReportRuleQueryMetrics(innerQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
+
+			_, err := queryFunc(context.Background(), "test", time.Now())
+			require.NoError(t, err)
+
+			logMessages := strings.Split(strings.TrimSuffix(buffer.String(), "\n"), "\n")
+			require.Len(t, logMessages, 1, "expected exactly one log message")
+
+			logMessage := logMessages[0]
+			require.Contains(t, logMessage, `msg="query stats"`)
+			require.Contains(t, logMessage, `query=test`)
+			require.Contains(t, logMessage, `result_series_count=2`)
+
+			if remoteQuerier {
+				require.NotContains(t, logMessage, "query_wall_time_seconds")
+				require.NotContains(t, logMessage, "fetched_series_count")
+				require.NotContains(t, logMessage, "fetched_chunk_bytes")
+				require.NotContains(t, logMessage, "fetched_chunks_count")
+				require.NotContains(t, logMessage, "sharded_queries")
+			} else {
+				require.Contains(t, logMessage, "query_wall_time_seconds")
+				require.Contains(t, logMessage, "fetched_series_count")
+				require.Contains(t, logMessage, "fetched_chunk_bytes")
+				require.Contains(t, logMessage, "fetched_chunks_count")
+				require.Contains(t, logMessage, "sharded_queries")
+			}
+		})
 	}
-
-	buffer := &bytes.Buffer{}
-	logger := log.NewLogfmtLogger(buffer)
-	queryFunc := RecordAndReportRuleQueryMetrics(innerQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
-
-	_, err := queryFunc(context.Background(), "test", time.Now())
-	require.NoError(t, err)
-
-	logMessages := strings.Split(strings.TrimSuffix(buffer.String(), "\n"), "\n")
-	require.Len(t, logMessages, 1, "expected exactly one log message")
-
-	logMessage := logMessages[0]
-	require.Contains(t, logMessage, `msg="query stats"`)
-	require.Contains(t, logMessage, `query=test`)
-	require.Contains(t, logMessage, `result_series_count=2`)
 }
 
 // TestDefaultManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
