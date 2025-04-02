@@ -347,8 +347,7 @@ func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits, err := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
-			require.NoError(t, err)
+			limits := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
 
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
@@ -364,7 +363,7 @@ func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
 				end:   util.TimeToMillis(testData.reqEndTime),
 			}
 
-			_, err = outer.Do(ctx, req)
+			_, err := outer.Do(ctx, req)
 			require.NoError(t, err)
 
 			// Assert on the time range of the request passed to the inner handler (5s delta).

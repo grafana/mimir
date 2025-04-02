@@ -613,8 +613,7 @@ func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 					testModeEnabled:            true,
 				}
 
-				overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-				require.NoError(t, err)
+				overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry)
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 				defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -633,7 +632,7 @@ func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 					nil,
 					mimirpb.API,
 				)
-				err = i.PushToStorage(ctx, req)
+				err := i.PushToStorage(ctx, req)
 				require.NoError(t, err)
 
 				count := 0
@@ -661,7 +660,7 @@ func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 						ctx := user.InjectOrgID(context.Background(), userID)
 						count++
 						i.circuitBreaker.push.testRequestDelay = testCase.pushRequestDelay
-						err = i.PushToStorage(ctx, req)
+						err := i.PushToStorage(ctx, req)
 						if initialDelayEnabled {
 							if testCase.expectedErrorWhenCircuitBreakerClosed != nil {
 								require.ErrorAs(t, err, &testCase.expectedErrorWhenCircuitBreakerClosed)

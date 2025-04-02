@@ -558,11 +558,11 @@ type Overrides struct {
 }
 
 // NewOverrides makes a new Overrides.
-func NewOverrides(defaults Limits, tenantLimits TenantLimits) (*Overrides, error) {
+func NewOverrides(defaults Limits, tenantLimits TenantLimits) *Overrides {
 	return &Overrides{
 		tenantLimits:  tenantLimits,
 		defaultLimits: &defaults,
-	}, nil
+	}
 }
 
 // RequestRate returns the limit on request rate (requests per second).

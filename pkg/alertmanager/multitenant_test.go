@@ -843,9 +843,7 @@ receivers:
 				flagext.DefaultValues(&limits)
 				limits.AlertmanagerReceiversBlockPrivateAddresses = firewallEnabled
 
-				overrides, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
-
+				overrides := validation.NewOverrides(limits, nil)
 				features := featurecontrol.NoopFlags{}
 
 				// Start the alertmanager.

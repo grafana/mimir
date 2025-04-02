@@ -2379,8 +2379,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					})
 
 					caCase.cfg(&limits)
-					overrides, err := validation.NewOverrides(limits, nil)
-					require.NoError(b, err)
+					overrides := validation.NewOverrides(limits, nil)
 
 					// Initialize the cost attribution manager
 					var cam *costattribution.Manager
@@ -5921,9 +5920,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			}
 		}
 
-		overrides, err := validation.NewOverrides(*cfg.limits, nil)
-		require.NoError(t, err)
-
+		overrides := validation.NewOverrides(*cfg.limits, nil)
 		reg := prometheus.NewPedanticRegistry()
 		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -8597,9 +8594,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 		return &noopIngester{}, nil
 	})
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
+	overrides := validation.NewOverrides(limits, nil)
 	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -8677,8 +8672,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 					IngestionArtificialDelay: model.Duration(tc.delay),
 				},
 			})
-			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(*prepareDefaultLimits(), limits)
 
 			// Mock to capture sleep and advance time.
 			timeSource := &MockTimeSource{CurrentTime: time.Now()}
@@ -8701,7 +8695,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 				ctx = user.InjectOrgID(ctx, tc.userID)
 			}
 			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
-			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
 			require.NoError(t, err)
 
 			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.
