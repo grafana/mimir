@@ -817,6 +817,14 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: false
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -830,6 +838,14 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: false
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -843,6 +859,14 @@ alertmanager:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `alertmanager.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: false
 
 distributor:
   # -- Whether to render the manifests related to the distributor component.
@@ -1175,6 +1199,14 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1188,6 +1220,14 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: mimir-ingester-zone-a
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1201,6 +1241,14 @@ ingester:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `ingester.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: mimir-ingester-zone-b
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: true
 
 overrides_exporter:
   enabled: true
@@ -2318,6 +2366,14 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: false
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -2331,6 +2387,14 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: false
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -2344,6 +2408,14 @@ store_gateway:
         # If set to "-", then use `storageClassName: ""`, which disables dynamic provisioning
         # If undefined or set to null (the default), then fall back to the value of `store_gateway.persistentVolume.storageClass`.
         storageClass: null
+        # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
+        noDownscale: false
+        # -- downscaleLeader is an Annotation used by the rollout-operator
+        # If defined, downscaleLeader: <downscaleLeader>
+        # If undefined or set to null (the default), no Annotation is set
+        downscaleLeader: null
+        # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
+        prepareDownscale: false
 
 compactor:
   # -- Whether to render the manifests related to the compactor component.
