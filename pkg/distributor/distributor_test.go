@@ -4583,16 +4583,19 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
 					// the final ingester may not have received series yet.
 					// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-					test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
+					require.Eventually(t, func() bool {
 						seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
-						require.NoError(t, err)
-						assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
-						// Make sure the resultant label names are sorted
+						if !assert.NoError(t, err) {
+							return false
+						}
+						if !assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal) {
+							return false
+						}
 						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
 							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
 						})
-						return cardinalityMap
-					})
+						return assert.EqualValues(t, testData.expectedResult, cardinalityMap)
+					}, 1*time.Second, 50*time.Millisecond)
 
 					// Make sure enough ingesters were queried
 					assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
@@ -5669,7 +5672,6 @@ func prepareIngesters(t testing.TB, cfg prepConfig) []*mockIngester {
 		ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 	}
 	return ingesters
-
 }
 
 func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
