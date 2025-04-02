@@ -4972,12 +4972,12 @@
         },
         {
           "kind": "field",
-          "name": "max_cost_attribution_cardinality_per_user",
+          "name": "max_cost_attribution_cardinality",
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
           "fieldDefaultValue": 10000,
-          "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
+          "fieldFlag": "validation.max-cost-attribution-cardinality",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },

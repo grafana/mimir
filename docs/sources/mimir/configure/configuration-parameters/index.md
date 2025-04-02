@@ -3735,8 +3735,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
-# CLI flag: -validation.max-cost-attribution-cardinality-per-user
-[max_cost_attribution_cardinality_per_user: <int> | default = 10000]
+# CLI flag: -validation.max-cost-attribution-cardinality
+[max_cost_attribution_cardinality: <int> | default = 10000]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if
