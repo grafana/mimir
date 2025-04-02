@@ -286,6 +286,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				false,
 				tc.promoteResourceAttributes,
 				tc.keepIdentifyingResourceAttributes,
+				false,
 				md,
 				log.NewNopLogger(),
 			)
@@ -311,6 +312,68 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			assert.ElementsMatch(t, ts.Labels, tc.expectedLabels)
 			assert.ElementsMatch(t, targetInfo.Labels, tc.expectedInfoLabels)
 		})
+	}
+}
+
+func TestConvertOTelHistograms(t *testing.T) {
+	resourceAttrs := map[string]string{
+		"service.name":        "service name",
+		"service.namespace":   "service namespace",
+		"service.instance.id": "service ID",
+		"existent-attr":       "resource value",
+		// This one is for testing conflict with metric attribute.
+		"metric-attr": "resource value",
+		// This one is for testing conflict with auto-generated job attribute.
+		"job": "resource value",
+		// This one is for testing conflict with auto-generated instance attribute.
+		"instance": "resource value",
+	}
+
+	md := pmetric.NewMetrics()
+	{
+		rm := md.ResourceMetrics().AppendEmpty()
+		for k, v := range resourceAttrs {
+			rm.Resource().Attributes().PutStr(k, v)
+		}
+		il := rm.ScopeMetrics().AppendEmpty()
+		m := il.Metrics().AppendEmpty()
+		m.SetName("test_histogram_metric")
+		m.SetEmptyHistogram()
+		m.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		dp := m.Histogram().DataPoints().AppendEmpty()
+		dp.SetCount(3)
+		dp.SetSum(17.8)
+
+		dp.BucketCounts().FromRaw([]uint64{2, 0, 1})
+		dp.ExplicitBounds().FromRaw([]float64{5, 10})
+
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.Attributes().PutStr("metric-attr", "metric value")
+	}
+
+	for _, convertHistogramsToNHCB := range []bool{false, true} {
+		converter := newOTLPMimirConverter()
+		mimirTS, dropped, err := otelMetricsToTimeseries(
+			context.Background(),
+			converter,
+			true,
+			false,
+			false,
+			[]string{},
+			false,
+			convertHistogramsToNHCB,
+			md,
+			log.NewNopLogger(),
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, dropped)
+		if convertHistogramsToNHCB {
+			require.Len(t, mimirTS, 2)
+			require.Len(t, mimirTS[0].Histograms, 1)
+		} else {
+			require.Len(t, mimirTS, 6)
+			require.Len(t, mimirTS[0].Histograms, 0)
+		}
 	}
 }
 
