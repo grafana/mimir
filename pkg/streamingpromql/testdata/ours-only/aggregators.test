@@ -21,5 +21,7 @@ load 6m
   series{env="prod", instance="3"} 0   0   8   _   _   _   _ _
   param                            0.5 0.1 0.9 0.1 0.2 0.3 _ Inf
 
-eval_warn range from 0 to 42m step 6m quantile(scalar(param), series)
+eval range from 0 to 42m step 6m quantile(scalar(param), series)
+  expect no_info
+  expect warn
   {} 1 0.6000000000000001 9.799999999999999 20 _ 1 _ _

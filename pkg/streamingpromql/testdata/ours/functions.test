@@ -118,7 +118,9 @@ eval range from 0 to 7m step 1m present_over_time(some_metric_count[3m1s])
 eval range from 0 to 7m step 1m present_over_time(some_metric_count[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval_info range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+eval range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+  expect info
+  expect no_warn
   {foo="bar"} 0 0 0 0 1 2 3 _
 
 eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
@@ -127,7 +129,9 @@ eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
 
-eval_info range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+eval range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+  expect info
+  expect no_warn
   {foo="bar"} 0 1 2 3 3 3 3 _
 
 eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
@@ -136,7 +140,9 @@ eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m max_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 2 3 Inf Inf Inf Inf Inf Inf NaN 8 8 8 8 7 6
 
-eval_warn range from 0 to 10m step 1m sum_over_time(some_metric_count[3m1s])
+eval range from 0 to 10m step 1m sum_over_time(some_metric_count[3m1s])
+  expect no_info
+  expect warn
   {foo="bar"} 0 1 3 6 6 5 _ {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
 eval range from 0 to 5m step 1m sum_over_time(some_metric_count[3m1s])
@@ -154,7 +160,9 @@ eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m1s])
 eval range from 0 to 16m step 1m sum_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 3 6 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 21 13 6
 
-eval_warn range from 0 to 10m step 1m avg_over_time(some_metric_count[3m1s])
+eval range from 0 to 10m step 1m avg_over_time(some_metric_count[3m1s])
+  expect no_info
+  expect warn
   {foo="bar"} 0 0.5 1 1.5 2 2.5 _ {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
 eval range from 0 to 5m step 1m avg_over_time(some_metric_count[3m1s])
@@ -618,7 +626,9 @@ load 1m
   metric{case="nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
   metric{case="floats, nh and nhcb"} 0 1 2 3 2 1 0 _ {{schema:3 sum:0 count:2 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 0 1]}} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval_info range from 0 to 20m step 1m deriv(metric[3m1s])
+eval range from 0 to 20m step 1m deriv(metric[3m1s])
+  expect info
+  expect no_warn
   {case="all Inf"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all floats 1"} _ 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666
@@ -656,7 +666,9 @@ load 1m
   metric{case="all nh"} {{schema:3 sum:0 count:0 buckets:[1 2 1]}} {{schema:3 sum:0 count:0 buckets:[1 2 1]}}
   metric{case="all nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
+eval range from 0 to 8m step 1m idelta(metric[3m1s])
+  expect no_info
+  expect warn
   {case="2 floats"} _ 4 4 4
   {case="2 floats and nh last sample"} _ 4
   {case="2 floats and nh middle sample"} _ _ 4 4
@@ -677,7 +689,9 @@ eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
   {case="all nhcb"} _ {{schema:-53 count:-3 sum:14 custom_values:[5 10] buckets:[-1 -2] counter_reset_hint:gauge}} {{schema:-53 count:13 sum:-12 custom_values:[5 10] buckets:[7 6] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}}
 
-eval_warn range from 0 to 8m step 1m irate(metric[3m1s])
+eval range from 0 to 8m step 1m irate(metric[3m1s])
+  expect no_info
+  expect warn
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
   {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
@@ -910,7 +924,9 @@ eval range from 0 to 2m step 1m timestamp(some_metric * 2)
   {case="histograms only"} 0 60 120
   {case="floats and histograms"} 0 60 120
 
-eval_info range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+eval range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+  expect info
+  expect no_warn
   {case="floats only"} _ 60 120
   {case="histograms only"} _ 60 120
 

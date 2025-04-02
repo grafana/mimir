@@ -188,10 +188,14 @@ load 1m
   incr_histogram	1 2 3 4 {{schema:5 sum:2 count:1 buckets:[1] offset:1}}
 
 # Each element in v that contains a mix of float and native histogram samples within the range, will be missing from the result vector.
-eval_warn instant at 5m rate(incr_histogram[5m])
+eval instant at 5m rate(incr_histogram[5m])
+  expect no_info
+  expect warn
   # We expect no results.
 
-eval_warn instant at 5m increase(incr_histogram[5m])
+eval instant at 5m increase(incr_histogram[5m])
+  expect no_info
+  expect warn
   # We expect no results.
 
 clear
@@ -204,10 +208,14 @@ load 1m
 # - The second value is a rate/increase from two floats
 # - The third value is a rate/increase across a float and histogram (so no value returned)
 # - The remaining values contain the rate/increase across two histograms in the vector
-eval_warn range from 0 to 4m step 1m rate(incr_histogram_sum[1m1s])
+eval range from 0 to 4m step 1m rate(incr_histogram_sum[1m1s])
+  expect no_info
+  expect warn
   {} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
 
-eval_warn range from 0 to 4m step 1m increase(incr_histogram_sum[1m1s])
+eval range from 0 to 4m step 1m increase(incr_histogram_sum[1m1s])
+  expect no_info
+  expect warn
   {} _ 1.0166666666666666 _ {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}} {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}}
 
 clear
@@ -253,7 +261,9 @@ load 6m
 # T=12: mixed, should be ignored and emit a warning
 # T=18: only exponential
 # T=24: only custom
-eval_warn range from 0 to 24m step 6m sum(metric)
+eval range from 0 to 24m step 6m sum(metric)
+  expect no_info
+  expect warn
   {} {{sum:7 count:9 buckets:[2 5 2]}} {{schema:-53 sum:16 count:3 custom_values:[5 10] buckets:[1 2]}} _ {{sum:7 count:9 buckets:[2 5 2]}} {{schema:-53 sum:18 count:3 custom_values:[5 10] buckets:[1 2]}}
 
 clear
@@ -268,7 +278,9 @@ load 6m
 # T=6: compatible
 # T=12: incompatible followed by compatible, should be ignored and emit a warning
 # T=18: compatible
-eval_warn range from 0 to 18m step 6m sum(metric)
+eval range from 0 to 18m step 6m sum(metric)
+  expect no_info
+  expect warn
   {} _ {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2 4]}} _ {{schema:-53 sum:3.8 count:6 custom_values:[3] buckets:[6]}}
 
 clear
