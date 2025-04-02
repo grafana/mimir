@@ -4972,17 +4972,6 @@
         },
         {
           "kind": "field",
-          "name": "max_cost_attribution_labels_per_user",
-          "required": false,
-          "desc": "Maximum number of cost attribution labels allowed per user, the value is capped at 4.",
-          "fieldValue": null,
-          "fieldDefaultValue": 2,
-          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "max_cost_attribution_cardinality_per_user",
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
