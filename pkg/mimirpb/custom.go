@@ -114,9 +114,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		}
 	}
 
-	if holder, ok := v.(interface {
-		SetBuffer(mem.Buffer)
-	}); ok {
+	if holder, ok := v.(MessageWithBufferRef); ok {
 		buf.Ref()
 		holder.SetBuffer(buf)
 	}
@@ -126,6 +124,11 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 func (c *codecV2) Name() string {
 	return c.codec.Name()
+}
+
+type MessageWithBufferRef interface {
+	SetBuffer(mem.Buffer)
+	FreeBuffer()
 }
 
 // BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
