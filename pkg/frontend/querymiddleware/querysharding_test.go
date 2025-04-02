@@ -1366,7 +1366,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			totalShards:       16,
 			maxShardedQueries: 32,
 			compactorShards:   8,
-			expectedShards:    16, // 2 legs * 8 shards per query = 16 max sharded queries
+			expectedShards:    16, // 2 legs * 16 shards per query = 32 max sharded queries
 		},
 		"hints are missing, query has 4 shardable legs": {
 			query:             "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
@@ -1390,7 +1390,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			totalShards:       16,
 			maxShardedQueries: 32,
 			compactorShards:   8,
-			expectedShards:    16, // 2 legs * 8 shards per query = 16 max sharded queries
+			expectedShards:    16, // 2 legs * 16 shards per query = 32 max sharded queries
 		},
 		"total queries number is missing in hints, query has 4 shardable legs": {
 			query:             "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
