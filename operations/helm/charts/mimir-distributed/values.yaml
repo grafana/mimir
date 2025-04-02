@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: 2.16.0-rc.0
+  tag: 2.16.0
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -573,7 +573,7 @@ alertmanager:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   statefulSet:
     enabled: true
@@ -851,7 +851,7 @@ distributor:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -971,7 +971,7 @@ ingester:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -1208,7 +1208,7 @@ overrides_exporter:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -1305,7 +1305,7 @@ ruler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -1434,7 +1434,7 @@ ruler_querier:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -1559,7 +1559,7 @@ ruler_query_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1676,7 +1676,7 @@ ruler_query_scheduler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -1772,7 +1772,7 @@ querier:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -1910,7 +1910,7 @@ query_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -2028,7 +2028,7 @@ query_scheduler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -2124,7 +2124,7 @@ store_gateway:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2352,7 +2352,7 @@ compactor:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -3400,7 +3400,7 @@ gateway:
   # Only applies to the GEM gateway. Use gateway.nginx.image for the nginx gateway.
   image:
     # repository: grafana/mimir-enterprise
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Number of replicas for the Deployment
   replicas: 1
@@ -4208,7 +4208,7 @@ admin_api:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/enterprise-metrics
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -4696,7 +4696,7 @@ federation_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
   # federation-frontend without the rest of the GEM components.
@@ -4797,7 +4797,7 @@ smoke_test:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4821,7 +4821,7 @@ continuous_test:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir-continuous-test
-    # tag: 2.15.0
+    # tag: 2.16.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
