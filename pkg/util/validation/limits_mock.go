@@ -33,13 +33,7 @@ func MockOverrides(customize func(defaults *Limits, tenantLimits map[string]*Lim
 	tenantLimits := map[string]*Limits{}
 	customize(defaults, tenantLimits)
 
-	overrides, err := NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
-	if err != nil {
-		// This function is expected to be used only in tests, so we're not afraid of panicking.
-		panic(err)
-	}
-
-	return overrides
+	return NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
 }
 
 func MockDefaultLimits() *Limits {
@@ -49,12 +43,5 @@ func MockDefaultLimits() *Limits {
 }
 
 func MockDefaultOverrides() *Overrides {
-	defaults := MockDefaultLimits()
-	overrides, err := NewOverrides(*defaults, nil)
-	if err != nil {
-		// This function is expected to be used only in tests, so we're not afraid of panicking.
-		panic(err)
-	}
-
-	return overrides
+	return NewOverrides(*MockDefaultLimits(), nil)
 }

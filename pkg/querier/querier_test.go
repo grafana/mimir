@@ -242,8 +242,7 @@ func TestQuerier(t *testing.T) {
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
 			queryable, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
@@ -314,8 +313,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	limits := defaultLimitsConfig()
 	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:     util_log.SlogFromGoKit(logger),
@@ -362,8 +360,7 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	limits := defaultLimitsConfig()
 	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	s1 := []mimirpb.Sample{}
 	s2 := []mimirpb.Sample{}
@@ -437,8 +434,7 @@ func BenchmarkQueryExecute(b *testing.B) {
 
 	limits := defaultLimitsConfig()
 	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(b, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	scenarios := []struct {
 		numChunks          int
@@ -636,8 +632,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 
 			limits := defaultLimitsConfig()
 			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
@@ -709,8 +704,7 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
 			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
@@ -777,8 +771,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			limits := defaultLimitsConfig()
 			limits.MaxPartialQueryLength = model.Duration(maxQueryLength)
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			// We don't need to query any data for this test, so an empty distributor is fine.
 			distributor := &emptyDistributor{}
@@ -897,8 +890,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 			limits := defaultLimitsConfig()
 			limits.MaxQueryLookback = testData.maxQueryLookback
 			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			t.Run("query range", func(t *testing.T) {
 				distributor := &mockDistributor{}
@@ -1094,8 +1086,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 			limits.MaxPartialQueryLength = testData.maxLabelsQueryLength
 			limits.MaxTotalQueryLength = testData.maxLabelsQueryLength
 			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
@@ -1210,8 +1201,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
 			limits.MaxSeriesQueryLimit = testData.maxSeriesQueryLimit
 			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
@@ -1426,8 +1416,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 
 			limits := defaultLimitsConfig()
 			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
 			// it was hit or not).
@@ -1707,8 +1696,7 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 		},
 	}
 
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
 
 	provider := &tenantQueryLimitsProvider{
 		limits: overrides,

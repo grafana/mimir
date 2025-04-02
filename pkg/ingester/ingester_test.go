@@ -3698,11 +3698,11 @@ func BenchmarkIngesterPush(b *testing.B) {
 					limitCfg := t.limitsCfg()
 					caCase.limitsCfg(&limitCfg)
 
-					overrides, err := validation.NewOverrides(limitCfg, nil)
-					require.NoError(b, err)
+					overrides := validation.NewOverrides(limitCfg, nil)
 
 					var cam *costattribution.Manager
 					if caCase.customRegistry != nil {
+						var err error
 						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
 						require.NoError(b, err)
 					}
@@ -5900,8 +5900,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
@@ -6358,10 +6357,7 @@ func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, ingester
 }
 
 func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config, limits validation.Limits, ingestersRing ring.ReadRing, dataDir string, registerer prometheus.Registerer) (*Ingester, error) {
-	overrides, err := validation.NewOverrides(limits, nil)
-	if err != nil {
-		return nil, err
-	}
+	overrides := validation.NewOverrides(limits, nil)
 	return prepareIngesterWithBlockStorageAndOverrides(t, ingesterCfg, overrides, ingestersRing, dataDir, "", registerer)
 }
 
@@ -6585,8 +6581,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 
 			// Create a temporary directory for TSDB
 			tempDir := t.TempDir()
@@ -7736,8 +7731,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 
 	limits := defaultLimitsTestConfig()
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	ingesterCfg := defaultIngesterTestConfig(t)
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
@@ -8414,8 +8408,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	t.Run("with ingest storage enabled", func(t *testing.T) {
 		limits := InstanceLimits{MaxInflightPushRequests: 1}
 
-		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 		cfg := defaultIngesterTestConfig(t)
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
@@ -9531,8 +9524,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 			limits.NativeHistogramsIngestionEnabled = true
-			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, activeSeriesTenantOverride)
 
 			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, nil, "", "", registry)
 			require.NoError(t, err)
@@ -9666,8 +9658,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
-				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				ingester.limits = override
 				currentTime = time.Now()
 				// First update reloads the config
@@ -9797,8 +9788,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
-				override, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, nil)
 				ingester.limits = override
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
@@ -9921,8 +9911,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				limits := defaultLimitsTestConfig()
 				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
-				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				ingester.limits = override
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
@@ -10023,8 +10012,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Remove all configs
 				limits := defaultLimitsTestConfig()
-				override, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
+				override := validation.NewOverrides(limits, nil)
 				ingester.limits = override
 				ingester.updateActiveSeries(currentTime)
 				expectedMetrics = `
@@ -10054,14 +10042,11 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			limits.ActiveSeriesBaseCustomTrackersConfig = testData.activeSeriesConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			var overrides *validation.Overrides
-			var err error
 			// Without this, TenantLimitsMock(nil) != nil when using getOverridesForUser in limits.go
 			if testData.tenantLimits != nil {
-				overrides, err = validation.NewOverrides(limits, testData.tenantLimits)
-				require.NoError(t, err)
+				overrides = validation.NewOverrides(limits, testData.tenantLimits)
 			} else {
-				overrides, err = validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
+				overrides = validation.NewOverrides(limits, nil)
 			}
 
 			ing, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, overrides, nil, "", "", registry)
@@ -10121,8 +10106,7 @@ func testIngesterOutOfOrder(t *testing.T,
 	l.NativeHistogramsIngestionEnabled = true
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", "test").Return(nil)
-	override, err := validation.NewOverrides(l, tenantOverride)
-	require.NoError(t, err)
+	override := validation.NewOverrides(l, tenantOverride)
 
 	setOOOTimeWindow := func(oooTW model.Duration) {
 		tenantOverride.ExpectedCalls = nil
@@ -10386,8 +10370,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
@@ -10474,8 +10457,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
 	require.NoError(t, err)
@@ -10551,8 +10533,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				},
 			}
 
-			override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
-			require.NoError(t, err)
+			override := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
 
 			tmpDir := t.TempDir()
 			bucketDir := t.TempDir()
@@ -10661,8 +10642,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	userID := "1"
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", userID).Return(nil)
-	override, err := validation.NewOverrides(limits, tenantOverride)
-	require.NoError(t, err)
+	override := validation.NewOverrides(limits, tenantOverride)
 
 	setNativeHistogramsIngestionEnabled := func(enabled bool) {
 		tenantOverride.ExpectedCalls = nil
@@ -10709,7 +10689,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
+	_, err := ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
 		AddFloatSeries([][]mimirpb.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil).
 		AddHistogramSeries([][]mimirpb.LabelAdapter{labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
@@ -10736,7 +10716,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 		}
 
 		s := stream{ctx: ctx}
-		err = ing.QueryStream(req, &s)
+		err := ing.QueryStream(req, &s)
 		require.NoError(t, err, msg)
 
 		res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -11538,8 +11518,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 	l := defaultLimitsTestConfig()
 	l.CreationGracePeriod = model.Duration(time.Hour) * 24 * 365 * 15 // 15 years in the future
-	override, err := validation.NewOverrides(l, nil)
-	require.NoError(t, err)
+	override := validation.NewOverrides(l, nil)
 
 	// Create ingester
 	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
@@ -11657,8 +11636,7 @@ func TestIngester_Starting(t *testing.T) {
 func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	ctx := context.Background()
 
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 	type testCase struct {
 		name                     string

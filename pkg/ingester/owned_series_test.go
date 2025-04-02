@@ -736,9 +736,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 			c.registerTestedIngesterIntoRing(t, c.cfg.IngesterRing.InstanceID, c.cfg.IngesterRing.InstanceAddr, c.cfg.IngesterRing.InstanceZone)
 
-			var err error
-			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
-			require.NoError(t, err)
+			c.overrides = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 
 			c.ing = setupIngesterWithOverrides(t, c.cfg, c.overrides, c.ingesterRing, "") // Pass ring so that limiter and oss see the same state
 
@@ -1450,10 +1448,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			c.cfg.IngesterPartitionRing.KVStore.Mock = c.kvStore                               // Set ring with our in-memory KV, that we will use for watching.
 			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
 
-			var err error
-			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
-			require.NoError(t, err)
-
+			c.overrides = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 			// createTestIngesterWithIngestStorage will register partition and ingester into the partition ring.
 			c.createIngesterAndPartitionRing(t)
 

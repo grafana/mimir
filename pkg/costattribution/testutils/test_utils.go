@@ -7,7 +7,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func NewMockCostAttributionLimits(idx int, lvs ...string) (*validation.Overrides, error) {
+func NewMockCostAttributionLimits(idx int, lvs ...string) *validation.Overrides {
 	baseLimits := map[string]*validation.Limits{
 		"user1": {MaxCostAttributionCardinalityPerUser: 5, CostAttributionLabels: []string{"team"}},
 		"user2": {MaxCostAttributionCardinalityPerUser: 2, CostAttributionLabels: []string{}},
