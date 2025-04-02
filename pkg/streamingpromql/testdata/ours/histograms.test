@@ -8,7 +8,9 @@ load 6m
   series{le="+Inf"} 8
   series{le="2000"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
-eval_info instant at 0m histogram_quantile(0.8, series)
+eval instant at 0m histogram_quantile(0.8, series)
+  expect info
+  expect no_warn
   {} 595
   {le="2000"} 2.29739670999407
 
@@ -29,7 +31,9 @@ eval instant at 0m histogram_quantile(0.8, series)
 load 6m
   series            0 10
 
-eval_warn instant at 0m histogram_quantile(0.8, series)
+eval instant at 0m histogram_quantile(0.8, series)
+  expect no_info
+  expect warn
   {} 4.800000000000001
 
 clear
@@ -57,7 +61,9 @@ load 6m
   series{le="+Inf"} 3 3 3 3 3
   ph                -0.5 NaN _ 9 0.9
 
-eval_warn range from 0m to 24m step 6m histogram_quantile(scalar(ph), series)
+eval range from 0m to 24m step 6m histogram_quantile(scalar(ph), series)
+  expect no_info
+  expect warn
   {} -Inf NaN NaN Inf 5.4
 
 clear
@@ -72,7 +78,9 @@ load 6m
   ph                0.5 NaN 0.9
 
 # Both engines output a warning even though there is no point where ph is also invalid.
-eval_warn range from 0m to 12m step 6m histogram_quantile(scalar(ph), series)
+eval range from 0m to 12m step 6m histogram_quantile(scalar(ph), series)
+  expect no_info
+  expect warn
   {} 3 _ 5.4
 
 clear
@@ -88,7 +96,9 @@ load 6m
   series{host="a"}     {{schema:0 sum:5 count:4 buckets:[9 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} _ _ _
   series{host="b"}     1 {{schema:0 sum:5 count:4 buckets:[0 3 1]}} {{schema:0 sum:5 count:4 buckets:[3 3 1]}} _
 
-eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series)
+eval range from 0m to 24m step 6m histogram_quantile(0.8, series)
+  expect no_info
+  expect warn
   {host="a"}      _ 2.29739670999407 820.0000000000007
   {host="a", le="0.1"} _ _ _ 3.0314331330207964
   {host="a", le="1"} _ _ _ 2.29739670999407
@@ -96,10 +106,14 @@ eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series)
   {host="a", le="100"} _ _ _ _ 3.2490095854249423
   {host="b"} _ 2.29739670999407 2.29739670999407
 
-eval_warn range from 0m to 12m step 6m histogram_quantile(0.8, series{host="a"})
+eval range from 0m to 12m step 6m histogram_quantile(0.8, series{host="a"})
+  expect no_info
+  expect warn
   {host="a"} _ 2.29739670999407 820.0000000000007
 
-eval_warn range from 0m to 24m step 6m histogram_quantile(0.8, series{host="b"})
+eval range from 0m to 24m step 6m histogram_quantile(0.8, series{host="b"})
+  expect no_info
+  expect warn
   {host="b"} _ 2.29739670999407 2.29739670999407
 
 clear
@@ -118,7 +132,9 @@ load 6m
   notEnoughObservations{le="1"} 0 1
   notEnoughObservations{le="+Inf"} 0 2
 
-eval_info range from 0m to 6m step 6m histogram_quantile(0.8, series)
+eval range from 0m to 6m step 6m histogram_quantile(0.8, series)
+  expect info
+  expect no_warn
   {} 4.800000000000001 NaN
 
 eval range from 0m to 6m step 6m histogram_quantile(0.8, noInfinity)
@@ -143,7 +159,9 @@ load 6m
   series{le="+Inf"} 3
   series{le="3"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
-eval_warn instant at 0m histogram_quantile(0.8, series)
+eval instant at 0m histogram_quantile(0.8, series)
+  expect no_info
+  expect warn
   {} 4.800000000000001
   {le="3"} 2.29739670999407
 
@@ -160,7 +178,9 @@ load 6m
   series{le="+Inf"} 3
   series{le="3"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 
-eval_warn instant at 0m histogram_quantile(0.8, series)
+eval instant at 0m histogram_quantile(0.8, series)
+  expect no_info
+  expect warn
   {le="3"} 2.29739670999407
 
 clear
