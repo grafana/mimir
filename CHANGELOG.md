@@ -32,6 +32,7 @@
 * [BUGFIX] Ruler: don't count alerts towards `cortex_prometheus_notifications_dropped_total` if they are dropped due to alert relabelling. #10956
 * [BUGFIX] Querier: Fix issue where an entire store-gateway zone leaving caused high CPU usage trying to find active members of the leaving zone. #11028
 * [BUGFIX] Query-frontend: Fix blocks retention period enforcement when a request has multiple tenants (tenant federation). #11069
+* [BUGFIX] Query-frontend: Fix `-query-frontend.query-sharding-max-sharded-queries` enforcement for instant queries with binary operators. #11086
 
 ### Mixin
 

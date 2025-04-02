@@ -1352,6 +1352,54 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			compactorShards:   10,
 			expectedShards:    10,
 		},
+		"hints are missing, query has 1 shardable leg": {
+			query:             "count(metric)",
+			hints:             nil,
+			totalShards:       16,
+			maxShardedQueries: 32,
+			compactorShards:   8,
+			expectedShards:    16,
+		},
+		"hints are missing, query has 2 shardable legs": {
+			query:             "count(metric_1) or count(metric_2)",
+			hints:             nil,
+			totalShards:       16,
+			maxShardedQueries: 32,
+			compactorShards:   8,
+			expectedShards:    16, // 2 legs * 8 shards per query = 16 max sharded queries
+		},
+		"hints are missing, query has 4 shardable legs": {
+			query:             "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
+			hints:             nil,
+			totalShards:       16,
+			maxShardedQueries: 32,
+			compactorShards:   8,
+			expectedShards:    8, // 4 legs * 8 shards per query = 32 max sharded queries
+		},
+		"total queries number is missing in hints, query has 1 shardable leg": {
+			query:             "count(metric)",
+			hints:             &Hints{},
+			totalShards:       16,
+			maxShardedQueries: 32,
+			compactorShards:   8,
+			expectedShards:    16,
+		},
+		"total queries number is missing in hints, query has 2 shardable legs": {
+			query:             "count(metric_1) or count(metric_2)",
+			hints:             &Hints{},
+			totalShards:       16,
+			maxShardedQueries: 32,
+			compactorShards:   8,
+			expectedShards:    16, // 2 legs * 8 shards per query = 16 max sharded queries
+		},
+		"total queries number is missing in hints, query has 4 shardable legs": {
+			query:             "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
+			hints:             &Hints{},
+			totalShards:       16,
+			maxShardedQueries: 32,
+			compactorShards:   8,
+			expectedShards:    8, // 4 legs * 8 shards per query = 32 max sharded queries
+		},
 	}
 
 	for testName, testData := range tests {
