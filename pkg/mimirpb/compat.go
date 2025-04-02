@@ -678,7 +678,7 @@ loop:
 	return numLabels, true
 }
 
-func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
+/*func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
 	if req == nil {
 		return nil
 	}
@@ -724,7 +724,7 @@ func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
 		SkipLabelValidation:      req.SkipLabelValidation,
 		SkipLabelCountValidation: req.SkipLabelCountValidation,
 	}
-}
+}*/
 
 func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 	if req == nil {
@@ -759,10 +759,11 @@ func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 		if i < len(req.Timeseries) {
 			timeseries[i].Metadata = metadatav2
 		} else {
-			lbls := labels.FromStrings(labels.MetricName, metadata.MetricFamilyName)
-			buf := make([]uint32, 2)
+			refs := make([]uint32, 2)
+			refs[0] = symbols.Symbolize(labels.MetricName)
+			refs[1] = symbols.Symbolize(metadata.MetricFamilyName)
 			shell := TimeSeriesV2{
-				LabelsRefs: symbols.SymbolizeLabels(lbls, buf),
+				LabelsRefs: refs,
 				Metadata:   metadatav2,
 			}
 			timeseries = append(timeseries, shell)
@@ -788,6 +789,7 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 
 	// We might over-allocate if we have more metadata than timeseries. Ideally this is uncommon...
 	timeseries := make([]PreallocTimeseries, 0, len(req.Timeseries))
+	// timeseries := PreallocTimeseriesSliceFromPool()
 	metadata := make([]*MetricMetadata, 0, len(req.Timeseries))
 
 	for _, ts := range req.Timeseries {
@@ -835,7 +837,7 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 	}
 }
 
-func FromExemplarsToExemplarsV2(exemplars []Exemplar, symbols *writev2.SymbolsTable) []ExemplarV2 {
+func FromExemplarsToExemplarsV2(exemplars []Exemplar, symbols StringSymbolizer) []ExemplarV2 {
 	result := make([]ExemplarV2, 0, len(exemplars))
 	for _, ex := range exemplars {
 		refs := make([]uint32, len(ex.Labels)*2)
@@ -868,7 +870,7 @@ func FromExemplarsV2ToExemplars(exemplars []ExemplarV2, symbols []string) []Exem
 	return result
 }
 
-func FromMetricMetadataToMetricMetadataV2(metadata *MetricMetadata, symbols *writev2.SymbolsTable) MetricMetadataV2 {
+func FromMetricMetadataToMetricMetadataV2(metadata *MetricMetadata, symbols StringSymbolizer) MetricMetadataV2 {
 	if metadata == nil {
 		return MetricMetadataV2{}
 	}

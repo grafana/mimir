@@ -1145,7 +1145,7 @@ func BenchmarkRecordSerializer(b *testing.B) {
 	v2s := remoteWriteV2RecordSerializer{}
 	v1s := protoWriteRequestRecordSerializer{}
 
-	b.Run("v2 serialize", func(b *testing.B) {
+	b.Run("v2 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			_, err := v2s.serialize(req, req.Size())
 			if err != nil {
@@ -1154,20 +1154,20 @@ func BenchmarkRecordSerializer(b *testing.B) {
 		}
 	})
 
-	b.Run("v1 -> v2 convert", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
-			rwv2 := mimirpb.FromWriteRequestToWriteRequestV2(req)
-			if len(rwv2.Timeseries) == 0 {
-				b.Fatal("unexpectedly empty")
-			}
-		}
-	})
-
-	b.Run("v1 serialize", func(b *testing.B) {
+	b.Run("v1 serialize (full flow)", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			_, err := v1s.serialize(req, req.Size())
 			if err != nil {
 				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("v1 -> v2 convert", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			rwv2 := mimirpb.FromWriteRequestToWriteRequestV2Faster(req)
+			if len(rwv2.Timeseries) == 0 {
+				b.Fatal("unexpectedly empty")
 			}
 		}
 	})

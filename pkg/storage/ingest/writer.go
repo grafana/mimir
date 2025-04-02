@@ -293,11 +293,11 @@ func (p protoWriteRequestRecordSerializer) serialize(req *mimirpb.WriteRequest, 
 type remoteWriteV2RecordSerializer struct{}
 
 func (r remoteWriteV2RecordSerializer) serialize(req *mimirpb.WriteRequest, reqSize int) ([]byte, error) {
-	reqV2 := mimirpb.FromWriteRequestToWriteRequestV2(req)
+	reqV2 := mimirpb.FromWriteRequestToWriteRequestV2Faster(req)
 	reqSize = reqV2.Size()
 
 	data := make([]byte, reqSize)
-	n, err := reqV2.MarshalToSizedBuffer(data[:reqSize])
+	n, err := reqV2.FastMarshalToSizedBuffer(data[:reqSize])
 	if err != nil {
 		return nil, err
 	}
