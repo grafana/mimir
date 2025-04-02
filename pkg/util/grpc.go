@@ -5,6 +5,8 @@ package util
 import (
 	"errors"
 	"time"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 var ErrCloseAndExhaustTimedOut = errors.New("timed out waiting to exhaust stream after calling CloseSend, will continue exhausting stream in background")
@@ -30,9 +32,15 @@ func CloseAndExhaust[T any](stream Stream[T]) error {
 
 	go func() {
 		for {
-			if _, err := stream.Recv(); err != nil {
+			msg, err := stream.Recv()
+			if err != nil {
 				close(done)
 				return
+			}
+
+			// If the message has a buffer reference, free it.
+			if buffer, ok := any(msg).(mimirpb.MessageWithBufferRef); ok {
+				buffer.FreeBuffer()
 			}
 		}
 	}()
