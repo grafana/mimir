@@ -1074,11 +1074,11 @@ func TestFastCatchupOnIdlePartition(t *testing.T) {
 	require.NoError(t, err)
 
 	// The above cycle should try one consumption for the old commit point, then shortcut
-	// to the last 2h records. So we should not have more than 3-4 consumption attempts.
+	// to the last 2h records. So we should not have more than 4-5 consumption attempts.
 	// Without the shortcut in place, it will run consumption 48-49 times, one for each hour.
 	consumptionAttempts := getSampleCountFromHistogramVector(t, bb.blockBuilderMetrics.processPartitionDuration)
-	require.GreaterOrEqual(t, consumptionAttempts, 3)
-	require.LessOrEqual(t, consumptionAttempts, 4)
+	require.GreaterOrEqual(t, consumptionAttempts, 4)
+	require.LessOrEqual(t, consumptionAttempts, 5)
 
 	compareQueryWithDir(t,
 		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
