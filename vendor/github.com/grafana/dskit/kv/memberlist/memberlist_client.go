@@ -186,6 +186,9 @@ type KVConfig struct {
 	// The backoff configuration used by retries when discovering memberlist members via DNS.
 	// This useful to override it in tests.
 	discoverMembersBackoff backoff.Config `yaml:"-"`
+
+	// Hooks used for testing.
+	beforeJoinMembersOnStartupHook func(_ context.Context)
 }
 
 // RegisterFlagsWithPrefix registers flags.
@@ -529,16 +532,19 @@ func (m *KV) starting(ctx context.Context) error {
 var errFailedToJoinCluster = errors.New("failed to join memberlist cluster on startup")
 
 func (m *KV) running(ctx context.Context) error {
-	ok := m.joinMembersOnStartup(ctx)
-	if !ok && m.cfg.AbortIfJoinFails {
-		return errFailedToJoinCluster
-	}
-
+	// The key notifications goroutine must be started as the very first thing, otherwise watch key notifications
+	// will be delayed. In particular, it must be started before the memberlist cluster full-join procedure (below)
+	// because it may take a long time to complete.
 	if m.cfg.NotifyInterval > 0 {
 		// Start delayed key notifications.
 		notifTicker := time.NewTicker(m.cfg.NotifyInterval)
 		defer notifTicker.Stop()
 		go m.monitorKeyNotifications(ctx, notifTicker.C)
+	}
+
+	ok := m.joinMembersOnStartup(ctx)
+	if !ok && m.cfg.AbortIfJoinFails {
+		return errFailedToJoinCluster
 	}
 
 	var tickerChan <-chan time.Time
@@ -648,6 +654,11 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) error {
 // This method cannot be called before KV.running state as it may wait for K8S DNS to resolve the service addresses of members
 // running this very method. Which means the service needs to be READY for K8S to add it to DNS.
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
+	// Trigger a hook used for testing.
+	if m.cfg.beforeJoinMembersOnStartupHook != nil {
+		m.cfg.beforeJoinMembersOnStartupHook(ctx)
+	}
+
 	if len(m.cfg.JoinMembers) == 0 {
 		return true
 	}
