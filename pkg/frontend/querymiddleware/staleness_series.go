@@ -6,6 +6,7 @@ import (
 	"container/heap"
 	"math"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
@@ -85,52 +86,77 @@ func (s *stalenessMarkerSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator
 }
 
 type seriesSetsHeap struct {
-	ss                []storage.SeriesSet
-	alreadyCalledNext []bool
+	ss                           []storage.SeriesSet
+	calledNextWithoutReadingFrom []bool
+
+	doneErrs     multierror.MultiError
+	doneWarnings annotations.Annotations
 }
 
-func concatSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
+func concatSeriesSets(sets []storage.SeriesSet) *seriesSetsHeap {
 	h := seriesSetsHeap{}
 	for _, set := range sets {
 		if !set.Next() {
+			if err := set.Err(); err != nil {
+				h.doneErrs = append(h.doneErrs, err)
+				h.doneWarnings.Merge(set.Warnings())
+			}
 			continue
 		}
 		h.ss = append(h.ss, set)
-		h.alreadyCalledNext = append(h.alreadyCalledNext, true)
+		h.calledNextWithoutReadingFrom = append(h.calledNextWithoutReadingFrom, true)
 	}
 	heap.Init(&h)
 	return &h
 }
 
 func (s *seriesSetsHeap) Next() bool {
-	for len(s.ss) > 0 && !s.alreadyCalledNext[0] && !s.ss[0].Next() {
-		s.alreadyCalledNext[0] = false
-		heap.Pop(s)
+	for s.Len() > 0 && !s.calledNextWithoutReadingFrom[0] {
+		s.calledNextWithoutReadingFrom[0] = false
+		firstSet := s.ss[0]
+		if !firstSet.Next() {
+			s.doneErrs.Add(firstSet.Err())
+			s.doneWarnings.Merge(firstSet.Warnings())
+			heap.Pop(s)
+			continue
+		}
+		// If Fix moves the first item, we won't use its At(), but we also won't know where it went to mark it in calledNextWithoutReadingFrom
+		// So we mark it and unmark it if Fix didn't end up moving the item.
+		s.calledNextWithoutReadingFrom[0] = true
+		heap.Fix(s, 0)
+		if firstSet == s.ss[0] {
+			s.calledNextWithoutReadingFrom[0] = false
+		}
+		break
 	}
-	if len(s.ss) > 0 {
-		s.alreadyCalledNext[0] = false
+	if s.Len() > 0 {
+		s.calledNextWithoutReadingFrom[0] = false
 	}
-	heap.Fix(s, 0)
-	return len(s.ss) > 0
+	return s.Len() > 0
 }
 
 func (s *seriesSetsHeap) At() storage.Series {
+	if len(s.ss) == 0 {
+		return nil
+	}
 	return s.ss[0].At()
 }
 
 func (s *seriesSetsHeap) Err() error {
+	// Create a fresh instance, so we don't modify doneErrs for when Err() is called multiple times.
+	errs := multierror.New(s.doneErrs...)
 	for _, set := range s.ss {
-		if err := set.Err(); err != nil {
-			return err
-		}
+		errs.Add(set.Err())
 	}
-	return nil
+	return errs.Err()
 }
 
 func (s *seriesSetsHeap) Warnings() annotations.Annotations {
-	combined := make(annotations.Annotations)
+	// Merge into a fresh instance, so we don't modify doneWarnings for when Warnings is called multiple times.
+	combined := annotations.Annotations{}
+	combined.Merge(s.doneWarnings)
 	for _, set := range s.ss {
-		combined = combined.Merge(set.Warnings())
+		combined.Merge(set.Warnings())
 	}
 	return combined
 }
@@ -145,21 +171,24 @@ func (s *seriesSetsHeap) Less(i, j int) bool {
 
 func (s *seriesSetsHeap) Swap(i, j int) {
 	s.ss[i], s.ss[j] = s.ss[j], s.ss[i]
-	s.alreadyCalledNext[i], s.alreadyCalledNext[j] = s.alreadyCalledNext[j], s.alreadyCalledNext[i]
+	s.calledNextWithoutReadingFrom[i], s.calledNextWithoutReadingFrom[j] = s.calledNextWithoutReadingFrom[j], s.calledNextWithoutReadingFrom[i]
 }
 
 func (s *seriesSetsHeap) Push(x any) {
-	if !x.(storage.SeriesSet).Next() {
+	ss := x.(storage.SeriesSet)
+	if !ss.Next() {
+		s.doneErrs.Add(ss.Err())
+		s.doneWarnings.Merge(ss.Warnings())
 		return
 	}
-	s.ss = append(s.ss, x.(storage.SeriesSet))
-	s.alreadyCalledNext = append(s.alreadyCalledNext, true)
+	s.ss = append(s.ss, ss)
+	s.calledNextWithoutReadingFrom = append(s.calledNextWithoutReadingFrom, true)
 }
 
 func (s *seriesSetsHeap) Pop() any {
 	ss := s.ss[len(s.ss)-1]
 	s.ss = s.ss[:len(s.ss)-1]
-	s.alreadyCalledNext = s.alreadyCalledNext[:len(s.alreadyCalledNext)-1]
+	s.calledNextWithoutReadingFrom = s.calledNextWithoutReadingFrom[:len(s.calledNextWithoutReadingFrom)-1]
 	return ss
 }
 
