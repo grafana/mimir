@@ -240,8 +240,8 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 			partStr := fmt.Sprint(partition)
 
 			var consumeOffset int64
-			committedOff, ok := committed.Lookup(t, partition)
-			if ok {
+
+			if committedOff, ok := committed.Lookup(t, partition); ok {
 				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
 
 				consumeOffset = committedOff.At
@@ -376,7 +376,7 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 
 	po, ok := offs.Lookup(topic, partition)
 	if !ok {
-		return 0, nil
+		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: not present", partition, t)
 	}
 	if po.Err != nil {
 		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, po.Err)
@@ -419,13 +419,16 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 		if err != nil {
 			return nil, err
 		}
-		if off < committed {
-			// We're now before the committed offset, so we're done.
-			break
-		}
+
 		if off >= windowEndOffset {
 			// Found an offset exceeding our window. Ignore and keep looking.
 			continue
+		}
+
+		if off < committed {
+			// We've scanned to before the commit offset. Adjust it so we don't
+			// revisit data already consumed.
+			off = committed
 		}
 
 		if len(jobs) == 0 || off != jobs[len(jobs)-1].StartOffset {

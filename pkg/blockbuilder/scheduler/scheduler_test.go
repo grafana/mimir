@@ -470,7 +470,7 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
 			},
 			commit:         2000,
-			partEnd:        2001,
+			partEnd:        2000,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -665,7 +665,31 @@ func TestConsumptionRanges(t *testing.T) {
 			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 900*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
+		"boundary scan skips end and commit in one iteration": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 10, 1, 0, 0, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 2, 58, 0, time.UTC), 1002},
+				{time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 3, 30, 0, time.UTC), 1004},
+			},
+			commit:      1003,
+			partEnd:     1004,
+			jobSize:     1 * time.Minute,
+			boundary:    time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			expectedRanges: []offsetRange{
+				{start: 1003, end: 1004},
+			},
+		},
 	}
+
+	/*
+
+	   More cases to test:
+	   - start==end and commit < start
+	   - commit < start < end
+	   - start==end==commit
+	*/
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
