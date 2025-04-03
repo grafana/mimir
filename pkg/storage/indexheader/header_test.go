@@ -355,16 +355,16 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, err)
 		strValsFromOffsets := make([]string, len(valOffsets))
 		for i := range valOffsets {
-			strValsFromOffsets[i] = valOffsets[i].LabelValue
+			strValsFromOffsets[i] = valOffsets[i].GetLabelValue()
 		}
 		require.Equal(t, expectedLabelVals, strValsFromOffsets)
 
 		for _, v := range valOffsets {
-			ptr, err := headerReader.PostingsOffset(ctx, lname, v.LabelValue)
+			ptr, err := headerReader.PostingsOffset(ctx, lname, v.GetLabelValue())
 			require.NoError(t, err)
-			label := labels.Label{Name: lname, Value: v.LabelValue}
+			label := labels.Label{Name: lname, Value: v.GetLabelValue()}
 			assert.Equal(t, expRanges[label], ptr)
-			assert.Equal(t, expRanges[label], v.Off)
+			assert.Equal(t, expRanges[label], v.GetOff())
 			delete(expRanges, label)
 		}
 	}

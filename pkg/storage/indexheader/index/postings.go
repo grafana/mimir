@@ -53,9 +53,38 @@ type PostingOffsetTable interface {
 // The Start is inclusive and is the byte offset of the number_of_entries field of a posting list.
 // The End is exclusive and is typically the byte offset of the CRC32 field.
 // The End might be bigger than the actual posting ending, but not larger than the whole index file.
-type PostingListOffset struct {
-	LabelValue string
-	Off        index.Range
+type PostingListOffset interface {
+	GetLabelValue() string
+	SetLabelValue(string) PostingListOffset
+	GetOff() index.Range
+	SetOff(index.Range) PostingListOffset
+}
+
+type PostingListOffsetStringImpl struct {
+	labelValue string
+	off        index.Range
+}
+
+func newPostingListOffsetStringImpl(labelValue string, off index.Range) PostingListOffset {
+	return &PostingListOffsetStringImpl{
+		labelValue: labelValue,
+		off:        off,
+	}
+}
+
+func (p PostingListOffsetStringImpl) GetLabelValue() string {
+	return p.labelValue
+}
+func (p PostingListOffsetStringImpl) SetLabelValue(labelValue string) PostingListOffset {
+	p.labelValue = labelValue
+	return p
+}
+func (p PostingListOffsetStringImpl) GetOff() index.Range {
+	return p.off
+}
+func (p PostingListOffsetStringImpl) SetOff(off index.Range) PostingListOffset {
+	p.off = off
+	return p
 }
 
 type PostingOffsetTableV1 struct {
@@ -332,11 +361,11 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, pre
 		}
 		count++
 		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-			values = append(values, PostingListOffset{LabelValue: k, Off: r})
+			values = append(values, newPostingListOffsetStringImpl(k, r))
 		}
 	}
 	sort.Slice(values, func(i, j int) bool {
-		return values[i].LabelValue < values[j].LabelValue
+		return values[i].GetLabelValue() < values[j].GetLabelValue()
 	})
 	return values, nil
 }
@@ -553,6 +582,9 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 
 	var skip int
 	readNextList := func() (e pEntry) {
+		e = pEntry{
+			PostingListOffset: newPostingListOffsetStringImpl("", index.Range{}),
+		}
 		if skip == 0 {
 			// These are always the same number of bytes, since it's the same label name each time.
 			// It's faster to skip than parse.
@@ -573,19 +605,25 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
 		if e.matches {
-			e.LabelValue = strings.Clone(unsafeValue)
+			//e.SetLabelValue(strings.Clone(unsafeValue))
+			e.PostingListOffset = e.SetLabelValue(strings.Clone(unsafeValue))
 		}
 		// In the postings section of the index the information in each posting list for length and number
 		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
 		// So we can omit the first one - length - and return
-		// the offset of the number_of_entries field.
-		e.Off.Start = int64(d.Uvarint64()) + postingLengthFieldSize
+		// the offset of the number_of_entries field.\
+		off := e.GetOff()
+		off.Start = int64(d.Uvarint64()) + postingLengthFieldSize
+		e.PostingListOffset = e.SetOff(off)
 		return
 	}
 
+	emptyEntry := pEntry{
+		PostingListOffset: newPostingListOffsetStringImpl("", index.Range{}),
+	}
 	var (
-		currEntry pEntry
-		nextEntry pEntry
+		currEntry = emptyEntry
+		nextEntry = emptyEntry
 	)
 
 	count := 1
@@ -595,9 +633,9 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		}
 		count++
 		// Populate the current list either reading it from the pre-populated "next" or reading it from the index.
-		if nextEntry != (pEntry{}) {
+		if nextEntry != (emptyEntry) {
 			currEntry = nextEntry
-			nextEntry = pEntry{}
+			nextEntry = emptyEntry
 		} else {
 			currEntry = readNextList()
 		}
@@ -607,16 +645,20 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 			continue
 		}
 		// We peek at the next list, so we can use its offset as the end offset of the current one.
-		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
+		if currEntry.GetLabelValue() == noMoreMatchesMarkerVal && lastValMatches {
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
-			currEntry.Off.End = e.lastValOffset
+			off := currEntry.GetOff()
+			off.End = e.lastValOffset
+			currEntry.PostingListOffset = currEntry.SetOff(off)
 		} else {
 			nextEntry = readNextList()
 
 			// The end we want for the current posting list should be the byte offset of the CRC32 field.
 			// The start of the next posting list is the byte offset of the number_of_entries field.
 			// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
-			currEntry.Off.End = nextEntry.Off.Start - crc32.Size - postingLengthFieldSize
+			off := currEntry.GetOff()
+			off.End = nextEntry.GetOff().Start - crc32.Size - postingLengthFieldSize
+			currEntry.PostingListOffset = currEntry.SetOff(off)
 		}
 		offsets = append(offsets, currEntry.PostingListOffset)
 	}
