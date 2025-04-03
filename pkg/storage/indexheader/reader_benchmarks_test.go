@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"testing"
@@ -203,15 +204,22 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		//{10, 10, 4},
 		//{10, 100, 4},
 		//{10, 500, 4},
-		{10, 5, 8},
-		{10, 10, 8},
-		{10, 100, 8},
-		{10, 500, 8},
+		//{10, 5, 8},
+		//{10, 10, 8},
+		//{10, 100, 8},
+		//{10, 500, 8},
 		{10, 5, 32},
 		{10, 10, 32},
 		{10, 100, 32},
 		{10, 500, 32},
+		//{10, 5, 100},
+		//{10, 10, 100},
+		//{10, 100, 100},
+		//{10, 500, 100},
 	}
+
+	debug.SetGCPercent(-1)
+	debug.SetMemoryLimit(16 * 1024 * 1024)
 
 	for _, tc := range testCases {
 		ctx := context.Background()
@@ -244,11 +252,14 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("numNames=%v/numValues=%v/numConcurrent=%v", len(nameSymbols), len(valueSymbols), tc.numConcurrent), func(b *testing.B) {
+			//memProfile, _ := os.Create("mem.prof")
+			//defer memProfile.Close()
+			//runtime.GC()
+			var m1, m2 runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&m1)
 
 			for i := 0; i < b.N; i++ {
-				var m1, m2 runtime.MemStats
-				runtime.GC()
-				runtime.ReadMemStats(&m1)
 				runFunc := func() {
 					name := names[i%len(names)]
 
@@ -268,13 +279,14 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 					}()
 				}
 				wg.Wait()
-				runtime.ReadMemStats(&m2)
-
-				b.ReportMetric(float64(m2.HeapAlloc-m1.HeapAlloc), "B/inuse_space")
-				b.ReportMetric(float64(m2.HeapObjects-m1.HeapObjects), "inuse_objects")
 			}
+			//pprof.WriteHeapProfile(memProfile)
+			runtime.ReadMemStats(&m2)
 
+			b.ReportMetric(float64(m2.HeapAlloc-m1.HeapAlloc), "B/inuse_space")
+			b.ReportMetric(float64(m2.HeapObjects-m1.HeapObjects), "inuse_objects")
 		})
+
 	}
 }
 
