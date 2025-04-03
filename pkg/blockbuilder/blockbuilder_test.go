@@ -39,6 +39,9 @@ func TestErrFirstRecordInFuture(t *testing.T) {
 	var err error
 	err = &errFirstRecordInFuture{recordTs: time.Now()}
 	assert.True(t, errors.Is(err, &errFirstRecordInFuture{}))
+
+	firstRecErr := &errFirstRecordInFuture{}
+	assert.True(t, errors.As(err, &firstRecErr))
 }
 
 func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
