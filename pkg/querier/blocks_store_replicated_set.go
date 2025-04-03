@@ -11,10 +11,11 @@ import (
 	"math/rand"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -52,7 +53,7 @@ func newBlocksStoreReplicationSet(
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
 	limits BlocksStoreLimits,
-	clientConfig ClientConfig,
+	clientConfig grpcclient.Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
@@ -104,15 +105,13 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
-
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
-	replicationOption := ring.WithReplicationFactor(userRing.InstancesCount())
 
 	// Find the replication set of each block we need to query.
 	for _, block := range blocks {
 		var ringOpts []ring.Option
-		if s.dynamicReplication.EligibleForQuerying(block) {
-			ringOpts = append(ringOpts, replicationOption)
+		if eligible, replicationFactor := s.dynamicReplication.EligibleForQuerying(block); eligible {
+			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
 		// Note that we don't pass buffers since we retain instances from the returned replication set.

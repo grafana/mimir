@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -1512,9 +1512,9 @@ func TestMultitenantCompactor_ValidateAndComplete(t *testing.T) {
 				logger:            log.NewNopLogger(),
 				bucketClient:      injectedBkt,
 				cfgProvider:       cfgProvider,
-				blockUploadBlocks: promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
-				blockUploadBytes:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
-				blockUploadFiles:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
+				blockUploadBlocks: promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
+				blockUploadBytes:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
+				blockUploadFiles:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 
@@ -2097,9 +2097,9 @@ func TestMultitenantCompactor_MarkBlockComplete(t *testing.T) {
 				logger:            log.NewNopLogger(),
 				bucketClient:      injectedBkt,
 				cfgProvider:       cfgProvider,
-				blockUploadBlocks: promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
-				blockUploadBytes:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
-				blockUploadFiles:  promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{tenantID}),
+				blockUploadBlocks: promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
+				blockUploadBytes:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
+				blockUploadFiles:  promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{tenantID}),
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
 

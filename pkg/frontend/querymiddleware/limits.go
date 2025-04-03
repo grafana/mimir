@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -149,7 +150,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	}
 
 	// Clamp the time range based on the max query lookback and block retention period.
-	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
+	blocksRetentionPeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
 	maxLookback := smallestPositiveNonZeroDuration(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {
@@ -199,7 +200,6 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
 	}
-
 	return l.next.Do(ctx, r)
 }
 
@@ -251,6 +251,12 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
+				// Without this change, using WithTimeoutCause has no effect when calling Do on
+				// limitedParallelismRoundTripper, since that would need to return the cause as error,
+				// which is the normal behaviour except that semaphore does not do that.
+				if errors.Is(err, ctx.Err()) {
+					err = context.Cause(ctx)
+				}
 				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
 			defer sem.Release(1)

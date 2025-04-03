@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,45 @@ Annotations:
 
 {{ end }}{{ end }}{{ if gt (len .Alerts.Resolved) 0 }}**Resolved**
 {{ template "__teams_text_alert_list" .Alerts.Resolved }}{{ end }}{{ end }}
+
+{{ define "jira.default.summary" }}{{ template "__subject" . }}{{ end }}
+{{- define "jira.default.description" -}}
+{{- if gt (len .Alerts.Firing) 0 -}}
+# Alerts Firing:
+{{ template "__text_alert_list_markdown" .Alerts.Firing }}
+{{- end -}}
+{{- if gt (len .Alerts.Resolved) 0 -}}
+# Alerts Resolved:
+{{- template "__text_alert_list_markdown" .Alerts.Resolved -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "jira.default.priority" -}}
+{{- $priority := "" }}
+{{- range .Alerts.Firing -}}
+    {{- $severity := index .Labels "severity" -}}
+    {{- if (eq $severity "critical") -}}
+        {{- $priority = "High" -}}
+    {{- else if (and (eq $severity "warning") (ne $priority "High")) -}}
+        {{- $priority = "Medium" -}}
+    {{- else if (and (eq $severity "info") (eq $priority "")) -}}
+        {{- $priority = "Low" -}}
+    {{- end -}}
+{{- end -}}
+{{- if eq $priority "" -}}
+    {{- range .Alerts.Resolved -}}
+        {{- $severity := index .Labels "severity" -}}
+        {{- if (eq $severity "critical") -}}
+            {{- $priority = "High" -}}
+        {{- else if (and (eq $severity "warning") (ne $priority "High")) -}}
+            {{- $priority = "Medium" -}}
+        {{- else if (and (eq $severity "info") (eq $priority "")) -}}
+            {{- $priority = "Low" -}}
+        {{- end -}}
+    {{- end -}}
+{{- end -}}
+{{- $priority -}}
+{{- end -}}
 `
 
 // TemplateForTestsString is the template used for unit tests and integration tests.
@@ -98,10 +138,53 @@ Labels:
 {{ template "__text_alert_list" .Alerts.Resolved }}{{ end }}{{ end }}
 
 {{ define "teams.default.message" }}{{ template "default.message" . }}{{ end }}
+
+{{ define "jira.default.summary" }}{{ template "__subject" . }}{{ end }}
+
+{{- define "jira.default.description" -}}
+{{- if gt (len .Alerts.Firing) 0 -}}
+# Alerts Firing:
+{{ template "__text_alert_list_markdown" .Alerts.Firing }}
+{{- end -}}
+{{- if gt (len .Alerts.Resolved) 0 -}}
+# Alerts Resolved:
+{{- template "__text_alert_list_markdown" .Alerts.Resolved -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "jira.default.priority" -}}
+{{- $priority := "" }}
+{{- range .Alerts.Firing -}}
+    {{- $severity := index .Labels "severity" -}}
+    {{- if (eq $severity "critical") -}}
+        {{- $priority = "High" -}}
+    {{- else if (and (eq $severity "warning") (ne $priority "High")) -}}
+        {{- $priority = "Medium" -}}
+    {{- else if (and (eq $severity "info") (eq $priority "")) -}}
+        {{- $priority = "Low" -}}
+    {{- end -}}
+{{- end -}}
+{{- if eq $priority "" -}}
+    {{- range .Alerts.Resolved -}}
+        {{- $severity := index .Labels "severity" -}}
+        {{- if (eq $severity "critical") -}}
+            {{- $priority = "High" -}}
+        {{- else if (and (eq $severity "warning") (ne $priority "High")) -}}
+            {{- $priority = "Medium" -}}
+        {{- else if (and (eq $severity "info") (eq $priority "")) -}}
+            {{- $priority = "Low" -}}
+        {{- end -}}
+    {{- end -}}
+{{- end -}}
+{{- $priority -}}
+{{- end -}}
 `
 
 func ForTests(t *testing.T) *Template {
 	tmpl, err := FromContent([]string{TemplateForTestsString})
 	require.NoError(t, err)
+	externalURL, err := url.Parse("http://test.com")
+	require.NoError(t, err)
+	tmpl.ExternalURL = externalURL
 	return tmpl
 }

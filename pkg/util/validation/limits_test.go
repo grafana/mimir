@@ -38,8 +38,7 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 	defaults := Limits{
 		MaxLabelNamesPerSeries: 100,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	require.Equal(t, 100, ov.MaxLabelNamesPerSeries("user1"))
 	require.Equal(t, 0, ov.MaxLabelValueLength("user1"))
@@ -184,8 +183,7 @@ func TestSmallestPositiveIntPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxQueryParallelism: 0,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -216,8 +214,7 @@ func TestSmallestPositiveNonZeroIntPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxQueriersPerTenant: 0,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -248,8 +245,7 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	defaults := Limits{
 		MaxPartialQueryLength: 0,
 	}
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -267,6 +263,37 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	}
 }
 
+func TestLargestPositiveNonZeroDurationPerTenant(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxPartialQueryLength: model.Duration(time.Hour),
+		},
+		"tenant-b": {
+			MaxPartialQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+
+	defaults := Limits{
+		MaxPartialQueryLength: 0,
+	}
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a", "tenant-b", "tenant-c"}, expLimit: 4 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, LargestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxPartialQueryLength))
+	}
+}
+
 func TestMinDurationPerTenant(t *testing.T) {
 	defaults := Limits{ResultsCacheTTLForCardinalityQuery: 0}
 	tenantLimits := map[string]*Limits{
@@ -275,8 +302,7 @@ func TestMinDurationPerTenant(t *testing.T) {
 		"tenant-c": {ResultsCacheTTLForCardinalityQuery: model.Duration(time.Hour)},
 	}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -303,8 +329,7 @@ func TestMaxTotalQueryLengthWithoutDefault(t *testing.T) {
 	}
 	defaults := Limits{}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -328,8 +353,7 @@ func TestMaxTotalQueryLengthWithDefault(t *testing.T) {
 		MaxTotalQueryLength: model.Duration(3 * time.Hour),
 	}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	for _, tc := range []struct {
 		tenantIDs []string
@@ -353,8 +377,7 @@ func TestMaxPartialQueryLengthWithDefault(t *testing.T) {
 		MaxPartialQueryLength: model.Duration(6 * time.Hour),
 	}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	assert.Equal(t, 6*time.Hour, ov.MaxPartialQueryLength(""))
 	assert.Equal(t, 1*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
@@ -369,8 +392,7 @@ func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
 	}
 	defaults := Limits{}
 
-	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
 
 	assert.Equal(t, time.Duration(0), ov.MaxPartialQueryLength(""))
 	assert.Equal(t, 3*time.Hour, ov.MaxPartialQueryLength("tenant-a"))
@@ -433,8 +455,7 @@ alertmanager_notification_rate_limit_per_integration:
 			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tc.expectedRateLimit, ov.NotificationRateLimit("user", "email"))
 			require.Equal(t, tc.expectedBurstSize, ov.NotificationBurstSize("user", "email"))
@@ -580,8 +601,7 @@ testuser:
 
 			tl := NewMockTenantLimits(overrides)
 
-			ov, err := NewOverrides(limitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, tl)
 
 			require.Equal(t, tc.expectedRateLimit, ov.NotificationRateLimit("testuser", tc.testedIntegration))
 			require.Equal(t, tc.expectedBurstSize, ov.NotificationBurstSize("testuser", tc.testedIntegration))
@@ -629,8 +649,7 @@ ruler_max_rules_per_rule_group_by_namespace:
 			limitsYAML := Limits{}
 			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("user", tt.expectedNamespace))
 		})
@@ -745,8 +764,7 @@ differentuser:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(limitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, tl)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRulesPerRuleGroup("testuser", tt.inputNamespace))
 		})
@@ -793,8 +811,7 @@ ruler_max_rule_groups_per_tenant_by_namespace:
 			limitsYAML := Limits{}
 			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleGroupsPerTenant("user", tt.expectedNamespace))
 		})
@@ -908,8 +925,7 @@ differentuser:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(limitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, tl)
 
 			require.Equal(t, tt.expectedLimit, ov.RulerMaxRuleGroupsPerTenant("testuser", tt.inputNamespace))
 		})
@@ -963,8 +979,7 @@ user1:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(LimitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(LimitsYAML, tl)
 
 			require.Equal(t, tt.expectedNamespaces, ov.RulerProtectedNamespaces("user1"))
 		})
@@ -1018,8 +1033,7 @@ user1:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(LimitsYAML, tl)
-			require.NoError(t, err)
+			ov := NewOverrides(LimitsYAML, tl)
 
 			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant("user1"))
 		})
@@ -1083,8 +1097,7 @@ active_series_additional_custom_trackers:
 					}
 					require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
 
-					overrides, err := NewOverrides(limitsYAML, nil)
-					require.NoError(t, err)
+					overrides := NewOverrides(limitsYAML, nil)
 
 					// We expect the pointer holder to be always initialised, either when initializing default values
 					// or by the unmarshalling.
@@ -1118,8 +1131,7 @@ active_series_additional_custom_trackers:
 		limitsYAML := Limits{}
 		require.NoError(t, yaml.Unmarshal([]byte(cfg), &limitsYAML))
 
-		overrides, err := NewOverrides(limitsYAML, nil)
-		require.NoError(t, err)
+		overrides := NewOverrides(limitsYAML, nil)
 
 		start := make(chan struct{})
 		wg := sync.WaitGroup{}
@@ -1175,18 +1187,6 @@ metric_relabel_configs:
 		"should fail on invalid ingest_storage_read_consistency": {
 			cfg:         `ingest_storage_read_consistency: xyz`,
 			expectedErr: errInvalidIngestStorageReadConsistency.Error(),
-		},
-		"should fail when cost_attribution_labels exceed max_cost_attribution_labels_per_user": {
-			cfg: `
-cost_attribution_labels: label1, label2, label3,
-max_cost_attribution_labels_per_user: 2`,
-			expectedErr: errCostAttributionLabelsLimitExceeded.Error(),
-		},
-		"should fail when max_cost_attribution_labels_per_user is more than 4": {
-			cfg: `
-cost_attribution_labels: label1, label2,
-max_cost_attribution_labels_per_user: 5`,
-			expectedErr: errInvalidMaxCostAttributionLabelsPerUser.Error(),
 		},
 	}
 
@@ -1502,8 +1502,7 @@ alertmanager_max_grafana_state_size_bytes: "0"
 			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-			ov, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+			ov := NewOverrides(limitsYAML, nil)
 
 			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
 			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
@@ -1532,8 +1531,7 @@ user1:
 	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
 	require.NoError(t, err)
 	tl := NewMockTenantLimits(overrides)
-	ov, err := NewOverrides(getDefaultLimits(), tl)
-	require.NoError(t, err)
+	ov := NewOverrides(getDefaultLimits(), tl)
 
 	blockedRequests := ov.BlockedRequests("user1")
 	require.Len(t, blockedRequests, 2)

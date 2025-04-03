@@ -237,7 +237,7 @@
                      {
                         "expr": "cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n- cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
                   ],
@@ -314,7 +314,7 @@
                      {
                         "expr": "cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
                   ],
@@ -2298,6 +2298,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Number of Queries Queued - query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2406,6 +2407,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Number of Queries Queued - ruler-query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {

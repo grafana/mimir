@@ -20,7 +20,9 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const internalLabel = "__mimir_source__"
+// This has to match existing code in influx2cortex otherwise all customer series would
+// change when they move to the influx in Mimir endpoint.
+const internalLabel = "__proxy_source__"
 
 // ParseInfluxLineReader parses a Influx Line Protocol request from an io.Reader.
 func ParseInfluxLineReader(_ context.Context, r *http.Request, maxSize int) ([]mimirpb.PreallocTimeseries, int, error) {

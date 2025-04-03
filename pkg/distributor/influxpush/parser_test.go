@@ -31,8 +31,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 1.5, TimestampMs: 1465839830100}},
@@ -46,8 +46,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1465839830100}},
@@ -61,8 +61,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 3.14159, TimestampMs: 1465839830100}},
@@ -76,24 +76,24 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f2"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 3, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f3"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 3.14159, TimestampMs: 1465839830100}},
@@ -107,8 +107,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1465839830100}},
@@ -123,8 +123,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 						{Name: "t2", Value: "v2"},
 						{Name: "t3", Value: "v3"},
@@ -140,24 +140,24 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 3, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f2"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 365, TimestampMs: 1465839830100}},
 				},
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "measurement_f3"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1465839830100}},
@@ -171,8 +171,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 			expectedResult: []mimirpb.TimeSeries{
 				{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "_measurement_f_1"},
+						{Name: "__proxy_source__", Value: "influx"},
 						{Name: "_t1_", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1465839830100}},
@@ -187,8 +187,8 @@ func TestParseInfluxLineReader(t *testing.T) {
 				{
 					Labels: []mimirpb.LabelAdapter{
 						{Name: "_1t1", Value: "v1"},
-						{Name: "__mimir_source__", Value: "influx"},
 						{Name: "__name__", Value: "_0measurement_f1"},
+						{Name: "__proxy_source__", Value: "influx"},
 					},
 					Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1465839830100}},
 				},

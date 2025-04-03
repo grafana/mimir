@@ -102,9 +102,9 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	limits := defaultLimitsTestConfig()
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
+	limits.OutOfOrderBlocksExternalLabelEnabled = true // Needed to reproduce a panic.
 	limits.NativeHistogramsIngestionEnabled = true
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	return cfg, overrides
 }

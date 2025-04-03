@@ -103,7 +103,7 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.gateway_enabled,
-      $.row('Gateway')
+      $.row('Gateway - all write requests')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
@@ -115,6 +115,38 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+      )
+    )
+    .addRowIf(
+      $._config.gateway_enabled,
+      $.row('Gateway - Prometheus remote write requests')
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.promWriteRequestsPerSecondSelector)
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_prom_http_routes_regex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_prom_http_routes_regex)])
+      )
+    )
+    .addRowIf(
+      $._config.gateway_enabled,
+      $.row('Gateway - OTLP write requests')
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.otlpWriteRequestsPerSecondSelector)
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_otlp_http_routes_regex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_otlp_http_routes_regex)])
       )
     )
     .addRow(
@@ -734,8 +766,36 @@ local filename = 'mimir-writes.json';
         ),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.show_reactive_limiter_panels,
       $.row('Instance Limits')
+      .addPanel(
+        $.timeseriesPanel('Ingester per %s blocked requests' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_reactive_limiter_blocked_requests{%s, request_type="push"})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per %s inflight requests' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="push"})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per %s inflight request limit' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="push"})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      ),
+    )
+    .addRow(
+      $.row('')
       .addPanel(
         $.timeseriesPanel('Rejected distributor requests') +
         $.queryPanel(
@@ -753,6 +813,15 @@ local filename = 'mimir-writes.json';
           '{{reason}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+      .addPanelIf(
+        $._config.show_reactive_limiter_panels,
+        $.timeseriesPanel('Ingester per %s rejection rate' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_rejection_rate{%s})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', max: '1' } } }
       ),
     ),
 }

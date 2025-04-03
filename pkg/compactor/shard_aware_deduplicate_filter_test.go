@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
@@ -374,7 +374,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 
 			require.NoError(t, f.Filter(context.Background(), metas, m.Synced))
 			require.Equal(t, expected, metas)
-			require.Equal(t, float64(inputLen-len(tcase.expected)), promtest.ToFloat64(m.Synced.WithLabelValues(duplicateMeta)))
+			require.Equal(t, float64(inputLen-len(tcase.expected)), promtest.ToFloat64(m.Synced.WithLabelValues(block.DuplicateMeta)))
 
 			for _, id := range f.duplicateIDs {
 				require.NotNil(t, tcase.input[id])

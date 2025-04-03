@@ -34,7 +34,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/regexp"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,13 +57,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1046,10 +1047,13 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 	tmpDir := tb.TempDir()
 	bucketDir := filepath.Join(tmpDir, "bkt")
 
-	bkt, err := filesystem.NewBucket(bucketDir)
+	ubkt, err := filesystem.NewBucket(bucketDir)
 	assert.NoError(tb, err)
 
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	tb.Cleanup(func() {
+		assert.NoError(tb, ubkt.Close())
 		assert.NoError(tb, bkt.Close())
 	})
 
@@ -1073,7 +1077,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               localBucket{Bucket: bkt, dir: bucketDir},
+			bkt:               localBucket{Bucket: ubkt, dir: bucketDir},
 			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
@@ -1430,7 +1434,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1665,7 +1669,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil, 0)
 					assert.NoError(t, err)
 
 					// Create the bucket store.
@@ -1731,9 +1735,14 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bkt.Close()) }()
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	logger := log.NewNopLogger()
 	thanosMeta := block.ThanosMeta{
@@ -1989,7 +1998,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2050,7 +2059,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2121,7 +2130,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
@@ -2201,7 +2210,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2325,7 +2334,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil))
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2462,7 +2471,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	instrBkt := objstore.WithNoopInstr(bkt)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	tests := map[string]struct {
@@ -2611,7 +2620,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	}
 
 	// Instance a real bucket store we'll use to query back the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(tb, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2900,7 +2909,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	var w *wlog.WL
 	var err error
 	if opts.WithWAL {
-		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), wlog.CompressionSnappy)
+		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), compression.Snappy)
 		assert.NoError(t, err)
 	} else {
 		assert.NoError(t, os.MkdirAll(filepath.Join(opts.TSDBDir, "wal"), os.ModePerm))

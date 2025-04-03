@@ -86,7 +86,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
 	labels := m.limits.CostAttributionLabels(userID)
-	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	m.stmtx.Lock()
@@ -119,7 +119,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
 	labels := m.limits.CostAttributionLabels(userID)
-	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	m.atmtx.Lock()
@@ -132,7 +132,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	orderedLables := slices.Clone(labels)
 	slices.Sort(orderedLables)
 
-	tracker = newActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
+	tracker = NewActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -183,7 +183,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	newMaxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	newMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	if !st.hasSameLabels(lbls) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
@@ -195,7 +195,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.atmtx.Lock()
-		at = newActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
+		at = NewActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
 		m.atmtx.Unlock()
 	}

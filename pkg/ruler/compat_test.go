@@ -6,6 +6,7 @@
 package ruler
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -59,7 +60,12 @@ func (p *fakePusher) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb.
 
 func TestPusherAppendable(t *testing.T) {
 	pusher := &fakePusher{}
-	pa := NewPusherAppendable(pusher, "user-1", promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
+	pa := NewPusherAppendable(
+		pusher,
+		"user-1",
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"}),
+	)
 
 	type sample struct {
 		series         string
@@ -218,28 +224,31 @@ func TestPusherAppendable(t *testing.T) {
 
 func TestPusherErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
-		returnedError    error
-		expectedWrites   int
-		expectedFailures int
+		returnedError         error
+		expectedWrites        int
+		expectedFailures      int
+		expectedFailureReason string // default to "error"
 	}{
 		"no error": {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
-		"a 400 HTTPgRPC error is not reported as failure": {
-			returnedError:    httpgrpc.Errorf(http.StatusBadRequest, "test error"),
-			expectedWrites:   1,
-			expectedFailures: 0,
+		"a 400 HTTPgRPC error is reported as client failure": {
+			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
 		},
 		"a 500 HTTPgRPC error is reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedWrites:   1,
 			expectedFailures: 1,
 		},
-		"a BAD_DATA push error is not reported as failure": {
-			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
-			expectedWrites:   1,
-			expectedFailures: 0,
+		"a BAD_DATA push error is reported as client failure": {
+			returnedError:         mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
 		},
 		"a METHOD_NOT_ALLOWED push error is reported as failure": {
 			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
@@ -262,8 +271,8 @@ func TestPusherErrors(t *testing.T) {
 
 			pusher := &fakePusher{err: tc.returnedError, response: &mimirpb.WriteResponse{}}
 
-			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			writes := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+			failures := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"})
 			pa := NewPusherAppendable(pusher, "user-1", writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
@@ -275,8 +284,13 @@ func TestPusherErrors(t *testing.T) {
 
 			require.Equal(t, tc.returnedError, a.Commit())
 
-			require.Equal(t, tc.expectedWrites, int(testutil.ToFloat64(writes)))
-			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures)))
+			require.Equal(t, tc.expectedWrites, int(testutil.ToFloat64(writes.WithLabelValues("user-1"))))
+
+			expectedFailureReason := tc.expectedFailureReason
+			if expectedFailureReason == "" {
+				expectedFailureReason = failureReasonServerError
+			}
+			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailureReason))))
 		})
 	}
 }
@@ -331,6 +345,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 		expectedError         error
 		expectedQueries       int
 		expectedFailedQueries int
+		expectedFailedReason  string // default "error"
 		remoteQuerier         bool
 	}
 	// Add special cases to test first.
@@ -339,10 +354,10 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedQueries:       1,
-			expectedFailedQueries: 0, // 400 errors not reported as failures.
+			expectedFailedQueries: 1,
+			expectedFailedReason:  failureReasonClientError, // 400 errors coming from remote querier are reported as their own reason.
 			remoteQuerier:         true,
 		},
-
 		"httpgrpc 500 error": {
 			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
@@ -350,7 +365,6 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedFailedQueries: 1, // 500 errors are failures
 			remoteQuerier:         true,
 		},
-
 		"unknown but non-queryable error from remote": {
 			returnedError:         errors.New("test error"),
 			expectedError:         errors.New("test error"),
@@ -379,19 +393,24 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 	}
 	for name, tc := range allCases {
 		t.Run(name, func(t *testing.T) {
-			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			queries := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+			failures := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"})
 
 			mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
 			}
-			qf := MetricsQueryFunc(mockFunc, queries, failures, tc.remoteQuerier)
+			qf := MetricsQueryFunc(mockFunc, "user-1", queries, failures, tc.remoteQuerier)
 
 			_, err := qf(context.Background(), "test", time.Now())
 			require.Equal(t, tc.expectedError, err)
 
-			require.Equal(t, tc.expectedQueries, int(testutil.ToFloat64(queries)))
-			require.Equal(t, tc.expectedFailedQueries, int(testutil.ToFloat64(failures)))
+			require.Equal(t, tc.expectedQueries, int(testutil.ToFloat64(queries.WithLabelValues("user-1"))))
+
+			expectedFailedReason := tc.expectedFailedReason
+			if expectedFailedReason == "" {
+				expectedFailedReason = failureReasonServerError
+			}
+			require.Equal(t, tc.expectedFailedQueries, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailedReason))))
 		})
 	}
 }
@@ -404,7 +423,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
-	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), log.NewNopLogger())
+	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), false, log.NewNopLogger())
 
 	// Ensure we start with counters at 0.
 	require.LessOrEqual(t, float64(0), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
@@ -439,6 +458,53 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	_, _ = qf(context.Background(), "rate(test)", time.Now())
 	require.LessOrEqual(t, float64(6), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
 	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+}
+
+func TestRecordAndReportRuleQueryMetrics_Logging(t *testing.T) {
+	for _, remoteQuerier := range []bool{false, true} {
+		t.Run(fmt.Sprintf("remoteQuerier=%v", remoteQuerier), func(t *testing.T) {
+			queryTime := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			zeroFetchedSeriesCount := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+
+			innerQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
+				v := promql.Vector{
+					{T: 1, F: 10, Metric: labels.FromStrings("env", "prod")},
+					{T: 1, F: 20, Metric: labels.FromStrings("env", "test")},
+				}
+
+				return v, nil
+			}
+
+			buffer := &bytes.Buffer{}
+			logger := log.NewLogfmtLogger(buffer)
+			queryFunc := RecordAndReportRuleQueryMetrics(innerQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
+
+			_, err := queryFunc(context.Background(), "test", time.Now())
+			require.NoError(t, err)
+
+			logMessages := strings.Split(strings.TrimSuffix(buffer.String(), "\n"), "\n")
+			require.Len(t, logMessages, 1, "expected exactly one log message")
+
+			logMessage := logMessages[0]
+			require.Contains(t, logMessage, `msg="query stats"`)
+			require.Contains(t, logMessage, `query=test`)
+			require.Contains(t, logMessage, `result_series_count=2`)
+
+			if remoteQuerier {
+				require.NotContains(t, logMessage, "query_wall_time_seconds")
+				require.NotContains(t, logMessage, "fetched_series_count")
+				require.NotContains(t, logMessage, "fetched_chunk_bytes")
+				require.NotContains(t, logMessage, "fetched_chunks_count")
+				require.NotContains(t, logMessage, "sharded_queries")
+			} else {
+				require.Contains(t, logMessage, "query_wall_time_seconds")
+				require.Contains(t, logMessage, "fetched_series_count")
+				require.Contains(t, logMessage, "fetched_chunk_bytes")
+				require.Contains(t, logMessage, "fetched_chunks_count")
+				require.Contains(t, logMessage, "sharded_queries")
+			}
+		})
+	}
 }
 
 // TestDefaultManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants

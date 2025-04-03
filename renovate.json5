@@ -3,7 +3,7 @@
     "extends": [
       "config:base"
     ],
-    "baseBranches": ["main", "release-2.15", "release-2.14"],
+    "baseBranches": ["main", "release-2.16", "release-2.15"],
     "postUpdateOptions": [
       "gomodTidy",
       "gomodUpdateImportPaths"
@@ -11,11 +11,12 @@
     "schedule": ["before 9am on Monday"],
     "packageRules": [
       {
-        "matchBaseBranches": ["release-2.15", "release-2.14"],
+        "matchBaseBranches": ["release-2.16", "release-2.15"],
         "packagePatterns": ["*"],
         "enabled": false
       },
       {
+        // Don't update replace directives.
         "matchPackageNames": [
           "github.com/grafana/mimir-prometheus",
           "github.com/grafana/memberlist",
@@ -23,7 +24,8 @@
           "github.com/colega/go-yaml-yaml",
           "github.com/grafana/goautoneg",
           "github.com/grafana/opentracing-contrib-go-stdlib",
-          "github.com/charleskorn/go-grpc"
+          "github.com/charleskorn/go-grpc",
+          "google.golang.org/grpc",
         ],
         "enabled": false
       },
@@ -40,7 +42,7 @@
         "paths": ["operations/mimir-mixin-tools/screenshots"],
         "managers": ["npm"],
         "enabled": true
-      }
+      },
       {
         "description": "Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on",
         "matchPackageNames": ["jaegertracing/all-in-one"],
@@ -48,7 +50,7 @@
           "docker",
         ],
         "enabled": false
-      },
+      }
     ],
     "branchPrefix": "deps-update/",
     "vulnerabilityAlerts": {

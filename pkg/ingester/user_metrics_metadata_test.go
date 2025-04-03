@@ -76,11 +76,10 @@ func TestUserMetricsMetadata(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: 1, zonesCount: 1}
 
-			limits, err := validation.NewOverrides(validation.Limits{
+			limits := validation.NewOverrides(validation.Limits{
 				MaxGlobalMetricsWithMetadataPerUser: testData.maxMetadataPerUser,
 				MaxGlobalMetadataPerMetric:          testData.maxMetadataPerMetric,
 			}, nil)
-			require.NoError(t, err)
 
 			strategy := newIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
@@ -134,9 +133,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 	// Mock the ring
 	ring := &ringCountMock{instancesCount: 1, zonesCount: 1}
 
-	limits, err := validation.NewOverrides(validation.Limits{}, nil)
-	require.NoError(t, err)
-
+	limits := validation.NewOverrides(validation.Limits{}, nil)
 	strategy := newIngesterRingLimiterStrategy(ring, 1, false, "", limits.IngestionTenantShardSize)
 	limiter := NewLimiter(limits, strategy)
 

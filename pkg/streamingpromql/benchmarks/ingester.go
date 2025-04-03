@@ -66,10 +66,7 @@ func startBenchmarkIngester(rootDataDir string) (*ingester.Ingester, string, fun
 	limits := defaultLimitsTestConfig()
 	limits.NativeHistogramsIngestionEnabled = true
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	if err != nil {
-		return nil, "", nil, err
-	}
+	overrides := validation.NewOverrides(limits, nil)
 
 	ingesterCfg, closer := defaultIngesterTestConfig()
 	cleanupFuncs = append(cleanupFuncs, closer.Close)

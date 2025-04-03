@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -20,10 +21,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -41,6 +43,34 @@ const (
 	// DebugMetas is a directory for debug meta files that happen in the past. Useful for debugging.
 	DebugMetas = "debug/metas"
 )
+
+type FileType string
+
+const (
+	FileTypeMeta              FileType = "meta"
+	FileTypeIndex             FileType = "index"
+	FileTypeSparseIndexHeader FileType = "sparse_index_header"
+	FileTypeChunks            FileType = "chunks"
+	FileTypeUnknown           FileType = "unknown"
+)
+
+// UploadError wraps an error with additional information identifying the type of file that failed upload
+type UploadError struct {
+	cause    error
+	fileType FileType
+}
+
+func (e UploadError) Error() string {
+	return fmt.Sprintf("failed to upload %s: %v", e.fileType, e.cause)
+}
+
+func (e *UploadError) FileType() string {
+	return string(e.fileType)
+}
+
+func (e *UploadError) Unwrap() error {
+	return e.cause
+}
 
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then
@@ -78,7 +108,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 // meta.json file must still exist.
 //
 // - Meta struct is updated with gatherFileStats
-func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta) error {
+func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta, opts ...objstore.UploadOption) error {
 	df, err := os.Stat(blockDir)
 	if err != nil {
 		return err
@@ -113,12 +143,35 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		return errors.Wrap(err, "encode meta file")
 	}
 
-	if err := objstore.UploadDir(ctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname)); err != nil {
-		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload chunks"))
+	// upload TSDB block segments and block index concurrently
+	eg, uctx := errgroup.WithContext(ctx)
+	eg.Go(func() (err error) {
+		if err := objstore.UploadDir(uctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname), opts...); err != nil {
+			return UploadError{err, FileTypeChunks}
+		}
+		return nil
+	})
+
+	eg.Go(func() (err error) {
+		if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
+			return UploadError{err, FileTypeIndex}
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return cleanUp(logger, bkt, id, err)
 	}
 
-	if err := objstore.UploadFile(ctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
-		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload index"))
+	var oerr error
+	src := filepath.Join(blockDir, SparseIndexHeaderFilename)
+	dst := filepath.Join(id.String(), SparseIndexHeaderFilename)
+	if _, err := os.Stat(src); err == nil {
+		if err := objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
+			// Don't call cleanUp. Uploading sparse index headers is best effort.
+			level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
+			oerr = UploadError{err, FileTypeSparseIndexHeader}
+		}
 	}
 
 	// Meta.json always need to be uploaded as a last item. This will allow to assume block directories without meta file to be pending uploads.
@@ -127,10 +180,9 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		// and even though cleanUp will not see it yet, meta.json may appear in the bucket later.
 		// (Eg. S3 is known to behave this way when it returns 503 "SlowDown" error).
 		// If meta.json is not uploaded, this will produce partial blocks, but such blocks will be cleaned later.
-		return errors.Wrap(err, "upload meta file")
+		return UploadError{err, FileTypeMeta}
 	}
-
-	return nil
+	return oerr
 }
 
 func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {
@@ -164,7 +216,7 @@ func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 		return errors.Wrap(err, "json encode deletion mark")
 	}
 
-	if err := bkt.Upload(ctx, deletionMarkFile, bytes.NewBuffer(deletionMark)); err != nil {
+	if err := bkt.Upload(ctx, deletionMarkFile, bytes.NewReader(deletionMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", deletionMarkFile)
 	}
 	markedForDeletion.Inc()
@@ -359,7 +411,7 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return errors.Wrap(err, "json encode no compact mark")
 	}
 
-	if err := bkt.Upload(ctx, m, bytes.NewBuffer(noCompactMark)); err != nil {
+	if err := bkt.Upload(ctx, m, bytes.NewReader(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
 	markedForNoCompact.Inc()

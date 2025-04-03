@@ -31,7 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -70,6 +70,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/tracing"
@@ -134,6 +135,7 @@ var (
 	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
 	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
 	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
+	reasonIngesterMaxInflightReadRequests      = globalerror.IngesterMaxInflightReadRequests.LabelValue()
 )
 
 // Usage-stats expvars. Initialized as package-global in order to avoid race conditions and panics
@@ -210,8 +212,11 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
-	PushCircuitBreaker CircuitBreakerConfig `yaml:"push_circuit_breaker"`
-	ReadCircuitBreaker CircuitBreakerConfig `yaml:"read_circuit_breaker"`
+	PushCircuitBreaker   CircuitBreakerConfig                       `yaml:"push_circuit_breaker"`
+	ReadCircuitBreaker   CircuitBreakerConfig                       `yaml:"read_circuit_breaker"`
+	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
+	PushReactiveLimiter  reactivelimiter.Config                     `yaml:"push_reactive_limiter"`
+	ReadReactiveLimiter  reactivelimiter.Config                     `yaml:"read_reactive_limiter"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -230,6 +235,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
 	cfg.PushCircuitBreaker.RegisterFlagsWithPrefix("ingester.push-circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
 	cfg.ReadCircuitBreaker.RegisterFlagsWithPrefix("ingester.read-circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
+	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("ingester.rejection-prioritizer.", f)
+	cfg.PushReactiveLimiter.RegisterFlagsWithPrefix("ingester.push-reactive-limiter.", f)
+	cfg.ReadReactiveLimiter.RegisterFlagsWithPrefix("ingester.read-reactive-limiter.", f)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -347,7 +355,8 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
-	circuitBreaker ingesterCircuitBreaker
+	circuitBreaker  ingesterCircuitBreaker
+	reactiveLimiter *ingesterReactiveLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -395,6 +404,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
+
+	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -622,6 +633,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
+	if i.reactiveLimiter.service != nil {
+		servs = append(servs, i.reactiveLimiter.service)
+	}
+
 	if i.ingestPartitionLifecycler != nil {
 		servs = append(servs, i.ingestPartitionLifecycler)
 	}
@@ -772,9 +787,9 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchers(asm *asmodel.Matchers, userDB *userTSDB, now time.Time) {
+func (i *Ingester) replaceMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, userDB *userTSDB, now time.Time) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadMatchers(asm, now)
+	userDB.activeSeries.ReloadMatchersAndTrackers(asm, cat, now)
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -787,7 +802,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		newCostAttributionActiveSeriesTracker := i.costAttributionMgr.ActiveSeriesTracker(userID)
 		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionActiveSeriesTracker) {
-			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
+			i.replaceMatchersAndTrackers(asmodel.NewMatchers(newMatchersConfig), newCostAttributionActiveSeriesTracker, userDB, now)
 		}
 
 		idx := userDB.Head().MustIndex()
@@ -930,11 +945,6 @@ func (i *Ingester) applyTSDBSettings() {
 		} else {
 			db.db.DisableNativeHistograms()
 		}
-		if i.limits.OOONativeHistogramsIngestionEnabled(userID) {
-			db.db.EnableOOONativeHistograms()
-		} else {
-			db.db.DisableOOONativeHistograms()
-		}
 	}
 }
 
@@ -984,12 +994,17 @@ type pushStats struct {
 type ctxKey int
 
 var pushReqCtxKey ctxKey = 1
+var readReqCtxKey ctxKey = 2
 
 type pushRequestState struct {
 	requestSize     int64
 	requestDuration time.Duration
 	requestFinish   func(time.Duration, error)
 	pushErr         error
+}
+
+type readRequestState struct {
+	requestFinish func(err error)
 }
 
 func getPushRequestState(ctx context.Context) *pushRequestState {
@@ -999,13 +1014,42 @@ func getPushRequestState(ctx context.Context) *pushRequestState {
 	return nil
 }
 
-// StartPushRequest checks if ingester can start push request, and increments relevant counters.
-// If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
+func getReadRequestState(ctx context.Context) *readRequestState {
+	if st, ok := ctx.Value(readReqCtxKey).(*readRequestState); ok {
+		return st
+	}
+	return nil
+}
+
+// StartPushRequest implements pushReceiver and checks if ingester can start push request, incrementing relevant
+// counters. If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are
+// updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
 	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
 
+// PreparePushRequest implements pushReceiver.
+func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
+		if err != nil {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return nil, newReactiveLimiterExceededError(err)
+		}
+		return func(err error) {
+			if errors.Is(err, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}, nil
+	}
+	return nil, nil
+}
+
+// FinishPushRequest implements pushReceiver.
 func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	st := getPushRequestState(ctx)
 	if st == nil {
@@ -1049,6 +1093,11 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 		requestFinish: finish,
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
+
+	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	}
 
 	inflight := i.inflightPushRequests.Inc()
 	inflightBytes := int64(0)
@@ -1248,14 +1297,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				cast.IncrementDiscardedSamples(labels, 1, reasonPerMetricSeriesLimit, startAppend)
 				updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.sampleOutOfOrderCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonSampleOutOfOrder, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
-					return e
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
@@ -1645,13 +1686,66 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	return nil
 }
 
-func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
+// StartReadRequest implements ingesterReceiver and is called by a gRPC tap Handle when a request is first received to
+// determine if a request should be permitted. When permitted, StartReadRequest returns a context with a function that
+// should be called to finish the started read request once the request is completed. If it wasn't successful, the
+// causing error is returned and a nil context is returned.
+func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Context, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
+
+	if err := i.checkAvailableForRead(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
+	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	}
+
+	finish, err := i.circuitBreaker.tryAcquireReadPermit()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { finishReadRequest(err) }()
+	start := time.Now()
+	return context.WithValue(ctx, readReqCtxKey, &readRequestState{
+		requestFinish: func(err error) {
+			finish(time.Since(start), err)
+		},
+	}), nil
+}
+
+// PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
+// When successful, PrepareReadRequest returns a function that should be called once the request is completed.
+func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
+	cbFinish := func(error) {}
+	if st := getReadRequestState(ctx); st != nil {
+		cbFinish = st.requestFinish
+	}
+
+	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
+		if err != nil {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+			return nil, newReactiveLimiterExceededError(err)
+		}
+		return func(err error) {
+			cbFinish(err)
+			if errors.Is(err, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}, nil
+	}
+
+	return cbFinish, nil
+}
+
+func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
@@ -1711,11 +1805,6 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	labelName, startTimestampMs, endTimestampMs, hints, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
@@ -1770,11 +1859,6 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.LabelNames")
 	defer spanlog.Finish()
@@ -1829,11 +1913,6 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1852,7 +1931,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	// Parse the request
-	matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1876,6 +1955,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		hints := &storage.SelectHints{
 			Start: mint,
 			End:   maxt,
+			Limit: hints.Limit,
 			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 		}
 
@@ -1895,6 +1975,13 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 			return nil, ctx.Err()
 		}
 
+		// Besides we are passing the hints to q.Select, we also limit the number of returned series here,
+		// to account for cases when series were resolved via different instances and joined into a single seriesSet,
+		// which are not limited by the MergeSeriesSet.
+		if hints.Limit > 0 && len(result.Metric) >= hints.Limit {
+			break
+		}
+
 		result.Metric = append(result.Metric, &mimirpb.Metric{
 			Labels: mimirpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
 		})
@@ -1905,11 +1992,6 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1936,11 +2018,6 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 // because the purpose of this function is to show a snapshot of the live ingester's state.
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
@@ -1969,11 +2046,6 @@ const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(stream.Context())
 	if err != nil {
@@ -2023,11 +2095,6 @@ const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
@@ -2109,11 +2176,6 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
 	defer spanlog.Finish()
@@ -2747,7 +2809,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
-		EnableOOONativeHistograms:             i.limits.OOONativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
 	if err != nil {
@@ -3190,6 +3251,13 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		defer i.metrics.forcedCompactionInProgress.Set(0)
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3839,33 +3907,6 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// startReadRequest tries to start a read request.
-// If it was successful, startReadRequest returns a function that should be
-// called to finish the started read request once the request is completed.
-// If it wasn't successful, the causing error is returned. In this case no
-// function is returned.
-func (i *Ingester) startReadRequest() (func(error), error) {
-	start := time.Now()
-	finish, err := i.circuitBreaker.tryAcquireReadPermit()
-	if err != nil {
-		return nil, err
-	}
-
-	finishReadRequest := func(err error) {
-		finish(time.Since(start), err)
-	}
-
-	if err = i.checkAvailableForRead(); err != nil {
-		finishReadRequest(err)
-		return nil, err
-	}
-	if err = i.checkReadOverloaded(); err != nil {
-		finishReadRequest(err)
-		return nil, err
-	}
-	return finishReadRequest, nil
-}
-
 // checkAvailableForRead checks whether the ingester is available for read requests,
 // and if it is not the case returns an unavailableError error.
 func (i *Ingester) checkAvailableForRead() error {
@@ -4037,11 +4078,6 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 // MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

@@ -22,6 +22,9 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    // Added default flag for GEM-specific dashboards and alerts.
+    gem_enabled: false,
+
     // This is mapping between a Mimir component name and the regular expression that should be used
     // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
     // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.
@@ -55,6 +58,7 @@
       mimir_write: 'mimir-write',
       mimir_read: 'mimir-read',
       mimir_backend: 'mimir-backend',
+      federation_frontend: 'federation-frontend',
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
@@ -98,6 +102,8 @@
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
       backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
+
+      federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
@@ -144,6 +150,8 @@
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
       remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
+
+      federation_frontend: instanceMatcher(componentNameRegexp.federation_frontend),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
@@ -181,6 +189,8 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+
+      federation_frontend: componentNameRegexp.federation_frontend,
     },
 
     // The label used to differentiate between different Kubernetes clusters.
@@ -210,6 +220,15 @@
     // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
     alert_job_prefix: '.*/',
 
+    alert_cluster_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    alert_instance_variable: '{{ $labels.%s }}' % $._config.per_instance_label,
+
+    alert_node_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
+    alert_product: $._config.product,
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
@@ -221,8 +240,9 @@
     // Whether mimir block-builder is enabled (experimental)
     block_builder_enabled: false,
 
-    // Whether mimir gateway is enabled
-    gateway_enabled: false,
+    // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
+    gateway_enabled: $._config.gem_enabled,
+    gateway_per_tenant_metrics_enabled: false,
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
@@ -712,6 +732,10 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // When ingester reactive limiters are enabled (using -ingester.push-reactive-limiter.enabled=true and -ingester.read-reactive-limiter.enabled=true), additional
+    // metrics related to inflight requests and rejections can be shown on the Writes and Reads dashboards.
+    show_reactive_limiter_panels: false,
 
     // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
     show_grpc_ingestion_panels: true,

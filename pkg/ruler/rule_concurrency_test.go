@@ -246,7 +246,7 @@ func TestSplitGroupIntoBatches(t *testing.T) {
 	for name, tc := range splitToBatchesTestCases {
 		t.Run(name, func(t *testing.T) {
 			// Load group with a -1 interval so it's always at risk.
-			groups, errs := ruleManager.LoadGroups(-1*time.Second, labels.EmptyLabels(), "", nil, []string{tc.inputFile}...)
+			groups, errs := ruleManager.LoadGroups(-1*time.Second, labels.EmptyLabels(), "", nil, false, []string{tc.inputFile}...)
 			require.Empty(t, errs)
 			require.Len(t, groups, 1)
 
@@ -281,7 +281,7 @@ func BenchmarkSplitGroupIntoBatches(b *testing.B) {
 	for name, tc := range splitToBatchesTestCases {
 		b.Run(name, func(b *testing.B) {
 			// Load group with a -1 interval so it's always at risk.
-			groups, errs := ruleManager.LoadGroups(-1*time.Second, labels.EmptyLabels(), "", nil, []string{tc.inputFile}...)
+			groups, errs := ruleManager.LoadGroups(-1*time.Second, labels.EmptyLabels(), "", nil, false, []string{tc.inputFile}...)
 			require.Empty(b, errs)
 			require.Len(b, groups, 1)
 
@@ -358,7 +358,7 @@ func TestGroupAtRisk(t *testing.T) {
 			opts.RuleConcurrencyController = &allowAllConcurrencyController{}
 		}
 		manager := rules.NewManager(opts)
-		groups, errs := manager.LoadGroups(interval, labels.EmptyLabels(), "", nil, groupFile)
+		groups, errs := manager.LoadGroups(interval, labels.EmptyLabels(), "", nil, false, groupFile)
 		require.Empty(t, errs)
 
 		var g *rules.Group

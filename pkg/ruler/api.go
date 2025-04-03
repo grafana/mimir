@@ -192,6 +192,19 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		MaxGroups:     maxGroups,
 	}
 
+	// The file, rule_group and rule_name query parameters differ
+	// from Vanilla prometheus: file[], rule_group[], rule_name[]
+	// If they are provided in this format, use them instead.
+	if req.URL.Query().Has("rule_name[]") {
+		rulesReq.RuleName = req.URL.Query()["rule_name[]"]
+	}
+	if req.URL.Query().Has("rule_group[]") {
+		rulesReq.RuleGroup = req.URL.Query()["rule_group[]"]
+	}
+	if req.URL.Query().Has("file[]") {
+		rulesReq.File = req.URL.Query()["file[]"]
+	}
+
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
 	if ruleTypeFilter != "" {
 		switch ruleTypeFilter {
@@ -619,14 +632,24 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "attempting to unmarshal rulegroup", "userID", userID, "group", string(payload))
 
 	rg := rulefmt.RuleGroup{}
-	err = yaml.Unmarshal(payload, &rg)
-	if err != nil {
+	if err = yaml.Unmarshal(payload, &rg); err != nil {
 		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
 		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
 		return
 	}
 
-	errs := a.ruler.manager.ValidateRuleGroup(rg)
+	// Why do we unmarshal the rule group twice like this?
+	// Prometheus' validation methods require access to the original YAML nodes to produce errors with
+	// position (line and column) information, but we want to work with the non-YAML rulefmt.RuleGroup type.
+	// See https://github.com/prometheus/prometheus/pull/16252 for more discussion of this.
+	node := rulefmt.RuleGroupNode{}
+	if err = yaml.Unmarshal(payload, &node); err != nil {
+		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
+		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
+		return
+	}
+
+	errs := a.ruler.manager.ValidateRuleGroup(rg, node)
 	if len(errs) > 0 {
 		e := []string{}
 		for _, err := range errs {

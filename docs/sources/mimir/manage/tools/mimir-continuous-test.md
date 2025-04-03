@@ -130,5 +130,5 @@ mimir_continuous_test_queries_request_duration_seconds_count{results_cache="true
 
 ### Alerts
 
-[Grafana Mimir alerts]({{< relref "../monitor-grafana-mimir/installing-dashboards-and-alerts" >}}) include checks on failures that mimir-continuous-test tracks.
+[Grafana Mimir alerts](../../monitor-grafana-mimir/installing-dashboards-and-alerts/) include checks on failures that mimir-continuous-test tracks.
 When running mimir-continuous-test, use the provided alerts.

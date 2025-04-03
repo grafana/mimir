@@ -65,6 +65,7 @@ import (
 
 func init() {
 	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	// nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 }
 
@@ -149,8 +150,10 @@ type Distributor struct {
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	labelValuesWithNewlinesPerUser   *prometheus.CounterVec
 	hashCollisionCount               prometheus.Counter
+
+	// Metric for silently dropped native histogram samples
+	droppedNativeHistograms *prometheus.CounterVec
 
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
@@ -374,7 +377,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
 		})
 	}
 
@@ -462,9 +465,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
-		labelValuesWithNewlinesPerUser: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_distributor_label_values_with_newlines_total",
-			Help: "Total number of label values with newlines seen at ingestion time.",
+
+		droppedNativeHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_dropped_native_histograms_total",
+			Help: "The total number of native histograms that were silently dropped because native histograms ingestion is disabled.",
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
@@ -726,9 +730,10 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
-	d.labelValuesWithNewlinesPerUser.DeleteLabelValues(userID)
 
 	d.PushMetrics.deleteUserMetrics(userID)
+
+	d.droppedNativeHistograms.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
@@ -942,15 +947,6 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	}
 
 	return false, nil
-}
-func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
-	count := 0
-	for _, l := range labels {
-		if strings.IndexByte(l.Value, '\n') >= 0 {
-			count++
-		}
-	}
-	return count
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1206,11 +1202,14 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// Enforce the creation grace period on exemplars too.
 		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
 
+		// Are we going to drop native histograms? If yes, let's count and report them.
+		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
+		var droppedNativeHistograms int
+
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 
-		labelValuesWithNewlines := 0
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
 			totalExemplars += len(ts.Exemplars)
@@ -1227,6 +1226,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
+			if countDroppedNativeHistograms {
+				droppedNativeHistograms += len(ts.Histograms)
+			}
+
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
@@ -1242,14 +1245,14 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
-			labelValuesWithNewlines += d.labelValuesWithNewlines(ts.Labels)
+		}
+
+		if droppedNativeHistograms > 0 {
+			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
 		}
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
-		if labelValuesWithNewlines > 0 {
-			d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
-		}
 
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
@@ -1288,6 +1291,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+
+			// Determine whether limiter burst size was exceeded.
+			limiterBurst := d.ingestionRateLimiter.Burst(now, userID)
+			if totalN > limiterBurst {
+				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
+			}
 
 			burstSize := d.limits.IngestionBurstSize(userID)
 			if d.limits.IngestionBurstFactor(userID) > 0 {
@@ -1393,6 +1402,10 @@ type requestState struct {
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
 	ctx, _, err := d.startPushRequest(ctx, httpgrpcRequestSize)
 	return ctx, err
+}
+
+func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+	return nil, nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -2739,15 +2752,28 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
-func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := ingester_client.ToMetricsForLabelMatchersRequest(from, through, matchers)
+	req, err := ingester_client.ToMetricsForLabelMatchersRequest(from, through, hints, matchers)
 	if err != nil {
 		return nil, err
+	}
+
+	resultLimit := math.MaxInt
+	if hints != nil && hints.Limit > 0 {
+		resultLimit = hints.Limit
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Adjust the limit passed with the downstream request to ingesters with respect to how series are sharded.
+		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, resultLimit))
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
@@ -2758,9 +2784,13 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	}
 
 	metrics := map[uint64]labels.Labels{}
+respsLoop:
 	for _, resp := range resps {
 		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp)
 		for _, m := range ms {
+			if len(metrics) >= resultLimit {
+				break respsLoop
+			}
 			metrics[labels.StableHash(m)] = m
 		}
 	}
@@ -2775,6 +2805,44 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		result = append(result, m)
 	}
 	return result, nil
+}
+
+// adjustQueryRequestLimit recalculated the query request limit.
+// The returned value is the approximation, a query to an individual shard needs to be limited with.
+func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, limit int) int {
+	if limit == 0 {
+		return limit
+	}
+
+	var shardSize int
+	if d.cfg.IngestStorageConfig.Enabled {
+		// Get the number of active partitions in the ring. Here the ShuffleShardSize handles cases when a tenant has 0 or negative
+		// number of shards, or more shards than the number of active partitions in the ring.
+		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+	} else {
+		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
+		// Note, this can be costly to compute if the ring's caching is not enabled.
+		subring := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+		ingestionShardSize := subring.InstancesWithTokensCount()
+		// In classic Mimir the ingestion shard size is the number of ingesters in the shard across all zones.
+		shardSize = int(float64(ingestionShardSize) / float64(subring.ReplicationFactor()))
+	}
+	if shardSize == 0 || limit <= shardSize {
+		return limit
+	}
+
+	// Always round the adjusted limit up so the approximation over-counted, rather under-counted.
+	newLimit := int(math.Ceil(float64(limit) / float64(shardSize)))
+
+	spanLog := spanlogger.FromContext(ctx, d.log)
+	spanLog.DebugLog(
+		"msg", "the limit of query is adjusted to account for sharding",
+		"original", limit,
+		"updated", newLimit,
+		"shard_size (before replication)", shardSize,
+	)
+
+	return newLimit
 }
 
 // MetricsMetadata returns the metrics metadata based on the provided req.
@@ -2803,10 +2871,10 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 			dedupTracker[*m] = struct{}{}
 
 			result = append(result, scrape.MetricMetadata{
-				Metric: m.MetricFamilyName,
-				Help:   m.Help,
-				Unit:   m.Unit,
-				Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.GetType()),
+				MetricFamily: m.MetricFamilyName,
+				Help:         m.Help,
+				Unit:         m.Unit,
+				Type:         mimirpb.MetricMetadataMetricTypeToMetricType(m.GetType()),
 			})
 		}
 	}

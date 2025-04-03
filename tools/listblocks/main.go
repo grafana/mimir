@@ -15,7 +15,7 @@ import (
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"

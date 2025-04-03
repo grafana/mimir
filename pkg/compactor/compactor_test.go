@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/regexp"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -305,7 +305,10 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
 	// Ensure the bucket iteration has been retried the configured number of times.
-	bucketClient.AssertNumberOfCalls(t, "Iter", 1+3)
+	// 1 initial Iter to expose metrics before the cleanup run
+	// 1 adittional Iter on cleanup run
+	// 3 additional Iters on compaction run
+	bucketClient.AssertNumberOfCalls(t, "Iter", 1+1+3)
 
 	assert.Equal(t, []string{
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
@@ -915,6 +918,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
+	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
+
 	bucketClient.MockGet(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), `{"deletion_time": 1}`, nil)
 	bucketClient.MockUpload(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), nil)
 
@@ -1182,8 +1187,7 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 		var limits validation.Limits
 		flagext.DefaultValues(&limits)
 		limits.CompactorTenantShardSize = 1
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(limits, nil)
 
 		c, _, tsdbPlanner, l, _ := prepareWithConfigProvider(t, cfg, bucketClient, overrides)
 		defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -1762,8 +1766,7 @@ func prepareConfig(t *testing.T) Config {
 func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*MultitenantCompactor, *tsdbCompactorMock, *tsdbPlannerMock, *concurrency.SyncBuffer, prometheus.Gatherer) {
 	var limits validation.Limits
 	flagext.DefaultValues(&limits)
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	return prepareWithConfigProvider(t, compactorCfg, bucketClient, overrides)
 }
@@ -1958,8 +1961,7 @@ func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
 		var limits validation.Limits
 		flagext.DefaultValues(&limits)
 		limits.CompactorTenantShardSize = 1 // Each tenant will belong to single compactor only.
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(limits, nil)
 
 		c, _, tsdbPlanner, _, _ := prepareWithConfigProvider(t, cfg, inmem, overrides)
 		t.Cleanup(func() {

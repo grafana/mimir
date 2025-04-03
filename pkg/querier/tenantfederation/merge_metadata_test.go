@@ -38,13 +38,13 @@ func (m *mockMetadataSupplier) MetricsMetadata(ctx context.Context, _ *client.Me
 
 func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 	fixtureMetadata1 := scrape.MetricMetadata{
-		Metric: "up",
-		Type:   model.MetricTypeGauge,
+		MetricFamily: "up",
+		Type:         model.MetricTypeGauge,
 	}
 
 	fixtureMetadata2 := scrape.MetricMetadata{
-		Metric: "requests",
-		Type:   model.MetricTypeCounter,
+		MetricFamily: "requests",
+		Type:         model.MetricTypeCounter,
 	}
 
 	t.Run("invalid tenant IDs", func(t *testing.T) {

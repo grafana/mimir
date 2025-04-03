@@ -15,7 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -82,6 +82,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		blocks_meta_synced{state="failed"} 0
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 2
+		blocks_meta_synced{state="lookback-excluded"} 0
 		blocks_meta_synced{state="marked-for-deletion"} 1
 		blocks_meta_synced{state="marked-for-no-compact"} 0
 		blocks_meta_synced{state="no-bucket-index"} 0
@@ -128,6 +129,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="failed"} 0
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 0
+		blocks_meta_synced{state="lookback-excluded"} 0
 		blocks_meta_synced{state="marked-for-deletion"} 0
 		blocks_meta_synced{state="marked-for-no-compact"} 0
 		blocks_meta_synced{state="no-bucket-index"} 1
@@ -177,6 +179,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="failed"} 0
 		blocks_meta_synced{state="label-excluded"} 0
 		blocks_meta_synced{state="loaded"} 0
+		blocks_meta_synced{state="lookback-excluded"} 0
 		blocks_meta_synced{state="marked-for-deletion"} 0
 		blocks_meta_synced{state="marked-for-no-compact"} 0
 		blocks_meta_synced{state="no-bucket-index"} 0

@@ -8,18 +8,25 @@ SCRIPT_DIR=$(cd `dirname $0` && pwd)
 GRAFANA_VERSION=11.1.3
 DOCKER_CONTAINER_NAME="mixin-serve-grafana"
 DOCKER_OPTS=""
+MIXIN_PATH="../../mimir-mixin-compiled"  # default path
 
 function usage() {
-    echo "Usage: $0 [--docker-network <name>]"
+    echo "Usage: $0 [--docker-network <name>] [-p|--path <mixin-path>]"
     echo ""
     echo "Options:"
     echo "  --docker-network <name>   Joins the Docker network <name>"
+    echo "  -p, --path <path>         Path to mixin dashboards directory"
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --docker-network)
     DOCKER_OPTS="${DOCKER_OPTS} --network=$2"
+    shift
+    shift
+    ;;
+  -p|--path)
+    MIXIN_PATH="../../../$2"
     shift
     shift
     ;;
@@ -79,7 +86,7 @@ docker run \
   --env "LOKI_DATASOURCE_URL=${LOKI_DATASOURCE_URL}" \
   --env "LOKI_DATASOURCE_USERNAME=${LOKI_DATASOURCE_USERNAME}" \
   --env "LOKI_DATASOURCE_PASSWORD=${LOKI_DATASOURCE_PASSWORD}" \
-  -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards" \
+  -v "${SCRIPT_DIR}/${MIXIN_PATH}/dashboards:/var/lib/grafana/dashboards" \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
   --expose 3000 \

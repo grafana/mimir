@@ -124,7 +124,7 @@ spec:
                 /
                 sum by(cluster, namespace, name, operation) (
                   rate(thanos_cache_operations_total{operation!~"add|delete"}[1m])
-                )
+                ) > 10
               ) * 100 > 5
             for: 5m
             labels:
@@ -380,6 +380,34 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
             expr: |
               (
+                max without (revision) (
+                  sum without(statefulset) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                    unless
+                  sum without(statefulset) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                )
+                  *
+                (
+                  sum without(statefulset) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                    !=
+                  sum without(statefulset) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                )
+              ) and (
+                changes(sum without(statefulset) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                  ==
+                0
+              )
+              * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+            for: 6h
+            labels:
+              severity: critical
+              workload_type: statefulset
+          - alert: MimirRolloutStuck
+            annotations:
+              message: |
+                  The {{ $labels.rollout_group }} rollout is stuck in {{ $labels.cluster }}/{{ $labels.namespace }}.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
+            expr: |
+              (
                 sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
                   !=
                 sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
@@ -392,6 +420,26 @@ spec:
             for: 30m
             labels:
               severity: warning
+              workload_type: deployment
+          - alert: MimirRolloutStuck
+            annotations:
+              message: |
+                  The {{ $labels.rollout_group }} rollout is stuck in {{ $labels.cluster }}/{{ $labels.namespace }}.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
+            expr: |
+              (
+                sum without(deployment) (label_replace(kube_deployment_spec_replicas, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+                  !=
+                sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))
+              ) and (
+                changes(sum without(deployment) (label_replace(kube_deployment_status_replicas_updated, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+                  ==
+                0
+              )
+              * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+            for: 6h
+            labels:
+              severity: critical
               workload_type: deployment
           - alert: RolloutOperatorNotReconciling
             annotations:
@@ -452,7 +500,8 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulertoomanyfailedpushes
             expr: |
               100 * (
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total[1m]))
+              # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[1m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_total[1m]))
               ) > 1
@@ -466,7 +515,8 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulertoomanyfailedqueries
             expr: |
               100 * (
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total[1m]))
+              # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[1m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[1m]))
               ) > 1
@@ -977,6 +1027,36 @@ spec:
             for: 30m
             labels:
               severity: critical
+          - alert: MimirCompactorFailingToBuildSparseIndexHeaders
+            annotations:
+              message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to build sparse index headers
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorfailingtobuildsparseindexheaders
+            expr: |
+              (sum by(cluster, namespace, pod) (increase(cortex_compactor_build_sparse_headers_failures_total[5m])) > 0)
+            for: 30m
+            labels:
+              severity: warning
+      - name: mimir_distributor_alerts
+        rules:
+          - alert: MimirDistributorGcUsesTooMuchCpu
+            annotations:
+              message: Mimir distributors in {{ $labels.cluster }}/{{ $labels.namespace }} GC CPU utilization is too high.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirdistributorgcusestoomuchcpu
+            expr: |
+              (quantile by (cluster, namespace) (0.9, sum by (cluster, namespace, pod) (rate(go_cpu_classes_gc_total_cpu_seconds_total{container="distributor"}[5m]))
+                /
+                (
+                  sum by (cluster, namespace, pod) (rate(go_cpu_classes_total_cpu_seconds_total{container="distributor"}[5m]))
+                  -
+                  sum by (cluster, namespace, pod) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[5m]))
+                )
+              ) * 100) > 10
+  
+              # Alert only for namespaces with Mimir clusters.
+              and (count by (cluster, namespace) (mimir_build_info) > 0)
+            for: 10m
+            labels:
+              severity: warning
       - name: mimir_autoscaling
         rules:
           - alert: MimirAutoscalerNotActive
@@ -1107,12 +1187,18 @@ spec:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to consume write requests read from Kafka due to internal errors.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
             expr: |
-              sum by (cluster, namespace, pod) (
-                  # This is the old metric name. We're keeping support for backward compatibility.
-                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
-                or
-                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
-              ) > 0
+              (
+                sum by (cluster, namespace, pod) (
+                    # This is the old metric name. We're keeping support for backward compatibility.
+                  rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+                  or
+                  rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+                ) > 0
+              )
+  
+              # Tolerate failures during the forced TSDB head compaction, because samples older than the
+              # new "head min time" will fail to be appended while the forced compaction is running.
+              unless (max by (cluster, namespace, pod) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
             for: 5m
             labels:
               severity: critical
@@ -1181,7 +1267,7 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
             expr: |
               max by(cluster, namespace, pod) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
-            for: 20m
+            for: 60m
             labels:
               severity: critical
           - alert: MimirBlockBuilderLagging

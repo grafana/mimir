@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -247,7 +247,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication()
 	if gatewayCfg.DynamicReplication.Enabled {
 		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
-			gatewayCfg.DynamicReplication.MaxTimeThreshold,
+			gatewayCfg,
 			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
 			// ensure they are not unloaded while they are still being queried.
 			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,

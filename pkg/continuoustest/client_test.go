@@ -321,6 +321,7 @@ func TestClient_QueryHeaders(t *testing.T) {
 
 	testCases := map[string]struct {
 		cfgMutator func(*ClientConfig)
+		reqOptions []RequestOption
 
 		// There may be other headers on the resulting request, but we'll only check these:
 		expectedHeaders      map[string]string
@@ -385,6 +386,14 @@ func TestClient_QueryHeaders(t *testing.T) {
 				"User-Agent": "other-user-agent",
 			},
 		},
+		"additional headers": {
+			reqOptions: []RequestOption{
+				WithAdditionalHeaders(map[string]string{"added": "header-val"}),
+			},
+			expectedHeaders: map[string]string{
+				"added": "header-val",
+			},
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -404,7 +413,7 @@ func TestClient_QueryHeaders(t *testing.T) {
 
 			ctx := context.Background()
 
-			_, err = c.Query(ctx, "up", time.Unix(0, 0))
+			_, err = c.Query(ctx, "up", time.Unix(0, 0), tc.reqOptions...)
 			require.NoError(t, err)
 
 			require.Len(t, receivedRequests, 1)

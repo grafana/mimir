@@ -9,3 +9,11 @@ enterprise:
 gateway:
   ingress:
     enabled: true
+
+provisioner:
+  enabled: true
+  additionalTenants:
+    - name: team-a
+      secretNamespace: '{{ .Release.Namespace }}'
+    - name: team-b
+      secretNamespace: '{{ .Release.Namespace }}'

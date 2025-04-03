@@ -9,14 +9,12 @@ import (
 	"context"
 	"sort"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
-
-const duplicateMeta = "duplicate"
 
 // ShardAwareDeduplicateFilter is a MetaFetcher filter that filters out older blocks that have exactly the same data.
 // Not go-routine safe.
@@ -51,7 +49,7 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 			if metas[id] != nil {
 				f.duplicateIDs = append(f.duplicateIDs, id)
 			}
-			synced.WithLabelValues(duplicateMeta).Inc()
+			synced.WithLabelValues(block.DuplicateMeta).Inc()
 			delete(metas, id)
 		}
 	}

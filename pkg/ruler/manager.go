@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/user"
 	ot "github.com/opentracing/opentracing-go"
@@ -60,7 +59,7 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
 	if err != nil {
@@ -413,7 +412,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -437,12 +436,12 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 	}
 
 	for i, r := range g.Rules {
-		for _, err := range r.Validate() {
+		for _, err := range r.Validate(node.Rules[i]) {
 			var ruleName string
-			if r.Alert.Value != "" {
-				ruleName = r.Alert.Value
+			if r.Alert != "" {
+				ruleName = r.Alert
 			} else {
-				ruleName = r.Record.Value
+				ruleName = r.Record
 			}
 			errs = append(errs, &rulefmt.Error{
 				Group:    g.Name,

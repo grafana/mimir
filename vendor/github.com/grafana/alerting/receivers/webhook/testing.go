@@ -16,6 +16,11 @@ const FullValidConfigForTesting = `{
 		"clientCertificate": "test-client-certificate",
 		"clientKey": "test-client-key",
 		"caCertificate": "test-ca-certificate"
+	},
+	"hmacConfig": {
+		"secret": "test-hmac-secret",
+		"header": "X-Grafana-Alerting-Signature",
+		"timestampHeader": "X-Grafana-Alerting-Timestamp"
 	}
 }`
 
@@ -23,7 +28,8 @@ const FullValidConfigForTesting = `{
 const FullValidSecretsForTesting = `{
 	"username": "test-secret-user",
 	"password": "test-secret-pass",
-	"clientCertificate": "test-client-certificate",
-	"clientKey": "test-client-key",
-	"caCertificate": "test-ca-certificate"
+	"tlsConfig.clientCertificate": "test-override-client-certificate",
+	"tlsConfig.clientKey": "test-override-client-key",
+	"tlsConfig.caCertificate": "test-override-ca-certificate",
+	"hmacConfig.secret": "test-override-hmac-secret"
 }`

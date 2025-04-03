@@ -71,5 +71,5 @@ To set an alternative tenant ID, use the `-auth.no-auth-tenant` flag.
 
 {{< admonition type="note" >}}
 Not all tenant IDs are valid.
-For more information about tenant ID restrictions, refer to [About tenant IDs]({{< relref "../../configure/about-tenant-ids" >}}).
+For more information about tenant ID restrictions, refer to [About tenant IDs](../../../configure/about-tenant-ids/).
 {{< /admonition >}}

@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -129,6 +130,11 @@ type Config struct {
 	// Allow downstream projects to customise the blocks compactor.
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
+
+	// Allow compactor to upload sparse-index-header files
+	UploadSparseIndexHeaders       bool               `yaml:"upload_sparse_index_headers" category:"experimental"`
+	SparseIndexHeadersSamplingRate int                `yaml:"-"`
+	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -156,6 +162,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.")
 	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
+	f.BoolVar(&cfg.UploadSparseIndexHeaders, "compactor.upload-sparse-index-headers", false, "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.")
+
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
 	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing a newly compacted block uses a lot of memory for writing the index.")
@@ -238,6 +246,13 @@ type ConfigProvider interface {
 
 	// CompactorInMemoryTenantMetaCacheSize returns number of parsed *Meta objects that we can keep in memory for the user between compactions.
 	CompactorInMemoryTenantMetaCacheSize(userID string) int
+
+	// CompactorMaxLookback returns the duration of the compactor lookback period, blocks uploaded before the lookback period aren't
+	// considered in compactor cycles
+	CompactorMaxLookback(userID string) time.Duration
+
+	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
+	CompactorMaxPerBlockUploadConcurrency(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -300,9 +315,9 @@ type MultitenantCompactor struct {
 	syncerMetrics *aggregatedSyncerMetrics
 
 	// Block upload metrics
-	blockUploadBlocks      *prometheus.GaugeVec
-	blockUploadBytes       *prometheus.GaugeVec
-	blockUploadFiles       *prometheus.GaugeVec
+	blockUploadBlocks      *prometheus.CounterVec
+	blockUploadBytes       *prometheus.CounterVec
+	blockUploadFiles       *prometheus.CounterVec
 	blockUploadValidations atomic.Int64
 
 	// Per-tenant meta caches that are passed to MetaFetcher.
@@ -405,15 +420,15 @@ func newMultitenantCompactor(
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
 		}),
-		blockUploadBlocks: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+		blockUploadBlocks: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_block_upload_api_blocks_total",
 			Help: "Total number of blocks successfully uploaded and validated using the block upload API.",
 		}, []string{"user"}),
-		blockUploadBytes: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+		blockUploadBytes: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_block_upload_api_bytes_total",
 			Help: "Total number of bytes from successfully uploaded and validated blocks using block upload API.",
 		}, []string{"user"}),
-		blockUploadFiles: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+		blockUploadFiles: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_block_upload_api_files_total",
 			Help: "Total number of files from successfully uploaded and validated blocks using block upload API.",
 		}, []string{"user"}),
@@ -783,6 +798,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		}
 	}
 
+	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
+	// beyond the lookback period, we don't want the compactor to skip these
+	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
+	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
+		maxLookback = 0
+	}
+
 	fetcher, err := block.NewMetaFetcher(
 		userLogger,
 		c.compactorCfg.MetaSyncConcurrency,
@@ -791,6 +813,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		reg,
 		fetcherFilters,
 		metaCache,
+		maxLookback,
 	)
 	if err != nil {
 		return err
@@ -823,6 +846,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.CompactionWaitPeriod,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
+		c.compactorCfg.UploadSparseIndexHeaders,
+		c.compactorCfg.SparseIndexHeadersSamplingRate,
+		c.compactorCfg.SparseIndexHeadersConfig,
+		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")

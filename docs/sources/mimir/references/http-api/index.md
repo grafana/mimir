@@ -22,7 +22,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes](../architecture/deployment-modes/) for the grouping of components.
 
 ## Endpoints
 
@@ -122,7 +122,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
-For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}).
+For more information about authentication and authorization, refer to [Authentication and Authorization](../../manage/secure/authentication-and-authorization/).
 
 ## All services
 
@@ -184,7 +184,7 @@ This endpoint displays empty configuration flags, it exists only to be compatibl
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration](../../configure/about-runtime-configuration/) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
@@ -294,7 +294,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../architecture/components/distributor" >}}).
+The following endpoints relate to the [distributor](../architecture/components/distributor/).
 
 ### Remote write
 
@@ -366,7 +366,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../architecture/components/ingester" >}}).
+The following endpoints relate to the [ingester](../architecture/components/ingester/).
 
 ### Flush chunks / blocks
 
@@ -522,7 +522,7 @@ Displays a web page with details about tenant's open TSDB on given ingester.
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend" >}}).
+The following endpoints are exposed both by the [querier](../architecture/components/querier/) and [query-frontend](../architecture/components/query-frontend/).
 
 ### Instant query
 
@@ -592,6 +592,28 @@ Requires [authentication](#authentication).
 #### Headers
 
 - `Sharding-Control` - _optional_ - Integer value specifying how many shards to use for request execution.
+- `X-Mimir-Response-Query-Stats` - _optional_ - Boolean value specifying if the response must have query stats in the `Server-Timing` header.
+
+#### Response headers
+
+- `Server-Timing` - _optional_ - Contains query execution stats if the `X-Mimir-Response-Query-Stats` header is set to `true`.
+  The content of the header is a comma-separated list of key-value pairs, where the key is the name of the metric and the value is the metric value.
+  The contents of this header might change without notice. For example: `Server-Timing: encode_time_seconds;dur=0.041, estimated_series_count;val=31950, fetched_chunk_bytes;val=23791904, fetched_chunks_count;val=329964, fetched_index_bytes;val=28647863, fetched_series_count;val=29906, query_wall_time_seconds;dur=6259.888, queue_time_seconds;dur=0.020, response_size_bytes;val=118, response_time;dur=6267.381, results_cache_hit_bytes;val=0, results_cache_miss_bytes;val=0, sharded_queries;val=0, split_queries;val=0`
+  - Metrics:
+    - `encode_time_seconds`: The time, in seconds, spent at the frontend encoding the query's final results. This value does not include time spent serializing results at the querier.
+    - `estimated_series_count`: The estimated number of series to be fetched for the query.
+    - `fetched_chunk_bytes`: The number of bytes of the chunks fetched for the query, after any deduplication.
+    - `fetched_chunks_count`: The number of chunks fetched for the query, after any deduplication.
+    - `fetched_index_bytes`: The number of index bytes fetched on the store-gateway for the query.
+    - `fetched_series_count`: The number of series fetched for the query.
+    - `query_wall_time_seconds`: The sum of all wall time, in seconds, spent in the querier to run the query.
+    - `queue_time_seconds`: The sum of durations, in seconds, that the query spent in the queue, before being handled by querier.
+    - `response_size_bytes`: The number of bytes of the response.
+    - `response_time`: The time, in milliseconds, spent processing the query.
+    - `results_cache_hit_bytes`: The number of results cache hits.
+    - `results_cache_miss_bytes`: The number of results cache misses.
+    - `sharded_queries`: The number of sharded queries run. Set to `0` if sharding is disabled, or if the query can't be sharded.
+    - `split_queries`: The number of split partial queries run. Set to `0` if splitting is disabled, or if the query can't be split.
 
 #### Response format
 
@@ -860,7 +882,7 @@ Prometheus-compatible rules endpoint to list alerting and recording rules that a
 
 The `type` parameter is optional. If set, only the specified type of rule is returned.
 
-The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly.
+The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly. The parameters can also be provided as `file[]`, `rule_group[]` and `rule_name[]` - if both are provided e.g `file` and `file[]` , `file[]` will take precdent.
 
 The `exclude_alerts` parameter is optional. If set, it only returns rules and excludes active alerts.
 
@@ -895,7 +917,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+To list all rule groups from Mimir, use [`mimirtool rules list` command](../../manage/tools/mimirtool/#list-rules).
 {{< /admonition >}}
 
 **Example response**
@@ -996,7 +1018,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+To retrieve a single rule group from Mimir, use [`mimirtool rules get` command](../../manage/tools/mimirtool/#get-rule-group) .
 {{< /admonition >}}
 
 ### Set rule group
@@ -1016,7 +1038,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+To load one or more rule groups into Mimir, use [`mimirtool rules load` command](../../manage/tools/mimirtool/#load-rule-group) .
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
@@ -1051,7 +1073,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+To delete a rule group from Mimir, use [`mimirtool rules delete` command](../../manage/tools/mimirtool/#delete-rule-group).
 {{< /admonition >}}
 
 ### Delete namespace
@@ -1143,7 +1165,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command](../../manage/tools/mimirtool/#get-alertmanager-configuration).
 {{< /admonition >}}
 
 ### Set Alertmanager configuration
@@ -1163,7 +1185,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command](../../manage/tools/mimirtool/#load-alertmanager-configuration).
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
@@ -1208,7 +1230,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command](../../manage/tools/mimirtool/#delete-alertmanager-configuration).
 {{< /admonition >}}
 
 ## Store-gateway

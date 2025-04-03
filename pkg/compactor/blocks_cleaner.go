@@ -18,7 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -165,6 +165,7 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
+	c.instrumentBucketIndexUpdate(ctx)
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
@@ -203,6 +204,22 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 		go doCleanup()
 	} else {
 		doCleanup()
+	}
+}
+
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
+	allUsers, _, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return
+	}
+	for _, userID := range allUsers {
+		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
+			return
+		}
+		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 	}
 }
 
@@ -477,7 +494,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
 	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
-	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
+	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 
 	// Compute pending compaction jobs based on current index.
 	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
@@ -548,15 +565,15 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 // cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
 // partialDeletionCutoffTime, if not zero, is used to find blocks without deletion marker that were last modified before this time. Such blocks will be marked for deletion.
 func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, partialDeletionCutoffTime time.Time, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
-	// Collect all blocks with missing meta.json into buffered channel.
+	// Collect all blocks with missing meta.json or inconsistent deletion markers.
 	blocks := make([]ulid.ULID, 0, len(partials))
 
 	for blockID, blockErr := range partials {
-		// We can safely delete only blocks which are partial because the meta.json is missing.
-		if !errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) {
-			continue
+		// We can safely delete blocks which are partial because the meta.json is missing. Blocks that are missing deletion-mark.json can
+		// be deleted if they exceed the delay period.
+		if errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) || errors.Is(blockErr, bucketindex.ErrBlockDeletionMarkNotFound) {
+			blocks = append(blocks, blockID)
 		}
-		blocks = append(blocks, blockID)
 	}
 
 	var mu sync.Mutex

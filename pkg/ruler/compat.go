@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,14 +31,19 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+const (
+	failureReasonServerError = "server_error"
+	failureReasonClientError = "client_error"
+)
+
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
 
 type PusherAppender struct {
-	failedWrites prometheus.Counter
-	totalWrites  prometheus.Counter
+	failedWrites *prometheus.CounterVec
+	totalWrites  *prometheus.CounterVec
 
 	ctx             context.Context
 	pusher          Pusher
@@ -91,7 +95,7 @@ func (a *PusherAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.L
 }
 
 func (a *PusherAppender) Commit() error {
-	a.totalWrites.Inc()
+	a.totalWrites.WithLabelValues(a.userID).Inc()
 
 	// Since a.pusher is distributor, client.ReuseSlice will be called in a.pusher.Push.
 	// We shouldn't call client.ReuseSlice here.
@@ -100,11 +104,13 @@ func (a *PusherAppender) Commit() error {
 	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), req)
 
 	if err != nil {
-		// Don't report client errors, which are the same ones that would be reported with 4xx HTTP status code
-		// (e.g. series limits, duplicate samples, out of order, etc.)
-		if !mimirpb.IsClientError(err) {
-			a.failedWrites.Inc()
+		failureReason := failureReasonServerError
+		if mimirpb.IsClientError(err) {
+			// Client errors, which are the same ones that would be reported with 4xx HTTP status code
+			// (e.g. series limits, duplicate samples, out of order, etc.) are reported with their own reason.
+			failureReason = failureReasonClientError
 		}
+		a.failedWrites.WithLabelValues(a.userID, failureReason).Inc()
 	}
 
 	a.labels = nil
@@ -123,11 +129,11 @@ type PusherAppendable struct {
 	pusher Pusher
 	userID string
 
-	totalWrites  prometheus.Counter
-	failedWrites prometheus.Counter
+	totalWrites  *prometheus.CounterVec
+	failedWrites *prometheus.CounterVec
 }
 
-func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites prometheus.Counter) *PusherAppendable {
+func NewPusherAppendable(pusher Pusher, userID string, totalWrites, failedWrites *prometheus.CounterVec) *PusherAppendable {
 	return &PusherAppendable{
 		pusher:       pusher,
 		userID:       userID,
@@ -209,16 +215,16 @@ type RulesLimits interface {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 }
 
-func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter, remoteQuerier bool) rules.QueryFunc {
+func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-		queries.Inc()
+		queries.WithLabelValues(userID).Inc()
+
 		result, err := qf(ctx, qs, t)
 		if err == nil {
 			return result, nil
 		}
 
-		// We only care about errors returned by underlying Queryable. Errors returned by PromQL engine are "user-errors",
-		// and not interesting here.
+		failureReason := failureReasonServerError
 		qerr := QueryableError{}
 		if errors.As(err, &qerr) {
 			origErr := qerr.Unwrap()
@@ -233,23 +239,23 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			// All errors will still be counted towards "evaluation failures" metrics and logged by Prometheus Ruler,
 			// but we only want internal errors here.
 			if _, ok := querier.TranslateToPromqlAPIError(origErr).(promql.ErrStorage); ok {
-				failedQueries.Inc()
+				failedQueries.WithLabelValues(userID, failureReason).Inc()
 			}
 
 			// Return unwrapped error.
 			return result, origErr
 		} else if remoteQuerier {
-			// When remote querier enabled, consider anything an error except those with 4xx status code.
-			st, ok := grpcutil.ErrorToStatus(err)
-			if !(ok && st.Code()/100 == 4) {
-				failedQueries.Inc()
+			// When remote querier's enabled, consider anything a "server error" except those with 4xx status code ("client error").
+			if mimirpb.IsClientError(err) {
+				failureReason = failureReasonClientError
 			}
+			failedQueries.WithLabelValues(userID, failureReason).Inc()
 		}
 		return result, err
 	}
 }
 
-func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, logger log.Logger) rules.QueryFunc {
+func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, remoteQuerier bool, logger log.Logger) rules.QueryFunc {
 	if queryTime == nil || zeroFetchedSeriesCount == nil {
 		return qf
 	}
@@ -261,6 +267,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
+		var result promql.Vector
 		var err error
 		defer func() {
 			// Update stats wall time based on the timer created above.
@@ -287,17 +294,28 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			logMessage := []interface{}{
 				"msg", "query stats",
 				"component", "ruler",
-				"query_wall_time_seconds", wallTime.Seconds(),
-				"fetched_series_count", numSeries,
-				"fetched_chunk_bytes", numBytes,
-				"fetched_chunks_count", numChunks,
-				"sharded_queries", shardedQueries,
 				"query", qs,
 			}
+
+			if !remoteQuerier {
+				// These statistics will only be populated when using local rule evaluation (ie. not using a remote query-frontend).
+				logMessage = append(logMessage,
+					"query_wall_time_seconds", wallTime.Seconds(),
+					"fetched_series_count", numSeries,
+					"fetched_chunk_bytes", numBytes,
+					"fetched_chunks_count", numChunks,
+					"sharded_queries", shardedQueries,
+				)
+			}
+
+			if err == nil {
+				logMessage = append(logMessage, "result_series_count", len(result))
+			}
+
 			level.Info(util_log.WithContext(ctx, logger)).Log(logMessage...)
 		}()
 
-		result, err := qf(ctx, qs, t)
+		result, err = qf(ctx, qs, t)
 		return result, err
 	}
 }
@@ -329,23 +347,23 @@ func DefaultTenantManagerFactory(
 	overrides RulesLimits,
 	reg prometheus.Registerer,
 ) ManagerFactory {
-	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	totalWrites := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
-	})
-	failedWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	}, []string{"user"})
+	failedWrites := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_failed_total",
 		Help: "Number of failed write requests to ingesters.",
-	})
+	}, []string{"user", "reason"})
 
-	totalQueries := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	totalQueries := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ruler_queries_total",
 		Help: "Number of queries executed by ruler.",
-	})
-	failedQueries := promauto.With(reg).NewCounter(prometheus.CounterOpts{
+	}, []string{"user"})
+	failedQueries := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ruler_queries_failed_total",
 		Help: "Number of failed queries by ruler.",
-	})
+	}, []string{"user", "reason"})
 	var rulerQuerySeconds *prometheus.CounterVec
 	var zeroFetchedSeriesQueries *prometheus.CounterVec
 	if cfg.EnableQueryStats {
@@ -368,8 +386,9 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
-		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries, cfg.QueryFrontend.Address != "")
-		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
+		remoteQuerier := cfg.QueryFrontend.Address != ""
+		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
+		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
@@ -394,7 +413,7 @@ func DefaultTenantManagerFactory(
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
-			AlwaysRestoreAlertState:    true,
+			RestoreNewRuleGroups:       true,
 			DefaultRuleQueryOffset: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.

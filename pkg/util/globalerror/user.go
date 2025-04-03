@@ -48,6 +48,7 @@ const (
 	IngesterMaxInMemorySeries            ID = "ingester-max-series"
 	IngesterMaxInflightPushRequests      ID = "ingester-max-inflight-push-requests"
 	IngesterMaxInflightPushRequestsBytes ID = "ingester-max-inflight-push-requests-bytes"
+	IngesterMaxInflightReadRequests      ID = "ingester-max-inflight-read-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
@@ -88,7 +89,6 @@ const (
 	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
-	NativeHistogramOOODisabled          ID = "native-histogram-ooo-disabled"
 
 	// Alertmanager errors
 	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"

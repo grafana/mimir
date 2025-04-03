@@ -286,8 +286,10 @@ func TestQueryTimeRange(t *testing.T) {
 
 			if tc.interval == 0 {
 				qtr = NewInstantQueryTimeRange(tc.start)
+				require.True(t, qtr.IsInstant)
 			} else {
 				qtr = NewRangeQueryTimeRange(tc.start, tc.end, tc.interval)
+				require.False(t, qtr.IsInstant)
 			}
 
 			require.Equal(t, tc.expectedStart, qtr.StartT, "StartT matches")

@@ -1,7 +1,6 @@
 package notify
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +36,7 @@ import (
 
 	"github.com/grafana/alerting/cluster"
 	"github.com/grafana/alerting/notify/nfstatus"
+	"github.com/grafana/alerting/notify/stages"
 
 	"github.com/grafana/alerting/models"
 	"github.com/grafana/alerting/templates"
@@ -589,8 +589,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 	// Iterate over each definition in the template and evaluate it.
 	var results TestTemplatesResults
 	for _, def := range definitions {
-		var buf bytes.Buffer
-		err := newTextTmpl.ExecuteTemplate(&buf, def, data)
+		res, scope, err := testTemplateScopes(newTextTmpl, def, data)
 		if err != nil {
 			results.Errors = append(results.Errors, TestTemplatesErrorResult{
 				Name:  def,
@@ -599,8 +598,9 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 			})
 		} else {
 			results.Results = append(results.Results, TestTemplatesResult{
-				Name: def,
-				Text: buf.String(),
+				Name:  def,
+				Text:  res,
+				Scope: scope,
 			})
 		}
 	}
@@ -710,7 +710,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg Configuration) (err error) {
 	var receivers []*nfstatus.Receiver
 	activeReceivers := GetActiveReceiversMap(am.route)
 	for name := range integrationsMap {
-		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.waitFunc, am.notificationLog)
+		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.notificationLog)
 		routingStage[name] = notify.MultiStage{meshStage, silencingStage, timeMuteStage, inhibitionStage, stage}
 		_, isActive := activeReceivers[name]
 
@@ -877,7 +877,7 @@ func (e AlertValidationError) Error() string {
 }
 
 // createReceiverStage creates a pipeline of stages for a receiver.
-func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*notify.Integration, wait func() time.Duration, notificationLog notify.NotificationLog) notify.Stage {
+func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*notify.Integration, notificationLog notify.NotificationLog) notify.Stage {
 	var fs notify.FanoutStage
 	for i := range integrations {
 		recv := &nflogpb.Receiver{
@@ -886,7 +886,7 @@ func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*
 			Idx:         uint32(integrations[i].Index()),
 		}
 		var s notify.MultiStage
-		s = append(s, notify.NewWaitStage(wait))
+		s = append(s, stages.NewWaitStage(am.peer, am.peerTimeout))
 		s = append(s, notify.NewDedupStage(integrations[i], notificationLog, recv))
 		s = append(s, notify.NewRetryStage(integrations[i], name, am.stageMetrics))
 		s = append(s, notify.NewSetNotifiesStage(notificationLog, recv))

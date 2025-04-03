@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
@@ -118,9 +119,10 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	}
 
 	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
+	cfg := indexheader.Config{VerifyOnLoad: true}
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, 4, m)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, 4, m, false, 32, cfg, 8)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
@@ -155,8 +157,9 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 	}))
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
+	cfg := indexheader.Config{VerifyOnLoad: true}
 	now := time.UnixMilli(1500002900159)
-	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, 4, metrics)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, 4, metrics, true, 32, cfg, 8)
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})

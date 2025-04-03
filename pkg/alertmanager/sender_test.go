@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	alertingHttp "github.com/grafana/alerting/http"
 	alertingLogging "github.com/grafana/alerting/logging"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/pkg/errors"
@@ -26,14 +27,14 @@ func TestSendWebhook(t *testing.T) {
 		got = r
 		w.WriteHeader(http.StatusOK)
 	}))
-	s := NewSender(alertingLogging.FakeLogger{})
+	s := alertingHttp.NewClient(alertingLogging.FakeLogger{}, alertingHttp.ClientConfiguration{UserAgent: version.UserAgent()})
 
 	// The method should be either POST or PUT.
 	cmd := alertingReceivers.SendWebhookSettings{
 		HTTPMethod: http.MethodGet,
 		URL:        server.URL,
 	}
-	require.ErrorIs(t, s.SendWebhook(context.Background(), &cmd), ErrInvalidMethod)
+	require.ErrorIs(t, s.SendWebhook(context.Background(), &cmd), alertingHttp.ErrInvalidMethod)
 
 	// If the method is not specified, it should default to POST.
 	// Content type should default to application/json.

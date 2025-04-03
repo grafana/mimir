@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -43,7 +44,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -1252,9 +1252,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
-		limits, err := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
-		require.NoError(t, err)
-
+		limits := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
 		regs[i] = prometheus.NewPedanticRegistry()
 		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withLimits(limits), withStart(), withPrometheusRegisterer(regs[i]))
 	}
@@ -1475,10 +1473,10 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 
 	// "upload" rule groups
 	for _, key := range ruleGroups {
-		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.RuleNode{
+		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.Rule{
 			{
-				Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-				Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+				Record: "up",
+				Expr:   "up==1",
 			},
 		}})
 		require.NoError(t, rs.SetRuleGroup(context.Background(), key.user, key.namespace, desc))
@@ -1660,6 +1658,68 @@ user2:
               expr: up`
 
 	require.YAMLEq(t, expectedResponseYaml, string(body))
+}
+
+func TestRuler_ListAllUsers(t *testing.T) {
+	defaultCfg := defaultRulerConfig(t)
+
+	testCases := map[string]struct {
+		cfg             Config
+		limits          RulesLimits
+		expectedTenants []string
+	}{
+		"include all tenants": {
+			cfg:             defaultCfg,
+			limits:          validation.MockDefaultOverrides(),
+			expectedTenants: []string{"user1", "user2"},
+		},
+		"include disabled tenants": {
+			cfg: func() Config {
+				// Copy default config
+				cfg := defaultCfg
+				cfg.DisabledTenants = []string{"user1"}
+				return cfg
+			}(),
+			limits:          validation.MockDefaultOverrides(),
+			expectedTenants: []string{"user1", "user2"},
+		},
+		"include tenants disabled in overrides": {
+			cfg: defaultCfg,
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				const userID = "user1"
+				tenantLimits[userID] = validation.MockDefaultLimits()
+				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
+			}),
+			expectedTenants: []string{"user1", "user2"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			r := prepareRuler(t, tc.cfg, newMockRuleStore(mockRules), withLimits(tc.limits), withStart())
+
+			router := mux.NewRouter()
+			router.Path("/ruler/tenants").Methods(http.MethodGet).HandlerFunc(r.ListAllUsers)
+
+			req := requestFor(t, http.MethodGet, "http://localhost:8080/ruler/tenants", nil, "")
+			req.Header.Set("Accept", "application/json")
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			resp := w.Result()
+
+			// Check status code and header
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+
+			var respJSON struct {
+				Tenants []string `json:"tenants"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&respJSON))
+			require.ElementsMatch(t, tc.expectedTenants, respJSON.Tenants)
+		})
+	}
 }
 
 type senderFunc func(alerts ...*notifier.Alert)

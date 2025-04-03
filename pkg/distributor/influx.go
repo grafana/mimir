@@ -163,7 +163,7 @@ func TimeseriesToInfluxRequest(timeseries []prompb.TimeSeries) string {
 				name = l.Value
 				continue
 			}
-			if l.Name != "__mimir_source__" {
+			if l.Name != "__proxy_source__" {
 				others = append(others, l.Name+"="+l.Value)
 			}
 		}

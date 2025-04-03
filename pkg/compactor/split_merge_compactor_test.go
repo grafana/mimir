@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -660,6 +660,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				reg,
 				nil,
 				nil,
+				0,
 			)
 			require.NoError(t, err)
 			metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
@@ -752,6 +753,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		reg,
 		nil,
 		nil,
+		0,
 	)
 	require.NoError(t, err)
 	metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
