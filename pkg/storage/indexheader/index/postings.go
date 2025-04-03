@@ -55,9 +55,9 @@ type PostingOffsetTable interface {
 // The End might be bigger than the actual posting ending, but not larger than the whole index file.
 type PostingListOffset interface {
 	GetLabelValue() string
-	SetLabelValue(string) PostingListOffset
+	SetLabelValue(string)
 	GetOff() index.Range
-	SetOff(index.Range) PostingListOffset
+	SetOff(index.Range)
 }
 
 type PostingListOffsetStringImpl struct {
@@ -72,19 +72,17 @@ func newPostingListOffsetStringImpl(labelValue string, off index.Range) PostingL
 	}
 }
 
-func (p PostingListOffsetStringImpl) GetLabelValue() string {
+func (p *PostingListOffsetStringImpl) GetLabelValue() string {
 	return p.labelValue
 }
-func (p PostingListOffsetStringImpl) SetLabelValue(labelValue string) PostingListOffset {
+func (p *PostingListOffsetStringImpl) SetLabelValue(labelValue string) {
 	p.labelValue = labelValue
-	return p
 }
-func (p PostingListOffsetStringImpl) GetOff() index.Range {
+func (p *PostingListOffsetStringImpl) GetOff() index.Range {
 	return p.off
 }
-func (p PostingListOffsetStringImpl) SetOff(off index.Range) PostingListOffset {
+func (p *PostingListOffsetStringImpl) SetOff(off index.Range) {
 	p.off = off
-	return p
 }
 
 type PostingOffsetTableV1 struct {
@@ -582,9 +580,9 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 
 	var skip int
 	readNextList := func() (e pEntry) {
-		e = pEntry{
-			PostingListOffset: newPostingListOffsetStringImpl("", index.Range{}),
-		}
+		//e = pEntry{
+		//	//PostingListOffset: newPostingListOffsetStringImpl("", index.Range{}),
+		//}
 		if skip == 0 {
 			// These are always the same number of bytes, since it's the same label name each time.
 			// It's faster to skip than parse.
@@ -605,16 +603,26 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
 		if e.matches {
+			//if e.PostingListOffset == nil {
+			e.PostingListOffset = newPostingListOffsetStringImpl(strings.Clone(unsafeValue), index.Range{})
+			//}
 			//e.SetLabelValue(strings.Clone(unsafeValue))
-			e.PostingListOffset = e.SetLabelValue(strings.Clone(unsafeValue))
+			//e.PostingListOffset = e.SetLabelValue(strings.Clone(unsafeValue))
 		}
 		// In the postings section of the index the information in each posting list for length and number
 		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
 		// So we can omit the first one - length - and return
 		// the offset of the number_of_entries field.\
-		off := e.GetOff()
-		off.Start = int64(d.Uvarint64()) + postingLengthFieldSize
-		e.PostingListOffset = e.SetOff(off)
+		off := index.Range{
+			Start: int64(d.Uvarint64()) + postingLengthFieldSize,
+		}
+		if e.PostingListOffset == nil {
+			// We don't need to set the label value, because it is not used.
+			e.PostingListOffset = newPostingListOffsetStringImpl("", off)
+		} else {
+			e.SetOff(off)
+		}
+		//e.PostingListOffset = e.SetOff(off)
 		return
 	}
 
@@ -649,7 +657,8 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 			off := currEntry.GetOff()
 			off.End = e.lastValOffset
-			currEntry.PostingListOffset = currEntry.SetOff(off)
+			currEntry.SetOff(off)
+			//currEntry.PostingListOffset = currEntry.SetOff(off)
 		} else {
 			nextEntry = readNextList()
 
@@ -658,7 +667,8 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 			// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
 			off := currEntry.GetOff()
 			off.End = nextEntry.GetOff().Start - crc32.Size - postingLengthFieldSize
-			currEntry.PostingListOffset = currEntry.SetOff(off)
+			currEntry.SetOff(off)
+			//currEntry.PostingListOffset = currEntry.SetOff(off)
 		}
 		offsets = append(offsets, currEntry.PostingListOffset)
 	}
