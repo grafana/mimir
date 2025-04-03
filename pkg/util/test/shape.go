@@ -35,17 +35,29 @@ func prettyPrintType(t reflect.Type, ignoreName bool, ignoreXXXPrefix bool) stri
 	}
 
 	tree := treeprint.NewWithRoot("<root>")
-	AddTypeToTree(t, tree, ignoreName, ignoreXXXPrefix, false)
+	AddTypeToTree(t, tree, ignoreName, ignoreXXXPrefix, false, true)
 
 	return tree.String()
 }
 
-func AddTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName bool, ignoreXXXPrefix bool, ignoreOffset bool) {
+func AddTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName, ignoreXXXPrefix, ignoreOffset, ignoreProtoBufTag bool) {
 	offsetF := func(offset uintptr) uintptr {
 		if ignoreOffset {
 			return 0
 		}
 		return offset
+	}
+	protoBuf := func(t reflect.StructField) string {
+		if ignoreProtoBufTag {
+			return ""
+		}
+		tag := t.Tag.Get("protobuf")
+		if tag == "" {
+			return ""
+		}
+		// We only care about the type and the field number.
+		tokens := strings.Split(tag, ",")
+		return fmt.Sprintf(" protobuf:%s,%s", tokens[0], tokens[1])
 	}
 
 	if t.Kind() == reflect.Pointer {
@@ -57,7 +69,7 @@ func AddTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName bool, ignoreX
 			fieldName = ignoredFieldName
 		}
 		name := fmt.Sprintf("%s: *%s", fieldName, t.Elem().Kind())
-		AddTypeToTree(t.Elem(), tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset)
+		AddTypeToTree(t.Elem(), tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset, ignoreProtoBufTag)
 		return
 	}
 
@@ -77,21 +89,21 @@ func AddTypeToTree(t reflect.Type, tree treeprint.Tree, ignoreName bool, ignoreX
 
 		switch f.Type.Kind() {
 		case reflect.Pointer:
-			name := fmt.Sprintf("+%v %s: *%s", offsetF(f.Offset), fieldName, f.Type.Elem().Kind())
-			AddTypeToTree(f.Type.Elem(), tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset)
+			name := fmt.Sprintf("+%v %s: *%s%s", offsetF(f.Offset), fieldName, f.Type.Elem().Kind(), protoBuf(f))
+			AddTypeToTree(f.Type.Elem(), tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset, ignoreProtoBufTag)
 		case reflect.Slice:
-			name := fmt.Sprintf("+%v %s: []%s", offsetF(f.Offset), fieldName, f.Type.Elem().Kind())
+			name := fmt.Sprintf("+%v %s: []%s%s", offsetF(f.Offset), fieldName, f.Type.Elem().Kind(), protoBuf(f))
 
 			if isPrimitive(f.Type.Elem().Kind()) {
 				tree.AddNode(name)
 			} else {
-				AddTypeToTree(f.Type.Elem(), tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset)
+				AddTypeToTree(f.Type.Elem(), tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset, ignoreProtoBufTag)
 			}
 		case reflect.Struct:
-			name := fmt.Sprintf("+%v %s: struct", offsetF(f.Offset), fieldName)
-			AddTypeToTree(f.Type, tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset)
+			name := fmt.Sprintf("+%v %s: struct%s", offsetF(f.Offset), fieldName, protoBuf(f))
+			AddTypeToTree(f.Type, tree.AddBranch(name), ignoreName, ignoreXXXPrefix, ignoreOffset, ignoreProtoBufTag)
 		default:
-			name := fmt.Sprintf("+%v %s: %s", offsetF(f.Offset), fieldName, f.Type.Kind())
+			name := fmt.Sprintf("+%v %s: %s%s", offsetF(f.Offset), fieldName, f.Type.Kind(), protoBuf(f))
 			tree.AddNode(name)
 		}
 	}

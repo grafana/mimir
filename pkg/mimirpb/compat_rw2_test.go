@@ -25,10 +25,10 @@ func TestRW2TypesCompatible(t *testing.T) {
 	// but we don't. Which also means that the offsets would be different.
 	// But we are not going to cast between the two types, so offsets
 	// don't matter.
-	test.AddTypeToTree(expectedType, expectedTree, false, true, true)
+	test.AddTypeToTree(expectedType, expectedTree, false, true, true, false)
 
 	actualTree := treeprint.NewWithRoot("<root>")
-	test.AddTypeToTree(actualType, actualTree, false, true, true)
+	test.AddTypeToTree(actualType, actualTree, false, true, true, false)
 
 	// mimirpb.Sample fields order MUST match promql.FPoint so that we can
 	// cast types between them. However this makes test.RequireSameShape
