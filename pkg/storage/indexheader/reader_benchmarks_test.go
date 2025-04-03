@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -191,19 +193,24 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	testCases := []struct {
 		numLabelNames  int
 		numLabelValues int
+		numConcurrent  int
 	}{
-		{2, 5},
-		{2, 10},
-		{2, 100},
-		{2, 500},
-		{5, 5},
-		{5, 10},
-		{5, 100},
-		{5, 500},
-		{10, 5},
-		{10, 10},
-		{10, 100},
-		{10, 500},
+		{10, 5, 1},
+		{10, 10, 1},
+		{10, 100, 1},
+		{10, 500, 1},
+		//{10, 5, 4},
+		//{10, 10, 4},
+		//{10, 100, 4},
+		//{10, 500, 4},
+		{10, 5, 8},
+		{10, 10, 8},
+		{10, 100, 8},
+		{10, 500, 8},
+		{10, 5, 32},
+		{10, 10, 32},
+		{10, 100, 32},
+		{10, 500, 32},
 	}
 
 	for _, tc := range testCases {
@@ -236,17 +243,37 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			names[i], names[j] = names[j], names[i]
 		})
 
-		b.Run(fmt.Sprintf("numNames=%v/numValues=%v", len(nameSymbols), len(valueSymbols)), func(b *testing.B) {
+		b.Run(fmt.Sprintf("numNames=%v/numValues=%v/numConcurrent=%v", len(nameSymbols), len(valueSymbols), tc.numConcurrent), func(b *testing.B) {
+
 			for i := 0; i < b.N; i++ {
-				name := names[i%len(names)]
+				var m1, m2 runtime.MemStats
+				runtime.GC()
+				runtime.ReadMemStats(&m1)
+				runFunc := func() {
+					name := names[i%len(names)]
 
-				values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
-					return true
-				})
+					values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
+						return true
+					})
 
-				require.NoError(b, err)
-				require.NotEmpty(b, values)
+					require.NoError(b, err)
+					require.NotEmpty(b, values)
+				}
+				wg := sync.WaitGroup{}
+				for j := 0; j < tc.numConcurrent; j++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						runFunc()
+					}()
+				}
+				wg.Wait()
+				runtime.ReadMemStats(&m2)
+
+				b.ReportMetric(float64(m2.HeapAlloc-m1.HeapAlloc), "B/inuse_space")
+				b.ReportMetric(float64(m2.HeapObjects-m1.HeapObjects), "inuse_objects")
 			}
+
 		})
 	}
 }
