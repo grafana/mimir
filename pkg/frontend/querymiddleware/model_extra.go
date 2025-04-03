@@ -13,14 +13,20 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"sort"
 	"time"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1091,4 +1097,211 @@ func cloneHeaders(headers []*PrometheusHeader) []*PrometheusHeader {
 		cp[i] = &PrometheusHeader{Name: h.Name, Values: slices.Clone(h.Values)}
 	}
 	return cp
+}
+
+type streamsSeriesSet struct {
+	streams []SampleStream
+	current int
+}
+
+func sampleStreamToSeriesSet(streams []SampleStream) storage.SeriesSet {
+	sort.Slice(streams, func(i, j int) bool {
+		return mimirpb.CompareLabelAdapters(streams[i].Labels, streams[j].Labels) < 0
+	})
+	return &streamsSeriesSet{
+		streams: streams,
+		current: -1,
+	}
+}
+
+func (s *streamsSeriesSet) Next() bool {
+	s.current++
+	return s.current < len(s.streams)
+}
+
+func (s *streamsSeriesSet) At() storage.Series {
+	return newStreamSeries(s.streams[s.current])
+}
+
+func (s *streamsSeriesSet) Err() error {
+	return nil
+}
+
+func (s *streamsSeriesSet) Warnings() annotations.Annotations {
+	return nil
+}
+
+// streamSeries implements storage.Series for a single SampleStream.
+type streamSeries struct {
+	stream SampleStream
+}
+
+func newStreamSeries(stream SampleStream) *streamSeries {
+	return &streamSeries{stream: stream}
+}
+
+func (s *streamSeries) Labels() labels.Labels {
+	return mimirpb.FromLabelAdaptersToLabels(s.stream.Labels)
+}
+
+func (s *streamSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	// If we're passed a non-nil iterator, attempt to reuse it if it's our type
+	if sit, ok := it.(*streamSeriesIterator); ok {
+		sit.reset(s.stream)
+		return sit
+	}
+	return newStreamSeriesIterator(s.stream)
+}
+
+// streamSeriesIterator implements a series iterator for a SampleStream.
+type streamSeriesIterator struct {
+	stream    SampleStream
+	curSample int
+	curHisto  int
+	atHisto   bool
+}
+
+func newStreamSeriesIterator(stream SampleStream) *streamSeriesIterator {
+	it := &streamSeriesIterator{}
+	it.reset(stream)
+	return it
+}
+
+func (s *streamSeriesIterator) reset(stream SampleStream) {
+	s.stream = stream
+	s.curSample = -1
+	s.curHisto = -1
+	s.atHisto = false
+}
+
+// atType returns current timestamp and value type
+func (s *streamSeriesIterator) atType() (int64, chunkenc.ValueType) {
+	if s.atHisto {
+		if s.curHisto < 0 || s.curHisto >= len(s.stream.Histograms) {
+			return 0, chunkenc.ValNone
+		}
+		return s.stream.Histograms[s.curHisto].TimestampMs, chunkenc.ValFloatHistogram
+	}
+	if s.curSample < 0 || s.curSample >= len(s.stream.Samples) {
+		return 0, chunkenc.ValNone
+	}
+	return s.stream.Samples[s.curSample].TimestampMs, chunkenc.ValFloat
+}
+
+func (s *streamSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	oldTime, oldType := s.atType()
+	if oldTime >= t { // only advance via Seek
+		return oldType
+	}
+
+	s.curSample = sort.Search(len(s.stream.Samples), func(n int) bool {
+		return s.stream.Samples[n].TimestampMs >= t
+	})
+	s.curHisto = sort.Search(len(s.stream.Histograms), func(n int) bool {
+		return s.stream.Histograms[n].TimestampMs >= t
+	})
+
+	if s.curSample >= len(s.stream.Samples) && s.curHisto >= len(s.stream.Histograms) {
+		return chunkenc.ValNone
+	}
+	if s.curSample >= len(s.stream.Samples) {
+		s.atHisto = true
+		_, valueType := s.atType()
+		return valueType
+	}
+	if s.curHisto >= len(s.stream.Histograms) {
+		s.atHisto = false
+		return chunkenc.ValFloat
+	}
+
+	// If sample timestamp is earlier, point to the sample
+	if s.stream.Samples[s.curSample].TimestampMs < s.stream.Histograms[s.curHisto].TimestampMs {
+		s.curHisto--
+		s.atHisto = false
+		return chunkenc.ValFloat
+	}
+
+	// Otherwise point to the histogram
+	s.curSample--
+	s.atHisto = true
+	_, valueType := s.atType()
+	return valueType
+}
+
+func (s *streamSeriesIterator) At() (t int64, v float64) {
+	if s.atHisto {
+		panic(errors.New("streamSeriesIterator: Calling At() when cursor is at histogram"))
+	}
+	sample := s.stream.Samples[s.curSample]
+	return sample.TimestampMs, sample.Value
+}
+
+func (s *streamSeriesIterator) Next() chunkenc.ValueType {
+	// If we've exhausted both samples and histograms, return ValNone
+	if s.curSample+1 >= len(s.stream.Samples) && s.curHisto+1 >= len(s.stream.Histograms) {
+		s.curSample = len(s.stream.Samples)
+		s.curHisto = len(s.stream.Histograms)
+		return chunkenc.ValNone
+	}
+
+	// If we've exhausted samples, move to next histogram
+	if s.curSample+1 >= len(s.stream.Samples) {
+		s.curHisto++
+		s.atHisto = true
+		_, valueType := s.atType()
+		return valueType
+	}
+
+	// If we've exhausted histograms, move to next sample
+	if s.curHisto+1 >= len(s.stream.Histograms) {
+		s.curSample++
+		s.atHisto = false
+		return chunkenc.ValFloat
+	}
+
+	// Choose the one with earlier timestamp
+	nextSampleTs := s.stream.Samples[s.curSample+1].TimestampMs
+	nextHistoTs := s.stream.Histograms[s.curHisto+1].TimestampMs
+
+	if nextSampleTs < nextHistoTs {
+		s.curSample++
+		s.atHisto = false
+		return chunkenc.ValFloat
+	}
+	s.curHisto++
+	s.atHisto = true
+	_, valueType := s.atType()
+	return valueType
+}
+
+func (s *streamSeriesIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	// We don't support integer histograms in this iterator
+	return 0, nil
+}
+
+func (s *streamSeriesIterator) AtFloatHistogram(h *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	if !s.atHisto {
+		panic(errors.New("streamSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
+	}
+	if s.curHisto < 0 || s.curHisto >= len(s.stream.Histograms) {
+		return 0, nil
+	}
+
+	histSample := s.stream.Histograms[s.curHisto]
+	histResult := histSample.Histogram.ToPrometheusModel()
+
+	if h != nil {
+		histResult.CopyTo(h)
+		return histSample.TimestampMs, h
+	}
+	return histSample.TimestampMs, histResult
+}
+
+func (s *streamSeriesIterator) AtT() int64 {
+	t, _ := s.atType()
+	return t
+}
+
+func (s *streamSeriesIterator) Err() error {
+	return nil
 }

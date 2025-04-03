@@ -374,7 +374,11 @@ func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			set := newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{testData.input}, testData.hints)
+			step := int64(0)
+			if testData.hints != nil {
+				step = testData.hints.Step
+			}
+			set := newStalenessMarkerSeriesSet(sampleStreamToSeriesSet(testData.input), step)
 			actual, err := seriesSetToSampleStreams(set)
 			require.NoError(t, err)
 			assertEqualSampleStream(t, testData.expected, actual)

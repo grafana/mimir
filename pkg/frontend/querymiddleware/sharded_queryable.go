@@ -32,7 +32,8 @@ var (
 	errNotImplemented       = errors.New("not implemented")
 )
 
-type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
+// HandleEmbeddedQueryFunc returns a storage.SeriesSet for the embedded query. The PrometheusResponse is only used for warnings, annotations, and headers.
+type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) (storage.SeriesSet, *PrometheusResponse, error)
 
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
@@ -115,7 +116,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
-func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) (storage.SeriesSet, *PrometheusResponse, error) {
 	query, err := query.WithQuery(queryExpr.Expr)
 	if err != nil {
 		return nil, nil, err
@@ -135,22 +136,29 @@ func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.Emb
 		return nil, nil, err
 	}
 
-	return resStreams, promRes, nil
+	return sampleStreamToSeriesSet(resStreams), promRes, nil
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
 func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []astmapper.EmbeddedQuery, hints *storage.SelectHints) storage.SeriesSet {
-	streams := make([][]SampleStream, len(queries))
+	seriesSets := make([]storage.SeriesSet, len(queries))
+
+	// Get the query step from hints (if available)
+	var step int64
+	if hints != nil {
+		step = hints.Step
+	}
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
-		resStreams, promRes, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler)
+		// Each handleEmbeddedQuery call returns a plain SeriesSet without staleness markers
+		rawSeriesSet, promRes, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler)
 		if err != nil {
 			return err
 		}
 
-		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
+		seriesSets[idx] = newStalenessMarkerSeriesSet(rawSeriesSet, step)
 
 		q.responseHeaders.mergeHeaders(promRes.Headers)
 		q.annotationAccumulator.addInfos(promRes.Infos)
@@ -163,7 +171,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []as
 		return storage.ErrSeriesSet(err)
 	}
 
-	return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
+	return concatSeriesSets(seriesSets)
 }
 
 // LabelValues implements storage.LabelQuerier.
@@ -224,6 +232,7 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 // results.
 //
 // The returned storage.SeriesSet series is sorted.
+// TODO dimitarvdimitrov remove
 func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints) storage.SeriesSet {
 	totalLen := 0
 	for _, r := range results {

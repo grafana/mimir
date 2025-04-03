@@ -101,7 +101,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		q.responseHeaders.mergeHeaders(promRes.Headers)
 		q.annotationAccumulator.addInfos(promRes.Infos)
 		q.annotationAccumulator.addWarnings(promRes.Warnings)
-		return newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
+		return newStalenessMarkerSeriesSet(sampleStreamToSeriesSet(resStreams), hints.Step)
 	case astmapper.SubqueryMetricName:
 		expr := values[astmapper.SubqueryQueryLabelName]
 		rangeStr := values[astmapper.SubqueryRangeLabelName]
@@ -187,7 +187,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			if err != nil {
 				return storage.ErrSeriesSet(err)
 			}
-			sets[idx] = newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
+			sets[idx] = newStalenessMarkerSeriesSet(sampleStreamToSeriesSet(resStreams), hints.Step)
 			q.annotationAccumulator.addInfos(promRes.Infos)
 			q.annotationAccumulator.addWarnings(promRes.Warnings)
 		}
