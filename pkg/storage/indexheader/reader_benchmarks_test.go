@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -254,9 +255,9 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			//memProfile, _ := os.Create("mem.prof")
 			//defer memProfile.Close()
 			//runtime.GC()
-			//var m1, m2 runtime.MemStats
-			//runtime.GC()
-			//runtime.ReadMemStats(&m1)
+			var m1, m2 runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&m1)
 
 			for i := 0; i < b.N; i++ {
 				runFunc := func() {
@@ -280,10 +281,10 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 				wg.Wait()
 			}
 			//pprof.WriteHeapProfile(memProfile)
-			//runtime.ReadMemStats(&m2)
-			//
-			//b.ReportMetric(float64(m2.HeapAlloc-m1.HeapAlloc), "B/inuse_space")
-			//b.ReportMetric(float64(m2.HeapObjects-m1.HeapObjects), "inuse_objects")
+			runtime.ReadMemStats(&m2)
+
+			b.ReportMetric(float64(m2.HeapAlloc-m1.HeapAlloc), "B/inuse_space")
+			b.ReportMetric(float64(m2.HeapObjects-m1.HeapObjects), "inuse_objects")
 		})
 
 	}
