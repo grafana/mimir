@@ -732,7 +732,9 @@ func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 
 	source := FromWriteRequestSourceToWriteRequestV2Source(req.Source)
 	// symbols := writev2.NewSymbolTable()
-	symbols := NewFastSymbolsTable()
+	// symbols := NewFastSymbolsTable()
+	symbols := symbolizerFromPool()
+	defer reuseSymbolizer(symbols)
 
 	timeseries := make([]TimeSeriesV2, 0, len(req.Timeseries))
 	for _, ts := range req.Timeseries {
