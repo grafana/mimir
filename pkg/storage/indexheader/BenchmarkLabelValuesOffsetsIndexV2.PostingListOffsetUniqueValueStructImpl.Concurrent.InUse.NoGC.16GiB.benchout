@@ -1,0 +1,14 @@
+goos: linux
+goarch: amd64
+pkg: github.com/grafana/mimir/pkg/storage/indexheader
+cpu: AMD Ryzen 9 PRO 6950H with Radeon Graphics     
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=5/numConcurrent=1-16         	   20000	     13916 ns/op	    208648 B/inuse_space	      1693 inuse_objects	    1715 B/op	      15 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=10/numConcurrent=1-16        	   20000	     15617 ns/op	     64008 B/inuse_space	       448.0 inuse_objects	    1854 B/op	      20 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=100/numConcurrent=1-16       	   20000	     33035 ns/op	    150904 B/inuse_space	      2107 inuse_objects	    5607 B/op	     110 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=500/numConcurrent=1-16       	   20000	    146760 ns/op	    182464 B/inuse_space	      3448 inuse_objects	   22421 B/op	     511 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=5/numConcurrent=32-16        	   20000	    515438 ns/op	    526080 B/inuse_space	      2135 inuse_objects	   72998 B/op	     435 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=10/numConcurrent=32-16       	   20000	    459798 ns/op	    194048 B/inuse_space	      1327 inuse_objects	   73897 B/op	     593 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=100/numConcurrent=32-16      	   20000	   1001981 ns/op	    266904 B/inuse_space	      3586 inuse_objects	  206979 B/op	    3488 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=500/numConcurrent=32-16      	   20000	   3371080 ns/op	    867832 B/inuse_space	     18396 inuse_objects	  790406 B/op	   16760 allocs/op
+PASS
+ok  	github.com/grafana/mimir/pkg/storage/indexheader	115.504s
