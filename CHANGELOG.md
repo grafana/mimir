@@ -36,6 +36,7 @@
 * [BUGFIX] Querier: Fix issue where an entire store-gateway zone leaving caused high CPU usage trying to find active members of the leaving zone. #11028
 * [BUGFIX] Query-frontend: Fix blocks retention period enforcement when a request has multiple tenants (tenant federation). #11069
 * [BUGFIX] Query-frontend: Fix `-query-frontend.query-sharding-max-sharded-queries` enforcement for instant queries with binary operators. #11086
+* [BUGFIX] Memberlist: Fix hash ring updates before the full-join has been completed, when `-memberlist.notify-interval` is configured. #11098
 
 ### Mixin
 
