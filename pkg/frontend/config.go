@@ -107,7 +107,7 @@ func InitFrontend(
 }
 
 func invalidClusterValidationReporter(cfg CombinedFrontendConfig, reg prometheus.Registerer, logger log.Logger) middleware.InvalidClusterValidationReporter {
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-frontend", util.HTTPProtocol)
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "querier", util.HTTPProtocol)
 	return util.NewInvalidClusterValidationReporter(cfg.ClusterValidationConfig.Label, invalidClusterValidation, logger)
 }
 

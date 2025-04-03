@@ -152,7 +152,7 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_client_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
         	    # TYPE cortex_client_request_invalid_cluster_validation_labels_total counter
-        	    cortex_client_request_invalid_cluster_validation_labels_total{client="query-frontend",method="/api/v1/query_range",protocol="http"} 1
+        	    cortex_client_request_invalid_cluster_validation_labels_total{client="querier",method="/api/v1/query_range",protocol="http"} 1
 			`,
 		},
 		"if client has no cluster validation label and soft cluster validation is enabled no error is returned": {
