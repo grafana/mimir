@@ -1,0 +1,14 @@
+goos: linux
+goarch: amd64
+pkg: github.com/grafana/mimir/pkg/storage/indexheader
+cpu: AMD Ryzen 9 PRO 6950H with Radeon Graphics     
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=5/numConcurrent=1-16         	   20000	     14017 ns/op	    2815 B/op	      15 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=10/numConcurrent=1-16        	   20000	     15664 ns/op	    2874 B/op	      20 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=100/numConcurrent=1-16       	   20000	     27513 ns/op	    6727 B/op	     110 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=500/numConcurrent=1-16       	   20000	    202547 ns/op	   27990 B/op	     512 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=5/numConcurrent=32-16        	   20000	    418221 ns/op	  103245 B/op	     430 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=10/numConcurrent=32-16       	   20000	    404660 ns/op	  103812 B/op	     589 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=100/numConcurrent=32-16      	   20000	    649052 ns/op	  232262 B/op	    3476 allocs/op
+BenchmarkLabelValuesOffsetsIndexV2/numNames=10/numValues=500/numConcurrent=32-16      	   20000	   1476668 ns/op	  872371 B/op	   16292 allocs/op
+PASS
+ok  	github.com/grafana/mimir/pkg/storage/indexheader	68.506s
