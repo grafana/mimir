@@ -238,8 +238,7 @@ overrides:
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager))
 	})
 
-	overrides, err := validation.NewOverrides(cfg.LimitsConfig, newTenantLimits(manager))
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(cfg.LimitsConfig, newTenantLimits(manager))
 
 	require.Equal(t, `additional:{foo="user_1_additional"};base:{foo="user_1_base"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-1").String())
 	require.Equal(t, `additional:{foo="user_1_additional"};base:{foo="user_1_base"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-2").String())

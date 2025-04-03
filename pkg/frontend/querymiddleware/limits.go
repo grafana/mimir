@@ -150,7 +150,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	}
 
 	// Clamp the time range based on the max query lookback and block retention period.
-	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
+	blocksRetentionPeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
 	maxLookback := smallestPositiveNonZeroDuration(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {

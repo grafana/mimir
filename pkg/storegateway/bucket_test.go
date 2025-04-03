@@ -1047,10 +1047,13 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 	tmpDir := tb.TempDir()
 	bucketDir := filepath.Join(tmpDir, "bkt")
 
-	bkt, err := filesystem.NewBucket(bucketDir)
+	ubkt, err := filesystem.NewBucket(bucketDir)
 	assert.NoError(tb, err)
 
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	tb.Cleanup(func() {
+		assert.NoError(tb, ubkt.Close())
 		assert.NoError(tb, bkt.Close())
 	})
 
@@ -1074,7 +1077,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               localBucket{Bucket: bkt, dir: bucketDir},
+			bkt:               localBucket{Bucket: ubkt, dir: bucketDir},
 			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
@@ -1732,9 +1735,14 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bkt.Close()) }()
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	logger := log.NewNopLogger()
 	thanosMeta := block.ThanosMeta{

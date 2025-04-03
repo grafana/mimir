@@ -1245,112 +1245,160 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 
 func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 	tests := map[string]struct {
-		query             string
-		hints             *Hints
-		totalShards       int
-		maxShardedQueries int
-		nativeHistograms  bool
-		expectedShards    int
-		compactorShards   int
+		query                         string
+		hints                         *Hints
+		totalShards                   int
+		maxShardedQueries             int
+		nativeHistograms              bool
+		expectedShardsPerPartialQuery int
+		compactorShards               int
 	}{
 		"query is not shardable": {
-			query:             "metric",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    1,
+			query:                         "metric",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 1,
 		},
 		"single splitted query, query has 1 shardable leg": {
-			query:             "sum(metric)",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    16,
+			query:                         "sum(metric)",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 16,
 		},
 		"single splitted query, query has many shardable legs": {
-			query:             "sum(metric_1) + sum(metric_2) + sum(metric_3) + sum(metric_4)",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       16,
-			maxShardedQueries: 16,
-			expectedShards:    4,
+			query:                         "sum(metric_1) + sum(metric_2) + sum(metric_3) + sum(metric_4)",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   16,
+			maxShardedQueries:             16,
+			expectedShardsPerPartialQuery: 4,
 		},
 		"multiple splitted queries, query has 1 shardable leg": {
-			query:             "sum(metric)",
-			hints:             &Hints{TotalQueries: 10},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    6,
+			query:                         "sum(metric)",
+			hints:                         &Hints{TotalQueries: 10},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 6,
 		},
 		"multiple splitted queries, query has 2 shardable legs": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 10},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    3,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 10},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 3,
 		},
 		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   0,
-			expectedShards:    10,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               0,
+			expectedShardsPerPartialQuery: 10,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   3,
-			expectedShards:    9,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               3,
+			expectedShardsPerPartialQuery: 9,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   4,
-			expectedShards:    8,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               4,
+			expectedShardsPerPartialQuery: 8,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   10,
-			expectedShards:    10,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               10,
+			expectedShardsPerPartialQuery: 10,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   11,
-			expectedShards:    10, // cannot be adjusted to make 11 multiple or divisible, keep original.
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               11,
+			expectedShardsPerPartialQuery: 10, // cannot be adjusted to make 11 multiple or divisible, keep original.
 		},
 		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   14,
-			expectedShards:    7, // 7 divides 14
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               14,
+			expectedShardsPerPartialQuery: 7, // 7 divides 14
 		},
 		"query sharding is disabled": {
-			query:             "sum(metric)",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       0, // Disabled.
-			maxShardedQueries: 64,
-			expectedShards:    1,
+			query:                         "sum(metric)",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   0, // Disabled.
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 1,
 		},
 		"native histograms accepted": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			nativeHistograms:  true,
-			compactorShards:   10,
-			expectedShards:    10,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			nativeHistograms:              true,
+			compactorShards:               10,
+			expectedShardsPerPartialQuery: 10,
+		},
+		"hints are missing, query has 1 shardable leg": {
+			query:                         "count(metric)",
+			hints:                         nil,
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16,
+		},
+		"hints are missing, query has 2 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2)",
+			hints:                         nil,
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16, // 2 legs * 16 shards per query = 32 max sharded queries
+		},
+		"hints are missing, query has 4 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
+			hints:                         nil,
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 8, // 4 legs * 8 shards per query = 32 max sharded queries
+		},
+		"total queries number is missing in hints, query has 1 shardable leg": {
+			query:                         "count(metric)",
+			hints:                         &Hints{},
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16,
+		},
+		"total queries number is missing in hints, query has 2 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2)",
+			hints:                         &Hints{},
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16, // 2 legs * 16 shards per query = 32 max sharded queries
+		},
+		"total queries number is missing in hints, query has 4 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
+			hints:                         &Hints{},
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 8, // 4 legs * 8 shards per query = 32 max sharded queries
 		},
 	}
 
@@ -1394,7 +1442,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 			require.NoError(t, err)
 			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
-			assert.Equal(t, testData.expectedShards, len(uniqueShards))
+			assert.Equal(t, testData.expectedShardsPerPartialQuery, len(uniqueShards))
 		})
 	}
 }

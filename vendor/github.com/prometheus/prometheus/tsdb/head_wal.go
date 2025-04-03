@@ -25,9 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -467,6 +466,24 @@ Outer:
 			"metadata", unknownMetadataRefs.Load(),
 			"tombstones", unknownTombstoneRefs.Load(),
 		)
+
+		// @patryk: Check if any of the series reported as missing were actually found later in the WAL segment.
+		// This is a mimir-only change and currently purely diagnostic to gauge the size of the problem, and whether it
+		// enapsulates the whole of the instances of unknown series references we see.
+		foundSeries := 0
+		for walRef := range unknownSeriesRefs.refs {
+			headRef := walRef
+			// The series might be a duplicate, so use the original series ref.
+			if mr, ok := multiRef[walRef]; ok {
+				headRef = mr
+			}
+			if h.series.getByID(headRef) != nil {
+				h.logger.Warn("Series reported as missing but was found later in the WAL segment", "walRef", walRef, "headRef", headRef, "segment", r.Segment())
+				foundSeries++
+			}
+		}
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(foundSeries), "found_series")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()-foundSeries), "truly_missing_series")
 
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
 		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")

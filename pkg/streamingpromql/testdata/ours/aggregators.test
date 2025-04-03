@@ -181,7 +181,9 @@ eval instant at 0m sum(single_histogram)
 eval instant at 0m avg(single_histogram)
   {} {{schema:0 sum:5.666666666666667 count:6 buckets:[1.6666666666666667 4 0.33333333333333337]}}
 
-eval_info instant at 0m quantile(0.5, single_histogram)
+eval instant at 0m quantile(0.5, single_histogram)
+  expect info
+  expect no_warn
 
 eval instant at 0m sum by (label) (single_histogram)
   {label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
@@ -252,7 +254,9 @@ eval range from 0 to 5m step 1m sum(single_histogram)
 eval range from 0 to 5m step 1m avg(single_histogram)
   {} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
 
-eval_info range from 0 to 5m step 1m quantile(0.5, single_histogram)
+eval range from 0 to 5m step 1m quantile(0.5, single_histogram)
+  expect info
+  expect no_warn
   {} 0 0.5 0.5 2.5 4
 
 clear
@@ -263,11 +267,17 @@ load 1m
   single_histogram{label="value2"}  {{sum:5 count:5 buckets:[1 3 1]}}
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
-eval_warn instant at 1m sum(single_histogram)
+eval instant at 1m sum(single_histogram)
+  expect no_info
+  expect warn
 
-eval_warn instant at 1m avg(single_histogram)
+eval instant at 1m avg(single_histogram)
+  expect no_info
+  expect warn
 
-eval_info instant at 1m quantile(0.5, single_histogram)
+eval instant at 1m quantile(0.5, single_histogram)
+  expect info
+  expect no_warn
   {} 3
 
 clear
@@ -278,11 +288,17 @@ load 1m
   single_histogram{label="value2"}  3
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
-eval_warn instant at 1m sum(single_histogram)
+eval instant at 1m sum(single_histogram)
+  expect no_info
+  expect warn
 
-eval_warn instant at 1m avg(single_histogram)
+eval instant at 1m avg(single_histogram)
+  expect no_info
+  expect warn
 
-eval_info instant at 1m quantile(0.5, single_histogram)
+eval instant at 1m quantile(0.5, single_histogram)
+  expect info
+  expect no_warn
   {} 3
 
 clear
@@ -295,11 +311,17 @@ load 1m
   single_histogram{label="value3"}  3
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
-eval_warn instant at 1m sum(single_histogram)
+eval instant at 1m sum(single_histogram)
+  expect no_info
+  expect warn
 
-eval_warn instant at 1m avg(single_histogram)
+eval instant at 1m avg(single_histogram)
+  expect no_info
+  expect warn
 
-eval_info instant at 1m quantile(0.5, single_histogram)
+eval instant at 1m quantile(0.5, single_histogram)
+  expect info
+  expect no_warn
   {} 2
 
 clear
@@ -311,15 +333,23 @@ load 1m
   series{label="value3"}  -20 -9  -9                                         {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
   histogram_only_series   {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
 
-eval_info range from 0 to 5m step 1m max(series)
+eval range from 0 to 5m step 1m max(series)
+  expect info
+  expect no_warn
   {} 0 -9 -9 10 -10 _
 
-eval_info range from 0 to 5m step 1m min(series)
+eval range from 0 to 5m step 1m min(series)
+  expect info
+  expect no_warn
   {} -20 -10 -10 10 -10 _
 
-eval_info range from 0 to 2m step 1m max(histogram_only_series)
+eval range from 0 to 2m step 1m max(histogram_only_series)
+  expect info
+  expect no_warn
 
-eval_info range from 0 to 2m step 1m min(histogram_only_series)
+eval range from 0 to 2m step 1m min(histogram_only_series)
+  expect info
+  expect no_warn
 
 clear
 
@@ -332,12 +362,16 @@ load 1m
   mixed_series{type="histogram", label="value2"}  NaN
   mixed_series{type="onlyNaN"} NaN
 
-eval_info instant at 1m min by (type) (mixed_series)
+eval instant at 1m min by (type) (mixed_series)
+  expect info
+  expect no_warn
   {type="float"} -5
   {type="histogram"} NaN
   {type="onlyNaN"} NaN
 
-eval_info instant at 1m max by (type) (mixed_series)
+eval instant at 1m max by (type) (mixed_series)
+  expect info
+  expect no_warn
   {type="float"} 10
   {type="histogram"} NaN
   {type="onlyNaN"} NaN
@@ -690,11 +724,17 @@ load 6m
   series{idx="3"}   7 8 Inf NaN -Inf
 
 # Quantile value warning is emitted even when no series are returned
-eval_warn range from 0 to 12m step 6m quantile(20, noseries)
+eval range from 0 to 12m step 6m quantile(20, noseries)
+  expect no_info
+  expect warn
 
-eval_warn range from 0 to 12m step 6m quantile(Inf, noseries)
+eval range from 0 to 12m step 6m quantile(Inf, noseries)
+  expect no_info
+  expect warn
 
-eval_warn range from 0 to 12m step 6m quantile(-Inf, noseries)
+eval range from 0 to 12m step 6m quantile(-Inf, noseries)
+  expect no_info
+  expect warn
 
 eval range from 0 to 30m step 6m quantile(0.9, series)
   {} 6.4 7.4 +Inf 6.4 7.4 8.7

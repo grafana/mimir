@@ -326,9 +326,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 				gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 				limits.StoreGatewayTenantShardSize = testData.tenantShardSize
 
-				overrides, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
-
+				overrides := validation.NewOverrides(limits, nil)
 				reg := prometheus.NewPedanticRegistry()
 				g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
 				require.NoError(t, err)
@@ -418,9 +416,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		gatewayCfg.ShardingRing.WaitStabilityMinDuration = waitStabilityMin
 		gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
-
+		overrides := validation.NewOverrides(limits, nil)
 		reg := prometheus.NewPedanticRegistry()
 		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
 		require.NoError(t, err)
@@ -1450,8 +1446,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					// Customise the limits.
 					limits := defaultLimitsConfig()
 					limits.MaxChunksPerQuery = testData.limit
-					overrides, err := validation.NewOverrides(limits, nil)
-					require.NoError(t, err)
+					overrides := validation.NewOverrides(limits, nil)
 
 					// Create a store-gateway used to query back the series from the blocks.
 					gatewayCfg := mockGatewayConfig()
@@ -1688,11 +1683,8 @@ func defaultLimitsConfig() validation.Limits {
 	return limits
 }
 
-func defaultLimitsOverrides(t *testing.T) *validation.Overrides {
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-	require.NoError(t, err)
-
-	return overrides
+func defaultLimitsOverrides(_ *testing.T) *validation.Overrides {
+	return validation.NewOverrides(defaultLimitsConfig(), nil)
 }
 
 type mockShardingStrategy struct {

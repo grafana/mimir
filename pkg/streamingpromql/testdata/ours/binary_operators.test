@@ -189,10 +189,14 @@ eval instant at 0 second_histogram - first_histogram
   {job="test"} {{schema:0 sum:5 count:2 buckets:[0 0 0]}}
 
 # Cannot multiply two histograms
-eval_info instant at 0 first_histogram * second_histogram
+eval instant at 0 first_histogram * second_histogram
+  expect info
+  expect no_warn
 
 # Cannot divide a histogram by a histogram
-eval_info instant at 0 first_histogram / second_histogram
+eval instant at 0 first_histogram / second_histogram
+  expect info
+  expect no_warn
 
 # Histogram multiplied by float
 eval instant at 0 first_histogram * metric
@@ -207,34 +211,54 @@ eval instant at 0 first_histogram / metric
   {job="test"} {{schema:0 count:2 sum:2.5 buckets:[0.5 1 0.5]}}
 
 # Cannot divide a float by a histogram
-eval_info instant at 0 metric / first_histogram
+eval instant at 0 metric / first_histogram
+  expect info
+  expect no_warn
 
 # Cannot add a float to a histogram
-eval_info instant at 0 first_histogram + metric
+eval instant at 0 first_histogram + metric
+  expect info
+  expect no_warn
 
 # Cannot subtract a float from a histogram
-eval_info instant at 0 first_histogram - metric
+eval instant at 0 first_histogram - metric
+  expect info
+  expect no_warn
 
 # Cannot perform atan2 on a histogram.
-eval_info instant at 0 first_histogram atan2 metric
+eval instant at 0 first_histogram atan2 metric
+  expect info
+  expect no_warn
 
 # Cannot apply ^ to a histogram.
-eval_info instant at 0 first_histogram ^ second_histogram
+eval instant at 0 first_histogram ^ second_histogram
+  expect info
+  expect no_warn
 
 # Cannot apply ^ to a histogram.
-eval_info instant at 0 first_histogram ^ metric
+eval instant at 0 first_histogram ^ metric
+  expect info
+  expect no_warn
 
 # Cannot apply ^ to a histogram.
-eval_info instant at 0 metric ^ first_histogram
+eval instant at 0 metric ^ first_histogram
+  expect info
+  expect no_warn
 
 # Cannot apply % to a histogram.
-eval_info instant at 0 first_histogram % second_histogram
+eval instant at 0 first_histogram % second_histogram
+  expect info
+  expect no_warn
 
 # Cannot apply % to a histogram.
-eval_info instant at 0 first_histogram % metric
+eval instant at 0 first_histogram % metric
+  expect info
+  expect no_warn
 
 # Cannot apply % to a histogram.
-eval_info instant at 0 metric % first_histogram
+eval instant at 0 metric % first_histogram
+  expect info
+  expect no_warn
 
 clear
 
@@ -276,16 +300,24 @@ load 1m
   another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}}  {{schema:0 sum:12 count:6 buckets:[2 4 6]}}   4                                            5                                              {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
 #                           @0 @5m                                          @10m                                          @15m                                         @20m                                           @25m
 
-eval_info range from 0 to 5m step 1m mixed_metric + another_mixed
+eval range from 0 to 5m step 1m mixed_metric + another_mixed
+  expect info
+  expect no_warn
   {job="test"}              20 11                                           12                                            7                                            _                                              {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
 
-eval_info range from 0 to 5m step 1m mixed_metric - another_mixed
+eval range from 0 to 5m step 1m mixed_metric - another_mixed
+  expect info
+  expect no_warn
   {job="test"}              0  -9                                           -8                                            -1                                           _                                              {{schema:0 sum:0 count:0}}
 
-eval_info range from 0 to 5m step 1m mixed_metric * another_mixed
+eval range from 0 to 5m step 1m mixed_metric * another_mixed
+  expect info
+  expect no_warn
   {job="test"}              100 10                                          20                                            12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} _
 
-eval_info range from 0 to 5m step 1m mixed_metric / another_mixed
+eval range from 0 to 5m step 1m mixed_metric / another_mixed
+  expect info
+  expect no_warn
   {job="test"}              1  0.1                                          0.2                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} _
 
 clear
@@ -295,7 +327,9 @@ load 1m
   left   {{schema:0 sum:1 count:1 buckets:[1]}}  {{schema:0 sum:1 count:1 buckets:[1]}}                           {{schema:-53 sum:1 count:3 custom_values:[2 3] buckets:[1 2]}}   {{schema:-53 sum:1 count:3 custom_values:[2 3] buckets:[1 2]}}
   right  {{schema:0 sum:3 count:4 buckets:[4]}}  {{schema:-53 sum:1 count:3 custom_values:[5 10] buckets:[1 2]}}  {{schema:-53 sum:1 count:3 custom_values:[5 10] buckets:[1 2]}}  {{schema:-53 sum:2 count:6 custom_values:[2 3] buckets:[5 2]}}
 
-eval_warn range from 0 to 3m step 1m left + right
+eval range from 0 to 3m step 1m left + right
+  expect no_info
+  expect warn
   {}     {{schema:0 sum:4 count:5 buckets:[5]}}  _                                                                _                                                                {{schema:-53 sum:3 count:9 custom_values:[2 3] buckets:[6 4]}}
 
 clear
@@ -317,18 +351,24 @@ eval range from 0m to 24m step 6m my_metric / 2
 
 # Scalar on left side
 # Note that positive scalar / histogram == nothing.
-eval_info range from 0m to 24m step 6m 2 / my_metric
+eval range from 0m to 24m step 6m 2 / my_metric
+  expect info
+  expect no_warn
   {histograms="both"} 0.4 0.2 _
   {job="foo"} 2 1 0.6666666666666667 0.5 0.4
   {job="bar"} 0.2 0.1 0.06666666666666667 _ 0.04
 
 # Test other arithmetic operations.
-eval_info range from 0m to 24m step 6m my_metric + 2
+eval range from 0m to 24m step 6m my_metric + 2
+  expect info
+  expect no_warn
   {histograms="both"} 7 12 _
   {job="foo"} 3 4 5 6 7
   {job="bar"} 12 22 32 _ 52
 
-eval_info range from 0m to 24m step 6m my_metric - 2
+eval range from 0m to 24m step 6m my_metric - 2
+  expect info
+  expect no_warn
   {histograms="both"} 3 8
   {job="foo"} -1 0 1 2 3
   {job="bar"} 8 18 28 _ 48
@@ -339,12 +379,16 @@ eval range from 0m to 24m step 6m my_metric * 2
   {job="foo"} 2 4 6 8 10
   {job="bar"} 20 40 60 _ 100
 
-eval_info range from 0m to 24m step 6m my_metric ^ 2
+eval range from 0m to 24m step 6m my_metric ^ 2
+  expect info
+  expect no_warn
   {histograms="both"} 25 100 _
   {job="foo"} 1 4 9 16 25
   {job="bar"} 100 400 900 _ 2500
 
-eval_info range from 0m to 24m step 6m my_metric % 2
+eval range from 0m to 24m step 6m my_metric % 2
+  expect info
+  expect no_warn
   {histograms="both"} 1 0 _
   {job="foo"} 1 0 1 0 1
   {job="bar"} 0 0 0 _ 0
@@ -413,10 +457,14 @@ eval range from 0 to 24m step 6m left_histograms == right_histograms
 eval range from 0 to 24m step 6m left_histograms == bool right_histograms
   {} 1 0 _ _ _
 
-eval_info range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms == right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms == bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats != right_floats
@@ -431,10 +479,14 @@ eval range from 0 to 24m step 6m left_histograms != right_histograms
 eval range from 0 to 24m step 6m left_histograms != bool right_histograms
   {} 0 1 _ _ _
 
-eval_info range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms != right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms != bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats > right_floats
@@ -443,16 +495,24 @@ eval range from 0 to 60m step 6m left_floats > right_floats
 eval range from 0 to 60m step 6m left_floats > bool right_floats
   {} 0 _ _ _ 0 _ 1 0 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms > right_histograms
+eval range from 0 to 24m step 6m left_histograms > right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool right_histograms
+eval range from 0 to 24m step 6m left_histograms > bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms > right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms > bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats >= right_floats
@@ -461,16 +521,24 @@ eval range from 0 to 60m step 6m left_floats >= right_floats
 eval range from 0 to 60m step 6m left_floats >= bool right_floats
   {} 0 _ _ _ 1 _ 1 0 0 1 1
 
-eval_info range from 0 to 24m step 6m left_histograms >= right_histograms
+eval range from 0 to 24m step 6m left_histograms >= right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool right_histograms
+eval range from 0 to 24m step 6m left_histograms >= bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms >= right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms >= bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats < right_floats
@@ -479,16 +547,24 @@ eval range from 0 to 60m step 6m left_floats < right_floats
 eval range from 0 to 60m step 6m left_floats < bool right_floats
   {} 1 _ _ _ 0 _ 0 1 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms < right_histograms
+eval range from 0 to 24m step 6m left_histograms < right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool right_histograms
+eval range from 0 to 24m step 6m left_histograms < bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms < right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms < bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 eval range from 0 to 60m step 6m left_floats <= right_floats
@@ -497,16 +573,24 @@ eval range from 0 to 60m step 6m left_floats <= right_floats
 eval range from 0 to 60m step 6m left_floats <= bool right_floats
   {} 1 _ _ _ 1 _ 0 1 0 1 1
 
-eval_info range from 0 to 24m step 6m left_histograms <= right_histograms
+eval range from 0 to 24m step 6m left_histograms <= right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool right_histograms
+eval range from 0 to 24m step 6m left_histograms <= bool right_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms <= right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+eval range from 0 to 24m step 6m left_histograms <= bool right_floats_for_histograms
+  expect info
+  expect no_warn
   # No results.
 
 # Vector / scalar combinations with scalar on right side
@@ -543,76 +627,124 @@ eval range from 0 to 60m step 6m left_floats == NaN
 eval range from 0 to 60m step 6m left_floats == bool NaN
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval_info range from 0 to 24m step 6m left_histograms == 3
+eval range from 0 to 24m step 6m left_histograms == 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == 0
+eval range from 0 to 24m step 6m left_histograms == 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != 3
+eval range from 0 to 24m step 6m left_histograms != 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != 0
+eval range from 0 to 24m step 6m left_histograms != 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > 3
+eval range from 0 to 24m step 6m left_histograms > 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > 0
+eval range from 0 to 24m step 6m left_histograms > 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= 3
+eval range from 0 to 24m step 6m left_histograms >= 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= 0
+eval range from 0 to 24m step 6m left_histograms >= 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < 3
+eval range from 0 to 24m step 6m left_histograms < 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < 0
+eval range from 0 to 24m step 6m left_histograms < 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= 3
+eval range from 0 to 24m step 6m left_histograms <= 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= 0
+eval range from 0 to 24m step 6m left_histograms <= 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool 3
+eval range from 0 to 24m step 6m left_histograms == bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms == bool 0
+eval range from 0 to 24m step 6m left_histograms == bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool 3
+eval range from 0 to 24m step 6m left_histograms != bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms != bool 0
+eval range from 0 to 24m step 6m left_histograms != bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool 3
+eval range from 0 to 24m step 6m left_histograms > bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms > bool 0
+eval range from 0 to 24m step 6m left_histograms > bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool 3
+eval range from 0 to 24m step 6m left_histograms >= bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms >= bool 0
+eval range from 0 to 24m step 6m left_histograms >= bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool 3
+eval range from 0 to 24m step 6m left_histograms < bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms < bool 0
+eval range from 0 to 24m step 6m left_histograms < bool 0
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool 3
+eval range from 0 to 24m step 6m left_histograms <= bool 3
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m left_histograms <= bool 0
+eval range from 0 to 24m step 6m left_histograms <= bool 0
+  expect info
+  expect no_warn
   # No results.
 
 # Vector / scalar combinations with scalar on left side
@@ -649,40 +781,64 @@ eval range from 0 to 60m step 6m NaN == left_floats
 eval range from 0 to 60m step 6m NaN == bool left_floats
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval_info range from 0 to 24m step 6m 3 == left_histograms
+eval range from 0 to 24m step 6m 3 == left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 == left_histograms
+eval range from 0 to 24m step 6m 0 == left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 != left_histograms
+eval range from 0 to 24m step 6m 3 != left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 != left_histograms
+eval range from 0 to 24m step 6m 0 != left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 < left_histograms
+eval range from 0 to 24m step 6m 3 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 < left_histograms
+eval range from 0 to 24m step 6m 0 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 < left_histograms
+eval range from 0 to 24m step 6m 3 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 < left_histograms
+eval range from 0 to 24m step 6m 0 < left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 > left_histograms
+eval range from 0 to 24m step 6m 3 > left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 > left_histograms
+eval range from 0 to 24m step 6m 0 > left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 3 >= left_histograms
+eval range from 0 to 24m step 6m 3 >= left_histograms
+  expect info
+  expect no_warn
   # No results.
 
-eval_info range from 0 to 24m step 6m 0 >= left_histograms
+eval range from 0 to 24m step 6m 0 >= left_histograms
+  expect info
+  expect no_warn
   # No results.
 
 # Scalar / scalar combinations
@@ -1372,10 +1528,14 @@ eval instant at 0 second_histogram - on(job) group_left first_histogram
   {job="test"} {{schema:0 sum:5 count:2 buckets:[0 0 0]}}
 
 # Cannot multiply two histograms
-eval_info instant at 0 first_histogram * on(job) group_left second_histogram
+eval instant at 0 first_histogram * on(job) group_left second_histogram
+  expect info
+  expect no_warn
 
 # Cannot divide a histogram by a histogram
-eval_info instant at 0 first_histogram / on(job) group_left second_histogram
+eval instant at 0 first_histogram / on(job) group_left second_histogram
+  expect info
+  expect no_warn
 
 # Histogram multiplied by float
 eval instant at 0 first_histogram * on(job) group_left metric

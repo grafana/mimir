@@ -1543,6 +1543,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
+  -ingest-storage.kafka.fetch-max-wait duration
+    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
   -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
@@ -1935,8 +1937,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
     	Size of memory ballast to allocate.
+  -memberlist.abort-if-fast-join-fails
+    	Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.
   -memberlist.abort-if-join-fails
-    	If this node fails to join memberlist cluster, abort.
+    	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.acquire-writer-timeout duration
     	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
   -memberlist.advertise-addr string
@@ -2189,26 +2193,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
-  -querier.mimir-query-engine.disabled-aggregations comma-separated-list-of-strings
-    	[experimental] Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.
   -querier.mimir-query-engine.disabled-functions comma-separated-list-of-strings
     	[experimental] Comma-separated list of function names to disable support for. Only applies if MQE is in use.
-  -querier.mimir-query-engine.enable-aggregation-operations
-    	[experimental] Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-binary-logical-operations
-    	[experimental] Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
-    	[experimental] Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-scalars
-    	[experimental] Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-subqueries
-    	[experimental] Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-    	[experimental] Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -2271,8 +2257,36 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.shuffle-sharding-ingesters-enabled
     	Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default true)
+  -querier.store-gateway-client.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -querier.store-gateway-client.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -querier.store-gateway-client.backoff-on-ratelimits
+    	Enable backoff and retry when we hit rate limits.
+  -querier.store-gateway-client.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
   -querier.store-gateway-client.cluster-validation.label string
     	[experimental] Optionally define the cluster validation label.
+  -querier.store-gateway-client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -querier.store-gateway-client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -querier.store-gateway-client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
+  -querier.store-gateway-client.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -querier.store-gateway-client.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -querier.store-gateway-client.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -querier.store-gateway-client.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -querier.store-gateway-client.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -querier.store-gateway-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.store-gateway-client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
@@ -2280,7 +2294,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -querier.store-gateway-client.tls-enabled
-    	Enable TLS for gRPC client connecting to store-gateway.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -querier.store-gateway-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.store-gateway-client.tls-key-path string
@@ -2305,6 +2319,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache query results.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
+  -query-frontend.client-cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
@@ -3187,6 +3203,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
   -server.cluster-validation.grpc.soft-validation
     	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.grpc.enabled
+  -server.cluster-validation.http.enabled
+    	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
+  -server.cluster-validation.http.excluded-paths comma-separated-list-of-strings
+    	[experimental] Comma-separated list of url paths that are excluded from the cluster validation check.
+  -server.cluster-validation.http.soft-validation
+    	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled
   -server.cluster-validation.label string
     	[experimental] Optionally define the cluster validation label.
   -server.graceful-shutdown-timeout duration
@@ -3443,10 +3465,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
-  -validation.max-cost-attribution-cardinality-per-user int
+  -validation.max-cost-attribution-cardinality int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
-  -validation.max-cost-attribution-labels-per-user int
-    	[experimental] Maximum number of cost attribution labels allowed per user, the value is capped at 4. (default 2)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

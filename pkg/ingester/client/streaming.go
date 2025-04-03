@@ -10,8 +10,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -103,7 +105,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
-			if errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 				return
 			}
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)

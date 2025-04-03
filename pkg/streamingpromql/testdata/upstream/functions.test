@@ -850,25 +850,22 @@ load 10s
 	http_requests_mix{job="api-server", instance="1", group="canary"}		0+40x2000 {{schema:0 count:1 sum:2}}x1000
 	http_requests_histogram{job="api-server", instance="1", group="canary"}	{{schema:0 count:1 sum:2}}x1000
 
-# Unsupported by streaming engine.
-# eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
-# 	{job="api-server", instance="0", group="production"} 8000
-# 	{job="api-server", instance="1", group="production"} 16000
-# 	{job="api-server", instance="0", group="canary"} 24000
-# 	{job="api-server", instance="1", group="canary"} 32000
+eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 8000
+	{job="api-server", instance="1", group="production"} 16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} 32000
 
 # double_exponential_smoothing should ignore histograms in a mixed range of floats and histograms, flagged by an info annotation.
-# Unsupported by streaming engine.
-# eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
-# 	{job="api-server", instance="0", group="production"} 30100
-# 	{job="api-server", instance="1", group="production"} 30200
-# 	{job="api-server", instance="0", group="canary"} 80300
-# 	{job="api-server", instance="1", group="canary"} 80000
+eval_info instant at 20010s double_exponential_smoothing(http_requests_mix[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 30100
+	{job="api-server", instance="1", group="production"} 30200
+	{job="api-server", instance="0", group="canary"} 80300
+	{job="api-server", instance="1", group="canary"} 80000
 
 # double_exponential_smoothing should silently ignore ranges consisting only of histograms.
-# Unsupported by streaming engine.
-# eval instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
-# 	#empty
+eval instant at 10000s double_exponential_smoothing(http_requests_histogram[1m], 0.01, 0.1)
+	#empty
 
 # negative trends
 clear
@@ -878,12 +875,11 @@ load 10s
 	http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
 	http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
 
-# Unsupported by streaming engine.
-# eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
-# 	{job="api-server", instance="0", group="production"} 0
-# 	{job="api-server", instance="1", group="production"} -16000
-# 	{job="api-server", instance="0", group="canary"} 24000
-# 	{job="api-server", instance="1", group="canary"} -32000
+eval instant at 8000s double_exponential_smoothing(http_requests[1m], 0.01, 0.1)
+	{job="api-server", instance="0", group="production"} 0
+	{job="api-server", instance="1", group="production"} -16000
+	{job="api-server", instance="0", group="canary"} 24000
+	{job="api-server", instance="1", group="canary"} -32000
 
 # Tests for avg_over_time
 clear

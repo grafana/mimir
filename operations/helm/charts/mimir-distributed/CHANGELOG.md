@@ -29,8 +29,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-## 5.7.0-rc.0
+* [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 
+## 5.7.0-rc.1
+
+* [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Tokengen: Added k8s secret storage for the admin token. #5237
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634

@@ -230,8 +230,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
 			return
 		}
-		ctx, _ := context.WithDeadlineCause(r.Context(), deadline,
+		ctx, cancel := context.WithDeadlineCause(r.Context(), deadline,
 			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
+		defer cancel()
 		r = r.WithContext(ctx)
 	}
 
@@ -283,7 +284,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.cfg.QueryStatsEnabled {
 		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
-
 }
 
 // reportSlowQuery reports slow queries.
