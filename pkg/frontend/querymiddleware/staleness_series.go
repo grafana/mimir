@@ -97,10 +97,8 @@ func concatSeriesSets(sets []storage.SeriesSet) *seriesSetsHeap {
 	h := seriesSetsHeap{}
 	for _, set := range sets {
 		if !set.Next() {
-			if err := set.Err(); err != nil {
-				h.doneErrs = append(h.doneErrs, err)
-				h.doneWarnings.Merge(set.Warnings())
-			}
+			h.doneErrs.Add(set.Err())
+			h.doneWarnings.Merge(set.Warnings())
 			continue
 		}
 		h.ss = append(h.ss, set)
@@ -120,7 +118,8 @@ func (s *seriesSetsHeap) Next() bool {
 			heap.Pop(s)
 			continue
 		}
-		// If Fix moves the first item, we won't use its At(), but we also won't know where it went to mark it in calledNextWithoutReadingFrom
+		// If Fix moves the first item, we won't use its At(), so we need to mark it in calledNextWithoutReadingFrom.
+		// But we also won't know where it went to mark it in calledNextWithoutReadingFrom.
 		// So we mark it and unmark it if Fix didn't end up moving the item.
 		s.calledNextWithoutReadingFrom[0] = true
 		heap.Fix(s, 0)
@@ -201,6 +200,7 @@ type stalenessMarkerIterator struct {
 	returnedOnce   bool
 	currT          int64
 	currIsStale    bool
+	currType       chunkenc.ValueType
 	afterStaleType chunkenc.ValueType
 	afterStaleT    int64
 }
@@ -214,7 +214,10 @@ func newStalenessMarkerIterator(iter chunkenc.Iterator, step int64) *stalenessMa
 	}
 }
 
-func (it *stalenessMarkerIterator) Next() chunkenc.ValueType {
+func (it *stalenessMarkerIterator) Next() (currentType chunkenc.ValueType) {
+	defer func() {
+		it.currType = currentType
+	}()
 	if it.currIsStale {
 		it.currIsStale = false
 		it.currT = it.afterStaleT
@@ -266,7 +269,14 @@ func (it *stalenessMarkerIterator) Next() chunkenc.ValueType {
 	return valueType
 }
 
-func (it *stalenessMarkerIterator) Seek(t int64) chunkenc.ValueType {
+func (it *stalenessMarkerIterator) Seek(t int64) (currentType chunkenc.ValueType) {
+	defer func() {
+		it.currType = currentType
+	}()
+	if t <= it.currT {
+		// Seeking backward is not allowed.
+		return it.currType
+	}
 	// Reset state
 	it.currIsStale = false
 	it.afterStaleT = 0
@@ -279,12 +289,24 @@ func (it *stalenessMarkerIterator) Seek(t int64) chunkenc.ValueType {
 		// If we know the gap is small enough, avoid seeking.
 		// This also prevents invalid use of Seek to go backward.
 		hasSampleBeforeT = true
+		valueType = it.iter.Seek(t)
+
+		gap := it.iter.AtT() - it.currT
+		if gap > it.step {
+			hasSampleBeforeT = false
+		}
 	} else {
 		// We seek to check if there is another sample before this one.
 		// If there isn't, then this sample needs a stalness marker preceeding it.
 		valueType = it.iter.Seek(t - it.step)
 
-		if it.iter.AtT() >= t {
+		if valueType == chunkenc.ValNone {
+			// Even if we were to inject a staleness marker, it would have been too far back, so we can now just return ValNone.
+			it.currT = t
+			return valueType
+		}
+
+		if it.iter.AtT() > t {
 			// There wasn't anything between t and t-step. This means that there is a period which is at least it.step long without samples.
 			// So we need to add a staleness marker.
 			hasSampleBeforeT = false
@@ -304,19 +326,19 @@ func (it *stalenessMarkerIterator) Seek(t int64) chunkenc.ValueType {
 			}
 		}
 	}
-
-	if !hasSampleBeforeT {
-		it.currIsStale = true
-		it.currT = t - it.step
-		it.afterStaleType = valueType
-		it.afterStaleT = it.iter.AtT()
-		return chunkenc.ValFloat
-	}
 	// If we've reached the end or encountered an error, propagate it
 	if valueType == chunkenc.ValNone {
 		it.currIsStale = true
 		it.currT += it.step
 		it.afterStaleType = chunkenc.ValNone
+		return chunkenc.ValFloat
+	}
+
+	if !hasSampleBeforeT {
+		it.currIsStale = true
+		it.currT = t
+		it.afterStaleType = valueType
+		it.afterStaleT = it.iter.AtT()
 		return chunkenc.ValFloat
 	}
 
