@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
+	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // ToWriteRequest converts matched slices of Labels, Samples, Exemplars, and Metadata into a WriteRequest
@@ -725,24 +726,44 @@ loop:
 	}
 }*/
 
+// TODO: Is all this needed or just refs?????????
+const (
+	minPreallocatedLabelsRefs = 80 // default limit of 40 labels * 2 refs per pair
+)
+
+var (
+	labelsRefsPool = zeropool.New(func() []uint32 {
+		return make([]uint32, 0, minPreallocatedLabelsRefs)
+	})
+)
+
+func LabelsRefsSliceFromPool() []uint32 {
+	return labelsRefsPool.Get()
+}
+
+func ReuseLabelsRefsSlice(refs []uint32) {
+	labelsRefsPool.Put(refs[:0])
+}
+
 func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 	if req == nil {
 		return nil
 	}
 
 	source := FromWriteRequestSourceToWriteRequestV2Source(req.Source)
-	// symbols := writev2.NewSymbolTable()
-	// symbols := NewFastSymbolsTable()
 	symbols := symbolizerFromPool()
 	defer reuseSymbolizer(symbols)
 
 	timeseries := make([]TimeSeriesV2, 0, len(req.Timeseries))
 	for _, ts := range req.Timeseries {
-		refs := make([]uint32, len(ts.Labels)*2)
+		// refs := make([]uint32, len(ts.Labels)*2)
+		refs := LabelsRefsSliceFromPool()
 
 		for i := range ts.Labels {
-			refs[i*2] = symbols.Symbolize(ts.Labels[i].Name)
-			refs[i*2+1] = symbols.Symbolize(ts.Labels[i].Value)
+			//refs[i*2] = symbols.Symbolize(ts.Labels[i].Name)
+			//refs[i*2+1] = symbols.Symbolize(ts.Labels[i].Value)
+			refs = append(refs, symbols.Symbolize(ts.Labels[i].Name))
+			refs = append(refs, symbols.Symbolize(ts.Labels[i].Value))
 		}
 
 		exemplars := FromExemplarsToExemplarsV2(ts.Exemplars, symbols)

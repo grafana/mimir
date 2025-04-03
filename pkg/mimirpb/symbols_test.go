@@ -14,11 +14,11 @@ func TestSymbolsTable(t *testing.T) {
 		st := writev2.NewSymbolTable()
 		return &st
 	}
-	/*fastImplBuilder := func() StringSymbolizer {
+	fastImplBuilder := func() StringSymbolizer {
 		st := NewFastSymbolsTable()
 		return st
-	}*/
-	impls := [](func() StringSymbolizer){promImplBuilder}
+	}
+	impls := [](func() StringSymbolizer){promImplBuilder, fastImplBuilder}
 
 	for i, impl := range impls {
 		t.Run(fmt.Sprintf("impl %d", i), func(t *testing.T) {
@@ -58,4 +58,27 @@ func TestSymbolsTable(t *testing.T) {
 			require.Equal(t, ls, FromLabelAdaptersToLabels(decoded))
 		})
 	}
+}
+
+func BenchmarkSymbolizer(b *testing.B) {
+	b.Run("10k labels unique values", func(b *testing.B) {
+		lbls := make([]string, 2*10000)
+		for i := range 10000 {
+			lbls[i*2] = "__name__"
+			lbls[(i*2)+1] = fmt.Sprintf("series_%d", i)
+		}
+		st := NewFastSymbolsTable()
+
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			for _, l := range lbls {
+				_ = st.Symbolize(l)
+			}
+			symbols := st.Symbols()
+			if len(symbols) != 10002 {
+				b.Fatalf("unexpected number of symbols: %d", len(symbols))
+			}
+		}
+	})
 }

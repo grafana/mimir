@@ -302,6 +302,10 @@ func (r remoteWriteV2RecordSerializer) serialize(req *mimirpb.WriteRequest, reqS
 		return nil, err
 	}
 	data = data[:n]
+
+	for i := range reqV2.Timeseries {
+		mimirpb.ReuseLabelsRefsSlice(reqV2.Timeseries[i].LabelsRefs)
+	}
 	return data, nil
 }
 
