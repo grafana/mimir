@@ -227,7 +227,8 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 			j.assignee = ""
 			j.failCount++
 
-			s.unassigned.PushBack(j)
+			// An expired job gets to go to the front of the unassigned list.
+			s.unassigned.PushFront(j)
 
 			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee)
 		}
