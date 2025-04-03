@@ -10,7 +10,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -24,12 +23,8 @@ type queryBlockerMiddleware struct {
 func newQueryBlockerMiddleware(
 	limits Limits,
 	logger log.Logger,
-	registerer prometheus.Registerer,
+	blockedQueriesCounter *prometheus.CounterVec,
 ) MetricsQueryMiddleware {
-	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_rejected_queries_total",
-		Help: "Number of queries that were rejected by the cluster administrator.",
-	}, []string{"user", "reason"})
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryBlockerMiddleware{
 			next:                  next,
