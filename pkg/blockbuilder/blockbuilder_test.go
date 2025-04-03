@@ -36,8 +36,7 @@ import (
 )
 
 func TestErrFirstRecordInFuture(t *testing.T) {
-	var err error
-	err = &errFirstRecordInFuture{recordTs: time.Now()}
+	var err error = &errFirstRecordInFuture{recordTs: time.Now()}
 	assert.True(t, errors.Is(err, &errFirstRecordInFuture{}))
 
 	firstRecErr := &errFirstRecordInFuture{}
