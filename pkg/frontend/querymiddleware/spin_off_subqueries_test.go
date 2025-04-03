@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -94,6 +95,10 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		"subquery min with offset": {
 			query:                     `min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d)`,
 			expectedSpunOffSubqueries: 1,
+		},
+		"subquery min + max with offset": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d) + max_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d)`,
+			expectedSpunOffSubqueries: 2,
 		},
 		"subquery min: offset query time -10m": {
 			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
@@ -226,8 +231,8 @@ type subquerySpinOffTest struct {
 	offsetQueryTime           time.Duration
 }
 
-func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) storage.Queryable {
-	t.Helper()
+func setupSubquerySpinOffTestSeriesWithTB(tb testing.TB, timeRange time.Duration) storage.Queryable {
+	tb.Helper()
 
 	var (
 		numSeries      = 1000
@@ -273,6 +278,10 @@ func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) stora
 	queryable := storageSeriesQueryable(series)
 
 	return queryable
+}
+
+func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) storage.Queryable {
+	return setupSubquerySpinOffTestSeriesWithTB(t, timeRange)
 }
 
 func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest, engine *promql.Engine, downstream MetricsQueryHandler) {
@@ -347,6 +356,11 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			}
 			approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
+			var success int
+			if testData.expectedSpunOffSubqueries > 0 {
+				success = 1
+			}
+
 			var noSubqueries int
 			if testData.expectedSkippedReason == "no-subquery" {
 				noSubqueries = 1
@@ -368,11 +382,107 @@ cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queri
 # HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_successes_total counter
 cortex_frontend_subquery_spinoff_successes_total %d
-				`, testData.expectedSpunOffSubqueries, noSubqueries, testData.expectedSpunOffSubqueries)),
+				`, testData.expectedSpunOffSubqueries, noSubqueries, success)),
 				"cortex_frontend_subquery_spinoff_attempts_total",
 				"cortex_frontend_subquery_spinoff_successes_total",
 				"cortex_frontend_subquery_spinoff_skipped_total",
 				"cortex_frontend_spun_off_subqueries_total"))
 		})
+	}
+}
+
+func BenchmarkSubquerySpinOff(b *testing.B) {
+	// Setup test data
+	queryable := setupSubquerySpinOffTestSeriesWithTB(b, 2*24*time.Hour)
+	engine := newEngine()
+	realDownstream := &downstreamHandler{
+		engine:    engine,
+		queryable: queryable,
+	}
+
+	fakeStreams := []SampleStream{}
+	for i := 0; i < 1000; i++ {
+		fakeStreams = append(fakeStreams, SampleStream{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "group_1", Value: "1"},
+				{Name: "group_2", Value: "2"},
+			},
+		})
+	}
+	fakeResponse := &PrometheusResponse{
+		Status: statusSuccess,
+		Data: &PrometheusData{
+			ResultType: "vector",
+			Result:     fakeStreams,
+		},
+	}
+	fakeDownstream := mockHandlerWith(fakeResponse, nil)
+
+	// Test cases
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "single_downstream",
+			query: `rate(metric_counter[1m])`,
+		},
+		{
+			name:  "single_spun_off",
+			query: `max_over_time(rate(metric_counter[1m])[2d:1m])`,
+		},
+		{
+			name:  "two_spun_off_joined",
+			query: `max_over_time(rate(metric_counter[1m])[2d:1m]) + max_over_time(rate(metric_counter[1m])[2d:1m])`,
+		},
+		{
+			name:  "three_spun_off_two_downstream",
+			query: `rate(metric_counter[1m]) + max_over_time(rate(metric_counter[1m])[2d:1m]) + max_over_time(rate(metric_counter[1m])[2d:1m]) + max_over_time(rate(metric_counter[1m])[2d:1m]) + rate(metric_counter[1m])`,
+		},
+	}
+
+	// Create middleware with metrics registry
+	reg := prometheus.NewPedanticRegistry()
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+		mockLimits{
+			instantQueriesWithSubquerySpinOff: []string{".*"},
+		},
+		log.NewNopLogger(),
+		engine,
+		reg,
+		nil,
+		defaultStepFunc,
+	)
+
+	// Run benchmarks
+	for _, tc := range cases {
+		for _, mockedDownstream := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s_mocked_downstream_%t", tc.name, mockedDownstream), func(b *testing.B) {
+				req := &PrometheusInstantQueryRequest{
+					path:      "/query",
+					time:      util.TimeToMillis(time.Now()),
+					queryExpr: parseQuery(b, tc.query),
+				}
+
+				var downstream MetricsQueryHandler = realDownstream
+				if mockedDownstream {
+					downstream = fakeDownstream
+				}
+
+				ctx := user.InjectOrgID(context.Background(), "test")
+				handler := spinoffMiddleware.Wrap(downstream)
+
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					res, err := handler.Do(ctx, req)
+					if err != nil {
+						b.Fatalf("query failed: %v", err)
+					}
+					if res == nil {
+						b.Fatal("got nil response")
+					}
+				}
+			})
+		}
 	}
 }

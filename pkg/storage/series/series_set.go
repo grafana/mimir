@@ -62,6 +62,12 @@ func (c *ConcreteSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
+// ShallowClone returns a new series set with the same series.
+// It shares the same series slice, but can be iterated independently.
+func (c *ConcreteSeriesSet) ShallowClone() storage.SeriesSet {
+	return NewConcreteSeriesSetFromSortedSeries(c.series)
+}
+
 // ConcreteSeries implements storage.Series.
 type ConcreteSeries struct {
 	labels     labels.Labels
@@ -76,6 +82,12 @@ func NewConcreteSeries(ls labels.Labels, samples []model.SamplePair, histograms 
 		samples:    samples,
 		histograms: histograms,
 	}
+}
+
+func (c *ConcreteSeries) Merge(other *ConcreteSeries) *ConcreteSeries {
+	c.samples = append(c.samples, other.samples...)
+	c.histograms = append(c.histograms, other.histograms...)
+	return c
 }
 
 // Labels implements storage.Series

@@ -163,7 +163,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []as
 		return storage.ErrSeriesSet(err)
 	}
 
-	return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
+	return newSeriesSetFromEmbeddedQueriesResults(streams, hints, false)
 }
 
 // LabelValues implements storage.LabelQuerier.
@@ -224,20 +224,25 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 // results.
 //
 // The returned storage.SeriesSet series is sorted.
-func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints) storage.SeriesSet {
+func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints, mergeByLabels bool) storage.SeriesSet {
 	totalLen := 0
 	for _, r := range results {
 		totalLen += len(r)
 	}
 
 	var (
-		set  = make([]storage.Series, 0, totalLen)
-		step int64
+		set            = make([]storage.Series, 0, totalLen)
+		seriesByLabels map[uint64]*series.ConcreteSeries
+		step           int64
 	)
 
 	// Get the query step from hints (if they've been passed).
 	if hints != nil {
 		step = hints.Step
+	}
+
+	if mergeByLabels {
+		seriesByLabels = make(map[uint64]*series.ConcreteSeries)
 	}
 
 	for _, result := range results {
@@ -312,9 +317,26 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 				})
 			}
 
-			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
+			if mergeByLabels {
+				labels := mimirpb.FromLabelAdaptersToLabels(stream.Labels)
+				newSeries := series.NewConcreteSeries(labels, samples, histograms)
+				if seriesByLabels[labels.Hash()] == nil {
+					seriesByLabels[labels.Hash()] = newSeries
+				} else {
+					seriesByLabels[labels.Hash()].Merge(newSeries)
+				}
+			} else {
+				set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
+			}
 		}
 	}
+
+	if mergeByLabels {
+		for _, series := range seriesByLabels {
+			set = append(set, series)
+		}
+	}
+
 	return series.NewConcreteSeriesSetFromUnsortedSeries(set)
 }
 
