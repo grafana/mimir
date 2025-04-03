@@ -35,6 +35,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestErrFirstRecordInFuture(t *testing.T) {
+	var err error
+	err = &errFirstRecordInFuture{recordTs: time.Now()}
+	assert.True(t, errors.Is(err, &errFirstRecordInFuture{}))
+}
+
 func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	t.Parallel()
 
