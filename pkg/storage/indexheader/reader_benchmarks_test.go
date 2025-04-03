@@ -188,47 +188,67 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 }
 
 func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
-	ctx := context.Background()
+	testCases := []struct {
+		numLabelNames  int
+		numLabelValues int
+	}{
+		{2, 5},
+		{2, 10},
+		{2, 100},
+		{2, 500},
+		{5, 5},
+		{5, 10},
+		{5, 100},
+		{5, 500},
+		{10, 5},
+		{10, 10},
+		{10, 100},
+		{10, 500},
+	}
 
-	bucketDir := b.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
-	require.NoError(b, err)
-	b.Cleanup(func() {
-		require.NoError(b, bkt.Close())
-	})
+	for _, tc := range testCases {
+		ctx := context.Background()
 
-	nameSymbols := generateSymbols("name", 10)
-	valueSymbols := generateSymbols("value", 100)
-	idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+		bucketDir := b.TempDir()
+		bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, bkt.Close())
+		})
 
-	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+		nameSymbols := generateSymbols("name", tc.numLabelNames)
+		valueSymbols := generateSymbols("value", tc.numLabelValues)
+		idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+		require.NoError(b, err)
+		require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
-	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, br.Close()) })
+		indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
-	names, err := br.LabelNames(ctx)
-	require.NoError(b, err)
+		br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+		require.NoError(b, err)
+		b.Cleanup(func() { require.NoError(b, br.Close()) })
 
-	rand.Shuffle(len(names), func(i, j int) {
-		names[i], names[j] = names[j], names[i]
-	})
+		names, err := br.LabelNames(ctx)
+		require.NoError(b, err)
 
-	b.Run(fmt.Sprintf("%vNames%vValues", len(nameSymbols), len(valueSymbols)), func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			name := names[i%len(names)]
+		rand.Shuffle(len(names), func(i, j int) {
+			names[i], names[j] = names[j], names[i]
+		})
 
-			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
-				return true
-			})
+		b.Run(fmt.Sprintf("numNames=%v/numValues=%v", len(nameSymbols), len(valueSymbols)), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				name := names[i%len(names)]
 
-			require.NoError(b, err)
-			require.NotEmpty(b, values)
-		}
-	})
+				values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
+					return true
+				})
+
+				require.NoError(b, err)
+				require.NotEmpty(b, values)
+			}
+		})
+	}
 }
 
 func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
