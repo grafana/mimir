@@ -1172,6 +1172,18 @@ func BenchmarkRecordSerializer(b *testing.B) {
 		}
 	})
 
+	pushes := 1000
+	b.Run("multiple pushes", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			for _ = range pushes {
+				_, err := v2s.serialize(req, req.Size())
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	})
+
 	/*b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024, protoWriteRequestRecordSerializer{})

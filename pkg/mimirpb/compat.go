@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 )
@@ -732,7 +731,8 @@ func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 	}
 
 	source := FromWriteRequestSourceToWriteRequestV2Source(req.Source)
-	symbols := writev2.NewSymbolTable()
+	// symbols := writev2.NewSymbolTable()
+	symbols := NewFastSymbolsTable()
 
 	timeseries := make([]TimeSeriesV2, 0, len(req.Timeseries))
 	for _, ts := range req.Timeseries {
@@ -743,7 +743,7 @@ func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 			refs[i*2+1] = symbols.Symbolize(ts.Labels[i].Value)
 		}
 
-		exemplars := FromExemplarsToExemplarsV2(ts.Exemplars, &symbols)
+		exemplars := FromExemplarsToExemplarsV2(ts.Exemplars, symbols)
 
 		timeseries = append(timeseries, TimeSeriesV2{
 			LabelsRefs:       refs,
@@ -755,7 +755,7 @@ func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
 	}
 
 	for i, metadata := range req.Metadata {
-		metadatav2 := FromMetricMetadataToMetricMetadataV2(metadata, &symbols)
+		metadatav2 := FromMetricMetadataToMetricMetadataV2(metadata, symbols)
 		if i < len(req.Timeseries) {
 			timeseries[i].Metadata = metadatav2
 		} else {
