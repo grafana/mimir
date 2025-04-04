@@ -382,14 +382,6 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 			return 0, offs.Error()
 		}
 
-		for _, p := range offs.Offsets() {
-			for _, oo := range p {
-				if oo.Partition == partition {
-					level.Debug(o.logger).Log("msg", "Offset found for ts", "ts", t, "topic", oo.Topic, "partition", oo.Partition, "offset", oo.At)
-				}
-			}
-		}
-
 		o.offsets[t] = offs
 	}
 
@@ -431,6 +423,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 	if err != nil {
 		return nil, err
 	}
+	level.Debug(logger).Log("msg", "found window-end offset", "ts", boundaryTime, "topic", topic, "partition", partition, "offset", windowEndOffset)
 
 	if resume >= windowEndOffset {
 		// No new data to consume.
@@ -446,6 +439,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 		if err != nil {
 			return nil, err
 		}
+		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb, "topic", topic, "partition", partition, "offset", off)
 
 		if off >= windowEndOffset {
 			// Found an offset later than our boundary time. Keep looking.
