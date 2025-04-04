@@ -16,10 +16,13 @@ type OffsetsCommand struct {
 	getKafkaClient func() *kgo.Client
 	printer        Printer
 
-	group       string
 	topic       string
 	partitionID int32
+	offsetType  string
+	milli       int64
 }
+
+// ./kafkatool --kafka-sasl-username=ccun_mimir_dev_15 --kafka-sasl-password=ccp_mimir_dev_15 --kafka-address localhost:9092
 
 // Register is used to register the command to a parent command.
 func (c *OffsetsCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client, printer Printer) {
@@ -27,57 +30,50 @@ func (c *OffsetsCommand) Register(app *kingpin.Application, getKafkaClient func(
 	c.printer = printer
 
 	cmd := app.Command("offsets", "Describes offsets for a given topic and partition.")
-
-	listOffsetsCmd := cmd.Command("list-offsets", "List all offsets of a given topic and partition.").Action(c.listOffsets)
-	listOffsetsCmd.Flag("group", "Consumer group name.").Required().StringVar(&c.group)
-
+	listOffsetsCmd := cmd.Command("list", "List all offsets of a given topic and partition.").Action(c.listOffsets)
+	listOffsetsCmd.Flag("topic", "Kafka topic to dump").Required().StringVar(&c.topic)
+	listOffsetsCmd.Flag("partition", "Kafka partition to dump or import into").Required().Int32Var(&c.partitionID)
+	listOffsetsCmd.Flag("type", "offset type to list").Default("end").EnumVar(&c.offsetType, "start", "committed", "end", "after_ms")
+	listOffsetsCmd.Flag("milli", "millisecond timestamp to list offsets after").Int64Var(&c.milli)
 }
 
 func (c *OffsetsCommand) listOffsets(_ *kingpin.ParseContext) error {
 	client := c.getKafkaClient()
 	adm := kadm.NewClient(client)
 
-	offsets, err := fetchConsumerGroupOffsets(adm, c.group)
+	offsets, err := fetchOffsets(adm, c.topic, c.offsetType, c.milli)
 	if err != nil {
 		return err
 	}
 
 	// Sort topic and partitions to get a stable output.
-	for _, entry := range offsets.Sorted() {
-		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.Offset.At))
+	for _, entry := range offsets.Offsets().Sorted() {
+		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.At))
 	}
 
 	return nil
 }
 
-func fetchConsumerGroupOffsets(adm *kadm.Client, group string) (kadm.OffsetResponses, error) {
+func fetchOffsets(adm *kadm.Client, topic string, t string, milli int64) (kadm.ListedOffsets, error) {
+	var offs kadm.ListedOffsets
+	var err error
 
-	adm.ListEndOffsets()
-	offsets, err := adm.FetchOffsets(context.Background(), group)
+	switch t {
+	case "start":
+		offs, err = adm.ListStartOffsets(context.Background(), topic)
+	case "end":
+		offs, err = adm.ListEndOffsets(context.Background(), topic)
+	case "committed":
+		offs, err = adm.ListCommittedOffsets(context.Background(), topic)
+	case "after_ms":
+		offs, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topic)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if offsets.Error() != nil {
-		return nil, offsets.Error()
+	if offs.Error() != nil {
+		return nil, offs.Error()
 	}
 
-	return offsets, nil
-}
-
-func commitConsumerGroupOffset(adm *kadm.Client, group, topic string, partitionID int32, offset int64, printer Printer) error {
-	// Commit the offset.
-	toCommit := kadm.Offsets{}
-	toCommit.AddOffset(topic, partitionID, offset, -1)
-
-	committed, err := adm.CommitOffsets(context.Background(), group, toCommit)
-	if err != nil {
-		return err
-	} else if !committed.Ok() {
-		return committed.Error()
-	}
-
-	committedOffset, _ := committed.Lookup(topic, partitionID)
-	printer.PrintLine(fmt.Sprintf("successfully committed offset %d for consumer group %s, topic %s and partition %d", committedOffset.At, group, topic, partitionID))
-
-	return nil
+	return offs, nil
 }
