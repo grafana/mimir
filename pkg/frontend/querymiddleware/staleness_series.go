@@ -214,6 +214,16 @@ func newStalenessMarkerIterator(iter chunkenc.Iterator, step int64) *stalenessMa
 	}
 }
 
+// setStaleness sets the iterator to a staleness state and returns the appropriate value type.
+// It handles setting all the required fields for a staleness marker.
+func (it *stalenessMarkerIterator) setStaleness(currT int64, afterStaleType chunkenc.ValueType, afterStaleT int64) chunkenc.ValueType {
+	it.currIsStale = true
+	it.currT = currT
+	it.afterStaleType = afterStaleType
+	it.afterStaleT = afterStaleT
+	return chunkenc.ValFloat // Staleness markers are floats
+}
+
 func (it *stalenessMarkerIterator) Next() (currentType chunkenc.ValueType) {
 	defer func() {
 		it.currType = currentType
@@ -241,13 +251,8 @@ func (it *stalenessMarkerIterator) Next() (currentType chunkenc.ValueType) {
 	// This could result in an extra sample (stale marker) after the end of the query time range, but that's
 	// not a problem when running the outer query because it will just be discarded.
 	if valueType == chunkenc.ValNone {
-		it.currIsStale = true
-		it.currT += it.step
-		it.afterStaleType = chunkenc.ValNone
-		return chunkenc.ValFloat
+		return it.setStaleness(it.currT+it.step, chunkenc.ValNone, 0)
 	}
-
-	gap := nextT - it.currT
 
 	// When an embedded query is executed by PromQL engine, any stale marker in the time-series
 	// data is used the engine to stop applying the lookback delta but the stale marker is removed
@@ -257,12 +262,9 @@ func (it *stalenessMarkerIterator) Next() (currentType chunkenc.ValueType) {
 	// the PromQL engine to not apply the lookback delta when there are gaps in the embedded queries
 	// results. For this reason, here we do inject a stale marker at the beginning of each gap in the
 	// embedded queries results.
+	gap := nextT - it.currT
 	if gap > it.step {
-		it.currIsStale = true
-		it.afterStaleT = nextT
-		it.afterStaleType = valueType
-		it.currT += it.step
-		return chunkenc.ValFloat // Staleness markers are floats
+		return it.setStaleness(it.currT+it.step, valueType, nextT)
 	}
 
 	it.currT = nextT
@@ -279,22 +281,16 @@ func (it *stalenessMarkerIterator) Seek(t int64) (currentType chunkenc.ValueType
 	}
 	// Reset state
 	it.currIsStale = false
-	it.afterStaleT = 0
 
 	var (
-		hasSampleBeforeT bool
-		valueType        chunkenc.ValueType
+		insertStale  bool
+		doActualSeek bool
+		valueType    chunkenc.ValueType
 	)
 	if it.returnedOnce && it.currT+it.step >= t {
 		// If we know the gap is small enough, avoid seeking.
 		// This also prevents invalid use of Seek to go backward.
-		hasSampleBeforeT = true
-		valueType = it.iter.Seek(t)
-
-		gap := it.iter.AtT() - it.currT
-		if gap > it.step {
-			hasSampleBeforeT = false
-		}
+		doActualSeek = true
 	} else {
 		// We seek to check if there is another sample before this one.
 		// If there isn't, then this sample needs a stalness marker preceeding it.
@@ -302,44 +298,37 @@ func (it *stalenessMarkerIterator) Seek(t int64) (currentType chunkenc.ValueType
 
 		if valueType == chunkenc.ValNone {
 			// Even if we were to inject a staleness marker, it would have been too far back, so we can now just return ValNone.
-			it.currT = t
 			return valueType
 		}
 
-		if it.iter.AtT() > t {
+		if it.returnedOnce && it.iter.AtT() > t {
 			// There wasn't anything between t and t-step. This means that there is a period which is at least it.step long without samples.
-			// So we need to add a staleness marker.
-			hasSampleBeforeT = false
+			// The staleness marker should have been at some previous sample+step.
+			insertStale = it.currT+it.step > t
 		} else {
-			hasSampleBeforeT = true
-			// There are samples, but we're also not interested in them, so we need to skip over them.
 			it.currT = it.iter.AtT()
-
-			// Now we do the seek for what was asked.
-			// It's possible that Seek(t) brings up much further away from the sample we just seeked to.
-			valueType = it.iter.Seek(t)
-
-			gap := it.iter.AtT() - it.currT
-
-			if gap > it.step {
-				hasSampleBeforeT = false
-			}
+			// There are samples, so we don't need a staleness marker.
+			// We just need to skip over the samples.
+			doActualSeek = true
 		}
 	}
-	// If we've reached the end or encountered an error, propagate it
-	if valueType == chunkenc.ValNone {
-		it.currIsStale = true
-		it.currT += it.step
-		it.afterStaleType = chunkenc.ValNone
-		return chunkenc.ValFloat
-	}
+	if doActualSeek {
+		insertStale = false
 
-	if !hasSampleBeforeT {
-		it.currIsStale = true
-		it.currT = t
-		it.afterStaleType = valueType
-		it.afterStaleT = it.iter.AtT()
-		return chunkenc.ValFloat
+		// Now we do the seek for what was asked.
+		// It's possible that Seek(t) brings up much further away from the sample we just seeked to.
+		valueType = it.iter.Seek(t)
+
+		gap := it.iter.AtT() - it.currT
+
+		if gap > it.step {
+			insertStale = true
+		}
+		insertStale = insertStale || valueType == chunkenc.ValNone
+	}
+	// If we've reached the end or encountered an error, propagate it
+	if insertStale {
+		return it.setStaleness(it.currT+it.step, valueType, it.iter.AtT())
 	}
 
 	it.currT = it.iter.AtT()
