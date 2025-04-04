@@ -35,6 +35,7 @@
 * [BUGFIX] Query-frontend: Fix blocks retention period enforcement when a request has multiple tenants (tenant federation). #11069
 * [BUGFIX] Query-frontend: Fix `-query-frontend.query-sharding-max-sharded-queries` enforcement for instant queries with binary operators. #11086
 * [BUGFIX] Memberlist: Fix hash ring updates before the full-join has been completed, when `-memberlist.notify-interval` is configured. #11098
+* [ENHANCEMENT] Query Fronted: Expose samples_processed in a metric. #11110
 
 ### Mixin
 
