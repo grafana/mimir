@@ -1304,7 +1304,7 @@ type cancellationQueryable struct {
 
 func (w cancellationQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	// nolint:gosimple
-	return cancellationQuerier{onQueried: w.onQueried}, nil
+	return cancellationQuerier(w), nil
 }
 
 type cancellationQuerier struct {

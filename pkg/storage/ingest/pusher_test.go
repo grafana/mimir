@@ -1311,10 +1311,10 @@ func TestBatchingQueue(t *testing.T) {
 
 		select {
 		case batch := <-queue.Channel():
-			require.Len(t, batch.WriteRequest.Timeseries, 3)
-			require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
-			require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
-			require.Equal(t, series3, batch.WriteRequest.Timeseries[2])
+			require.Len(t, batch.Timeseries, 3)
+			require.Equal(t, series1, batch.Timeseries[0])
+			require.Equal(t, series2, batch.Timeseries[1])
+			require.Equal(t, series3, batch.Timeseries[2])
 		case <-time.After(time.Second):
 			t.Fatal("expected batch to be flushed")
 		}
@@ -1346,9 +1346,9 @@ func TestBatchingQueue(t *testing.T) {
 		// Close the queue, and the items should be flushed.
 		require.NoError(t, queue.Close())
 
-		require.Len(t, batch.WriteRequest.Timeseries, 2)
-		require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
-		require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+		require.Len(t, batch.Timeseries, 2)
+		require.Equal(t, series1, batch.Timeseries[0])
+		require.Equal(t, series2, batch.Timeseries[1])
 	})
 
 	t.Run("test queue capacity", func(t *testing.T) {
@@ -1370,7 +1370,7 @@ func TestBatchingQueue(t *testing.T) {
 
 		// Read one item to free up a queue space.
 		batch := <-queue.Channel()
-		require.Len(t, batch.WriteRequest.Timeseries, 3)
+		require.Len(t, batch.Timeseries, 3)
 
 		// Queue should have 4 items now and the currentBatch remains the same.
 		require.Len(t, queue.ch, 4)
@@ -1420,11 +1420,11 @@ func TestBatchingQueue(t *testing.T) {
 		select {
 		case batch, notExhausted := <-queue.Channel():
 			require.True(t, notExhausted)
-			require.Len(t, batch.WriteRequest.Timeseries, 1)
-			require.Len(t, batch.WriteRequest.Metadata, 1)
+			require.Len(t, batch.Timeseries, 1)
+			require.Len(t, batch.Metadata, 1)
 
 			// Check that the first series in the batch has the correct exemplars
-			require.Len(t, batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars, 1)
+			require.Len(t, batch.Timeseries[0].Exemplars, 1)
 			require.Equal(t, 42.0, batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Value)
 			require.Equal(t, int64(timestamp), batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].TimestampMs)
 			require.Equal(t, "trace_id", batch.WriteRequest.Timeseries[0].TimeSeries.Exemplars[0].Labels[0].Name)
@@ -1465,8 +1465,8 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		// Also the batch was pushed.
 		select {
 		case batch := <-queue.Channel():
-			require.Equal(t, series2, batch.WriteRequest.Timeseries[0])
-			require.Equal(t, series2, batch.WriteRequest.Timeseries[1])
+			require.Equal(t, series2, batch.Timeseries[0])
+			require.Equal(t, series2, batch.Timeseries[1])
 		default:
 			t.Fatal("expected batch to be flushed")
 		}
@@ -1502,7 +1502,7 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		// Batch is also pushed.
 		select {
 		case batch := <-queue.Channel():
-			require.Equal(t, series1, batch.WriteRequest.Timeseries[0])
+			require.Equal(t, series1, batch.Timeseries[0])
 		default:
 			t.Fatal("expected batch to be flushed")
 		}

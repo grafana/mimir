@@ -862,8 +862,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+		mockBucket.AssertNotCalled(t, "Get")
+		mockBucket.AssertNotCalled(t, "GetRange")
 	})
 
 	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
@@ -880,8 +880,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+		mockBucket.AssertNotCalled(t, "Get")
+		mockBucket.AssertNotCalled(t, "GetRange")
 	})
 
 	t.Run("postings selection strategy is respected", func(t *testing.T) {
@@ -1453,9 +1453,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				expectedSamples = 1
 			}
 			seriesCut := int(p * float64(numOfBlocks*seriesPerBlock))
-			if seriesCut == 0 {
+			switch seriesCut {
+			case 0:
 				seriesCut = 1
-			} else if seriesCut == 1 {
+			case 1:
 				seriesCut = expectedSamples / samplesPerSeriesPerBlock
 			}
 

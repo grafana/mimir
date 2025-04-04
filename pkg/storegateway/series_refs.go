@@ -1300,7 +1300,7 @@ func encodeCachedSeriesForPostings(set seriesChunkRefsSet, diffEncodedPostings [
 		DiffEncodedPostings: diffEncodedPostings,
 	}
 	for i, s := range set.series {
-		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
+		entry.Series[i].Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
 	}
 
 	uncompressed, err := entry.Marshal()

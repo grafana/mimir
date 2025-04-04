@@ -1879,8 +1879,8 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
-		receivedExemplars += len(ts.TimeSeries.Exemplars)
+		receivedSamples += len(ts.Samples) + len(ts.Histograms)
+		receivedExemplars += len(ts.Exemplars)
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)

@@ -44,7 +44,7 @@ func parseTime(str string) (time.Time, error) {
 func (qs *QueryStat) IsStepAligned() bool {
 	start := qs.Start.Truncate(qs.Step)
 	end := qs.End.Truncate(qs.Step)
-	return qs.Start == start && qs.End == end
+	return qs.Start.Equal(start) && qs.End.Equal(end)
 }
 
 // Queries which are involving only recent data are not cached

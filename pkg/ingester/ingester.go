@@ -3579,7 +3579,7 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 
 	allowedUsers := util.NewAllowedTenants(tenants, nil)
 	run := func() {
-		ingCtx := i.BasicService.ServiceContext()
+		ingCtx := i.ServiceContext()
 		if ingCtx == nil || ingCtx.Err() != nil {
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: ingester not running, ignoring flush request")
 			return

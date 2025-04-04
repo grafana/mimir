@@ -202,7 +202,7 @@ type sampleAndChunkQueryable struct {
 }
 
 func (q *sampleAndChunkQueryable) ChunkQuerier(minT, maxT int64) (storage.ChunkQuerier, error) {
-	qr, err := q.Queryable.Querier(minT, maxT)
+	qr, err := q.Querier(minT, maxT)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ type multiQuerier struct {
 
 func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matcher) (context.Context, []storage.Querier, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "multiQuerier.getQueriers")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	now := time.Now()
 
@@ -323,7 +323,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 // The bool passed is ignored because the series are always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {

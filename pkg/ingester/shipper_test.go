@@ -260,7 +260,7 @@ func TestIterBlockMetas(t *testing.T) {
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
 	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
-		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		return metas[i].MinTime < metas[j].MinTime
 	}), true)
 }
 

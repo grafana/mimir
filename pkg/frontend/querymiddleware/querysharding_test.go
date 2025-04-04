@@ -1097,18 +1097,18 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		if tpl == "" {
 			tpl = `(<fn>(bar1{}<args>))`
 		}
-		result := strings.Replace(tpl, "<fn>", fn, -1)
+		result := strings.ReplaceAll(tpl, "<fn>", fn)
 
 		if testMatrix {
 			// turn selectors into ranges
-			result = strings.Replace(result, "}", "}[1m]", -1)
+			result = strings.ReplaceAll(result, "}", "}[1m]")
 		}
 
 		if len(fArgs) > 0 {
 			args := "," + strings.Join(fArgs, ",")
-			result = strings.Replace(result, "<args>", args, -1)
+			result = strings.ReplaceAll(result, "<args>", args)
 		} else {
-			result = strings.Replace(result, "<args>", "", -1)
+			result = strings.ReplaceAll(result, "<args>", "")
 		}
 
 		return []string{

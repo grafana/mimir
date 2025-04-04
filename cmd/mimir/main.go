@@ -321,7 +321,7 @@ func expandEnvironmentVariables(config []byte) []byte {
 		}
 
 		if strings.Contains(v, "\n") {
-			return strings.Replace(v, "\n", "", -1)
+			return strings.ReplaceAll(v, "\n", "")
 		}
 
 		return v
