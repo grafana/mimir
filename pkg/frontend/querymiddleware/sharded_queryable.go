@@ -232,7 +232,7 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 // results.
 //
 // The returned storage.SeriesSet series is sorted.
-// TODO dimitarvdimitrov remove
+// TODO dimitarvdimitrov move to _test.go file
 func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints) storage.SeriesSet {
 	totalLen := 0
 	for _, r := range results {
