@@ -318,3 +318,9 @@ func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
 	}
 	st.observedMtx.Unlock()
 }
+
+func (st *SampleTracker) cardinality() (cardinality int, overflown bool) {
+	st.observedMtx.RLock()
+	defer st.observedMtx.RUnlock()
+	return len(st.observed), !st.overflowSince.IsZero()
+}

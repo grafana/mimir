@@ -4,6 +4,7 @@ package costattribution
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sync"
@@ -29,7 +30,13 @@ type Manager struct {
 	logger log.Logger
 	limits *validation.Overrides
 
-	costAttributionReg *prometheus.Registry
+	reg                                prometheus.Registerer
+	sampleTrackerCardinalityDesc       *prometheus.Desc
+	sampleTrackerOverflowDesc          *prometheus.Desc
+	activeSeriesTrackerCardinalityDesc *prometheus.Desc
+	activeSeriesTrackerOverflowDesc    *prometheus.Desc
+
+	costAttributionReg prometheus.Registerer
 
 	inactiveTimeout time.Duration
 	cleanupInterval time.Duration
@@ -41,13 +48,34 @@ type Manager struct {
 	activeTrackersByUserID map[string]*ActiveSeriesTracker
 }
 
-func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, costAttributionReg *prometheus.Registry) (*Manager, error) {
+func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg, costAttributionReg prometheus.Registerer) (*Manager, error) {
 	m := &Manager{
 		stmtx:                  sync.RWMutex{},
 		sampleTrackersByUserID: make(map[string]*SampleTracker),
 
 		atmtx:                  sync.RWMutex{},
 		activeTrackersByUserID: make(map[string]*ActiveSeriesTracker),
+
+		sampleTrackerCardinalityDesc: prometheus.NewDesc("cortex_cost_attribution_sample_tracker_cardinality",
+			"The cardinality of a cost attribution sample tracker for each user.",
+			[]string{"user"},
+			prometheus.Labels{trackerLabel: defaultTrackerName},
+		),
+		sampleTrackerOverflowDesc: prometheus.NewDesc("cortex_cost_attribution_sample_tracker_overflown",
+			"This metric is exported with value 1 when a sample tracker for a user is overflown. It's not exported otherwise.",
+			[]string{"user"},
+			prometheus.Labels{trackerLabel: defaultTrackerName},
+		),
+		activeSeriesTrackerCardinalityDesc: prometheus.NewDesc("cortex_cost_attribution_active_series_tracker_cardinality",
+			"The cardinality of a cost attribution active series tracker for each user.",
+			[]string{"user"},
+			prometheus.Labels{trackerLabel: defaultTrackerName},
+		),
+		activeSeriesTrackerOverflowDesc: prometheus.NewDesc("cortex_cost_attribution_active_series_tracker_overflown",
+			"This metric is exported with value 1 when an active series tracker for a user is overflown. It's not exported otherwise.",
+			[]string{"user"},
+			prometheus.Labels{trackerLabel: defaultTrackerName},
+		),
 
 		limits:             limits,
 		inactiveTimeout:    inactiveTimeout,
@@ -57,8 +85,11 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 	}
 
 	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
+	if err := reg.Register(m); err != nil {
+		return nil, fmt.Errorf("can't register operational metrics: %w", err)
+	}
 	if err := costAttributionReg.Register(costAttributionCollector{m}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("can't register cost attribution metrics: %w", err)
 	}
 	return m, nil
 }
@@ -138,6 +169,60 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	tracker = NewActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
+}
+
+func (m *Manager) Collect(out chan<- prometheus.Metric) {
+	// Clone both maps to avoid holding the locks while collecting metrics.
+	m.stmtx.RLock()
+	sampleTrackersByUserID := maps.Clone(m.sampleTrackersByUserID)
+	m.stmtx.RUnlock()
+
+	m.atmtx.RLock()
+	activeTrackersByUserID := maps.Clone(m.activeTrackersByUserID)
+	m.atmtx.RUnlock()
+
+	for _, tracker := range sampleTrackersByUserID {
+		cardinality, overflown := tracker.cardinality()
+
+		out <- prometheus.MustNewConstMetric(
+			m.sampleTrackerCardinalityDesc,
+			prometheus.GaugeValue,
+			float64(cardinality),
+			tracker.userID,
+		)
+		if overflown {
+			out <- prometheus.MustNewConstMetric(
+				m.sampleTrackerOverflowDesc,
+				prometheus.GaugeValue,
+				1,
+				tracker.userID,
+			)
+		}
+	}
+
+	for _, tracker := range activeTrackersByUserID {
+		cardinality, overflown := tracker.cardinality()
+
+		out <- prometheus.MustNewConstMetric(
+			m.activeSeriesTrackerCardinalityDesc,
+			prometheus.GaugeValue,
+			float64(cardinality),
+			tracker.userID,
+		)
+		if overflown {
+			out <- prometheus.MustNewConstMetric(
+				m.activeSeriesTrackerOverflowDesc,
+				prometheus.GaugeValue,
+				1,
+				tracker.userID,
+			)
+		}
+	}
+}
+
+func (m *Manager) Describe(chan<- *prometheus.Desc) {
+	// Describe is not implemented because the metrics include dynamic labels. The Manager functions as an unchecked exporter.
+	// For more details, refer to the documentation: https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#hdr-Custom_Collectors_and_constant_Metrics
 }
 
 func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
