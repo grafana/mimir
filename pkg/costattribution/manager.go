@@ -4,6 +4,7 @@ package costattribution
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -140,17 +141,22 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 }
 
 func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
+	// Clone both maps to avoid holding the locks while collecting metrics.
 	m.stmtx.RLock()
-	for _, tracker := range m.sampleTrackersByUserID {
-		tracker.collectCostAttribution(out)
-	}
+	sampleTrackersByUserID := maps.Clone(m.sampleTrackersByUserID)
 	m.stmtx.RUnlock()
 
 	m.atmtx.RLock()
-	for _, tracker := range m.activeTrackersByUserID {
+	activeTrackersByUserID := maps.Clone(m.activeTrackersByUserID)
+	m.atmtx.RUnlock()
+
+	for _, tracker := range sampleTrackersByUserID {
+		tracker.collectCostAttribution(out)
+	}
+
+	for _, tracker := range activeTrackersByUserID {
 		tracker.Collect(out)
 	}
-	m.atmtx.RUnlock()
 }
 
 func (m *Manager) describeCostAttribution(chan<- *prometheus.Desc) {
