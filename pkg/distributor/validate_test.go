@@ -82,7 +82,7 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelNamesPerInfoSeries = 4
 	limits := catestutils.NewMockCostAttributionLimits(0, userID, "team")
 	careg := prometheus.NewRegistry()
-	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, careg)
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
 	cast := manager.SampleTracker(userID)
 

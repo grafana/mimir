@@ -14,12 +14,14 @@ import (
 )
 
 func TestActiveTracker_hasSameLabels(t *testing.T) {
-	ast := newTestManager().ActiveSeriesTracker("user1")
+	manager, _, _ := newTestManager()
+	ast := manager.ActiveSeriesTracker("user1")
 	assert.True(t, ast.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
-	ast := newTestManager().ActiveSeriesTracker("user3")
+	manager, _, _ := newTestManager()
+	ast := manager.ActiveSeriesTracker("user3")
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
@@ -47,7 +49,7 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 }
 
 func TestActiveTracker_Concurrency(t *testing.T) {
-	m := newTestManager()
+	m, _, costAttributionReg := newTestManager()
 	ast := m.ActiveSeriesTracker("user1")
 
 	var wg sync.WaitGroup
@@ -78,7 +80,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
     # TYPE cortex_ingester_attributed_active_series gauge
 	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
 `
-	assert.NoError(t, testutil.GatherAndCompare(m.reg,
+	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 		strings.NewReader(expectedMetrics),
 		"cortex_ingester_attributed_active_series",
 		"cortex_ingester_attributed_active_native_histogram_series",
