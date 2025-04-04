@@ -166,8 +166,8 @@ jobs:
       fail-fast: false
       # Split tests into 4 groups.
       matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
+        test_group_id:    [0, 1, 2, 3, 4, 5]
+        test_group_total: [6]
     needs:
       - prepare
     container:
