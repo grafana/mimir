@@ -82,4 +82,4 @@ type StringOperator interface {
 	GetValue() string
 }
 
-var EOS = errors.New("operator stream exhausted") //nolint:revive
+var EOS = errors.New("operator stream exhausted") //nolint:revive,staticcheck
