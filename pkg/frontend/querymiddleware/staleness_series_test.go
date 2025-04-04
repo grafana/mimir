@@ -19,34 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// mockSeriesSet implements storage.SeriesSet for testing
-type mockSeriesSet struct { // TODO dimitarvdimitrov unify with seriesIteratorMock
-	series []storage.Series
-	next   int
-	err    error
-	warn   annotations.Annotations
-}
-
-func (m *mockSeriesSet) Next() bool {
-	m.next++
-	return m.next <= len(m.series)
-}
-
-func (m *mockSeriesSet) At() storage.Series {
-	if m.next <= 0 || m.next > len(m.series) {
-		return nil
-	}
-	return m.series[m.next-1]
-}
-
-func (m *mockSeriesSet) Err() error {
-	return m.err
-}
-
-func (m *mockSeriesSet) Warnings() annotations.Annotations {
-	return m.warn
-}
-
 // mockSeries implements storage.Series for testing
 type mockSeries struct {
 	lbs labels.Labels
@@ -72,7 +44,7 @@ func TestSeriesSetsHeap_SeriesSetInterface(t *testing.T) {
 		series1 := &mockSeries{lbs: labels.FromStrings("a", "1")}
 		series2 := &mockSeries{lbs: labels.FromStrings("b", "2")}
 
-		set := &mockSeriesSet{series: []storage.Series{series1, series2}}
+		set := &seriesIteratorMock{series: []storage.Series{series1, series2}}
 
 		h := concatSeriesSets([]storage.SeriesSet{set})
 
@@ -97,9 +69,9 @@ func TestSeriesSetsHeap_SeriesSetInterface(t *testing.T) {
 		seriesC1 := &mockSeries{lbs: labels.FromStrings("c", "1")}
 
 		// Create series sets
-		set1 := &mockSeriesSet{series: []storage.Series{seriesA1, seriesB1}}
-		set2 := &mockSeriesSet{series: []storage.Series{seriesA2, seriesC1}}
-		set3 := &mockSeriesSet{series: []storage.Series{seriesB2}}
+		set1 := &seriesIteratorMock{series: []storage.Series{seriesA1, seriesB1}}
+		set2 := &seriesIteratorMock{series: []storage.Series{seriesA2, seriesC1}}
+		set3 := &seriesIteratorMock{series: []storage.Series{seriesB2}}
 
 		// Create heap and add sets
 		h := concatSeriesSets([]storage.SeriesSet{set1, set2, set3})
@@ -134,11 +106,11 @@ func TestSeriesSetsHeap_ErrorHandling(t *testing.T) {
 	})
 
 	t.Run("collects errors from sets", func(t *testing.T) {
-		set1 := &mockSeriesSet{
+		set1 := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("a", "1")}},
 			err:    errors.New("error from set 1"),
 		}
-		set2 := &mockSeriesSet{
+		set2 := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("b", "1")}},
 			err:    errors.New("error from set 2"),
 		}
@@ -163,11 +135,11 @@ func TestSeriesSetsHeap_ErrorHandling(t *testing.T) {
 		warning1 := annotations.New().Add(errors.New("warning 1"))
 		warning2 := annotations.New().Add(errors.New("warning 2"))
 
-		set1 := &mockSeriesSet{
+		set1 := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("a", "1")}},
 			warn:   warning1,
 		}
-		set2 := &mockSeriesSet{
+		set2 := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("b", "1")}},
 			warn:   warning2,
 		}
@@ -202,7 +174,7 @@ func TestConcatSeriesSets(t *testing.T) {
 
 	t.Run("sets with errors before first element", func(t *testing.T) {
 		// Create a set that returns an error without any series
-		errorSet := &mockSeriesSet{
+		errorSet := &seriesIteratorMock{
 			err:  errors.New("set failed"),
 			warn: annotations.New().Add(errors.New("set warning")),
 		}
@@ -222,12 +194,12 @@ func TestConcatSeriesSets(t *testing.T) {
 
 	t.Run("sets with mixed success and errors", func(t *testing.T) {
 		// Create a set with series but no error
-		successSet := &mockSeriesSet{
+		successSet := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("a", "1")}},
 		}
 
 		// Create a set that fails before first element
-		errorSet := &mockSeriesSet{
+		errorSet := &seriesIteratorMock{
 			err: errors.New("error before any series"),
 		}
 
@@ -247,10 +219,10 @@ func TestConcatSeriesSets(t *testing.T) {
 
 	t.Run("concat multiple series with same label set", func(t *testing.T) {
 		// Create sets with the same labels but different values
-		set1 := &mockSeriesSet{
+		set1 := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("a", "1")}},
 		}
-		set2 := &mockSeriesSet{
+		set2 := &seriesIteratorMock{
 			series: []storage.Series{&mockSeries{lbs: labels.FromStrings("a", "1")}},
 		}
 
@@ -273,9 +245,9 @@ func TestConcatSeriesSets(t *testing.T) {
 		series1c := &mockSeries{lbs: labels.FromStrings("a", "1")} // Same labels as 1a and 1b
 
 		// Create series sets with those series
-		set1 := &mockSeriesSet{series: []storage.Series{series1a}}
-		set2 := &mockSeriesSet{series: []storage.Series{series1b}}
-		set3 := &mockSeriesSet{series: []storage.Series{series1c}}
+		set1 := &seriesIteratorMock{series: []storage.Series{series1a}}
+		set2 := &seriesIteratorMock{series: []storage.Series{series1b}}
+		set3 := &seriesIteratorMock{series: []storage.Series{series1c}}
 
 		h := concatSeriesSets([]storage.SeriesSet{set1, set2, set3})
 
@@ -313,8 +285,8 @@ func TestConcatSeriesSets(t *testing.T) {
 		seriesF := &mockSeries{lbs: labels.FromStrings("f", "1")}
 
 		// Create sets with non-sequential series
-		set1 := &mockSeriesSet{series: []storage.Series{seriesA, seriesC, seriesE}}
-		set2 := &mockSeriesSet{series: []storage.Series{seriesB, seriesD, seriesF}}
+		set1 := &seriesIteratorMock{series: []storage.Series{seriesA, seriesC, seriesE}}
+		set2 := &seriesIteratorMock{series: []storage.Series{seriesB, seriesD, seriesF}}
 
 		h := concatSeriesSets([]storage.SeriesSet{set1, set2})
 
@@ -343,7 +315,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 		name     string
 		samples  []mimirpb.Sample
 		step     int64
-		testFunc func(t *testing.T, iter chunkenc.Iterator) // TODO dimitarvdimitrov remote *testing.T arg because its unused
+		testFunc func(iter chunkenc.Iterator)
 	}{
 		{
 			name: "seek forward with normal data",
@@ -354,7 +326,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 40, Value: 4.0},
 			},
 			step: 5,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(25)
 			},
 		},
@@ -366,7 +338,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 30, Value: 3.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Next()
 				iter.Next()
 				iter.Next()
@@ -383,7 +355,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 50, Value: 5.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				// First get to time 20
 				iter.Next()
 				iter.Next()
@@ -403,7 +375,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 30, Value: 3.0},
 			},
 			step: 5,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				// Seek past the end at time 40
 				iter.Seek(40)
 
@@ -419,7 +391,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 30, Value: 3.0},
 			},
 			step: 5,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(20)
 
 				// Seek to same position again
@@ -434,7 +406,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 30, Value: 3.0},
 			},
 			step: 5,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				// Seek to 25
 				iter.Seek(25)
 
@@ -449,7 +421,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 30, Value: 3.0}, // Gap of 20 units
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				// Seek to 20 (exactly in the gap)
 				iter.Seek(20)
 
@@ -464,7 +436,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 20, Value: 2.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				// Seek to before the start
 				iter.Seek(1)
 
@@ -482,7 +454,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 20, Value: 2.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				// Seek to negative timestamp
 				iter.Seek(-10)
 
@@ -498,7 +470,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			name:    "iterating over no samples",
 			samples: []mimirpb.Sample{},
 			step:    10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(10)
 			},
 		},
@@ -506,7 +478,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			name:    "iterating over no samples",
 			samples: []mimirpb.Sample{},
 			step:    10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Next()
 				iter.Seek(10)
 			},
@@ -519,7 +491,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 30, Value: 3.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(31)
 			},
 		},
@@ -530,7 +502,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 100, Value: 10.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Next()
 				iter.Seek(70)
 				iter.Next()
@@ -545,7 +517,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 100, Value: 10.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Next()
 				iter.Seek(78) // This should give us the staleness marker at 79
 				iter.Next()
@@ -560,7 +532,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 100, Value: 10.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Next()
 				iter.Seek(80) // There was a staleness marker at 79
 				iter.Next()
@@ -575,7 +547,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 100, Value: 10.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(80) // There was a staleness marker at 79
 				iter.Next()
 			},
@@ -589,7 +561,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 100, Value: 10.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(1000)
 				iter.Next()
 			},
@@ -606,7 +578,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				{TimestampMs: 100, Value: 10.0},
 			},
 			step: 10,
-			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+			testFunc: func(iter chunkenc.Iterator) {
 				iter.Seek(14)
 				iter.Next()
 				iter.Next()
@@ -635,7 +607,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			compIter := newComparingIterator(t, expected, actual)
 
 			// Run the test
-			tc.testFunc(t, compIter)
+			tc.testFunc(compIter)
 		})
 	}
 }
