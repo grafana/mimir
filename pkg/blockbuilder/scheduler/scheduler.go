@@ -398,11 +398,12 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 var _ offsetStore = (*offsetFinder)(nil)
 
 // computePartitionJobs returns the ranges of offsets that should be consumed
-// for the given topic and partition.
+// for the given topic and partition. Jobs are returned in increasing order of
+// start offset.
 //
 // start is the start offset of the partition.
 // resume is the offset to resume from.
-// partEnd is the end offset of the partition.
+// end is the end offset of the partition.
 // boundaryTime is the time to stop consuming at.
 // jobSize is the size of the jobs to create.
 // minScanTime is the minimum time to scan for.
