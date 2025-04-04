@@ -355,7 +355,6 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			},
 			step: 5,
 			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
-				// Seek to time 25 - should get to sample at time 30
 				iter.Seek(25)
 			},
 		},
@@ -421,7 +420,6 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			},
 			step: 5,
 			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
-				// Seek to 20
 				iter.Seek(20)
 
 				// Seek to same position again
@@ -510,6 +508,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			step:    10,
 			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
 				iter.Next()
+				iter.Seek(10)
 			},
 		},
 		{
@@ -578,6 +577,44 @@ func TestStalenessMarkerIterator(t *testing.T) {
 			step: 10,
 			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
 				iter.Seek(80) // There was a staleness marker at 79
+				iter.Next()
+			},
+		},
+		{
+			name: "seeking much after the last sample",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+				{TimestampMs: 69, Value: 6.9},
+				{TimestampMs: 100, Value: 10.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Seek(1000)
+				iter.Next()
+			},
+		},
+		{
+			name: "samples with smaller than step intervals",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 12, Value: 1.2},
+				{TimestampMs: 14, Value: 1.4},
+				{TimestampMs: 16, Value: 1.6},
+				{TimestampMs: 18, Value: 1.8},
+				{TimestampMs: 30, Value: 3.0},
+				{TimestampMs: 100, Value: 10.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Seek(14)
+				iter.Next()
+				iter.Next()
+				iter.Next()
+				iter.Next()
+				iter.Next()
+				iter.Next()
+				iter.Next()
 				iter.Next()
 			},
 		},
