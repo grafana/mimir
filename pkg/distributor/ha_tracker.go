@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	prom_labels "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -674,8 +675,8 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 	return err
 }
 
-func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {
-	var cluster, replica string
+func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string, string) {
+	var cluster, replica, metricName string
 	var pair mimirpb.LabelAdapter
 
 	for _, pair = range labels {
@@ -685,9 +686,12 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 		if pair.Name == clusterLabel {
 			cluster = pair.Value
 		}
+		if pair.Name == prom_labels.MetricName {
+			metricName = pair.Value
+		}
 	}
 
-	return cluster, replica
+	return cluster, replica, metricName
 }
 
 func (h *defaultHaTracker) cleanupHATrackerMetricsForUser(userID string) {
