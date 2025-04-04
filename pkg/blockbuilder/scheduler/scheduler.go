@@ -320,7 +320,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 		}
 
 		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", off.topic,
-			"partition", off.partition, "start", off.resume, "end", off.end, "boundary", boundary)
+			"partition", off.partition, "start", off.start, "resume", off.resume, "end", off.end, "boundary", boundary)
 
 		pj, err := computePartitionJobs(ctx, offFinder, off.topic, off.partition,
 			off.start, off.resume, off.end, boundary, s.cfg.JobSize, minScanTime, s.logger)
@@ -329,7 +329,21 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 			continue
 		}
 
-		s.validateJobs(pj, off.resume, off.end)
+		for _, j := range pj {
+			level.Debug(s.logger).Log(
+				"msg", "computed job",
+				"topic", j.Topic,
+				"partition", j.Partition,
+				"startOffset", j.StartOffset,
+				"endOffset", j.EndOffset,
+			)
+		}
+
+		for _, err := range validateJobs(pj, off.start, off.resume, off.end) {
+			level.Warn(s.logger).Log("msg", "job failed validation", "topic", off.topic, "partition", off.partition,
+				"start", off.start, "resume", off.resume, "end", off.end, "boundary", boundary, "err", err)
+		}
+
 		jobs = append(jobs, pj...)
 	}
 
@@ -450,7 +464,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 		}
 
 		if off == resume {
-			// We've reached the committed offset, so we're done.
+			// We've reached the resumption offset, so we're done.
 			break
 		}
 	}
@@ -471,32 +485,27 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 	return jobs, nil
 }
 
-func (s *BlockBuilderScheduler) validateJobs(jobs []*schedulerpb.JobSpec, start, end int64) {
-	for i := range jobs {
-		level.Debug(s.logger).Log(
-			"msg", "computed job",
-			"topic", jobs[i].Topic,
-			"partition", jobs[i].Partition,
-			"startOffset", jobs[i].StartOffset,
-			"endOffset", jobs[i].EndOffset,
-		)
+func validateJobs(jobs []*schedulerpb.JobSpec, start, resume, end int64) []error {
+	errors := []error{}
 
-		if i == 0 && jobs[0].StartOffset != start {
-			level.Warn(s.logger).Log("msg", "first job doesn't start at requested start offset", "startOffset", jobs[0].StartOffset, "start", start)
-		}
-		if jobs[i].StartOffset < start || jobs[i].StartOffset >= end {
-			level.Warn(s.logger).Log("msg", "job start offset is out of range", "startOffset", jobs[i].StartOffset, "start", start, "end", end)
+	realResume := max(resume, start)
+
+	for i := range jobs {
+		if jobs[i].StartOffset < realResume || jobs[i].StartOffset >= end {
+			errors = append(errors, fmt.Errorf("job start offset is out of range: %d < %d || %d >= %d", jobs[i].StartOffset, realResume, jobs[i].StartOffset, end))
 		}
 		if jobs[i].EndOffset > end {
-			level.Warn(s.logger).Log("msg", "job end offset is out of range", "endOffset", jobs[i].EndOffset, "end", end)
+			errors = append(errors, fmt.Errorf("job end offset is out of range: %d > %d", jobs[i].EndOffset, end))
 		}
 		if jobs[i].StartOffset == jobs[i].EndOffset {
-			level.Warn(s.logger).Log("msg", "job has equal start and end offset", "startOffset", jobs[i].StartOffset, "endOffset", jobs[i].EndOffset)
+			errors = append(errors, fmt.Errorf("job has equal start and end offset: %d == %d", jobs[i].StartOffset, jobs[i].EndOffset))
 		}
 		if i > 0 && jobs[i].StartOffset != jobs[i-1].EndOffset {
-			level.Warn(s.logger).Log("msg", "job start offset is not contiguous", "startOffset", jobs[i].StartOffset, "previousEndOffset", jobs[i-1].EndOffset)
+			errors = append(errors, fmt.Errorf("job start offset is not contiguous: %d != %d", jobs[i].StartOffset, jobs[i-1].EndOffset))
 		}
 	}
+
+	return errors
 }
 
 // fetchCommittedOffsets fetches the committed offsets for the given consumer group.

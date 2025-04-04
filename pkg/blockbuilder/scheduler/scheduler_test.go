@@ -734,6 +734,10 @@ func TestConsumptionRanges(t *testing.T) {
 			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.boundary, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 
+			for _, err := range validateJobs(j, tt.start, tt.resume, tt.end) {
+				assert.NoError(t, err)
+			}
+
 			// Convert offsetRange to JobSpec.
 			expectedJobs := make([]*schedulerpb.JobSpec, len(tt.expectedRanges))
 			for i, r := range tt.expectedRanges {
