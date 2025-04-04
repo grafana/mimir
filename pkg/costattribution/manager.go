@@ -30,13 +30,10 @@ type Manager struct {
 	logger log.Logger
 	limits *validation.Overrides
 
-	reg                                prometheus.Registerer
 	sampleTrackerCardinalityDesc       *prometheus.Desc
 	sampleTrackerOverflowDesc          *prometheus.Desc
 	activeSeriesTrackerCardinalityDesc *prometheus.Desc
 	activeSeriesTrackerOverflowDesc    *prometheus.Desc
-
-	costAttributionReg prometheus.Registerer
 
 	inactiveTimeout time.Duration
 	cleanupInterval time.Duration
@@ -77,11 +74,10 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 			prometheus.Labels{trackerLabel: defaultTrackerName},
 		),
 
-		limits:             limits,
-		inactiveTimeout:    inactiveTimeout,
-		logger:             logger,
-		costAttributionReg: costAttributionReg,
-		cleanupInterval:    cleanupInterval,
+		limits:          limits,
+		inactiveTimeout: inactiveTimeout,
+		logger:          logger,
+		cleanupInterval: cleanupInterval,
 	}
 
 	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
