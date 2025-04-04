@@ -343,7 +343,7 @@ func TestStalenessMarkerIterator(t *testing.T) {
 		name     string
 		samples  []mimirpb.Sample
 		step     int64
-		testFunc func(t *testing.T, iter chunkenc.Iterator)
+		testFunc func(t *testing.T, iter chunkenc.Iterator) // TODO dimitarvdimitrov remote *testing.T arg because its unused
 	}{
 		{
 			name: "seek forward with normal data",
@@ -456,6 +456,128 @@ func TestStalenessMarkerIterator(t *testing.T) {
 				iter.Seek(20)
 
 				// Next should bring us to 30
+				iter.Next()
+			},
+		},
+		{
+			name: "seek to before start",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				// Seek to before the start
+				iter.Seek(1)
+
+				// Next should bring us to 20
+				iter.Next()
+
+				// Next should return false
+				iter.Next()
+			},
+		},
+		{
+			name: "seek to negative timestamp",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				// Seek to negative timestamp
+				iter.Seek(-10)
+
+				// Next should bring us to 20
+				iter.Next()
+
+				// Next should return false
+				iter.Next()
+			},
+		},
+
+		{
+			name:    "iterating over no samples",
+			samples: []mimirpb.Sample{},
+			step:    10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Seek(10)
+			},
+		},
+		{
+			name:    "iterating over no samples",
+			samples: []mimirpb.Sample{},
+			step:    10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Next()
+			},
+		},
+		{
+			name: "seeking to beyond the last sample",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+				{TimestampMs: 30, Value: 3.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Seek(31)
+			},
+		},
+		{
+			name: "a very large gap between samples",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 100, Value: 10.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Next()
+				iter.Seek(70)
+				iter.Next()
+			},
+		},
+		{
+			name: "a very large gap between Seeks",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+				{TimestampMs: 69, Value: 6.9},
+				{TimestampMs: 100, Value: 10.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Next()
+				iter.Seek(78) // This should give us the staleness marker at 79
+				iter.Next()
+			},
+		},
+		{
+			name: "seeking to right after a staleness marker after a read",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+				{TimestampMs: 69, Value: 6.9},
+				{TimestampMs: 100, Value: 10.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Next()
+				iter.Seek(80) // There was a staleness marker at 79
+				iter.Next()
+			},
+		},
+		{
+			name: "seeking to right after a staleness marker",
+			samples: []mimirpb.Sample{
+				{TimestampMs: 10, Value: 1.0},
+				{TimestampMs: 20, Value: 2.0},
+				{TimestampMs: 69, Value: 6.9},
+				{TimestampMs: 100, Value: 10.0},
+			},
+			step: 10,
+			testFunc: func(t *testing.T, iter chunkenc.Iterator) {
+				iter.Seek(80) // There was a staleness marker at 79
 				iter.Next()
 			},
 		},
