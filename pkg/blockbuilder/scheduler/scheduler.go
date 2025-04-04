@@ -481,7 +481,6 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 
 func validateJobs(jobs []*schedulerpb.JobSpec, start, resume, end int64) []error {
 	errors := []error{}
-
 	realResume := max(resume, start)
 
 	for i := range jobs {
@@ -491,8 +490,8 @@ func validateJobs(jobs []*schedulerpb.JobSpec, start, resume, end int64) []error
 		if jobs[i].EndOffset > end {
 			errors = append(errors, fmt.Errorf("job end offset is out of range: %d > %d", jobs[i].EndOffset, end))
 		}
-		if jobs[i].StartOffset == jobs[i].EndOffset {
-			errors = append(errors, fmt.Errorf("job has equal start and end offset: %d == %d", jobs[i].StartOffset, jobs[i].EndOffset))
+		if jobs[i].StartOffset >= jobs[i].EndOffset {
+			errors = append(errors, fmt.Errorf("job start >= end: %d == %d", jobs[i].StartOffset, jobs[i].EndOffset))
 		}
 		if i > 0 && jobs[i].StartOffset != jobs[i-1].EndOffset {
 			errors = append(errors, fmt.Errorf("job start offset is not contiguous: %d != %d", jobs[i].StartOffset, jobs[i-1].EndOffset))

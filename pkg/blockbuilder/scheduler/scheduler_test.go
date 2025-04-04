@@ -728,8 +728,6 @@ func TestConsumptionRanges(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			println(name)
-
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end}
 			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.boundary, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
 			assert.NoError(t, err)
