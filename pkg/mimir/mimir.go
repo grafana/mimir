@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -760,6 +761,7 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec

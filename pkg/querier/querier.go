@@ -139,7 +139,7 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker, planner *streamingpromql.QueryPlanner) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	queryables = append(queryables, TimeRangeQueryable{
@@ -174,7 +174,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		eng = promql.NewEngine(opts)
 	case mimirEngine:
 		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
-		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, logger)
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner, logger)
 		if err != nil {
 			return nil, nil, nil, err
 		}
