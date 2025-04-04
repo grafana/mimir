@@ -90,7 +90,7 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
+func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	st.observedMtx.RLock()

@@ -32,7 +32,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	# TYPE cortex_distributor_received_attributed_samples_total counter
 	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 3
 	`
-		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(tManager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 	t.Run("Multiple Different Series in Request", func(t *testing.T) {
 		st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
@@ -46,7 +46,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 6
 	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
-		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(tManager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 
 	t.Run("Multiple Series in Request with Same Labels", func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 14
 	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
-		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(tManager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 }
 
@@ -154,5 +154,5 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 	cortex_distributor_received_attributed_samples_total{team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
 
 `
-	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
+	assert.NoError(t, testutil.GatherAndCompare(m.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }

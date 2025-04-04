@@ -78,7 +78,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
     # TYPE cortex_ingester_attributed_active_series gauge
 	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
 `
-	assert.NoError(t, testutil.GatherAndCompare(m.reg,
+	assert.NoError(t, testutil.GatherAndCompare(m.costAttributionReg,
 		strings.NewReader(expectedMetrics),
 		"cortex_ingester_attributed_active_series",
 		"cortex_ingester_attributed_active_native_histogram_series",

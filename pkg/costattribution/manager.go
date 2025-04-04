@@ -25,9 +25,11 @@ const (
 
 type Manager struct {
 	services.Service
-	logger          log.Logger
-	limits          *validation.Overrides
-	reg             *prometheus.Registry
+	logger log.Logger
+	limits *validation.Overrides
+
+	costAttributionReg *prometheus.Registry
+
 	inactiveTimeout time.Duration
 	cleanupInterval time.Duration
 
@@ -38,7 +40,7 @@ type Manager struct {
 	activeTrackersByUserID map[string]*ActiveSeriesTracker
 }
 
-func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
+func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, costAttributionReg *prometheus.Registry) (*Manager, error) {
 	m := &Manager{
 		stmtx:                  sync.RWMutex{},
 		sampleTrackersByUserID: make(map[string]*SampleTracker),
@@ -46,15 +48,15 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 		atmtx:                  sync.RWMutex{},
 		activeTrackersByUserID: make(map[string]*ActiveSeriesTracker),
 
-		limits:          limits,
-		inactiveTimeout: inactiveTimeout,
-		logger:          logger,
-		reg:             reg,
-		cleanupInterval: cleanupInterval,
+		limits:             limits,
+		inactiveTimeout:    inactiveTimeout,
+		logger:             logger,
+		costAttributionReg: costAttributionReg,
+		cleanupInterval:    cleanupInterval,
 	}
 
 	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
-	if err := reg.Register(m); err != nil {
+	if err := costAttributionReg.Register(costAttributionCollector{m}); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -137,10 +139,10 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	return tracker
 }
 
-func (m *Manager) Collect(out chan<- prometheus.Metric) {
+func (m *Manager) collectCostAttribution(out chan<- prometheus.Metric) {
 	m.stmtx.RLock()
 	for _, tracker := range m.sampleTrackersByUserID {
-		tracker.Collect(out)
+		tracker.collectCostAttribution(out)
 	}
 	m.stmtx.RUnlock()
 
@@ -151,7 +153,7 @@ func (m *Manager) Collect(out chan<- prometheus.Metric) {
 	m.atmtx.RUnlock()
 }
 
-func (m *Manager) Describe(chan<- *prometheus.Desc) {
+func (m *Manager) describeCostAttribution(chan<- *prometheus.Desc) {
 	// Describe is not implemented because the metrics include dynamic labels. The Manager functions as an unchecked exporter.
 	// For more details, refer to the documentation: https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#hdr-Custom_Collectors_and_constant_Metrics
 }
@@ -234,4 +236,24 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
 		}
 	}
 	return nil
+}
+
+var _ prometheus.Collector = (*costAttributionCollector)(nil)
+
+// costAttributionCollector is a prometheus collector that collects cost attribution metrics.
+// It collects metrics from methods that are explicit on their purpose: they are cost attribution metrics.
+// This way it's clear which are the usual operational metrics and which ones are the cost attribution metrics.
+type costAttributionCollector struct {
+	ca interface {
+		describeCostAttribution(chan<- *prometheus.Desc)
+		collectCostAttribution(chan<- prometheus.Metric)
+	}
+}
+
+func (c costAttributionCollector) Describe(descs chan<- *prometheus.Desc) {
+	c.ca.describeCostAttribution(descs)
+}
+
+func (c costAttributionCollector) Collect(metrics chan<- prometheus.Metric) {
+	c.ca.collectCostAttribution(metrics)
 }

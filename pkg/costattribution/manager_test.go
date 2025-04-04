@@ -77,7 +77,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
         # TYPE cortex_ingester_attributed_active_series gauge
         cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 3
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg,
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg,
 			strings.NewReader(expectedMetrics),
 			"cortex_discarded_attributed_samples_total",
 			"cortex_distributor_received_attributed_samples_total",
@@ -105,7 +105,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
         # TYPE cortex_ingester_attributed_active_series gauge
         cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 2
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg,
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg,
 			strings.NewReader(expectedMetrics),
 			"cortex_discarded_attributed_samples_total",
 			"cortex_distributor_received_attributed_samples_total",
@@ -127,7 +127,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_ingester_attributed_active_series gauge
 		cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg,
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg,
 			strings.NewReader(expectedMetrics),
 			"cortex_discarded_attributed_samples_total",
 			"cortex_distributor_received_attributed_samples_total",
@@ -148,7 +148,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
         # TYPE cortex_ingester_attributed_active_series gauge
         cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_ingester_attributed_active_series"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_ingester_attributed_active_series"))
 	})
 
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
@@ -161,7 +161,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_distributor_received_attributed_samples_total counter
 		cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total", "cortex_ingester_attributed_active_series"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total", "cortex_ingester_attributed_active_series"))
 	})
 
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
@@ -177,7 +177,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_discarded_attributed_samples_total counter
 		cortex_discarded_attributed_samples_total{feature="__missing__",reason="invalid-metrics-name",team="foo",tenant="user3",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
 
 	t.Run("Overflow metrics on cardinality limit", func(t *testing.T) {
@@ -189,7 +189,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_distributor_received_attributed_samples_total counter
 		cortex_distributor_received_attributed_samples_total{feature="__overflow__",team="__overflow__",tenant="user3",tracker="cost-attribution"} 2
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 }
 
@@ -210,7 +210,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
 		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="bar",tenant="user3",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
 
 	t.Run("Purge after inactive timeout", func(t *testing.T) {
@@ -228,7 +228,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		# TYPE cortex_discarded_attributed_samples_total counter
 		cortex_discarded_attributed_samples_total{department="foo",reason="out-of-window",service="bar",tenant="user3",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total"))
 	})
 
 	t.Run("Purge all trackers", func(t *testing.T) {
@@ -239,6 +239,6 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after full purge")
 
 		// No metrics should remain after all purged
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.costAttributionReg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
 }
