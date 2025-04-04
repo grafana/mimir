@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
+* [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 
 ## 5.7.0-rc.1
 
