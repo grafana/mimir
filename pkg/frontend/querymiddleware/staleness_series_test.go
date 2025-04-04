@@ -481,6 +481,96 @@ func TestStalenessMarkerIterator(t *testing.T) {
 	}
 }
 
+func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
+	tests := map[string]struct {
+		input    []SampleStream
+		hints    *storage.SelectHints
+		expected []SampleStream
+	}{
+		"should add a stale marker at the end even if if input samples have no gaps": {
+			input: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}},
+			hints: &storage.SelectHints{Step: 10},
+			expected: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
+			}},
+		},
+		"should add stale markers at the beginning of each gap and one at the end of the series": {
+			input: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}},
+			hints: &storage.SelectHints{Step: 10},
+			expected: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 20, Value: math.Float64frombits(value.StaleNaN)}, {TimestampMs: 40, Value: 4}, {TimestampMs: 50, Value: math.Float64frombits(value.StaleNaN)}, {TimestampMs: 90, Value: 9}, {TimestampMs: 100, Value: math.Float64frombits(value.StaleNaN)}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}, {TimestampMs: 40, Value: math.Float64frombits(value.StaleNaN)}},
+			}},
+		},
+		"should not add stale markers even if points have gaps if hints is not passed": {
+			input: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}},
+			hints: nil,
+			expected: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}},
+		},
+		"should not add stale markers even if points have gaps if step == 0": {
+			input: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}},
+			hints: &storage.SelectHints{Step: 0},
+			expected: []SampleStream{{
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
+			}, {
+				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
+			}},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			step := int64(0)
+			if testData.hints != nil {
+				step = testData.hints.Step
+			}
+			set := newStalenessMarkerSeriesSet(sampleStreamToSeriesSet(testData.input), step)
+			actual, err := seriesSetToSampleStreams(set)
+			require.NoError(t, err)
+			assertEqualSampleStream(t, testData.expected, actual)
+		})
+	}
+}
+
 // comparingIterator wraps two iterators and compares their behavior
 type comparingIterator struct {
 	t        *testing.T
@@ -495,6 +585,7 @@ func newComparingIterator(t *testing.T, expected, actual chunkenc.Iterator) *com
 		actual:   actual,
 	}
 }
+
 func (c *comparingIterator) Next() chunkenc.ValueType {
 	vtExpected := c.expected.Next()
 	vtActual := c.actual.Next()
