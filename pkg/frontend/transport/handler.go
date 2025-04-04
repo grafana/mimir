@@ -333,7 +333,7 @@ func (f *Handler) reportQueryStats(
 	numChunks := stats.LoadFetchedChunks()
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
-	samplesProcessed := stats.GetSamplesProcessed()
+	samplesProcessed := stats.LoadSamplesProcessed()
 
 	if stats != nil {
 		// Track stats.
