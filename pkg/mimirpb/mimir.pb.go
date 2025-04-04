@@ -802,7 +802,7 @@ type Histogram struct {
 	Timestamp int64 `protobuf:"varint,15,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	// custom_values are not part of the specification, DO NOT use in remote write clients.
 	// Used only for converting from OpenTelemetry to Prometheus internally and
-	// to unmarshall Remote Write 2.0 messages.
+	// to unmarshal Remote Write 2.0 messages.
 	CustomValues []float64 `protobuf:"fixed64,16,rep,packed,name=custom_values,json=customValues,proto3" json:"custom_values,omitempty"`
 }
 
