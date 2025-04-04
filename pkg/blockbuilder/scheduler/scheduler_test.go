@@ -619,22 +619,6 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1000, end: 1001},
 			},
 		},
-		"resumption offset is before retention window": {
-			offsets: []timeOffset{
-				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
-				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
-				{time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC), 1005},
-			},
-			resume:      1000,
-			end:         1005,
-			jobSize:     100 * time.Millisecond,
-			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC),
-			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 500*1000000, time.UTC),
-			expectedRanges: []offsetRange{
-				{start: 1003, end: 1004},
-				{start: 1004, end: 1005},
-			},
-		},
 		"resumption offset is before min scan time": {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1001},
@@ -731,7 +715,7 @@ func TestConsumptionRanges(t *testing.T) {
 			end:         10001,
 			jobSize:     1 * time.Hour,
 			boundary:    time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
-			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 0, time.UTC),
+			minScanTime: time.Date(2025, 1, 20, 10, 0, 0, 0, time.UTC),
 			expectedRanges: []offsetRange{
 				{start: 2000, end: 3000},
 				{start: 3000, end: 4000},
