@@ -430,8 +430,9 @@ func TestConsumptionRanges(t *testing.T) {
 
 	tests := map[string]struct {
 		offsets        []timeOffset
-		commit         int64
-		partEnd        int64
+		start          int64
+		resume         int64
+		end            int64
 		jobSize        time.Duration
 		boundary       time.Time
 		expectedRanges []offsetRange
@@ -449,8 +450,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC), 6000},
 				{time.Date(2025, 3, 1, 16, 0, 0, 0, time.UTC), 7000},
 			},
-			commit:      2000,
-			partEnd:     10001,
+			resume:      2000,
+			end:         10001,
 			jobSize:     1 * time.Hour,
 			boundary:    time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 0, time.UTC),
@@ -469,8 +470,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC), 1001},
 				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
 			},
-			commit:         2000,
-			partEnd:        2000,
+			resume:         2000,
+			end:            2000,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -481,8 +482,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
 				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 2000},
 			},
-			commit:      2000,
-			partEnd:     2001,
+			resume:      2000,
+			end:         2001,
 			jobSize:     200 * time.Millisecond,
 			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -494,8 +495,8 @@ func TestConsumptionRanges(t *testing.T) {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
 			},
-			commit:         2000,
-			partEnd:        2000,
+			resume:         2000,
+			end:            2000,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -507,8 +508,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 1001*1000000, time.UTC), 1001},
 				{time.Date(2025, 3, 1, 10, 0, 0, 1002*1000000, time.UTC), 1002},
 			},
-			commit:         1000,
-			partEnd:        1003,
+			resume:         1000,
+			end:            1003,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -519,8 +520,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC), 3000},
 				{time.Date(2025, 3, 1, 10, 0, 0, 4000*1000000, time.UTC), 4000},
 			},
-			commit:         3000,
-			partEnd:        4001,
+			resume:         3000,
+			end:            4001,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 3000*1000000, time.UTC),
@@ -531,8 +532,8 @@ func TestConsumptionRanges(t *testing.T) {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC), 3000},
 			},
-			commit:         3000,
-			partEnd:        3001,
+			resume:         3000,
+			end:            3001,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 3000*1000000, time.UTC),
@@ -540,8 +541,8 @@ func TestConsumptionRanges(t *testing.T) {
 		},
 		"empty partition: no data": {
 			offsets:        []timeOffset{},
-			commit:         0,
-			partEnd:        0,
+			resume:         0,
+			end:            0,
 			jobSize:        200 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -570,8 +571,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 503*1000000, time.UTC), 1016},
 				{time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC), 1017},
 			},
-			commit:      1000,
-			partEnd:     10001,
+			resume:      1000,
+			end:         10001,
 			jobSize:     100 * time.Millisecond,
 			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -580,7 +581,7 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1013, end: 1017},
 			},
 		},
-		"records with the duplicate timestamps": {
+		"records with duplicate timestamps": {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1000},
 				{time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC), 1001},
@@ -592,8 +593,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1007},
 				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1008},
 			},
-			commit:      1000,
-			partEnd:     1009,
+			resume:      1000,
+			end:         1009,
 			jobSize:     100 * time.Millisecond,
 			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
@@ -601,7 +602,7 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1000, end: 1009},
 			},
 		},
-		"no data between commit and time boundary": {
+		"no data between resume and time boundary": {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1000},
 				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 1001},
@@ -609,8 +610,8 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1003},
 				{time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC), 1004},
 			},
-			commit:      1000,
-			partEnd:     1005,
+			resume:      1000,
+			end:         1005,
 			jobSize:     100 * time.Millisecond,
 			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 200*1000000, time.UTC),
@@ -618,14 +619,14 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1000, end: 1001},
 			},
 		},
-		"commit before retention window": {
+		"resumption offset is before retention window": {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
 				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
 				{time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC), 1005},
 			},
-			commit:      1000,
-			partEnd:     1005,
+			resume:      1000,
+			end:         1005,
 			jobSize:     100 * time.Millisecond,
 			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC),
 			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 500*1000000, time.UTC),
@@ -634,15 +635,15 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1004, end: 1005},
 			},
 		},
-		"committed before min scan time": {
+		"resumption offset is before min scan time": {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1001},
 				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 1002},
 				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
 				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
 			},
-			commit:      1001,
-			partEnd:     1004,
+			resume:      1001,
+			end:         1004,
 			jobSize:     100 * time.Millisecond,
 			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 150*1000000, time.UTC),
@@ -658,22 +659,22 @@ func TestConsumptionRanges(t *testing.T) {
 				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
 				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
 			},
-			commit:         1001,
-			partEnd:        1004,
+			resume:         1001,
+			end:            1004,
 			jobSize:        100 * time.Millisecond,
 			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 900*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
-		"boundary scan skips end and commit in one iteration": {
+		"boundary scan skips end and resumption offset in one iteration": {
 			offsets: []timeOffset{
 				{time.Date(2025, 3, 1, 10, 1, 0, 0, time.UTC), 1001},
 				{time.Date(2025, 3, 1, 10, 2, 58, 0, time.UTC), 1002},
 				{time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC), 1003},
 				{time.Date(2025, 3, 1, 10, 3, 30, 0, time.UTC), 1004},
 			},
-			commit:      1003,
-			partEnd:     1004,
+			resume:      1003,
+			end:         1004,
 			jobSize:     1 * time.Minute,
 			boundary:    time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
 			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
@@ -681,22 +682,72 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1003, end: 1004},
 			},
 		},
+		"resume < start and start == end": {
+			offsets:        []timeOffset{},
+			start:          1004,
+			resume:         1000,
+			end:            1004,
+			jobSize:        1 * time.Minute,
+			boundary:       time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
+			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			expectedRanges: []offsetRange{},
+		},
+		"resume < start < end": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 10, 3, 0, 0, time.UTC), 1003},
+			},
+			start:       1003,
+			resume:      1000,
+			end:         1004,
+			jobSize:     1 * time.Minute,
+			boundary:    time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			expectedRanges: []offsetRange{
+				{start: 1003, end: 1004},
+			},
+		},
+		"resume == start == end": {
+			offsets:        []timeOffset{},
+			start:          1003,
+			resume:         1003,
+			end:            1003,
+			jobSize:        1 * time.Minute,
+			boundary:       time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
+			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			expectedRanges: []offsetRange{},
+		},
+		"hour-based ranges when resume < start": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC), 2000},
+				{time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC), 3000},
+				{time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC), 4000},
+				{time.Date(2025, 3, 1, 14, 0, 0, 0, time.UTC), 5000},
+				{time.Date(2025, 3, 1, 14, 30, 0, 0, time.UTC), 5500},
+				{time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC), 6000},
+				{time.Date(2025, 3, 1, 16, 0, 0, 0, time.UTC), 7000},
+			},
+			start:       2000,
+			resume:      100,
+			end:         10001,
+			jobSize:     1 * time.Hour,
+			boundary:    time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 0, time.UTC),
+			expectedRanges: []offsetRange{
+				{start: 2000, end: 3000},
+				{start: 3000, end: 4000},
+				{start: 4000, end: 5000},
+				{start: 5000, end: 6000},
+			},
+			msg: "if resumption offset has fallen off the retention window, we should produce jobs beginning at start",
+		},
 	}
-
-	/*
-
-	   More cases to test:
-	   - start==end and commit < start
-	   - commit < start < end
-	   - start==end==commit
-	*/
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			println(name)
 
-			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.partEnd}
-			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.boundary, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
+			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.end}
+			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.start, tt.resume, tt.end, tt.boundary, tt.jobSize, tt.minScanTime, test.NewTestingLogger(t))
 			assert.NoError(t, err)
 
 			// Convert offsetRange to JobSpec.

@@ -188,8 +188,8 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		return
 	}
 
-	// job computation was based on a snapshot of the committed offsets that may have changed.
-	// Nix any jobs that are now before the committed offsets.
+	// Job computation was based on a snapshot of the committed offsets that may
+	// have changed. Nix any jobs that are now before the committed offsets.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -209,9 +209,9 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 }
 
 type partitionOffsets struct {
-	topic      string
-	partition  int32
-	start, end int64
+	topic              string
+	partition          int32
+	start, resume, end int64
 }
 
 // consumptionOffsets returns the resumption and end offsets for each partition, falling back to the
@@ -221,18 +221,28 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 	if err != nil {
 		return nil, fmt.Errorf("list start offsets: %w", err)
 	}
+	if startOffsets.Error() != nil {
+		return nil, fmt.Errorf("list start offsets: %w", startOffsets.Error())
+	}
 	endOffsets, err := s.adminClient.ListEndOffsets(ctx, topic)
 	if err != nil {
 		return nil, fmt.Errorf("list end offsets: %w", err)
+	}
+	if endOffsets.Error() != nil {
+		return nil, fmt.Errorf("list end offsets: %w", endOffsets.Error())
 	}
 	fallbackOffsets, err := s.adminClient.ListOffsetsAfterMilli(ctx, fallbackTime.UnixMilli(), topic)
 	if err != nil {
 		return nil, fmt.Errorf("list fallback offsets: %w", err)
 	}
+	if fallbackOffsets.Error() != nil {
+		return nil, fmt.Errorf("list fallback offsets: %w", fallbackOffsets.Error())
+	}
 
-	offs := []partitionOffsets{}
+	so := startOffsets.Offsets()
+	offs := make([]partitionOffsets, 0, len(so))
 
-	for t, pt := range startOffsets.Offsets() {
+	for t, pt := range so {
 		if t != topic {
 			continue
 		}
@@ -253,7 +263,7 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 					return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, t)
 				}
 
-				level.Debug(s.logger).Log("msg", "no commit, so falling back to max of startOffset and fallbackOffset",
+				level.Debug(s.logger).Log("msg", "no commit; falling back to max of startOffset and fallbackOffset",
 					"topic", t, "partition", partition, "startOffset", startOffset.At, "fallbackOffset", o.Offset)
 
 				consumeOffset = max(startOffset.At, o.Offset)
@@ -269,14 +279,13 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(end.Offset))
 
-			if consumeOffset < end.Offset {
-				offs = append(offs, partitionOffsets{
-					topic:     t,
-					partition: partition,
-					start:     consumeOffset,
-					end:       end.Offset,
-				})
-			}
+			offs = append(offs, partitionOffsets{
+				topic:     t,
+				partition: partition,
+				start:     startOffset.At,
+				resume:    consumeOffset,
+				end:       end.Offset,
+			})
 		}
 	}
 
@@ -295,7 +304,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 	// A later run will create job(s) for the boundary and beyond.
 
 	boundary := time.Now().Truncate(s.cfg.JobSize)
-	of := newOffsetFinder(s.adminClient, s.logger)
+	offFinder := newOffsetFinder(s.adminClient, s.logger)
 	minScanTime := time.Now().Add(-s.cfg.MaxScanAge)
 	jobs := []*schedulerpb.JobSpec{}
 
@@ -305,26 +314,22 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 	})
 
 	for _, off := range consumeOffs {
-		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", off.topic, "partition", off.partition, "start", off.start, "end", off.end, "boundary", boundary)
+		if off.resume >= off.end || off.start >= off.end {
+			// Nothing to consume, so skip.
+			continue
+		}
 
-		pj, err := computePartitionJobs(ctx, of, off.topic, off.partition,
-			off.start, off.end, boundary, s.cfg.JobSize, minScanTime, s.logger)
+		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", off.topic,
+			"partition", off.partition, "start", off.resume, "end", off.end, "boundary", boundary)
+
+		pj, err := computePartitionJobs(ctx, offFinder, off.topic, off.partition,
+			off.start, off.resume, off.end, boundary, s.cfg.JobSize, minScanTime, s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue
 		}
 
-		// Log details of each job for debugging purposes
-		for _, job := range pj {
-			level.Debug(s.logger).Log(
-				"msg", "computed job",
-				"topic", job.Topic,
-				"partition", job.Partition,
-				"startOffset", job.StartOffset,
-				"endOffset", job.EndOffset,
-			)
-		}
-
+		s.validateJobs(pj, off.resume, off.end)
 		jobs = append(jobs, pj...)
 	}
 
@@ -388,10 +393,18 @@ var _ offsetStore = (*offsetFinder)(nil)
 
 // computePartitionJobs returns the ranges of offsets that should be consumed
 // for the given topic and partition.
+//
+// start is the start offset of the partition.
+// resume is the offset to resume from.
+// partEnd is the end offset of the partition.
+// boundaryTime is the time to stop consuming at.
+// jobSize is the size of the jobs to create.
+// minScanTime is the minimum time to scan for.
 func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
-	committed int64, partEnd int64, boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*schedulerpb.JobSpec, error) {
+	start, resume, end int64, boundaryTime time.Time, jobSize time.Duration,
+	minScanTime time.Time, logger log.Logger) ([]*schedulerpb.JobSpec, error) {
 
-	if committed >= partEnd {
+	if resume >= end || start >= end {
 		// No new data to consume.
 		return []*schedulerpb.JobSpec{}, nil
 	}
@@ -405,7 +418,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 		return nil, err
 	}
 
-	if committed >= windowEndOffset {
+	if resume >= windowEndOffset {
 		// No new data to consume.
 		return []*schedulerpb.JobSpec{}, nil
 	}
@@ -421,15 +434,12 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 		}
 
 		if off >= windowEndOffset {
-			// Found an offset exceeding our window. Ignore and keep looking.
+			// Found an offset later than our boundary time. Keep looking.
 			continue
 		}
 
-		if off < committed {
-			// We've scanned to before the commit offset. Adjust it so we don't
-			// revisit data already consumed.
-			off = committed
-		}
+		// Don't want to create jobs that are before the resume offset.
+		off = max(off, resume)
 
 		if len(jobs) == 0 || off != jobs[len(jobs)-1].StartOffset {
 			jobs = append(jobs, &schedulerpb.JobSpec{
@@ -439,7 +449,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 			})
 		}
 
-		if off == committed {
+		if off == resume {
 			// We've reached the committed offset, so we're done.
 			break
 		}
@@ -459,6 +469,34 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 	}
 
 	return jobs, nil
+}
+
+func (s *BlockBuilderScheduler) validateJobs(jobs []*schedulerpb.JobSpec, start, end int64) {
+	for i := range jobs {
+		level.Debug(s.logger).Log(
+			"msg", "computed job",
+			"topic", jobs[i].Topic,
+			"partition", jobs[i].Partition,
+			"startOffset", jobs[i].StartOffset,
+			"endOffset", jobs[i].EndOffset,
+		)
+
+		if i == 0 && jobs[0].StartOffset != start {
+			level.Warn(s.logger).Log("msg", "first job doesn't start at requested start offset", "startOffset", jobs[0].StartOffset, "start", start)
+		}
+		if jobs[i].StartOffset < start || jobs[i].StartOffset >= end {
+			level.Warn(s.logger).Log("msg", "job start offset is out of range", "startOffset", jobs[i].StartOffset, "start", start, "end", end)
+		}
+		if jobs[i].EndOffset > end {
+			level.Warn(s.logger).Log("msg", "job end offset is out of range", "endOffset", jobs[i].EndOffset, "end", end)
+		}
+		if jobs[i].StartOffset == jobs[i].EndOffset {
+			level.Warn(s.logger).Log("msg", "job has equal start and end offset", "startOffset", jobs[i].StartOffset, "endOffset", jobs[i].EndOffset)
+		}
+		if i > 0 && jobs[i].StartOffset != jobs[i-1].EndOffset {
+			level.Warn(s.logger).Log("msg", "job start offset is not contiguous", "startOffset", jobs[i].StartOffset, "previousEndOffset", jobs[i-1].EndOffset)
+		}
+	}
 }
 
 // fetchCommittedOffsets fetches the committed offsets for the given consumer group.
