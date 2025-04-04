@@ -22,8 +22,6 @@ type OffsetsCommand struct {
 	milli       int64
 }
 
-// ./kafkatool --kafka-sasl-username=ccun_mimir_dev_15 --kafka-sasl-password=ccp_mimir_dev_15 --kafka-address localhost:9092
-
 // Register is used to register the command to a parent command.
 func (c *OffsetsCommand) Register(app *kingpin.Application, getKafkaClient func() *kgo.Client, printer Printer) {
 	c.getKafkaClient = getKafkaClient
