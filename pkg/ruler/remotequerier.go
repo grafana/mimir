@@ -167,7 +167,7 @@ func NewRemoteQuerier(
 // See: https://github.com/prometheus/prometheus/blob/28a830ed9f331e71549c24c2ac3b441033201e8f/storage/remote/client.go#L342
 func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
-	defer log.Span.Finish()
+	defer log.Finish()
 
 	rdReq := &prompb.ReadRequest{
 		Queries: []*prompb.Query{
@@ -246,7 +246,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 	logger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Query")
-	defer logger.Span.Finish()
+	defer logger.Finish()
 
 	return q.query(ctx, qs, t, logger)
 }

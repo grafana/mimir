@@ -7780,14 +7780,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist, reg := getDistributor(cfg)
 
 		metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
-			if metricIdx%3 == 0 {
+			switch metricIdx % 3 {
+			case 0:
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: metricName,
 					Help:             strings.Repeat("a", metadataLengthLimit+1),
 					Unit:             "unknown",
 				}
-			} else if metricIdx%3 == 1 {
+			case 1:
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: strings.Repeat("a", metadataLengthLimit+1),

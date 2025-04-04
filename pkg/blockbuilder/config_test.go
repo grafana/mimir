@@ -97,7 +97,7 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	// Block storage related options.
 	flagext.DefaultValues(&cfg.BlocksStorage)
-	cfg.BlocksStorage.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
+	cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
 	cfg.BlocksStorage.Bucket.Filesystem.Directory = t.TempDir()
 
 	limits := defaultLimitsTestConfig()

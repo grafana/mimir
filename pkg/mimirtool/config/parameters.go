@@ -32,15 +32,15 @@ func (i defaultValueInspectedEntry) Walk(f func(path string, value Value) error)
 }
 
 func (i defaultValueInspectedEntry) GetValue(path string) (Value, error) {
-	return i.InspectedEntry.GetDefaultValue(path)
+	return i.GetDefaultValue(path)
 }
 
 func (i defaultValueInspectedEntry) MustGetValue(path string) Value {
-	return i.InspectedEntry.MustGetDefaultValue(path)
+	return i.MustGetDefaultValue(path)
 }
 
 func (i defaultValueInspectedEntry) SetValue(path string, v Value) error {
-	return i.InspectedEntry.SetDefaultValue(path, v)
+	return i.SetDefaultValue(path, v)
 }
 
 func (i defaultValueInspectedEntry) walk(path string, errs *multierror.MultiError, f func(path string, value Value) error) {

@@ -11795,7 +11795,7 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 func (i *failingIngester) shutDownWaitAndCheck(ctx context.Context, t *testing.T) {
 	// We properly shut down ingester, and ensure that it lifecycler is terminated.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
-	require.Equal(t, services.Terminated, i.lifecycler.BasicService.State())
+	require.Equal(t, services.Terminated, i.lifecycler.State())
 }
 
 func (i *failingIngester) starting(parentCtx context.Context) error {

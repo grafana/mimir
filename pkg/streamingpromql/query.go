@@ -98,7 +98,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		},
 	}
 
-	if start == end && interval == 0 {
+	if start.Equal(end) && interval == 0 {
 		q.topLevelQueryTimeRange = types.NewInstantQueryTimeRange(start)
 	} else {
 		q.topLevelQueryTimeRange = types.NewRangeQueryTimeRange(start, end, interval)

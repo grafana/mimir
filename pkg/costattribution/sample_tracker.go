@@ -145,7 +145,7 @@ func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
 		st.fillKeyFromLabelAdapters(ts.Labels, buf)
-		dict[string(buf.Bytes())] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
+		dict[string(buf.Bytes())] += len(ts.Samples) + len(ts.Histograms)
 	}
 
 	// Update the observations for each label set and update the state per request,
