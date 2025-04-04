@@ -344,7 +344,7 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 
 	flagext.DefaultValues(&config)
 	ctx := context.Background()
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	logger := utiltest.NewTestingLogger(t)
 	config.Codecs = []codec.Codec{
 		GetReplicaDescCodec(),
 	}
