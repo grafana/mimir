@@ -50,7 +50,7 @@ type Stats struct {
 	QueueTime time.Duration `protobuf:"bytes,9,opt,name=queue_time,json=queueTime,proto3,stdduration" json:"queue_time"`
 	// The time spent at the frontend encoding the query's final results. Does not include time spent serializing results at the querier.
 	EncodeTime time.Duration `protobuf:"bytes,10,opt,name=encode_time,json=encodeTime,proto3,stdduration" json:"encode_time"`
-	// TotalSamples represents the total number of samples scanned while evaluating a query.
+	// SamplesProcessed represents the total number of samples scanned while evaluating a query.
 	SamplesProcessed uint64 `protobuf:"varint,11,opt,name=samples_processed,json=samplesProcessed,proto3" json:"samples_processed,omitempty"`
 	// The number of subqueries that were spun off as actual range queries in order to execute the full query
 	SpunOffSubqueries uint32 `protobuf:"varint,12,opt,name=spun_off_subqueries,json=spunOffSubqueries,proto3" json:"spun_off_subqueries,omitempty"`
