@@ -71,5 +71,8 @@ func main() {
 	dumpCommand := &DumpCommand{}
 	dumpCommand.Register(app, getKafkaClient, printer)
 
+	offsetsCommand := &OffsetsCommand{}
+	offsetsCommand.Register(app, getKafkaClient, printer)
+
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
