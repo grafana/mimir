@@ -61,7 +61,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
 	f.IntVar(&cfg.ApplyMaxGlobalSeriesPerUserBelow, "block-builder.apply-max-global-series-per-user-below", 0, "Apply the global series limit per partition if the global series limit for the user is <= this given value. 0 means limits are disabled. If a user's limit is more than the given value, then the limits are not applied as well.")
 	f.BoolVar(&cfg.NoPartiallyConsumedRegion, "block-builder.no-partially-consumed-region", false, "Get rid of the 'last seen' logic and instead consume everything between two offsets to build the block.")
-	cfg.SchedulerConfig.GRPCClientConfig.RegisterFlags(f)
+	cfg.SchedulerConfig.RegisterFlags(f)
 }
 
 func (cfg *SchedulerConfig) RegisterFlags(f *flag.FlagSet) {
