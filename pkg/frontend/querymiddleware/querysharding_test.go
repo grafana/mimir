@@ -2337,7 +2337,7 @@ func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHi
 		})
 	}
 
-	return newSeriesIteratorMock(filtered)
+	return &seriesIteratorMock{series: filtered}
 }
 
 func (m *querierMock) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -2525,37 +2525,32 @@ func constant(value float64) generator {
 	}
 }
 
+// seriesIteratorMock implements storage.SeriesSet for testing
 type seriesIteratorMock struct {
-	idx    int
 	series []storage.Series
+	next   int
+	err    error
+	warn   annotations.Annotations
 }
 
-func newSeriesIteratorMock(series []storage.Series) *seriesIteratorMock {
-	return &seriesIteratorMock{
-		idx:    -1,
-		series: series,
-	}
+func (m *seriesIteratorMock) Next() bool {
+	m.next++
+	return m.next <= len(m.series)
 }
 
-func (i *seriesIteratorMock) Next() bool {
-	i.idx++
-	return i.idx < len(i.series)
-}
-
-func (i *seriesIteratorMock) At() storage.Series {
-	if i.idx >= len(i.series) {
+func (m *seriesIteratorMock) At() storage.Series {
+	if m.next <= 0 || m.next > len(m.series) {
 		return nil
 	}
-
-	return i.series[i.idx]
+	return m.series[m.next-1]
 }
 
-func (i *seriesIteratorMock) Err() error {
-	return nil
+func (m *seriesIteratorMock) Err() error {
+	return m.err
 }
 
-func (i *seriesIteratorMock) Warnings() annotations.Annotations {
-	return nil
+func (m *seriesIteratorMock) Warnings() annotations.Annotations {
+	return m.warn
 }
 
 // Usually series are read by a single engine in a single goroutine but in
