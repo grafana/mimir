@@ -4,7 +4,9 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -35,6 +37,26 @@ func TestDistributor(t *testing.T) {
 	})
 }
 
+type metadataResponse struct {
+	Status string                            `json:"status"`
+	Data   map[string][]metadataResponseItem `json:"data"`
+}
+
+type metadataResponseItem struct {
+	Type string `json:"type"`
+	Help string `json:"help"`
+	Unit string `json:"unit"`
+}
+
+type distributorTestCase struct {
+	rw1request      []prompb.WriteRequest
+	rw2request      []promRW2.Request
+	runtimeConfig   string
+	queries         map[string]model.Matrix
+	exemplarQueries map[string][]promv1.ExemplarQueryResult
+	metadataQueries map[string]metadataResponse
+}
+
 func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataEnabled bool) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
@@ -44,30 +66,517 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 		return fmt.Sprintf("overrides:\n  \"%s\":\n    max_global_exemplars_per_user: %d\n", userID, maxExemplars)
 	}
 
-	testCases := map[string]struct {
-		inSeries        [][]prompb.TimeSeries
-		runtimeConfig   string
-		queries         map[string]model.Matrix
-		exemplarQueries map[string][]promv1.ExemplarQueryResult
-	}{
-		"no special features": {
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels:  []prompb.Label{{Name: "__name__", Value: "foobar"}},
-				Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-			}}},
+	testCases := map[string]distributorTestCase{
+		"simple counter": {
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarC_total"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Metadata: []prompb.MetricMetadata{
+						{
+							MetricFamilyName: "foobarC_total",
+							Help:             "some helpC",
+							Unit:             "someunitC",
+							Type:             prompb.MetricMetadata_COUNTER,
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+								HelpRef: 2,
+								UnitRef: 3,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "foobarC_total", "some helpC", "someunitC"},
+				},
+			},
 			queries: map[string]model.Matrix{
-				"foobar": {{
-					Metric: model.Metric{"__name__": "foobar"},
+				"foobarC_total": {{
+					Metric: model.Metric{"__name__": "foobarC_total"},
 					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
 				}},
 			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarC_total": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarC_total": {{
+							Type: "counter",
+							Help: "some helpC",
+							Unit: "someunitC",
+						}},
+					},
+				},
+			},
 		},
 
+		"simple gauge": {
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarG"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Metadata: []prompb.MetricMetadata{
+						{
+							MetricFamilyName: "foobarG",
+							Help:             "some helpG",
+							Unit:             "someunitG",
+							Type:             prompb.MetricMetadata_GAUGE,
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_GAUGE,
+								HelpRef: 2,
+								UnitRef: 3,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "foobarG", "some helpG", "someunitG"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarG": {{
+					Metric: model.Metric{"__name__": "foobarG"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarG": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarG": {{
+							Type: "gauge",
+							Help: "some helpG",
+							Unit: "someunitG",
+						}},
+					},
+				},
+			},
+		},
+
+		"simple histogram": {
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarH_bucket"}, {Name: "le", Value: "0.1"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarH_bucket"}, {Name: "le", Value: "+Inf"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
+						},
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarH_count"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
+						},
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarH_sum"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 1000}},
+						},
+					},
+					Metadata: []prompb.MetricMetadata{
+						{
+							MetricFamilyName: "foobarH",
+							Help:             "some helpH",
+							Unit:             "someunitH",
+							Type:             prompb.MetricMetadata_HISTOGRAM,
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+						{
+							LabelsRefs: []uint32{0, 1, 2, 6},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+						{
+							LabelsRefs: []uint32{0, 7},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+						{
+							LabelsRefs: []uint32{0, 8},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 1000}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "foobarH_bucket", "le", "0.1", "some helpH", "someunitH", "+Inf", "foobarH_count", "foobarH_sum"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarH_bucket": {
+					{
+						Metric: model.Metric{"__name__": "foobarH_bucket", "le": "0.1"},
+						Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
+					},
+					{
+						Metric: model.Metric{"__name__": "foobarH_bucket", "le": "+Inf"},
+						Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(200)}},
+					},
+				},
+				"foobarH_count": {{
+					Metric: model.Metric{"__name__": "foobarH_count"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(200)}},
+				}},
+				"foobarH_sum": {{
+					Metric: model.Metric{"__name__": "foobarH_sum"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(1000)}},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarH": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarH": {{
+							Type: "histogram",
+							Help: "some helpH",
+							Unit: "someunitH",
+						}},
+					},
+				},
+			},
+		},
+
+		"simple summary": {
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarS"}, {Name: "quantile", Value: "0.5"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarS_count"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
+						},
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobarS_sum"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 1000}},
+						},
+					},
+					Metadata: []prompb.MetricMetadata{
+						{
+							MetricFamilyName: "foobarS",
+							Help:             "some helpS",
+							Unit:             "someunitS",
+							Type:             prompb.MetricMetadata_SUMMARY,
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_SUMMARY,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+						{
+							LabelsRefs: []uint32{0, 6},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 200}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_SUMMARY,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+						{
+							LabelsRefs: []uint32{0, 7},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 1000}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_SUMMARY,
+								HelpRef: 4,
+								UnitRef: 5,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "foobarS", "quantile", "0.5", "some helpS", "someunitS", "foobarS_count", "foobarS_sum"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarS": {{
+					Metric: model.Metric{"__name__": "foobarS", "quantile": "0.5"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+				"foobarS_count": {{
+					Metric: model.Metric{"__name__": "foobarS_count"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(200)}},
+				}},
+				"foobarS_sum": {{
+					Metric: model.Metric{"__name__": "foobarS_sum"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(1000)}},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarS": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarS": {{
+							Type: "summary",
+							Help: "some helpS",
+							Unit: "someunitS",
+						}},
+					},
+				},
+			},
+		},
+
+		"simple native histogram": {
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{{Name: "__name__", Value: "foobarNH"}},
+							Histograms: []prompb.Histogram{
+								{
+									Count:  &prompb.Histogram_CountInt{CountInt: 200},
+									Sum:    1000,
+									Schema: -1,
+									PositiveSpans: []prompb.BucketSpan{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveDeltas: []int64{150, -100},
+									Timestamp:      queryStart.UnixMilli(),
+								},
+							},
+						},
+					},
+					Metadata: []prompb.MetricMetadata{
+						{
+							MetricFamilyName: "foobarNH",
+							Help:             "some helpNH",
+							Unit:             "someunitNH",
+							Type:             prompb.MetricMetadata_HISTOGRAM,
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Histograms: []promRW2.Histogram{
+								{
+									Count:  &promRW2.Histogram_CountInt{CountInt: 200},
+									Sum:    1000,
+									Schema: -1,
+									PositiveSpans: []promRW2.BucketSpan{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveDeltas: []int64{150, -100},
+									Timestamp:      queryStart.UnixMilli(),
+								},
+							},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+								HelpRef: 2,
+								UnitRef: 3,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "foobarNH", "some helpNH", "someunitNH"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarNH": {{
+					Metric: model.Metric{"__name__": "foobarNH"},
+					Histograms: []model.SampleHistogramPair{
+						{
+							Timestamp: model.Time(queryStart.UnixMilli()),
+							Histogram: &model.SampleHistogram{
+								Count: 200,
+								Sum:   1000,
+								Buckets: model.HistogramBuckets{
+									{
+										Boundaries: 0,
+										Lower:      0.25,
+										Upper:      1,
+										Count:      150,
+									},
+									{
+										Boundaries: 0,
+										Lower:      1,
+										Upper:      4,
+										Count:      50,
+									},
+								},
+							},
+						},
+					},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarNH": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarNH": {{
+							Type: "histogram",
+							Help: "some helpNH",
+							Unit: "someunitNH",
+						}},
+					},
+				},
+			},
+		},
+
+		// TODO(krajorama): uncomment once we support NHCB ingestion in validation.
+		// "simple nhcb histogram": {
+		// 	rw1request: nil,  // Not supported in RW1
+		// 	rw2request: []promRW2.Request{
+		// 		{
+		// 			Timeseries: []promRW2.TimeSeries{
+		// 				{
+		// 					LabelsRefs: []uint32{0, 1},
+		// 					Histograms: []promRW2.Histogram{
+		// 						{
+		// 							Count:  &promRW2.Histogram_CountInt{CountInt: 200},
+		// 							Sum:    1000,
+		// 							Schema: -53,
+		// 							PositiveSpans: []promRW2.BucketSpan{
+		// 								{
+		// 									Offset: 0,
+		// 									Length: 2,
+		// 								},
+		// 							},
+		// 							PositiveDeltas: []int64{150, -100},
+		// 							CustomValues: []float64{0.1},
+		// 							Timestamp: queryStart.UnixMilli(),
+		// 						},
+		// 					},
+		// 					Metadata: promRW2.Metadata{
+		// 						Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+		// 						HelpRef: 2,
+		// 						UnitRef: 3,
+		// 					},
+		// 				},
+		// 			},
+		// 			Symbols: []string{"__name__", "foobarNHCB", "some helpNHCB", "someunitNHCB"},
+		// 		},
+		// 	},
+		// 	queries: map[string]model.Matrix{
+		// 		"foobarNHCB": {{
+		// 			Metric: model.Metric{"__name__": "foobarNHCB"},
+		// 			Histograms: []model.SampleHistogramPair{
+		// 				{
+		// 					Timestamp: model.Time(queryStart.UnixMilli()),
+		// 					Histogram: &model.SampleHistogram{
+		// 						Count: 200,
+		// 						Sum:   1000,
+		// 						Buckets: model.HistogramBuckets{
+		// 							{
+		// 								Boundaries: 0,
+		// 								Lower:      math.Inf(-1),
+		// 								Upper:      0.1,
+		// 								Count:      150,
+		// 							},
+		// 							{
+		// 								Boundaries: 0,
+		// 								Lower:      0.1,
+		// 								Upper:      math.Inf(1),
+		// 								Count:      50,
+		// 							},
+		// 						},
+		// 					},
+		// 				},
+		// 			},
+		// 		}},
+		// 	},
+		// 	metadataQueries: map[string]metadataResponse{
+		// 		"foobarNHCB": {
+		// 			Status: "success",
+		// 			Data: map[string][]metadataResponseItem{
+		// 				"foobarNHCB": {{
+		// 					Type: "histogram",
+		// 					Help: "some helpNHCB",
+		// 					Unit: "someunitNHCB",
+		// 				}},
+		// 			},
+		// 		},
+		// 	},
+		// },
+
 		"drop empty labels": {
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_empty_label"}, {Name: "empty", Value: ""}},
-				Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-			}}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_empty_label"}, {Name: "empty", Value: ""}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Symbols: []string{"__name__", "series_with_empty_label", "empty", ""},
+				},
+			},
 			queries: map[string]model.Matrix{
 				"series_with_empty_label": {{
 					Metric: model.Metric{"__name__": "series_with_empty_label"},
@@ -77,10 +586,27 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 		},
 
 		"wrong labels order": {
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_wrong_labels_order"}, {Name: "zzz", Value: "1"}, {Name: "aaa", Value: "2"}},
-				Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-			}}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_wrong_labels_order"}, {Name: "zzz", Value: "1"}, {Name: "aaa", Value: "2"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3, 4, 5},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Symbols: []string{"__name__", "series_with_wrong_labels_order", "zzz", "1", "aaa", "2"},
+				},
+			},
 			queries: map[string]model.Matrix{
 				"series_with_wrong_labels_order": {{
 					Metric: model.Metric{"__name__": "series_with_wrong_labels_order", "aaa": "2", "zzz": "1"},
@@ -90,17 +616,43 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 		},
 
 		"deduplicated requests": {
-			inSeries: [][]prompb.TimeSeries{
-				// Request from replica "a"
-				{{
-					Labels:  []prompb.Label{{Name: "__name__", Value: "series1"}, {Name: "cluster", Value: "C"}, {Name: "replica", Value: "a"}},
-					Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				}},
-				// Request from replica "b", will be ignored.
-				{{
-					Labels:  []prompb.Label{{Name: "__name__", Value: "series2"}, {Name: "cluster", Value: "C"}, {Name: "replica", Value: "b"}},
-					Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "series1"}, {Name: "cluster", Value: "C"}, {Name: "replica", Value: "a"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+				},
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "series2"}, {Name: "cluster", Value: "C"}, {Name: "replica", Value: "b"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3, 4, 5},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Symbols: []string{"__name__", "series1", "cluster", "C", "replica", "a"},
+				},
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3, 4, 5},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Symbols: []string{"__name__", "series2", "cluster", "C", "replica", "b"},
+				},
 			},
 			queries: map[string]model.Matrix{
 				"series1": {{
@@ -110,20 +662,35 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				"series2": {},
 			},
 
-			runtimeConfig: `
-overrides:
-  "` + userID + `":
-    ha_cluster_label: "cluster"
-    ha_replica_label: "replica"
-`,
+			runtimeConfig: rw2util.Unindent(t, `
+				overrides:
+				  "`+userID+`":
+				    ha_cluster_label: "cluster"
+				    ha_replica_label: "replica"
+			`),
 		},
 
 		"dropped labels": {
-			inSeries: [][]prompb.TimeSeries{
-				{{
-					Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_dropped_label"}, {Name: "dropped_label", Value: "some value"}},
-					Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_dropped_label"}, {Name: "dropped_label", Value: "some value"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Symbols: []string{"__name__", "series_with_dropped_label", "dropped_label", "some value"},
+				},
 			},
 			queries: map[string]model.Matrix{
 				"series_with_dropped_label": {{
@@ -131,20 +698,35 @@ overrides:
 					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
 				}},
 			},
-			runtimeConfig: `
-overrides:
-  "` + userID + `":
-    drop_labels:
-      - dropped_label
-`,
+			runtimeConfig: rw2util.Unindent(t, `
+				overrides:
+				  "`+userID+`":
+				    drop_labels:
+				      - dropped_label
+			`),
 		},
 
 		"relabeling test, using prometheus label": {
-			inSeries: [][]prompb.TimeSeries{
-				{{
-					Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_relabeling_applied"}, {Name: "prometheus", Value: "cluster/instance"}},
-					Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "series_with_relabeling_applied"}, {Name: "prometheus", Value: "cluster/instance"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1, 2, 3},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+						},
+					},
+					Symbols: []string{"__name__", "series_with_relabeling_applied", "prometheus", "cluster/instance"},
+				},
 			},
 			queries: map[string]model.Matrix{
 				"series_with_relabeling_applied": {{
@@ -157,24 +739,42 @@ overrides:
 				}},
 			},
 
-			runtimeConfig: `
-overrides:
-  "` + userID + `":
-    metric_relabel_configs:
-      - source_labels: [prometheus]
-        regex: ".*/(.+)"
-        target_label: "prometheus_instance"
-        replacement: "$1"
-        action: replace
-`,
+			runtimeConfig: rw2util.Unindent(t, `
+				overrides:
+				  "`+userID+`":
+				    metric_relabel_configs:
+				      - source_labels: [prometheus]
+				        regex: ".*/(.+)"
+				        target_label: "prometheus_instance"
+				        replacement: "$1"
+				        action: replace
+			`),
 		},
 
 		"series with exemplars": {
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels:    []prompb.Label{{Name: "__name__", Value: "foobar_with_exemplars"}},
-				Samples:   []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "test", Value: "test"}}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
-			}}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:    []prompb.Label{{Name: "__name__", Value: "foobar_with_exemplars"}},
+							Samples:   []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "test", Value: "test"}}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{2, 2}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+						},
+					},
+					Symbols: []string{"__name__", "foobar_with_exemplars", "test"},
+				},
+			},
 			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
 				"foobar_with_exemplars": {{
 					SeriesLabels: model.LabelSet{
@@ -191,15 +791,33 @@ overrides:
 		},
 
 		"series with old exemplars": {
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels:  []prompb.Label{{Name: "__name__", Value: "foobar_with_old_exemplars"}},
-				Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				Exemplars: []prompb.Exemplar{{
-					Labels:    []prompb.Label{{Name: "test", Value: "test"}},
-					Value:     123.0,
-					Timestamp: queryStart.Add(-10 * time.Minute).UnixMilli(), // Exemplars older than 10 minutes from oldest sample for the series in the request are dropped by distributor.
-				}},
-			}}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:  []prompb.Label{{Name: "__name__", Value: "foobar_with_old_exemplars"}},
+							Samples: []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Exemplars: []prompb.Exemplar{{
+								Labels:    []prompb.Label{{Name: "test", Value: "test"}},
+								Value:     123.0,
+								Timestamp: queryStart.Add(-10 * time.Minute).UnixMilli(), // Exemplars older than 10 minutes from oldest sample for the series in the request are dropped by distributor.
+							}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{2, 2}, Value: 123.0, Timestamp: queryStart.Add(-10 * time.Minute).UnixMilli()}},
+						},
+					},
+					Symbols: []string{"__name__", "foobar_with_old_exemplars", "test"},
+				},
+			},
 			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
 				"foobar_with_old_exemplars": {},
 			},
@@ -207,11 +825,29 @@ overrides:
 		},
 
 		"sending series with exemplars, when exemplars are disabled": {
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels:    []prompb.Label{{Name: "__name__", Value: "foobar_with_exemplars_disabled"}},
-				Samples:   []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-				Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "test", Value: "test"}}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
-			}}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels:    []prompb.Label{{Name: "__name__", Value: "foobar_with_exemplars_disabled"}},
+							Samples:   []prompb.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "test", Value: "test"}}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Exemplars:  []promRW2.Exemplar{{LabelsRefs: []uint32{2, 2}, Value: 123.0, Timestamp: queryStart.UnixMilli()}},
+						},
+					},
+					Symbols: []string{"__name__", "foobar_with_exemplars_disabled", "test"},
+				},
+			},
 			exemplarQueries: map[string][]promv1.ExemplarQueryResult{
 				"foobar_with_exemplars_disabled": {},
 			},
@@ -220,28 +856,53 @@ overrides:
 		},
 
 		"reduce native histogram buckets via down scaling": {
-			runtimeConfig: `
-overrides:
-  "` + userID + `":
-    native_histograms_ingestion_enabled: true
-    max_native_histogram_buckets: 7
-`,
-			inSeries: [][]prompb.TimeSeries{{{
-				Labels: []prompb.Label{{Name: "__name__", Value: "histogram_down_scaling_series"}},
-				Histograms: []prompb.Histogram{{
-					// This histogram has 4+4=8 buckets (without zero bucket), but only 7 are allowed by the runtime config.
-					Count:          &prompb.Histogram_CountInt{CountInt: 12},
-					ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 2},
-					ZeroThreshold:  0.001,
-					Sum:            18.4,
-					Schema:         0,
-					NegativeSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-					NegativeDeltas: []int64{1, 1, -1, 0},
-					PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
-					PositiveDeltas: []int64{1, 1, -1, 0},
-					Timestamp:      queryStart.UnixMilli(),
-				}},
-			}}},
+			rw1request: []prompb.WriteRequest{
+				{
+					Timeseries: []prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{{Name: "__name__", Value: "histogram_down_scaling_series"}},
+							Histograms: []prompb.Histogram{
+								{
+									Count:          &prompb.Histogram_CountInt{CountInt: 12},
+									ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: 2},
+									ZeroThreshold:  0.001,
+									Sum:            18.4,
+									Schema:         0,
+									NegativeSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+									NegativeDeltas: []int64{1, 1, -1, 0},
+									PositiveSpans:  []prompb.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+									PositiveDeltas: []int64{1, 1, -1, 0},
+									Timestamp:      queryStart.UnixMilli(),
+								},
+							},
+						},
+					},
+				},
+			},
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Histograms: []promRW2.Histogram{
+								{
+									Count:          &promRW2.Histogram_CountInt{CountInt: 12},
+									ZeroCount:      &promRW2.Histogram_ZeroCountInt{ZeroCountInt: 2},
+									ZeroThreshold:  0.001,
+									Sum:            18.4,
+									Schema:         0,
+									NegativeSpans:  []promRW2.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+									NegativeDeltas: []int64{1, 1, -1, 0},
+									PositiveSpans:  []promRW2.BucketSpan{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+									PositiveDeltas: []int64{1, 1, -1, 0},
+									Timestamp:      queryStart.UnixMilli(),
+								},
+							},
+						},
+					},
+					Symbols: []string{"__name__", "histogram_down_scaling_series"},
+				},
+			},
 			queries: map[string]model.Matrix{
 				"histogram_down_scaling_series": {{
 					Metric: model.Metric{
@@ -264,159 +925,22 @@ overrides:
 					}},
 				}},
 			},
+			runtimeConfig: rw2util.Unindent(t, `
+				overrides:
+				  "`+userID+`":
+				    max_native_histogram_buckets: 7
+			`),
 		},
 	}
 
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
-	defer s.Close()
-
-	previousRuntimeConfig := ""
-	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(previousRuntimeConfig)))
-
-	// Start dependencies.
-	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName)
-	require.NoError(t, s.StartAndWaitReady(consul, minio))
-
-	baseFlags := map[string]string{
-		"-distributor.ingestion-tenant-shard-size":           "0",
-		"-ingester.ring.heartbeat-period":                    "1s",
-		"-distributor.ha-tracker.enable":                     "true",
-		"-distributor.ha-tracker.enable-for-all-users":       "true",
-		"-distributor.ha-tracker.store":                      "consul",
-		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
-		"-distributor.ha-tracker.prefix":                     "prom_ha/",
-		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
-	}
-
-	flags := mergeFlags(
-		BlocksStorageFlags(),
-		BlocksStorageS3Flags(),
-		baseFlags,
-	)
-
-	// We want only distributor to be reloading runtime config.
-	distributorFlags := mergeFlags(flags, map[string]string{
-		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
-		"-runtime-config.reload-period": "100ms",
-		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
-		"-ingester.max-global-exemplars-per-user": "3",
-	})
-
-	// Ingester will not reload runtime config.
-	ingesterFlags := mergeFlags(flags, map[string]string{
-		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
-		"-ingester.max-global-exemplars-per-user": "100",
-	})
-
-	// Start Mimir components.
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
-
-	// Wait until distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-	// Wait until querier has updated the ring.
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
-	require.NoError(t, err)
-
-	runtimeConfigURL := fmt.Sprintf("http://%s/runtime_config?mode=diff", distributor.HTTPEndpoint())
-
-	for testName, tc := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			for _, ser := range tc.inSeries {
-				if tc.runtimeConfig != previousRuntimeConfig {
-					currentRuntimeConfig, err := getURL(runtimeConfigURL)
-					require.NoError(t, err)
-
-					// Write new runtime config
-					require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(tc.runtimeConfig)))
-
-					// Wait until distributor has reloaded runtime config.
-					test.Poll(t, 1*time.Second, true, func() interface{} {
-						newRuntimeConfig, err := getURL(runtimeConfigURL)
-						require.NoError(t, err)
-						return currentRuntimeConfig != newRuntimeConfig
-					})
-
-					previousRuntimeConfig = tc.runtimeConfig
-				}
-
-				res, err := client.Push(ser)
-				require.NoError(t, err)
-				require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
-			}
-
-			for q, res := range tc.queries {
-				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
-				require.NoError(t, err)
-
-				require.Equal(t, res.String(), result.String())
-			}
-
-			for q, expResult := range tc.exemplarQueries {
-				result, err := client.QueryExemplars(q, queryStart, queryEnd)
-				require.NoError(t, err)
-
-				require.Equal(t, expResult, result)
-			}
+	for _, rwVersion := range []string{"rw1", "rw2"} {
+		t.Run(rwVersion, func(t *testing.T) {
+			testDistributorCases(t, cachingUnmarshalDataEnabled, rwVersion, queryStart, queryEnd, queryStep, testCases)
 		})
 	}
 }
 
-func TestDistributorRemoteWrite2(t *testing.T) {
-	t.Run("caching_unmarshal_data_enabled", func(t *testing.T) {
-		testDistributorRemoteWrite2(t, true)
-	})
-
-	t.Run("caching_unmarshal_data_disabled", func(t *testing.T) {
-		testDistributorRemoteWrite2(t, false)
-	})
-}
-
-func testDistributorRemoteWrite2(t *testing.T, cachingUnmarshalDataEnabled bool) {
-	queryEnd := time.Now().Round(time.Second)
-	queryStart := queryEnd.Add(-1 * time.Hour)
-	queryStep := 10 * time.Minute
-
-	testCases := map[string]struct {
-		inRemoteWrite   []*promRW2.Request
-		runtimeConfig   string
-		queries         map[string]model.Matrix
-		exemplarQueries map[string][]promv1.ExemplarQueryResult
-		expectedStatus  int
-	}{
-		"no special features": {
-			inRemoteWrite: []*promRW2.Request{
-				rw2util.AddFloatSeries(
-					nil,
-					labels.FromStrings("__name__", "foobar"),
-					[]promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
-					promRW2.Metadata_METRIC_TYPE_COUNTER,
-					"some help",
-					"someunit",
-					0,
-					nil),
-			},
-			queries: map[string]model.Matrix{
-				"foobar": {{
-					Metric: model.Metric{"__name__": "foobar"},
-					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
-				}},
-			},
-			expectedStatus: http.StatusOK,
-		},
-	}
-
+func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVersion string, queryStart, queryEnd time.Time, queryStep time.Duration, testCases map[string]distributorTestCase) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -482,28 +1006,44 @@ func testDistributorRemoteWrite2(t *testing.T, cachingUnmarshalDataEnabled bool)
 	runtimeConfigURL := fmt.Sprintf("http://%s/runtime_config?mode=diff", distributor.HTTPEndpoint())
 
 	for testName, tc := range testCases {
+		if rwVersion == "rw1" && tc.rw1request == nil || rwVersion == "rw2" && tc.rw2request == nil {
+			// Skip test case if no remote write request for the the current rwVersion.
+			continue
+		}
+
 		t.Run(testName, func(t *testing.T) {
-			for _, ser := range tc.inRemoteWrite {
-				if tc.runtimeConfig != previousRuntimeConfig {
-					currentRuntimeConfig, err := getURL(runtimeConfigURL)
-					require.NoError(t, err)
-
-					// Write new runtime config
-					require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(tc.runtimeConfig)))
-
-					// Wait until distributor has reloaded runtime config.
-					test.Poll(t, 1*time.Second, true, func() interface{} {
-						newRuntimeConfig, err := getURL(runtimeConfigURL)
-						require.NoError(t, err)
-						return currentRuntimeConfig != newRuntimeConfig
-					})
-
-					previousRuntimeConfig = tc.runtimeConfig
-				}
-
-				res, err := client.PushRW2(ser)
+			if tc.runtimeConfig != previousRuntimeConfig {
+				currentRuntimeConfig, err := getURL(runtimeConfigURL)
 				require.NoError(t, err)
-				require.Equal(t, tc.expectedStatus, res.StatusCode)
+
+				// Write new runtime config
+				require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(tc.runtimeConfig)))
+
+				// Wait until distributor has reloaded runtime config.
+				test.Poll(t, 1*time.Second, true, func() interface{} {
+					newRuntimeConfig, err := getURL(runtimeConfigURL)
+					require.NoError(t, err)
+					return currentRuntimeConfig != newRuntimeConfig
+				})
+
+				previousRuntimeConfig = tc.runtimeConfig
+			}
+
+			switch rwVersion {
+			case "rw1":
+				for _, wreq := range tc.rw1request {
+					res, err := client.PushRW1(&wreq)
+					require.NoError(t, err)
+					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+				}
+			case "rw2":
+				for _, wreq := range tc.rw2request {
+					res, err := client.PushRW2(&wreq)
+					require.NoError(t, err)
+					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+				}
+			default:
+				t.Fatalf("unknown rwVersion %s", rwVersion)
 			}
 
 			for q, res := range tc.queries {
@@ -518,6 +1058,19 @@ func testDistributorRemoteWrite2(t *testing.T, cachingUnmarshalDataEnabled bool)
 				require.NoError(t, err)
 
 				require.Equal(t, expResult, result)
+			}
+
+			for q, expected := range tc.metadataQueries {
+				result, err := client.GetPrometheusMetadata(q)
+				require.NoError(t, err)
+				defer result.Body.Close()
+				require.Equal(t, http.StatusOK, result.StatusCode)
+				data, err := io.ReadAll(result.Body)
+				require.NoError(t, err)
+				var actual metadataResponse
+				err = json.Unmarshal(data, &actual)
+				require.NoError(t, err)
+				require.Equal(t, expected, actual)
 			}
 		})
 	}
