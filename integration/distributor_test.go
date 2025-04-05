@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/distributor/rw2"
+	rw2util "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributor(t *testing.T) {
@@ -374,18 +374,30 @@ overrides:
 }
 
 func TestDistributorRemoteWrite2(t *testing.T) {
+	t.Run("caching_unmarshal_data_enabled", func(t *testing.T) {
+		testDistributorRemoteWrite2(t, true)
+	})
+
+	t.Run("caching_unmarshal_data_disabled", func(t *testing.T) {
+		testDistributorRemoteWrite2(t, false)
+	})
+}
+
+func testDistributorRemoteWrite2(t *testing.T, cachingUnmarshalDataEnabled bool) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 10 * time.Minute
 
 	testCases := map[string]struct {
 		inRemoteWrite   []*promRW2.Request
 		runtimeConfig   string
 		queries         map[string]model.Matrix
 		exemplarQueries map[string][]promv1.ExemplarQueryResult
+		expectedStatus  int
 	}{
 		"no special features": {
 			inRemoteWrite: []*promRW2.Request{
-				rw2.AddFloatSeries(
+				rw2util.AddFloatSeries(
 					nil,
 					labels.FromStrings("__name__", "foobar"),
 					[]promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
@@ -401,6 +413,7 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
 				}},
 			},
+			expectedStatus: http.StatusOK,
 		},
 	}
 
@@ -424,7 +437,7 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 		"-distributor.ha-tracker.store":                      "consul",
 		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
 		"-distributor.ha-tracker.prefix":                     "prom_ha/",
-		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(false),
+		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
 	}
 
 	flags := mergeFlags(
@@ -490,10 +503,22 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 
 				res, err := client.PushRW2(ser)
 				require.NoError(t, err)
-				require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode)
+				require.Equal(t, tc.expectedStatus, res.StatusCode)
 			}
 
-			// Placeholder for actual query tests.
+			for q, res := range tc.queries {
+				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				require.NoError(t, err)
+
+				require.Equal(t, res.String(), result.String())
+			}
+
+			for q, expResult := range tc.exemplarQueries {
+				result, err := client.QueryExemplars(q, queryStart, queryEnd)
+				require.NoError(t, err)
+
+				require.Equal(t, expResult, result)
+			}
 		})
 	}
 }
