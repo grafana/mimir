@@ -344,14 +344,14 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 
 	flagext.DefaultValues(&config)
 	ctx := context.Background()
-
+	logger := utiltest.NewTestingLogger(t)
 	config.Codecs = []codec.Codec{
 		GetReplicaDescCodec(),
 	}
 
 	memberListSvc := memberlist.NewKVInitService(
 		&config,
-		log.NewNopLogger(),
+		logger,
 		&dnsProviderMock{},
 		prometheus.NewPedanticRegistry(),
 	)
@@ -368,7 +368,7 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 		UpdateTimeout:          updateTimeout,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        failoverTimeout,
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{maxClusters: 100}, nil, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
 
