@@ -2248,14 +2248,35 @@
           "desc": "",
           "blockEntries": [
             {
-              "kind": "field",
-              "name": "disabled_functions",
+              "kind": "block",
+              "name": "features",
               "required": false,
-              "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "disabled_functions",
+                  "required": false,
+                  "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.mimir-query-engine.disabled-functions",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
               "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.mimir-query-engine.disabled-functions",
-              "fieldType": "string",
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "use_query_planning",
+              "required": false,
+              "desc": "Use query planner when evaluating queries.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.use-query-planning",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
           ],

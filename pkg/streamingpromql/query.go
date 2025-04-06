@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -31,6 +30,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -40,11 +41,15 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
-	queryable                storage.Queryable
-	statement                *parser.EvalStmt
-	root                     types.Operator
-	engine                   *Engine
-	qs                       string
+	queryable storage.Queryable
+	statement *parser.EvalStmt
+	root      types.Operator
+	engine    *Engine
+
+	// The original PromQL expression for this query.
+	// May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
+	originalExpression string
+
 	cancel                   context.CancelCauseFunc
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
@@ -55,57 +60,71 @@ type Query struct {
 	// Subqueries may use a different range.
 	topLevelQueryTimeRange types.QueryTimeRange
 
+	operatorFactories map[planning.Node]planning.OperatorFactory
+	operatorParams    *planning.OperatorParameters
+
 	result *promql.Result
 }
 
-func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
+func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
 	if lookbackDelta == 0 {
-		lookbackDelta = engine.lookbackDelta
+		lookbackDelta = e.lookbackDelta
 	}
 
-	maxEstimatedMemoryConsumptionPerQuery, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	q := &Query{
+		queryable:                queryable,
+		engine:                   e,
+		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		annotations:              annotations.New(),
+		stats:                    &types.QueryStats{},
+		topLevelQueryTimeRange:   timeRange,
+		lookbackDelta:            lookbackDelta,
+	}
+
+	return q, nil
+}
+
+func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (*Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
 
 	expr = promql.PreprocessExpr(expr, start, end)
-
-	q := &Query{
-		queryable:                queryable,
-		engine:                   engine,
-		qs:                       qs,
-		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
-		annotations:              annotations.New(),
-		stats:                    &types.QueryStats{},
-		lookbackDelta:            lookbackDelta,
-
-		statement: &parser.EvalStmt{
-			Expr:          expr,
-			Start:         start,
-			End:           end,
-			Interval:      interval, // 0 for instant queries
-			LookbackDelta: lookbackDelta,
-		},
-	}
+	var timeRange types.QueryTimeRange
 
 	if start.Equal(end) && interval == 0 {
-		q.topLevelQueryTimeRange = types.NewInstantQueryTimeRange(start)
+		timeRange = types.NewInstantQueryTimeRange(start)
 	} else {
-		q.topLevelQueryTimeRange = types.NewRangeQueryTimeRange(start, end, interval)
+		timeRange = types.NewRangeQueryTimeRange(start, end, interval)
 
 		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
+	}
+
+	q, err := e.newQuery(ctx, queryable, opts, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	q.originalExpression = qs
+	q.statement = &parser.EvalStmt{
+		Expr:          expr,
+		Start:         start,
+		End:           end,
+		Interval:      interval, // 0 for instant queries
+		LookbackDelta: q.lookbackDelta,
 	}
 
 	q.root, err = q.convertToOperator(expr, q.topLevelQueryTimeRange)
@@ -394,42 +413,13 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
 
 	case *parser.SubqueryExpr:
-		// Subqueries are evaluated as a single range query with steps aligned to Unix epoch time 0.
-		// They are not evaluated as queries aligned to the individual step timestamps.
-		// See https://www.robustperception.io/promql-subqueries-and-alignment/ for an explanation.
-		// Subquery evaluation aligned to step timestamps is not supported by Prometheus, but may be
-		// introduced in the future in https://github.com/prometheus/prometheus/pull/9114.
-		//
-		// While this makes subqueries simpler to implement and more efficient in most cases, it does
-		// mean we could waste time evaluating steps that won't be used if the subquery range is less
-		// than the parent query step. For example, if the parent query is running with a step of 1h,
-		// and the subquery is for a 10m range with 1m steps, then we'll evaluate ~50m of steps that
-		// won't be used.
-		// This is relatively uncommon, and Prometheus' engine does the same thing. In the future, we
-		// could be smarter about this if it turns out to be a big problem.
-		step := e.Step.Milliseconds()
+		step := e.Step
 
 		if step == 0 {
-			step = q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())
+			step = time.Duration(q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())) * time.Millisecond
 		}
 
-		start := timeRange.StartT
-		end := timeRange.EndT
-
-		if e.Timestamp != nil {
-			start = *e.Timestamp
-			end = *e.Timestamp
-		}
-
-		// Find the first timestamp inside the subquery range that is aligned to the step.
-		alignedStart := step * ((start - e.OriginalOffset.Milliseconds() - e.Range.Milliseconds()) / step)
-		if alignedStart < start-e.OriginalOffset.Milliseconds()-e.Range.Milliseconds() {
-			alignedStart += step
-		}
-
-		end = end - e.OriginalOffset.Milliseconds()
-
-		subqueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), time.Duration(step)*time.Millisecond)
+		subqueryTimeRange := core.SubqueryTimeRange(timeRange, e.Range, step, e.Timestamp, e.OriginalOffset)
 		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange)
 		if err != nil {
 			return nil, err
@@ -534,6 +524,33 @@ func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange ty
 	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
 }
 
+func (q *Query) convertNodeToOperator(node planning.Node, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if f, ok := q.operatorFactories[node]; ok {
+		return f.Produce()
+	}
+
+	childTimeRange := node.ChildrenTimeRange(timeRange)
+	childrenNodes := node.Children()
+	childrenOperators := make([]types.Operator, 0, len(childrenNodes))
+	for _, child := range childrenNodes {
+		o, err := q.convertNodeToOperator(child, childTimeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		childrenOperators = append(childrenOperators, o)
+	}
+
+	f, err := node.OperatorFactory(childrenOperators, timeRange, q.operatorParams)
+	if err != nil {
+		return nil, err
+	}
+
+	q.operatorFactories[node] = f
+
+	return f.Produce()
+}
+
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
@@ -552,7 +569,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer cancel(errQueryFinished)
 
 	if q.engine.activeQueryTracker != nil {
-		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.qs)
+		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
@@ -567,7 +584,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		msg = append(msg,
 			"msg", "query stats",
 			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes,
-			"expr", q.qs,
+			"expr", q.originalExpression,
 		)
 
 		if q.topLevelQueryTimeRange.IsInstant {
@@ -865,5 +882,5 @@ func (q *Query) Cancel() {
 }
 
 func (q *Query) String() string {
-	return q.qs
+	return q.originalExpression
 }
