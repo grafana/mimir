@@ -58,6 +58,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] `kafkatool`: add `offsets` command for querying various partition offsets. #11115
+
 ## 2.16.0
 
 ### Grafana Mimir
@@ -409,7 +411,6 @@
   * `--kafka-sasl-password`
 * [ENHANCEMENT] `kafkatool`: add `dump print` command to print the content of write requests from a dump. #9942
 * [ENHANCEMENT] Updated `KubePersistentVolumeFillingUp` runbook, including a sample command to debug the distroless image. #9802
-* [ENHANCEMENT] `kafkatool`: add `offsets` command for querying various partition offsets. #11115
 
 ## 2.14.3
 
