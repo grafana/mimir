@@ -211,8 +211,7 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			limits := validation.Limits{}
 			flagext.DefaultValues(&limits)
 			limits.CardinalityAnalysisEnabled = true
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 			handler := LabelNamesCardinalityHandler(distributor, overrides)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
@@ -276,8 +275,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			if !data.cardinalityAnalysisDisabled {
 				limits.CardinalityAnalysisEnabled = true
 			}
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues([]*client.LabelValues{}, nil), overrides)
 
 			recorder := httptest.NewRecorder()
@@ -644,8 +642,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 				nil)
 
 			limits := validation.Limits{CardinalityAnalysisEnabled: testData.cardinalityAnalysisEnabled}
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 			handler := LabelValuesCardinalityHandler(distributor, overrides)
 
 			recorder := httptest.NewRecorder()
@@ -1041,8 +1038,7 @@ func BenchmarkActiveNativeHistogramMetricsHandler_ServeHTTP(b *testing.B) {
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
 func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
 	limits := validation.Limits{CardinalityAnalysisEnabled: true}
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	handler := cardinalityHandler(distributor, overrides)
 	return handler

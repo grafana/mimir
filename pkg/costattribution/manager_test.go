@@ -19,7 +19,7 @@ import (
 
 func newTestManager() *Manager {
 	logger := log.NewNopLogger()
-	limits, _ := testutils.NewMockCostAttributionLimits(0)
+	limits := testutils.NewMockCostAttributionLimits(0)
 	reg := prometheus.NewRegistry()
 	manager, err := NewManager(5*time.Second, 10*time.Second, logger, limits, reg)
 	if err != nil {
@@ -56,7 +56,9 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
 		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
-		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0))
+		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 50)
+		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), -1)
+		manager.ActiveSeriesTracker("user1").Increment(labels.FromStrings("team", "bar"), time.Unix(10, 0), 2)
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
@@ -65,11 +67,74 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_distributor_received_attributed_samples_total counter
 		cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+        cortex_ingester_attributed_active_native_histogram_buckets{team="bar",tenant="user1",tracker="cost-attribution"} 52
+        # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+        cortex_ingester_attributed_active_native_histogram_series{team="bar",tenant="user1",tracker="cost-attribution"} 2
 		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
         # TYPE cortex_ingester_attributed_active_series gauge
-        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 3
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total", "cortex_ingester_attributed_active_series"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg,
+			strings.NewReader(expectedMetrics),
+			"cortex_discarded_attributed_samples_total",
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+		))
+
+		manager.ActiveSeriesTracker("user1").Decrement(labels.FromStrings("team", "bar"), 50)
+		expectedMetrics = `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
+        # HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+        # TYPE cortex_distributor_received_attributed_samples_total counter
+        cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+        cortex_ingester_attributed_active_native_histogram_buckets{team="bar",tenant="user1",tracker="cost-attribution"} 2
+        # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+        cortex_ingester_attributed_active_native_histogram_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+        # TYPE cortex_ingester_attributed_active_series gauge
+        cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 2
+		`
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg,
+			strings.NewReader(expectedMetrics),
+			"cortex_discarded_attributed_samples_total",
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+		))
+
+		manager.ActiveSeriesTracker("user1").Decrement(labels.FromStrings("team", "bar"), 2)
+		expectedMetrics = `
+		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+		# TYPE cortex_discarded_attributed_samples_total counter
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="bar",tenant="user1",tracker="cost-attribution"} 1
+        cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
+        # HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+        # TYPE cortex_distributor_received_attributed_samples_total counter
+        cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+		# TYPE cortex_ingester_attributed_active_series gauge
+		cortex_ingester_attributed_active_series{team="bar",tenant="user1",tracker="cost-attribution"} 1
+		`
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg,
+			strings.NewReader(expectedMetrics),
+			"cortex_discarded_attributed_samples_total",
+			"cortex_distributor_received_attributed_samples_total",
+			"cortex_ingester_attributed_active_series",
+			"cortex_ingester_attributed_active_native_histogram_series",
+			"cortex_ingester_attributed_active_native_histogram_buckets",
+		))
 	})
 
 	t.Run("Purge inactive attributions, only received/discarded samples are purged", func(t *testing.T) {
@@ -87,9 +152,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
-		var err error
-		manager.limits, err = testutils.NewMockCostAttributionLimits(1)
-		assert.NoError(t, err)
+		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(11, 0)))
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 
@@ -102,9 +165,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
-		var err error
-		manager.limits, err = testutils.NewMockCostAttributionLimits(2)
-		assert.NoError(t, err)
+		manager.limits = testutils.NewMockCostAttributionLimits(2)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(12, 0)))
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 		assert.True(t, manager.SampleTracker("user3").hasSameLabels([]string{"feature", "team"}))
@@ -154,7 +215,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 	t.Run("Purge after inactive timeout", func(t *testing.T) {
 		// disable cost attribution for user1 to test purging
-		manager.limits, _ = testutils.NewMockCostAttributionLimits(1)
+		manager.limits = testutils.NewMockCostAttributionLimits(1)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(5, 0)))
 
 		// User3's tracker should remain since it's active, user1's tracker should be removed

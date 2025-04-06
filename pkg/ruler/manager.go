@@ -207,7 +207,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	}
 
 	// We need to update the manager only if it was just created or rules on disk have changed.
-	if !(created || update) {
+	if !created && !update {
 		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
 		return
 	}
@@ -412,7 +412,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -436,12 +436,12 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 	}
 
 	for i, r := range g.Rules {
-		for _, err := range r.Validate() {
+		for _, err := range r.Validate(node.Rules[i]) {
 			var ruleName string
-			if r.Alert.Value != "" {
-				ruleName = r.Alert.Value
+			if r.Alert != "" {
+				ruleName = r.Alert
 			} else {
-				ruleName = r.Record.Value
+				ruleName = r.Record
 			}
 			errs = append(errs, &rulefmt.Error{
 				Group:    g.Name,

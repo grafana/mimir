@@ -119,7 +119,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	// For now, the feature is completely opt-in
 	// So we check that the given query is allowed to be spun off

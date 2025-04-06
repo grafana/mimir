@@ -242,6 +242,7 @@
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
+    gateway_per_tenant_metrics_enabled: false,
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,

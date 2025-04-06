@@ -72,6 +72,21 @@ func TestPartitionReader(t *testing.T) {
 	assert.Equal(t, [][]byte{[]byte("record 1"), []byte("record 2")}, records)
 }
 
+func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
+	const (
+		topicName    = "test"
+		partitionID  = 1
+		fetchMaxWait = 12 * time.Second
+	)
+
+	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
+	cfg.kafka.FetchMaxWait = fetchMaxWait
+
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	require.NoError(t, err)
+	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
+}
+
 func TestPartitionReader_logFetchErrors(t *testing.T) {
 	const (
 		topicName   = "test"
@@ -2597,7 +2612,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs),
-		kgo.WithLogger(NewKafkaLogger(mimirtest.NewTestingLogger(t))),
+		kgo.WithLogger(NewKafkaLogger(testingLogger.WithT(t))),
 		// We will choose the partition of each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)

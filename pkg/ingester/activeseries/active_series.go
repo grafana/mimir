@@ -379,6 +379,8 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 					s.activeMatchingNativeHistogramBuckets[match] -= uint32(entry.numNativeHistogramBuckets)
 				}
 			}
+			s.cat.Decrement(series, entry.numNativeHistogramBuckets)
+			s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
 			s.refs[ref] = entry
 		}
@@ -408,7 +410,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
 
-	s.cat.Increment(series, time.Unix(0, nowNanos))
+	s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 	s.refs[ref] = e
 	return e.nanos, true
 }
@@ -472,7 +474,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 				if err := idx.Series(ref, &buf, nil); err != nil {
 					s.activeSeriesAttributionFailureCounter.Add(1)
 				} else {
-					s.cat.Decrement(buf.Labels())
+					s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
 				}
 			}
 			if entry.deleted {
@@ -537,7 +539,7 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 		if err := idx.Series(ref, &buf, nil); err != nil {
 			s.activeSeriesAttributionFailureCounter.Add(1)
 		} else {
-			s.cat.Decrement(buf.Labels())
+			s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
 		}
 	}
 	if entry.numNativeHistogramBuckets >= 0 {

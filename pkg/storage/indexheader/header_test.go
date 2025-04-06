@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -206,8 +206,15 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			tmpDir := t.TempDir()
 			test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
-			bkt, err := filesystem.NewBucket(tmpDir)
+			ubkt, err := filesystem.NewBucket(tmpDir)
 			require.NoError(t, err)
+
+			bkt := objstore.WithNoopInstr(ubkt)
+
+			t.Cleanup(func() {
+				require.NoError(t, ubkt.Close())
+				require.NoError(t, bkt.Close())
+			})
 
 			ctx := context.Background()
 			noopMetrics := NewStreamBinaryReaderMetrics(nil)

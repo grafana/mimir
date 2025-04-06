@@ -8,18 +8,18 @@ package functions
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// AbsentOverTime performs a rate calculation over a range vector.
+// AbsentOverTime is an operator that implements the absent_over_time() function.
 type AbsentOverTime struct {
 	TimeRange                types.QueryTimeRange
-	ArgExpressions           parser.Expr
+	Labels                   labels.Labels
 	Inner                    types.RangeVectorOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
@@ -32,7 +32,7 @@ var _ types.InstantVectorOperator = &AbsentOverTime{}
 
 func NewAbsentOverTime(
 	inner types.RangeVectorOperator,
-	argExpressions parser.Expr,
+	labels labels.Labels,
 	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
@@ -40,7 +40,7 @@ func NewAbsentOverTime(
 	return &AbsentOverTime{
 		TimeRange:                timeRange,
 		Inner:                    inner,
-		ArgExpressions:           argExpressions,
+		Labels:                   labels,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
@@ -63,7 +63,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.ArgExpressions),
+		Labels: a.Labels,
 	})
 
 	for range innerMetadata {

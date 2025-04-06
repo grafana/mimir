@@ -65,11 +65,12 @@ type ingesterMetrics struct {
 	maxLocalSeriesPerUser *prometheus.GaugeVec
 
 	// Head compactions metrics.
-	compactionsTriggered   prometheus.Counter
-	compactionsFailed      prometheus.Counter
-	appenderAddDuration    prometheus.Histogram
-	appenderCommitDuration prometheus.Histogram
-	idleTsdbChecks         *prometheus.CounterVec
+	compactionsTriggered       prometheus.Counter
+	compactionsFailed          prometheus.Counter
+	forcedCompactionInProgress prometheus.Gauge
+	appenderAddDuration        prometheus.Histogram
+	appenderCommitDuration     prometheus.Histogram
+	idleTsdbChecks             *prometheus.CounterVec
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
@@ -345,11 +346,15 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
 			Help: "Total number of triggered compactions.",
 		}),
-
 		compactionsFailed: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_failed_total",
 			Help: "Total number of compactions that failed.",
 		}),
+		forcedCompactionInProgress: promauto.With(r).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_forced_compactions_in_progress",
+			Help: "Reports 1 if there's a forced TSDB head compaction in progress, 0 otherwise.",
+		}),
+
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingester_tsdb_appender_add_duration_seconds",
 			Help:    "The total time it takes for a push request to add samples to the TSDB appender.",
@@ -523,6 +528,9 @@ type tsdbMetrics struct {
 	memSeries             *prometheus.Desc
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
+
+	tsdbWalReplayUnknownRefsTotal *prometheus.Desc
+	tsdbWblReplayUnknownRefsTotal *prometheus.Desc
 
 	headPostingsForMatchersCacheMetrics  *tsdb.PostingsForMatchersCacheMetrics
 	blockPostingsForMatchersCacheMetrics *tsdb.PostingsForMatchersCacheMetrics
@@ -707,6 +715,15 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
 
+		tsdbWalReplayUnknownRefsTotal: prometheus.NewDesc(
+			"cortex_ingester_tsdb_wal_replay_unknown_refs_total",
+			"Total number of unknown series references encountered during WAL replay.",
+			[]string{"user", "type"}, nil),
+		tsdbWblReplayUnknownRefsTotal: prometheus.NewDesc(
+			"cortex_ingester_tsdb_wbl_replay_unknown_refs_total",
+			"Total number of unknown series references encountered during WBL replay.",
+			[]string{"user", "type"}, nil),
+
 		headPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", r)),
 		blockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", r)),
 	}
@@ -762,6 +779,9 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.memSeries
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
+
+	out <- sm.tsdbWalReplayUnknownRefsTotal
+	out <- sm.tsdbWblReplayUnknownRefsTotal
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -804,12 +824,12 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbExemplarSeriesInStorage, "prometheus_tsdb_exemplar_series_with_exemplars_in_storage")
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbExemplarLastTs, "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds")
 	data.SendSumOfCounters(out, sm.tsdbExemplarsOutOfOrder, "prometheus_tsdb_exemplar_out_of_order_exemplars_total")
-
 	data.SendSumOfCountersPerTenant(out, sm.tsdbOOOAppendedSamples, "prometheus_tsdb_head_out_of_order_samples_appended_total")
-
 	data.SendSumOfGauges(out, sm.memSeries, "prometheus_tsdb_head_series")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerTenant(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
+	data.SendSumOfCountersPerTenant(out, sm.tsdbWalReplayUnknownRefsTotal, "prometheus_tsdb_wal_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
+	data.SendSumOfCountersPerTenant(out, sm.tsdbWblReplayUnknownRefsTotal, "prometheus_tsdb_wbl_replay_unknown_refs_total", dskit_metrics.WithLabels("type"))
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {

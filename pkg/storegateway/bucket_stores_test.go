@@ -22,7 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -385,8 +385,7 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 			bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 			require.NoError(t, err)
 
-			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
 
 			var allowedTenants *util.AllowedTenants
 			reg := prometheus.NewPedanticRegistry()

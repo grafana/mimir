@@ -21,10 +21,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -107,7 +108,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 // meta.json file must still exist.
 //
 // - Meta struct is updated with gatherFileStats
-func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta) error {
+func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta, opts ...objstore.UploadOption) error {
 	df, err := os.Stat(blockDir)
 	if err != nil {
 		return err
@@ -142,12 +143,24 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		return errors.Wrap(err, "encode meta file")
 	}
 
-	if err := objstore.UploadDir(ctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname)); err != nil {
-		return cleanUp(logger, bkt, id, UploadError{err, FileTypeChunks})
-	}
+	// upload TSDB block segments and block index concurrently
+	eg, uctx := errgroup.WithContext(ctx)
+	eg.Go(func() (err error) {
+		if err := objstore.UploadDir(uctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname), opts...); err != nil {
+			return UploadError{err, FileTypeChunks}
+		}
+		return nil
+	})
 
-	if err := objstore.UploadFile(ctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
-		return cleanUp(logger, bkt, id, UploadError{err, FileTypeIndex})
+	eg.Go(func() (err error) {
+		if err := objstore.UploadFile(uctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
+			return UploadError{err, FileTypeIndex}
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return cleanUp(logger, bkt, id, err)
 	}
 
 	var oerr error
@@ -203,7 +216,7 @@ func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 		return errors.Wrap(err, "json encode deletion mark")
 	}
 
-	if err := bkt.Upload(ctx, deletionMarkFile, bytes.NewBuffer(deletionMark)); err != nil {
+	if err := bkt.Upload(ctx, deletionMarkFile, bytes.NewReader(deletionMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", deletionMarkFile)
 	}
 	markedForDeletion.Inc()
@@ -398,7 +411,7 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return errors.Wrap(err, "json encode no compact mark")
 	}
 
-	if err := bkt.Upload(ctx, m, bytes.NewBuffer(noCompactMark)); err != nil {
+	if err := bkt.Upload(ctx, m, bytes.NewReader(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
 	markedForNoCompact.Inc()

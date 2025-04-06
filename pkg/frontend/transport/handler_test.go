@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -303,8 +304,84 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
+			},
+		},
+		{
+			name: "handler with QueryStatsEnabled and X-Mimir-Response-Query-Stats in true, check ServiceTimingHeader",
+			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader("query=some_metric&time=42"))
+				req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				req.Header.Add(responseQueryStatsHeaderName, strconv.FormatBool(true))
+				return req
+			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         5,
+			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "encode_time_seconds;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "estimated_series_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_chunk_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_chunks_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_index_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_series_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "query_wall_time_seconds;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "queue_time_seconds;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_size_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_hit_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
+			},
+		},
+		{
+			name: "handler with X-Mimir-Response-Query-Stats in true, check ServiceTimingHeader",
+			cfg:  HandlerConfig{QueryStatsEnabled: false, MaxBodySize: 1024},
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader("query=some_metric&time=42"))
+				req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				req.Header.Add(responseQueryStatsHeaderName, strconv.FormatBool(true))
+				return req
+			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         0,
+			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "encode_time_seconds;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "estimated_series_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_chunk_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_chunks_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_index_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_series_count;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "query_wall_time_seconds;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "queue_time_seconds;dur=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_size_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_hit_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
 			},
 		},
 	} {
@@ -359,6 +436,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, activities)
 
+			if tt.assertHeaders != nil {
+				tt.assertHeaders(t, resp.Result().Header)
+			}
 			if tt.cfg.QueryStatsEnabled {
 				require.Len(t, logger.logMessages, 1)
 
@@ -392,9 +472,6 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				// The response size is tracked only for successful requests.
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
-				}
-				if tt.assertHeaders != nil {
-					tt.assertHeaders(t, resp.Header())
 				}
 
 				// Check that the HTTP or Protobuf request parameters are logged.

@@ -464,8 +464,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 
 			defaults := validation.MockDefaultLimits()
 			defaults.MaxGlobalExemplarsPerUser = tc.maxGlobalExemplarsPerUser
-			limits, err := validation.NewOverrides(*defaults, nil)
-			require.NoError(t, err)
+			limits := validation.NewOverrides(*defaults, nil)
 
 			var gotReqEncoded *Request
 			handler := Handler(100000, nil, nil, true, false, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
@@ -1108,12 +1107,10 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 					ServiceOverloadStatusCodeOnRateLimitEnabled: tc.serviceOverloadErrorEnabled,
 				},
 			}
-			limits, err := validation.NewOverrides(
+			limits := validation.NewOverrides(
 				validation.Limits{},
 				validation.NewMockTenantLimits(tenantLimits),
 			)
-			require.NoError(t, err)
-
 			status := toHTTPStatus(ctx, tc.err, limits)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 		})

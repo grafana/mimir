@@ -155,7 +155,7 @@ type reactiveLimiter struct {
 
 	// Mutable state
 	semaphore *mimirsync.DynamicSemaphore
-	mu        sync.Mutex
+	mu        sync.RWMutex
 
 	// Guarded by mu
 	limit            float64        // The current concurrency limit
@@ -184,9 +184,13 @@ func (l *reactiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 	}, nil
 }
 
+func (l *reactiveLimiter) CanAcquirePermit() bool {
+	return !l.semaphore.IsFull()
+}
+
 func (l *reactiveLimiter) Limit() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return int(l.limit)
 }
 
@@ -325,6 +329,13 @@ func (l *reactiveLimiter) logLimit(direction, reason string, limit float64, grad
 		"thrptCorr", fmt.Sprintf("%.2f", throughputCorr),
 		"thrptCV", fmt.Sprintf("%.2f", throughputCV),
 		"rttCorr", fmt.Sprintf("%.2f", rttCorr))
+}
+
+func (l *reactiveLimiter) queueStats() (limit, queued, rejectionThreshold, maxQueue int) {
+	limit = l.Limit()
+	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
+	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
+	return limit, l.Blocked(), rejectionThreshold, maxQueue
 }
 
 type recordingPermit struct {

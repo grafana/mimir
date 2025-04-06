@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
@@ -80,7 +80,7 @@ func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
-func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
+func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
 	var readerFactory func() (Reader, error)
 	var reader Reader
 	var err error

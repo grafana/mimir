@@ -32,6 +32,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
@@ -40,7 +41,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 )
 
 const (
@@ -120,7 +120,8 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []mimirpb.LabelAdapter {
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
+) []mimirpb.LabelAdapter {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
@@ -162,7 +163,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	for _, label := range labels {
 		finalKey := label.Name
 		if !settings.AllowUTF8 {
-			finalKey = prometheustranslator.NormalizeLabel(finalKey)
+			finalKey = otlptranslator.NormalizeLabel(finalKey)
 		}
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
@@ -174,7 +175,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	for _, lbl := range promotedAttrs {
 		normalized := lbl.Name
 		if !settings.AllowUTF8 {
-			normalized = prometheustranslator.NormalizeLabel(normalized)
+			normalized = otlptranslator.NormalizeLabel(normalized)
 		}
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
@@ -214,7 +215,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		}
 		// internal labels should be maintained
 		if !settings.AllowUTF8 && !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
-			name = prometheustranslator.NormalizeLabel(name)
+			name = otlptranslator.NormalizeLabel(name)
 		}
 		l[name] = extras[i+1]
 	}
@@ -252,7 +253,8 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string, logger *slog.Logger) error {
+	resource pcommon.Resource, settings Settings, baseName string, logger *slog.Logger,
+) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -279,7 +281,6 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 
 			c.handleStartTime(startTimestampMs, timestamp, sumlabels, settings, "histogram_sum", sum.Value, logger)
 			c.addSample(sum, sumlabels)
-
 		}
 
 		// treat count as a sample in an individual TimeSeries
@@ -422,7 +423,7 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 	return promExemplars, nil
 }
 
-// mostRecentTimestampInMetric returns the latest timestamp in a batch of metrics
+// mostRecentTimestampInMetric returns the latest timestamp in a batch of metrics.
 func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 	var ts pcommon.Timestamp
 	// handle individual metric based on type
@@ -458,7 +459,8 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string, logger *slog.Logger) error {
+	settings Settings, baseName string, logger *slog.Logger,
+) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -631,32 +633,6 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 	c.addSample(&mimirpb.Sample{TimestampMs: startTs, Value: createdTimeValue}, labels)
 }
 
-// handleHistogramStartTime similar to the method above but for native histograms..
-func (c *MimirConverter) handleHistogramStartTime(startTs, sampleTs int64, ts *mimirpb.TimeSeries, settings Settings) {
-	if !settings.EnableCreatedTimestampZeroIngestion {
-		return
-	}
-	// We want to ignore the write in three cases.
-	// - We've seen samples with the start timestamp set to epoch meaning it wasn't set by the sender so we skip those.
-	// - If StartTimestamp equals Timestamp ist means we don't know at which time the metric restarted according to the spec.
-	// - StartTimestamp can never be greater than the sample timestamp.
-	if startTs <= 0 || startTs == sampleTs || startTs > sampleTs {
-		return
-	}
-
-	threshold := defaultIntervalForStartTimestamps
-	if settings.ValidIntervalCreatedTimestampZeroIngestion != 0 {
-		threshold = settings.ValidIntervalCreatedTimestampZeroIngestion.Milliseconds()
-	}
-
-	// The difference between the start and the actual timestamp is more than a reasonable time, so we skip this sample.
-	if sampleTs-startTs > threshold {
-		return
-	}
-
-	ts.Histograms = append(ts.Histograms, mimirpb.Histogram{Timestamp: startTs})
-}
-
 // addResourceTargetInfo converts the resource to the target info metric.
 func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, converter *MimirConverter) {
 	if settings.DisableTargetInfo || timestamp == 0 {
@@ -713,7 +689,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	converter.addSample(sample, labels)
 }
 
-// convertTimeStamp converts OTLP timestamp in ns to timestamp in ms
+// convertTimeStamp converts OTLP timestamp in ns to timestamp in ms.
 func convertTimeStamp(timestamp pcommon.Timestamp) int64 {
 	return int64(timestamp) / 1_000_000
 }

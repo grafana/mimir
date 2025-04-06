@@ -843,9 +843,7 @@ receivers:
 				flagext.DefaultValues(&limits)
 				limits.AlertmanagerReceiversBlockPrivateAddresses = firewallEnabled
 
-				overrides, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
-
+				overrides := validation.NewOverrides(limits, nil)
 				features := featurecontrol.NoopFlags{}
 
 				// Start the alertmanager.
@@ -892,10 +890,8 @@ receivers:
 				// Ensure the server endpoint has not been called if firewall is enabled. Since the alert is delivered
 				// asynchronously, we should pool it for a short period.
 				deadline := time.Now().Add(3 * time.Second)
-				for {
-					if time.Now().After(deadline) || serverInvoked.Load() {
-						break
-					}
+				for !time.Now().After(deadline) && !serverInvoked.Load() {
+
 					time.Sleep(100 * time.Millisecond)
 				}
 
@@ -2483,6 +2479,7 @@ receivers:
 	ctx = notify.WithReceiverName(ctx, "email")
 	ctx = notify.WithGroupKey(ctx, "key")
 	ctx = notify.WithRepeatInterval(ctx, time.Minute)
+	ctx = notify.WithNow(ctx, time.Now())
 
 	// Verify that rate-limiter is in place for email notifier.
 	_, _, err = uam.lastPipeline.Exec(ctx, log.NewNopLogger(), &types.Alert{})

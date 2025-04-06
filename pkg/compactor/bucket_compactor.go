@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -444,9 +444,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
 			break
 		}
+
+		// instrument filesystem.Bucket to objstore.InstrumentedBucket
+		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
 		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 			blockToUpload := blocksToUpload[idx]
-			err := prepareSparseIndexHeader(ctx, jobLogger, fsbkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
+			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
 			if err != nil {
 				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
@@ -461,7 +464,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		blockToUpload := blocksToUpload[idx]
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		begin := time.Now()
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
+
+		opts := []objstore.UploadOption{
+			objstore.WithUploadConcurrency(c.maxPerBlockUploadConcurrency),
+		}
+
+		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
 			var uploadErr *block.UploadError
 			if errors.As(err, &uploadErr) {
 				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
@@ -501,7 +509,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.Bucket, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
+func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
 	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
@@ -833,6 +841,7 @@ type BucketCompactor struct {
 	skipUnhealthyBlocks           bool
 	uploadSparseIndexHeaders      bool
 	sparseIndexHeaderSamplingRate int
+	maxPerBlockUploadConcurrency  int
 	sparseIndexHeaderconfig       indexheader.Config
 	ownJob                        ownCompactionJobFunc
 	sortJobs                      JobsOrderFunc
@@ -860,10 +869,16 @@ func NewBucketCompactor(
 	uploadSparseIndexHeaders bool,
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
+	maxPerBlockUploadConcurrency int,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, errors.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
 	}
+
+	if maxPerBlockUploadConcurrency <= 0 {
+		return nil, errors.Errorf("invalid per block upload concurrency level (%d), concurrency must be > 0", maxPerBlockUploadConcurrency)
+	}
+
 	return &BucketCompactor{
 		logger:                        logger,
 		sy:                            sy,
@@ -882,6 +897,7 @@ func NewBucketCompactor(
 		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
 		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
 		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
+		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
 	}, nil
 }
 

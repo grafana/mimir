@@ -205,7 +205,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -228,7 +228,7 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints
 
 func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {

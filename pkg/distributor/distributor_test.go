@@ -361,7 +361,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_metadata_in_total",
 		"cortex_distributor_non_ha_samples_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
-		"cortex_distributor_label_values_with_newlines_total",
 		"cortex_distributor_dropped_native_histograms_total",
 	}
 
@@ -377,7 +376,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.nonHASamples.WithLabelValues("userA").Add(5)
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
-	d.labelValuesWithNewlinesPerUser.WithLabelValues("userA").Inc()
 	d.droppedNativeHistograms.WithLabelValues("userA").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -423,10 +421,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		cortex_distributor_exemplars_in_total{user="userA"} 5
-
-		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
-		# TYPE cortex_distributor_label_values_with_newlines_total counter
-		cortex_distributor_label_values_with_newlines_total{user="userA"} 1
 		`), metrics...))
 
 	d.cleanupInactiveUser("userA")
@@ -464,9 +458,6 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
-
-		# HELP cortex_distributor_label_values_with_newlines_total Total number of label values with newlines seen at ingestion time.
-		# TYPE cortex_distributor_label_values_with_newlines_total counter
 		`), metrics...))
 }
 
@@ -2207,7 +2198,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "ingestion rate limit",
+			expectedErr: "ingestion burst size limit",
 		},
 		"too many labels limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -2336,7 +2327,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
 				limits.CostAttributionLabels = []string{"team"}
-				limits.MaxCostAttributionCardinalityPerUser = 100
+				limits.MaxCostAttributionCardinality = 100
 			},
 		},
 	}
@@ -2388,8 +2379,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					})
 
 					caCase.cfg(&limits)
-					overrides, err := validation.NewOverrides(limits, nil)
-					require.NoError(b, err)
+					overrides := validation.NewOverrides(limits, nil)
 
 					// Initialize the cost attribution manager
 					var cam *costattribution.Manager
@@ -2415,7 +2405,10 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					b.ResetTimer()
 
 					for n := 0; n < b.N; n++ {
-						_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+						b.StopTimer()
+						rw := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
+						b.StartTimer()
+						_, err := distributor.Push(ctx, rw)
 
 						if testData.expectedErr == "" && err != nil {
 							b.Fatalf("no error expected but got %v", err)
@@ -4589,16 +4582,21 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 					// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
 					// the final ingester may not have received series yet.
 					// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-					test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
+					require.Eventually(t, func() bool {
 						seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers, cardinality.InMemoryMethod)
-						require.NoError(t, err)
-						assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
-						// Make sure the resultant label names are sorted
+						if err != nil {
+							return false
+						}
+						if testData.expectedSeriesCountTotal != seriesCountTotal {
+							// Not all ingesters have received the series yet.
+							return false
+						}
+
 						sort.Slice(cardinalityMap.Items, func(l, r int) bool {
 							return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
 						})
-						return cardinalityMap
-					})
+						return assert.EqualValues(t, testData.expectedResult, cardinalityMap)
+					}, 1*time.Second, 50*time.Millisecond)
 
 					// Make sure enough ingesters were queried
 					assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
@@ -5675,7 +5673,6 @@ func prepareIngesters(t testing.TB, cfg prepConfig) []*mockIngester {
 		ingesters = append(ingesters, prepareIngesterZone(t, zone, state, cfg)...)
 	}
 	return ingesters
-
 }
 
 func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
@@ -5927,9 +5924,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			}
 		}
 
-		overrides, err := validation.NewOverrides(*cfg.limits, nil)
-		require.NoError(t, err)
-
+		overrides := validation.NewOverrides(*cfg.limits, nil)
 		reg := prometheus.NewPedanticRegistry()
 		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
@@ -7785,14 +7780,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist, reg := getDistributor(cfg)
 
 		metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
-			if metricIdx%3 == 0 {
+			switch metricIdx % 3 {
+			case 0:
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: metricName,
 					Help:             strings.Repeat("a", metadataLengthLimit+1),
 					Unit:             "unknown",
 				}
-			} else if metricIdx%3 == 1 {
+			case 1:
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: strings.Repeat("a", metadataLengthLimit+1),
@@ -8603,9 +8599,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 		return &noopIngester{}, nil
 	})
 
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
+	overrides := validation.NewOverrides(limits, nil)
 	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -8683,8 +8677,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 					IngestionArtificialDelay: model.Duration(tc.delay),
 				},
 			})
-			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(*prepareDefaultLimits(), limits)
 
 			// Mock to capture sleep and advance time.
 			timeSource := &MockTimeSource{CurrentTime: time.Now()}
@@ -8707,7 +8700,7 @@ func Test_outerMaybeDelayMiddleware(t *testing.T) {
 				ctx = user.InjectOrgID(ctx, tc.userID)
 			}
 			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
-			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			err := wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
 			require.NoError(t, err)
 
 			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.
