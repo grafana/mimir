@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestOffsets(t *testing.T) {
