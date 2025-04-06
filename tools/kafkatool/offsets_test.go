@@ -3,8 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/stretchr/testify/assert"
@@ -38,16 +40,67 @@ func TestOffsets(t *testing.T) {
 	app := newTestApp()
 	_, printer := newTestOffsetsCommand(app, clientProvider)
 
-	// List offsets.
-	printer.Reset()
-	_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "end"})
-	require.NoError(t, err)
-	require.Len(t, printer.Lines, partitions)
+	t.Run("start offsets", func(t *testing.T) {
+		printer.Reset()
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "start"})
+		require.NoError(t, err)
+		require.Len(t, printer.Lines, partitions)
 
-	for p := range partitions {
-		assert.Regexp(t, expectedLineRegexpByComponents(
-			"Topic:", topic, "Partition:", strconv.Itoa(p), "Offset:", strconv.Itoa(p*10)), printer.Lines[p])
-	}
+		for p := range partitions {
+			assert.Regexp(t, expectedLineRegexpByComponents(
+				"Topic:", topic, "Partition:", strconv.Itoa(p), "Offset:", "0"), printer.Lines[p])
+		}
+	})
+
+	t.Run("end offsets", func(t *testing.T) {
+		printer.Reset()
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "end"})
+		require.NoError(t, err)
+		require.Len(t, printer.Lines, partitions)
+
+		for p := range partitions {
+			assert.Regexp(t, expectedLineRegexpByComponents(
+				"Topic:", topic, "Partition:", strconv.Itoa(p), "Offset:", strconv.Itoa(p*10)), printer.Lines[p])
+		}
+	})
+
+	t.Run("committed offsets", func(t *testing.T) {
+		printer.Reset()
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "committed"})
+		require.NoError(t, err)
+		require.Len(t, printer.Lines, partitions)
+
+		for p := range partitions {
+			assert.Regexp(t, expectedLineRegexpByComponents(
+				"Topic:", topic, "Partition:", strconv.Itoa(p), "Offset:", strconv.Itoa(p*10)), printer.Lines[p])
+		}
+	})
+
+	t.Run("after ms", func(t *testing.T) {
+		printer.Reset()
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "after_ms"})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "--millis is required when --type=after_ms")
+
+		printer.Reset()
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "end", "--millis", "1234"})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "--millis is only valid when --type=after_ms")
+
+		printer.Reset()
+		tomorrow := time.Now().Add(24 * time.Hour)
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "after_ms", "--millis", fmt.Sprint(tomorrow.UnixMilli())})
+		require.NoError(t, err)
+		require.Len(t, printer.Lines, partitions)
+
+		for p := range partitions {
+			assert.Regexp(t,
+				expectedLineRegexpByComponents("Topic:", topic, "Partition:", strconv.Itoa(p), "Offset:", strconv.Itoa(p*10)),
+				printer.Lines[p],
+				"future timestamp should return the partition's end offset",
+			)
+		}
+	})
 }
 
 func newTestOffsetsCommand(app *kingpin.Application, getKafkaClient func() *kgo.Client) (*OffsetsCommand, *BufferedPrinter) {
