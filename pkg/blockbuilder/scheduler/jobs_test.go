@@ -178,7 +178,7 @@ func TestJobCreationPolicies(t *testing.T) {
 // allowNoneJobCreationPolicy is a job creation policy that never allows job creation.
 type allowNoneJobCreationPolicy[T any] struct{}
 
-func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool {
+func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool { // nolint:unused
 	return false
 }
 

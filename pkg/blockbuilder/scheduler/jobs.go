@@ -294,7 +294,7 @@ type jobCreationPolicy[T any] interface {
 
 type noOpJobCreationPolicy[T any] struct{}
 
-func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool {
+func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool { // nolint:unused
 	return true
 }
 
