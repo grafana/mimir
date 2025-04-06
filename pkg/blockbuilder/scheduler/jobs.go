@@ -262,6 +262,14 @@ func (s *jobQueue[T]) removeJob(key jobKey) {
 	level.Debug(s.logger).Log("msg", "removed job", "job_id", key.id, "epoch", key.epoch)
 }
 
+// count returns the number of jobs in the jobQueue.
+func (s *jobQueue[T]) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.jobs)
+}
+
 type job[T any] struct {
 	key jobKey
 

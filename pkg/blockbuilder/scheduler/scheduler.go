@@ -97,6 +97,8 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	s.completeObservationMode()
 	level.Info(s.logger).Log("msg", "entering normal operation")
 
+	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
+
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
 	for {
@@ -112,6 +114,9 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			}
 
 			s.updateSchedule(ctx)
+
+			s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
+
 		case <-ctx.Done():
 			return nil
 		}
