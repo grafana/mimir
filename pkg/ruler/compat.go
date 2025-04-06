@@ -255,7 +255,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 	}
 }
 
-func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, logger log.Logger) rules.QueryFunc {
+func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, remoteQuerier bool, logger log.Logger) rules.QueryFunc {
 	if queryTime == nil || zeroFetchedSeriesCount == nil {
 		return qf
 	}
@@ -267,6 +267,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
+		var result promql.Vector
 		var err error
 		defer func() {
 			// Update stats wall time based on the timer created above.
@@ -293,17 +294,28 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			logMessage := []interface{}{
 				"msg", "query stats",
 				"component", "ruler",
-				"query_wall_time_seconds", wallTime.Seconds(),
-				"fetched_series_count", numSeries,
-				"fetched_chunk_bytes", numBytes,
-				"fetched_chunks_count", numChunks,
-				"sharded_queries", shardedQueries,
 				"query", qs,
 			}
+
+			if !remoteQuerier {
+				// These statistics will only be populated when using local rule evaluation (ie. not using a remote query-frontend).
+				logMessage = append(logMessage,
+					"query_wall_time_seconds", wallTime.Seconds(),
+					"fetched_series_count", numSeries,
+					"fetched_chunk_bytes", numBytes,
+					"fetched_chunks_count", numChunks,
+					"sharded_queries", shardedQueries,
+				)
+			}
+
+			if err == nil {
+				logMessage = append(logMessage, "result_series_count", len(result))
+			}
+
 			level.Info(util_log.WithContext(ctx, logger)).Log(logMessage...)
 		}()
 
-		result, err := qf(ctx, qs, t)
+		result, err = qf(ctx, qs, t)
 		return result, err
 	}
 }
@@ -374,8 +386,9 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
-		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, cfg.QueryFrontend.Address != "")
-		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
+		remoteQuerier := cfg.QueryFrontend.Address != ""
+		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, userID, totalQueries, failedQueries, remoteQuerier)
+		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, remoteQuerier, logger)
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)

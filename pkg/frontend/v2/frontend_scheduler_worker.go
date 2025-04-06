@@ -404,8 +404,8 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
 func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
 	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
-	spanLogger.Span.SetTag("scheduler_address", w.conn.Target())
-	defer spanLogger.Span.Finish()
+	spanLogger.SetTag("scheduler_address", w.conn.Target())
+	defer spanLogger.Finish()
 
 	// Keep track of how long it takes to enqueue a request end-to-end.
 	durationTimer := prometheus.NewTimer(w.enqueueDuration)

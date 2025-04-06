@@ -33,8 +33,7 @@ func TestFilteringQueryablesViaHttpHeader(t *testing.T) {
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
 		metrics := stats.NewQueryMetrics(reg)
-		overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
 		cfg := Config{}
 		flagext.DefaultValues(&cfg)

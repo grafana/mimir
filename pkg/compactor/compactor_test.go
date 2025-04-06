@@ -1187,8 +1187,7 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 		var limits validation.Limits
 		flagext.DefaultValues(&limits)
 		limits.CompactorTenantShardSize = 1
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(limits, nil)
 
 		c, _, tsdbPlanner, l, _ := prepareWithConfigProvider(t, cfg, bucketClient, overrides)
 		defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -1767,8 +1766,7 @@ func prepareConfig(t *testing.T) Config {
 func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*MultitenantCompactor, *tsdbCompactorMock, *tsdbPlannerMock, *concurrency.SyncBuffer, prometheus.Gatherer) {
 	var limits validation.Limits
 	flagext.DefaultValues(&limits)
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	return prepareWithConfigProvider(t, compactorCfg, bucketClient, overrides)
 }
@@ -1963,8 +1961,7 @@ func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
 		var limits validation.Limits
 		flagext.DefaultValues(&limits)
 		limits.CompactorTenantShardSize = 1 // Each tenant will belong to single compactor only.
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(limits, nil)
 
 		c, _, tsdbPlanner, _, _ := prepareWithConfigProvider(t, cfg, inmem, overrides)
 		t.Cleanup(func() {

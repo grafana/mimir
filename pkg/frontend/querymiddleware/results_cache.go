@@ -415,10 +415,10 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:            acc.Extent.Start,
-		End:              acc.Extent.End,
+		Start:            acc.Start,
+		End:              acc.End,
 		Response:         marshalled,
-		TraceId:          acc.Extent.TraceId,
+		TraceId:          acc.TraceId,
 		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
 }

@@ -245,7 +245,7 @@ func newQueryTripperware(
 		if err != nil {
 			return nil, err
 		}
-		c = cache.NewCompression(cfg.ResultsCacheConfig.Compression, c, log)
+		c = cache.NewCompression(cfg.Compression, c, log)
 	}
 
 	cacheKeyGenerator := cfg.CacheKeyGenerator

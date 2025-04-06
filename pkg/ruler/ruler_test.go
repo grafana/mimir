@@ -1252,9 +1252,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
-		limits, err := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
-		require.NoError(t, err)
-
+		limits := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
 		regs[i] = prometheus.NewPedanticRegistry()
 		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withLimits(limits), withStart(), withPrometheusRegisterer(regs[i]))
 	}

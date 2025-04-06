@@ -235,7 +235,7 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		metas = append(metas, m)
 	}
 	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		return metas[i].MinTime < metas[j].MinTime
 	})
 	return metas, nil
 }

@@ -93,7 +93,7 @@ type wrappedRequest struct {
 }
 
 func (w *wrappedRequest) Marshal() ([]byte, error) {
-	size := w.WriteRequest.Size()
+	size := w.Size()
 	buf, slabID := w.slabPool.Get(size)
 
 	if w.slabID == 0 {
@@ -102,7 +102,7 @@ func (w *wrappedRequest) Marshal() ([]byte, error) {
 		w.moreSlabIDs = append(w.moreSlabIDs, slabID)
 	}
 
-	n, err := w.WriteRequest.MarshalToSizedBuffer(buf[:size])
+	n, err := w.MarshalToSizedBuffer(buf[:size])
 	if err != nil {
 		return nil, err
 	}

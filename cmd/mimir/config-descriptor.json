@@ -764,6 +764,49 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.http.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "soft_validation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.http.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "excluded_paths",
+                  "required": false,
+                  "desc": "Comma-separated list of url paths that are excluded from the cluster validation check.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "server.cluster-validation.http.excluded-paths",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -1783,9 +1826,140 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "max_recv_msg_size",
+              "required": false,
+              "desc": "gRPC client max receive message size (bytes).",
+              "fieldValue": null,
+              "fieldDefaultValue": 104857600,
+              "fieldFlag": "querier.store-gateway-client.grpc-max-recv-msg-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_send_msg_size",
+              "required": false,
+              "desc": "gRPC client max send message size (bytes).",
+              "fieldValue": null,
+              "fieldDefaultValue": 104857600,
+              "fieldFlag": "querier.store-gateway-client.grpc-max-send-msg-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "grpc_compression",
+              "required": false,
+              "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "querier.store-gateway-client.grpc-compression",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "rate_limit",
+              "required": false,
+              "desc": "Rate limit for gRPC client; 0 means disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.store-gateway-client.grpc-client-rate-limit",
+              "fieldType": "float",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "rate_limit_burst",
+              "required": false,
+              "desc": "Rate limit burst for gRPC client.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.store-gateway-client.grpc-client-rate-limit-burst",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "backoff_on_ratelimits",
+              "required": false,
+              "desc": "Enable backoff and retry when we hit rate limits.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.store-gateway-client.backoff-on-ratelimits",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "backoff_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "min_period",
+                  "required": false,
+                  "desc": "Minimum delay when backing off.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100000000,
+                  "fieldFlag": "querier.store-gateway-client.backoff-min-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_period",
+                  "required": false,
+                  "desc": "Maximum delay when backing off.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "querier.store-gateway-client.backoff-max-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Number of times to backoff and retry before failing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "querier.store-gateway-client.backoff-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "querier.store-gateway-client.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "querier.store-gateway-client.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS for gRPC client connecting to store-gateway.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "querier.store-gateway-client.tls-enabled",
@@ -1867,6 +2041,39 @@
               "fieldDefaultValue": "",
               "fieldFlag": "querier.store-gateway-client.tls-min-version",
               "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "querier.store-gateway-client.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "querier.store-gateway-client.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "querier.store-gateway-client.connect-backoff-max-delay",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             },
             {
@@ -4786,23 +4993,12 @@
         },
         {
           "kind": "field",
-          "name": "max_cost_attribution_labels_per_user",
-          "required": false,
-          "desc": "Maximum number of cost attribution labels allowed per user, the value is capped at 4.",
-          "fieldValue": null,
-          "fieldDefaultValue": 2,
-          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "max_cost_attribution_cardinality_per_user",
+          "name": "max_cost_attribution_cardinality",
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
           "fieldDefaultValue": 10000,
-          "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
+          "fieldFlag": "validation.max-cost-attribution-cardinality",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -7072,6 +7268,27 @@
           "fieldFlag": "query-frontend.downstream-url",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "client_cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define the cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "query-frontend.client-cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -17849,9 +18066,20 @@
         },
         {
           "kind": "field",
+          "name": "abort_if_cluster_fast_join_fails",
+          "required": false,
+          "desc": "Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.abort-if-fast-join-fails",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "abort_if_cluster_join_fails",
           "required": false,
-          "desc": "If this node fails to join memberlist cluster, abort.",
+          "desc": "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "memberlist.abort-if-join-fails",

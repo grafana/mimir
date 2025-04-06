@@ -19,6 +19,7 @@ import (
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
 
@@ -81,7 +82,6 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	const idleTimeout = time.Second
 	ctx, tmpDir, bkt, blockID, metrics := prepareReaderPool(t)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Note that we are creating a ReaderPool that doesn't run a background cleanup task for idle
 	// Reader instances. We'll manually invoke the cleanup task when we need it as part of this test.
@@ -142,14 +142,17 @@ func TestReaderPool_LoadedBlocks(t *testing.T) {
 	require.Equal(t, []ulid.ULID{id}, loadedBlocks)
 }
 
-func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {
+func prepareReaderPool(t *testing.T) (context.Context, string, objstore.InstrumentedBucketReader, ulid.ULID, *ReaderPoolMetrics) {
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	require.NoError(t, err)
 	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
 		require.NoError(t, bkt.Close())
 	})
 

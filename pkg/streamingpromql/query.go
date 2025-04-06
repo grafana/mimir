@@ -103,7 +103,7 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 	expr = promql.PreprocessExpr(expr, start, end)
 	var timeRange types.QueryTimeRange
 
-	if start == end && interval == 0 {
+	if start.Equal(end) && interval == 0 {
 		timeRange = types.NewInstantQueryTimeRange(start)
 	} else {
 		timeRange = types.NewRangeQueryTimeRange(start, end, interval)

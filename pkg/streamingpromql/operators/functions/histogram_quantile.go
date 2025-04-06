@@ -334,7 +334,7 @@ func (h *HistogramQuantileFunction) saveNativeHistogramsToGroup(hPoints []promql
 
 	// We should only ever see one set of native histograms per group.
 	if g.nativeHistograms != nil {
-		return fmt.Errorf("We should never see more than one native histogram per group")
+		return fmt.Errorf("we should never see more than one native histogram per group")
 	}
 	g.nativeHistograms = hPoints
 	return nil

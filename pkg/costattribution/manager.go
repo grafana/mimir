@@ -86,7 +86,7 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
 	labels := m.limits.CostAttributionLabels(userID)
-	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	m.stmtx.Lock()
@@ -119,7 +119,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 
 	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
 	labels := m.limits.CostAttributionLabels(userID)
-	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	maxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	m.atmtx.Lock()
@@ -183,7 +183,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	newMaxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	newMaxCardinality := m.limits.MaxCostAttributionCardinality(userID)
 	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	if !st.hasSameLabels(lbls) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {

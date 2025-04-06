@@ -385,8 +385,7 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 			bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 			require.NoError(t, err)
 
-			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
 
 			var allowedTenants *util.AllowedTenants
 			reg := prometheus.NewPedanticRegistry()
