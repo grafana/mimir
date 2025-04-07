@@ -210,15 +210,15 @@ func handler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
-		ctx = contextWithWriteResponseStats(ctx)
+		if isRW2 {
+			ctx = contextWithWriteResponseStats(ctx)
+		}
 		err = push(ctx, req)
-		rsValue := ctx.Value(PushResponseStatsContextKey)
-		if rsValue != nil {
-			rs := rsValue.(*promRemote.WriteResponseStats)
-			addWriteResponseStats(w, rs)
-		} else {
-			// This should not happen, but if it does, we should not panic.
-			addWriteResponseStats(w, &promRemote.WriteResponseStats{})
+		if isRW2 {
+			if err := addWriteResponseStats(ctx, w); err != nil {
+				// Should not happen, but we should not panic anyway.
+				level.Error(logger).Log("msg", "error write response stats not found in context", "err", err)
+			}
 		}
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -299,17 +299,26 @@ func contextWithWriteResponseStats(ctx context.Context) context.Context {
 	return context.WithValue(ctx, PushResponseStatsContextKey, &promRemote.WriteResponseStats{})
 }
 
-func addWriteResponseStats(w http.ResponseWriter, rs *promRemote.WriteResponseStats) {
+func addWriteResponseStats(ctx context.Context, w http.ResponseWriter) error {
+	rsValue := ctx.Value(PushResponseStatsContextKey)
+	if rsValue == nil {
+		return errors.New("error write response stats not found in context")
+	}
+	prs, ok := rsValue.(*promRemote.WriteResponseStats)
+	if !ok {
+		return errors.New("error write response stats not of type *promRemote.WriteResponseStats")
+	}
 	headers := w.Header()
-	headers.Set(rw20WrittenSamplesHeader, strconv.Itoa(rs.Samples))
-	headers.Set(rw20WrittenHistogramsHeader, strconv.Itoa(rs.Histograms))
-	headers.Set(rw20WrittenExemplarsHeader, strconv.Itoa(rs.Exemplars))
+	headers.Set(rw20WrittenSamplesHeader, strconv.Itoa(prs.Samples))
+	headers.Set(rw20WrittenHistogramsHeader, strconv.Itoa(prs.Histograms))
+	headers.Set(rw20WrittenExemplarsHeader, strconv.Itoa(prs.Exemplars))
+	return nil
 }
 
 func updateWriteResponseStatsCtx(ctx context.Context, samples, histograms, exemplars int) {
 	prs := ctx.Value(PushResponseStatsContextKey)
 	if prs == nil {
-		// Should not happen, but we should not panic anyway.
+		// Only present for RW2.0.
 		return
 	}
 	prs.(*promRemote.WriteResponseStats).Samples += samples

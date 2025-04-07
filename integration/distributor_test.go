@@ -21,10 +21,18 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
+	promRemote "github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	rw2util "github.com/grafana/mimir/pkg/util/test"
+)
+
+// Consts from https://github.com/prometheus/prometheus/blob/main/storage/remote/stats.go
+const (
+	rw20WrittenSamplesHeader    = "X-Prometheus-Remote-Write-Samples-Written"
+	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Histograms-Written"
+	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Exemplars-Written"
 )
 
 func TestDistributor(t *testing.T) {
@@ -55,6 +63,8 @@ type distributorTestCase struct {
 	queries         map[string]model.Matrix
 	exemplarQueries map[string][]promv1.ExemplarQueryResult
 	metadataQueries map[string]metadataResponse
+	// Expected statistics for RW2 per request.
+	expectedStats []promRemote.WriteResponseStats
 }
 
 func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataEnabled bool) {
@@ -120,6 +130,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 					},
 				},
 			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
 		},
 
 		"simple gauge": {
@@ -173,6 +190,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							Unit: "someunitG",
 						}},
 					},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  0,
 				},
 			},
 		},
@@ -283,6 +307,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 					},
 				},
 			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    4,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
 		},
 
 		"simple summary": {
@@ -370,6 +401,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							Unit: "someunitS",
 						}},
 					},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    3,
+					Histograms: 0,
+					Exemplars:  0,
 				},
 			},
 		},
@@ -475,6 +513,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							Unit: "someunitNH",
 						}},
 					},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    0,
+					Histograms: 1,
+					Exemplars:  0,
 				},
 			},
 		},
@@ -712,6 +757,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				}},
 			},
 			runtimeConfig: overridesWithExemplars(100),
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  1,
+				},
+			},
 		},
 
 		"series with old exemplars": {
@@ -746,6 +798,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				"foobar_with_old_exemplars": {},
 			},
 			runtimeConfig: overridesWithExemplars(100),
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
 		},
 
 		"sending series with exemplars, when exemplars are disabled": {
@@ -777,6 +836,13 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 			},
 			// By disabling exemplars via runtime config, distributor will stop sending them to ingester.
 			runtimeConfig: overridesWithExemplars(0),
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
 		},
 
 		"reduce native histogram buckets via down scaling": {
@@ -959,12 +1025,16 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 					res, err := client.PushRW1(&wreq)
 					require.NoError(t, err)
 					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					assertNoStats(t, res)
 				}
 			case "rw2":
-				for _, wreq := range tc.rw2request {
+				for i, wreq := range tc.rw2request {
 					res, err := client.PushRW2(&wreq)
 					require.NoError(t, err)
 					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					if tc.expectedStats != nil {
+						assertStats(t, tc.expectedStats[i], res)
+					}
 				}
 			default:
 				t.Fatalf("unknown rwVersion %s", rwVersion)
@@ -998,4 +1068,37 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 			}
 		})
 	}
+}
+
+func assertNoStats(t *testing.T, res *http.Response) {
+	t.Helper()
+	samplesH := res.Header.Get(rw20WrittenSamplesHeader)
+	require.Empty(t, samplesH, "samples stats header should be empty")
+
+	histogramsH := res.Header.Get(rw20WrittenHistogramsHeader)
+	require.Empty(t, histogramsH, "histograms stats header should be empty")
+
+	exemplarsH := res.Header.Get(rw20WrittenExemplarsHeader)
+	require.Empty(t, exemplarsH, "exemplars stats header should be empty")
+}
+
+func assertStats(t *testing.T, expectedStats promRemote.WriteResponseStats, res *http.Response) {
+	t.Helper()
+	samplesH := res.Header.Get(rw20WrittenSamplesHeader)
+	require.NotEmpty(t, samplesH, "missing samples stats header")
+	samples, err := strconv.Atoi(samplesH)
+	require.NoError(t, err, "samples stats header value should be an integer")
+	require.Equal(t, expectedStats.Samples, samples, "wrong samples stats header value")
+
+	histogramsH := res.Header.Get(rw20WrittenHistogramsHeader)
+	require.NotEmpty(t, histogramsH, "missing histograms stats header")
+	histograms, err := strconv.Atoi(histogramsH)
+	require.NoError(t, err, "histograms stats header value should be an integer")
+	require.Equal(t, expectedStats.Histograms, histograms, "wrong histograms stats header value")
+
+	exemplarsH := res.Header.Get(rw20WrittenExemplarsHeader)
+	require.NotEmpty(t, exemplarsH, "missing exemplars stats header")
+	exemplars, err := strconv.Atoi(exemplarsH)
+	require.NoError(t, err, "exemplars stats header value should be an integer")
+	require.Equal(t, expectedStats.Exemplars, exemplars, "wrong exemplars stats header value")
 }
