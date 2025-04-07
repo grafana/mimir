@@ -1766,20 +1766,25 @@ func rejectedMetrics(rejectedDueToMemoryConsumption int) string {
 	`, rejectedDueToMemoryConsumption)
 }
 
-func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
+func getMetrics(t *testing.T, reg *prometheus.Registry, name string) []*dto.Metric {
 	metrics, err := reg.Gather()
 	require.NoError(t, err)
 
 	for _, m := range metrics {
 		if m.GetName() == name {
-			require.Len(t, m.Metric, 1)
-
-			return m.Metric[0].Histogram
+			return m.Metric
 		}
 	}
 
 	require.Fail(t, "expected to find a metric with name "+name)
 	return nil
+}
+
+func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Histogram {
+	m := getMetrics(t, reg, name)
+	require.Len(t, m, 1)
+
+	return m[0].Histogram
 }
 
 func TestActiveQueryTracker(t *testing.T) {
