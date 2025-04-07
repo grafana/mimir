@@ -58,7 +58,7 @@
 
 ### Tools
 
-* [ENHANCEMENT] `kafkatool`: add `offsets` command for querying various partition offsets. #11115
+* [ENHANCEMENT] `kafkatool`: Add `offsets` command for querying various partition offsets. #11115
 
 ## 2.16.0
 
