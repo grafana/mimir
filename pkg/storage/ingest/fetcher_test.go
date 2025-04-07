@@ -1198,48 +1198,28 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		return offsetReader.FetchPartitionStartOffset(ctx, partition)
 	}, time.Second, logger)
 
-	var (
-		f   *concurrentFetchers
-		err error
+	f, err := newConcurrentFetchers(
+		ctx,
+		client,
+		logger,
+		topic,
+		partition,
+		startOffset,
+		concurrency,
+		maxInflightBytes,
+		true,        // kfake uses compression and behaves similar to apache kafka
+		time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
+		offsetReader,
+		startOffsetsReader,
+		fastFetchBackoffConfig,
+		&metrics,
 	)
+	require.NoError(t, err)
 
 	if start {
-		f, err = newConcurrentFetchers(
-			ctx,
-			client,
-			logger,
-			topic,
-			partition,
-			startOffset,
-			concurrency,
-			maxInflightBytes,
-			true,        // kfake uses compression and behaves similar to apache kafka
-			time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
-			offsetReader,
-			startOffsetsReader,
-			fastFetchBackoffConfig,
-			&metrics,
-		)
-	} else {
-		f, err = newConcurrentFetchersWithoutStart(
-			ctx,
-			client,
-			logger,
-			topic,
-			partition,
-			startOffset,
-			maxInflightBytes,
-			true,        // kfake uses compression and behaves similar to apache kafka
-			time.Second, // same order of magnitude as the real one (defaultMinBytesMaxWaitTime), but faster for tests
-			offsetReader,
-			startOffsetsReader,
-			fastFetchBackoffConfig,
-			&metrics,
-		)
+		f.Start(ctx)
+		t.Cleanup(f.Stop)
 	}
-
-	require.NoError(t, err)
-	t.Cleanup(f.Stop)
 
 	return f, reg
 }
