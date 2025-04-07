@@ -260,8 +260,8 @@
 {{-         fail "You have selected rbac.type=scc, you must set the value of fsGroup to null in rollout_operator.podSecurityContext" -}}
 {{-       end -}}
 {{-     end -}}
-{{-     if ne .runAsGroup nil -}}
-{{-       if hasKey . "runAsGroup" -}}
+{{-     if hasKey . "runAsGroup" -}}
+{{-       if ne .runAsGroup nil -}}
 {{-         fail "You have selected rbac.type=scc, you must set the value of runAsGroup to null in rollout_operator.podSecurityContext" -}}
 {{-       end -}}
 {{-     end -}}
