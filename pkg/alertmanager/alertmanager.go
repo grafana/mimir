@@ -594,33 +594,34 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 	return am.state.GetFullState()
 }
 
+func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
+	if am.cfg.EnableNotifyHooks {
+		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
+		if err != nil {
+			// It's rare an error is returned, but in theory it can happen.
+			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
+		} else {
+			notifier = n
+		}
+	}
+
+	if am.cfg.Limits != nil {
+		rl := &tenantRateLimits{
+			tenant:      am.cfg.UserID,
+			limits:      am.cfg.Limits,
+			integration: integrationName,
+		}
+
+		notifier = newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
+	}
+
+	return notifier
+}
+
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
 func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []string, staticHeaders map[string]string) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
-
-	// Create a function that wraps a notifier with rate limiting and external hooks.
-	nw := func(integrationName string, notifier notify.Notifier) notify.Notifier {
-		if am.cfg.EnableNotifyHooks {
-			n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
-			if err != nil {
-				// It's rare an error is returned, but in theory it can happen.
-				level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
-			} else {
-				notifier = n
-			}
-		}
-		if am.cfg.Limits != nil {
-			rl := &tenantRateLimits{
-				tenant:      am.cfg.UserID,
-				limits:      am.cfg.Limits,
-				integration: integrationName,
-			}
-
-			notifier = newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
-		}
-		return notifier
-	}
 
 	emailCfg := alertingReceivers.EmailSenderConfig{
 		AuthPassword:  string(gCfg.SMTPAuthPassword),
@@ -655,9 +656,9 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger)
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier)
 		} else {
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, nw)
+			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		}
 		if err != nil {
 			return nil, err
@@ -674,10 +675,10 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 	emailCfg := am.emailCfg
 	am.emailCfgMtx.RUnlock()
 
-	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger)
+	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier)
 }
 
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
@@ -692,6 +693,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		newLoggerFactory(logger),
 		alertingHttp.ClientConfiguration{UserAgent: version.UserAgent()},
 		alertingReceivers.NewEmailSenderFactory(emailCfg),
+		wrapper,
 		1, // orgID is always 1.
 		version.Version,
 	)
