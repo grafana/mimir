@@ -62,6 +62,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -866,6 +867,10 @@ func (t *Mimir) initQueryPlanner() (services.Service, error) {
 
 		t.QueryPlanner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 		t.QueryPlanner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+
+		if t.Cfg.Querier.EngineConfig.MimirQueryEngine.EnableCommonSubexpressionElimination {
+			t.QueryPlanner.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
+		}
 	}
 
 	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
