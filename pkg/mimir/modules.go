@@ -667,10 +667,10 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	// The cost attribution service is only initilized if the custom registry path is provided.
 	if t.Cfg.CostAttributionRegistryPath != "" {
-		reg := prometheus.NewRegistry()
+		costAttributionReg := prometheus.NewRegistry()
 		var err error
-		t.CostAttributionManager, err = costattribution.NewManager(t.Cfg.CostAttributionCleanupInterval, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
-		t.API.RegisterCostAttribution(t.Cfg.CostAttributionRegistryPath, reg)
+		t.CostAttributionManager, err = costattribution.NewManager(t.Cfg.CostAttributionCleanupInterval, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, t.Registerer, costAttributionReg)
+		t.API.RegisterCostAttribution(t.Cfg.CostAttributionRegistryPath, costAttributionReg)
 		return t.CostAttributionManager, err
 	}
 	return nil, nil
