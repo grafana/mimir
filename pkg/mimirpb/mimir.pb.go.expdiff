@@ -9,7 +9,7 @@ index 817dddf44e..3d3b15da3b 100644
 -
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
--	// Unmarshal from Remote Write 2.0. if symbols is not nil.
+-	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 -	rw2symbols *rw2PagedSymbols
  }
  

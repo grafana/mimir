@@ -289,7 +289,7 @@ type WriteRequest struct {
 
 	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
-	// Unmarshal from Remote Write 2.0. if symbols is not nil.
+	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
 	rw2symbols *rw2PagedSymbols
 }
 
