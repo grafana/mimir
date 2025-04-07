@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -76,5 +77,8 @@ func (u *UnaryExpression) OperatorFactory(children []types.Operator, timeRange t
 	default:
 		return nil, fmt.Errorf("expected InstantVectorOperator or ScalarOperator as child of UnaryExpression, got %T", children[0])
 	}
+}
 
+func (u *UnaryExpression) ResultType() (parser.ValueType, error) {
+	return u.Inner.ResultType()
 }

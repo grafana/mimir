@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -74,4 +75,8 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.Stats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
+}
+
+func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeMatrix, nil
 }

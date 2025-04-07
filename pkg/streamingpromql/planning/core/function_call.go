@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -127,4 +128,16 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.FunctionName))
 	}
+}
+
+func (f *FunctionCall) ResultType() (parser.ValueType, error) {
+	if _, ok := functions.InstantVectorFunctionOperatorFactories[f.FunctionName]; ok || f.FunctionName == "absent" || f.FunctionName == "absent_over_time" {
+		return parser.ValueTypeVector, nil
+	}
+
+	if _, ok := functions.ScalarFunctionOperatorFactories[f.FunctionName]; ok {
+		return parser.ValueTypeScalar, nil
+	}
+
+	return parser.ValueTypeNone, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.FunctionName))
 }

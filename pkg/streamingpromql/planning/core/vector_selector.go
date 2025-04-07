@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -75,4 +76,8 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	}
 
 	return planning.NewSingleUseOperatorFactory(o), nil
+}
+
+func (v *VectorSelector) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeVector, nil
 }

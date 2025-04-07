@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -55,4 +56,8 @@ func (n *NumberLiteral) OperatorFactory(_ []types.Operator, timeRange types.Quer
 	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.ExpressionPosition.ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
+}
+
+func (n *NumberLiteral) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeScalar, nil
 }
