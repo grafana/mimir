@@ -8,11 +8,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
@@ -33,13 +35,6 @@ func marshalDetails(m proto.Message) *prototypes.Any {
 }
 
 func TestPlanCreationEncodingAndDecoding(t *testing.T) {
-	opts := NewTestEngineOpts()
-	opts.CommonOpts.NoStepSubqueryIntervalFn = func(_ int64) int64 {
-		return (23 * time.Second).Milliseconds()
-	}
-
-	planner := NewQueryPlanner(opts)
-
 	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1, IsInstant: true}
 	rangeQuery := types.NewRangeQueryTimeRange(timestamp.Time(3000), timestamp.Time(5000), time.Second)
@@ -1027,8 +1022,22 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			testCase.expectedPlan.OriginalExpression = testCase.expr
 
+			reg := prometheus.NewPedanticRegistry()
+			opts := NewTestEngineOpts()
+			opts.CommonOpts.NoStepSubqueryIntervalFn = func(_ int64) int64 {
+				return (23 * time.Second).Milliseconds()
+			}
+			opts.CommonOpts.Reg = reg
+			planner := NewQueryPlanner(opts)
+
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
+
+			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
+{stage="Original plan", stage_type="plan"} 1
+{stage="Parsing", stage_type="AST"} 1
+{stage="Pre-processing", stage_type="AST"} 1
+			`)
 
 			// Encode plan, confirm it matches what we expect
 			encoded, err := originalPlan.ToEncodedPlan(true, true)
@@ -1460,4 +1469,34 @@ func TestDecodingInvalidPlan(t *testing.T) {
 			require.Nil(t, output)
 		})
 	}
+}
+
+func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string, expected string) {
+	metrics := getMetrics(t, reg, name)
+	builder := &strings.Builder{}
+
+	for i, m := range metrics {
+		if i > 0 {
+			builder.WriteRune('\n')
+		}
+
+		require.NotNilf(t, m.Histogram, "expected series %v to be a histogram", m.Label)
+		builder.WriteRune('{')
+
+		for i, l := range m.Label {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			builder.WriteString(*l.Name)
+			builder.WriteString(`="`)
+			builder.WriteString(*l.Value)
+			builder.WriteRune('"')
+		}
+
+		builder.WriteString("} ")
+		builder.WriteString(strconv.FormatUint(*m.Histogram.SampleCount, 10))
+	}
+
+	require.Equal(t, strings.TrimSpace(expected), builder.String())
 }
