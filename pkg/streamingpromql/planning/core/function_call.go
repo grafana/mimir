@@ -97,6 +97,7 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 		return planning.NewSingleUseOperatorFactory(o), nil
 	}
 
+	// absent and absent_over_time need special handling because we need to pass the series labels to their operators.
 	switch f.FunctionName {
 	case "absent":
 		if len(children) != 1 {
