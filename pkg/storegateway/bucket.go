@@ -1709,7 +1709,7 @@ func labelValuesFromSeries(ctx context.Context, labelName string, seriesPerBatch
 func labelValuesFromPostings(ctx context.Context, labelName string, indexr *bucketIndexReader, allValues []streamindex.PostingListOffset, p []storage.SeriesRef, stats *safeQueryStats) ([]string, error) {
 	keys := make([]labels.Label, len(allValues))
 	for i, value := range allValues {
-		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue}
+		keys[i] = labels.Label{Name: labelName, Value: value.LabelValue.Value()}
 	}
 
 	fetchedPostings, err := indexr.FetchPostings(ctx, keys, stats)
@@ -1721,10 +1721,10 @@ func labelValuesFromPostings(ctx context.Context, labelName string, indexr *buck
 	for i, value := range allValues {
 		intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
 		if intersection.Next() {
-			matched = append(matched, value.LabelValue)
+			matched = append(matched, value.LabelValue.Value())
 		}
 		if err = intersection.Err(); err != nil {
-			return nil, errors.Wrapf(err, "intersecting value %q postings", value.LabelValue)
+			return nil, errors.Wrapf(err, "intersecting value %q postings", value.LabelValue.Value())
 		}
 	}
 	return matched, nil

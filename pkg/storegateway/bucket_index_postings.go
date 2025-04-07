@@ -96,7 +96,7 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		}
 		keys = make([]labels.Label, len(vals))
 		for i := range vals {
-			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue}
+			keys[i] = labels.Label{Name: g.labelName, Value: vals[i].LabelValue.Value()}
 			totalSize += vals[i].Off.End - vals[i].Off.Start
 		}
 	} else {

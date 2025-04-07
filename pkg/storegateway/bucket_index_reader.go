@@ -301,7 +301,7 @@ func extractLabels(groups []postingGroup) []labels.Label {
 func extractLabelValues(offsets []streamindex.PostingListOffset) []string {
 	vals := make([]string, len(offsets))
 	for i := range offsets {
-		vals[i] = offsets[i].LabelValue
+		vals[i] = offsets[i].LabelValue.Value()
 	}
 	return vals
 }

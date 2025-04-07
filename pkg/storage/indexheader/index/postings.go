@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unique"
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
@@ -54,7 +55,7 @@ type PostingOffsetTable interface {
 // The End is exclusive and is typically the byte offset of the CRC32 field.
 // The End might be bigger than the actual posting ending, but not larger than the whole index file.
 type PostingListOffset struct {
-	LabelValue string
+	LabelValue unique.Handle[string]
 	Off        index.Range
 }
 
@@ -333,11 +334,11 @@ func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, pre
 		}
 		count++
 		if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-			values = append(values, PostingListOffset{LabelValue: k, Off: r})
+			values = append(values, PostingListOffset{LabelValue: unique.Make(k), Off: r})
 		}
 	}
 	sort.Slice(values, func(i, j int) bool {
-		return values[i].LabelValue < values[j].LabelValue
+		return values[i].LabelValue.Value() < values[j].LabelValue.Value()
 	})
 	return values, nil
 }
@@ -546,6 +547,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 	if !lastValMatches {
 		noMoreMatchesMarkerVal = e.offsets[offsetsEnd].value
 	}
+	noMoreMatchesMarker := unique.Make(noMoreMatchesMarkerVal)
 
 	type pEntry struct {
 		PostingListOffset
@@ -574,7 +576,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
 		if e.matches {
-			e.LabelValue = strings.Clone(unsafeValue)
+			e.LabelValue = unique.Make(unsafeValue)
 		}
 		// In the postings section of the index the information in each posting list for length and number
 		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
@@ -608,7 +610,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 			continue
 		}
 		// We peek at the next list, so we can use its offset as the end offset of the current one.
-		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
+		if currEntry.LabelValue == noMoreMatchesMarker && lastValMatches {
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 			currEntry.Off.End = e.lastValOffset
 		} else {
