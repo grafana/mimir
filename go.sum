@@ -1276,8 +1276,8 @@ github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc h1:PXZQA2WCxe85T
 github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/alerting v0.0.0-20250325165008-58ba6c617ff0 h1:Px9S1OTPnPyXFcCQNjlghEkBLCrKZXNoDrnqHyC+Trw=
 github.com/grafana/alerting v0.0.0-20250325165008-58ba6c617ff0/go.mod h1:IClWv5buV1QUQLbpkROr9XzdK83ofGF6K74UGep+t4o=
-github.com/grafana/dskit v0.0.0-20250403190227-84872c0c2572 h1:owbXoYD0VMmgeI0ma/XCactoVxvyVNZ5JYsKR2/meeo=
-github.com/grafana/dskit v0.0.0-20250403190227-84872c0c2572/go.mod h1:C1GFHXokZCavEcP4A4TiUnViRWiIZ1WZIio6L3eYhW4=
+github.com/grafana/dskit v0.0.0-20250407073127-5ff25a4351b6 h1:X70eC1p1U8CDZ0pb43mQJUqME+GiBPwdMbPMWouoBu4=
+github.com/grafana/dskit v0.0.0-20250407073127-5ff25a4351b6/go.mod h1:BoqjRhTdF0f3ssb1KjVh5B3Jv/HpSd1K27+qs5f8utE=
 github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908 h1:l3pFNUs4heAhiXnMo0thaJQrNWeE4SgLqUOEUmZtC6A=
 github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
 github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937 h1:fwwnG/NcygoS6XbAaEyK2QzMXI/BZIEJvQ3CD+7XZm8=
@@ -1697,8 +1697,8 @@ github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 h1:nn5Wsu0esKSJiIVhscUt
 github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg65j358z/aeFdxmN0P9QXhEzd20vsDc=
 github.com/segmentio/fasthash v1.0.3 h1:EI9+KE1EwvMLBWwjpRDc+fEM+prwxDYbslddQGtrmhM=
 github.com/segmentio/fasthash v1.0.3/go.mod h1:waKX8l2N8yckOgmSsXJi7x1ZfdKZ4x7KRMzBtS3oedY=
-github.com/sercand/kuberesolver/v5 v5.1.1 h1:CYH+d67G0sGBj7q5wLK61yzqJJ8gLLC8aeprPTHb6yY=
-github.com/sercand/kuberesolver/v5 v5.1.1/go.mod h1:Fs1KbKhVRnB2aDWN12NjKCB+RgYMWZJ294T3BtmVCpQ=
+github.com/sercand/kuberesolver/v6 v6.0.0 h1:ScvS2Ga9snVkpOahln/BCLySr3/iBAHJf25u66DweZ0=
+github.com/sercand/kuberesolver/v6 v6.0.0/go.mod h1:Dxkqms3OJadP5zirIBPLi9FV8Qpys3T3w40XPEcVsu0=
 github.com/sergi/go-diff v1.2.0 h1:XU+rvMAioB0UC3q1MFrIQy4Vo5/4VsRDQQXHsEya6xQ=
 github.com/sergi/go-diff v1.2.0/go.mod h1:STckp+ISIX8hZLjrqAeVduY0gWCT9IjLuqbuNXdaHfM=
 github.com/shirou/gopsutil/v4 v4.24.12 h1:qvePBOk20e0IKA1QXrIIU+jmk+zEiYVVx06WjBRlZo4=
