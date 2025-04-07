@@ -274,7 +274,8 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
-	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
+	// Check if schema is either a valid exponential schema or NHCB.
+	if (s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema) && s.Schema != mimirpb.NativeHistogramsWithCustomBucketsSchema {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidNativeHistogramSchema, now.Time())
 		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
 		return false, fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
@@ -286,6 +287,12 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			bucketCount = len(s.GetNegativeCounts()) + len(s.GetPositiveCounts())
 		} else {
 			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
+		}
+		if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
+			// Custom buckets cannot be scaled down.
+			cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
+			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+			return false, fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 		}
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {

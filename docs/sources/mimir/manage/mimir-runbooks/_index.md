@@ -1919,6 +1919,47 @@ The series containing such samples are skipped during ingestion, and valid serie
 When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
 {{< /admonition >}}
 
+### err-mimir-native-histogram-custom-buckets-mismatch
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
+with custom buckets where more buckets are present than the upper bound is specified for. In technical terms: the
+number of bucket values from spans is higher than the number of custom values.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-custom-buckets-invalid
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
+with custom buckets where the bucket boundaries are not in ascending order.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-custom-buckets-infinite
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
+with custom buckets where one of the boundaries is +Inf, which should not be specified as it is the default implicit
+last boundary.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
 ### err-mimir-native-histogram-ooo-disabled
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
