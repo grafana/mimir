@@ -250,7 +250,8 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
-		r.Start(ctx)
+		f.Start(ctx)
+
 		r.setFetcher(f)
 	} else {
 		// When concurrent fetch is disabled we read records directly from the Kafka client, so we want it
