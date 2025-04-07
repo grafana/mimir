@@ -2995,6 +2995,11 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
+	optsWithQueryPlanner := NewTestEngineOpts()
+	optsWithQueryPlanner.UseQueryPlanning = true
+	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
+	require.NoError(t, err)
+
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	timeRanges := []struct {
@@ -3019,17 +3024,23 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 			// We run so many combinations that calling t.Run() for each of them has a noticeable performance impact.
 			// So we instead just log the test case before we run it.
 			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
-			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			prometheusQuery, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 			require.NoError(t, err)
-			defer q.Close()
-			prometheusResults := q.Exec(context.Background())
+			prometheusResults := prometheusQuery.Exec(context.Background())
 
-			q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			mimirQuery, err := mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 			require.NoError(t, err)
-			defer q.Close()
-			mimirResults := q.Exec(context.Background())
-
+			mimirResults := mimirQuery.Exec(context.Background())
 			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
+
+			mimirQueryWithQueryPlanner, err := mimirEngineWithQueryPlanner.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			mimirResultsWithQueryPlanner := mimirQueryWithQueryPlanner.Exec(context.Background())
+			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResultsWithQueryPlanner, skipAnnotationComparison)
+
+			prometheusQuery.Close()
+			mimirQuery.Close()
+			mimirQueryWithQueryPlanner.Close()
 		}
 	}
 }

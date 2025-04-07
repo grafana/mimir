@@ -46,7 +46,7 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
-		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Timestamp == otherVectorSelector.Timestamp.Timestamp)) &&
+		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset
 }
 
@@ -65,7 +65,7 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		Selector: &selectors.Selector{
 			Queryable:          params.Queryable,
 			TimeRange:          timeRange,
-			Timestamp:          v.Timestamp.ToInt64(),
+			Timestamp:          TimestampFromTime(v.Timestamp),
 			Offset:             v.Offset.Milliseconds(),
 			LookbackDelta:      params.LookbackDelta,
 			Matchers:           matchers,

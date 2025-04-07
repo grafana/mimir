@@ -6,6 +6,7 @@ package core;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 option (gogoproto.marshaler_all) = true;
@@ -121,29 +122,25 @@ enum UnaryOperation {
 
 message VectorSelectorDetails {
   repeated LabelMatcher matchers = 1;
-  Timestamp timestamp = 2; // FIXME: the timestamp needs to be nullable, but optional isn't supported in gogoproto and gogoproto.nullable = true does nothing on int64 fields, so an inner message seems like the least-worst option
+  google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
 }
 
 message MatrixSelectorDetails {
   repeated LabelMatcher matchers = 1;
-  Timestamp timestamp = 2; // FIXME: the timestamp needs to be nullable, but optional isn't supported in gogoproto and gogoproto.nullable = true does nothing on int64 fields, so an inner message seems like the least-worst option
+  google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   google.protobuf.Duration range = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
 }
 
 message SubqueryDetails {
-  Timestamp timestamp = 1; // FIXME: the timestamp needs to be nullable, but optional isn't supported in gogoproto and gogoproto.nullable = true does nothing on int64 fields, so an inner message seems like the least-worst option
+  google.protobuf.Timestamp timestamp = 1 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 2 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   google.protobuf.Duration range = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   google.protobuf.Duration step = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
-}
-
-message Timestamp {
-  int64 timestamp = 1;
 }
 
 message LabelMatcher {

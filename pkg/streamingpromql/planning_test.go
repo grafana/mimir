@@ -109,7 +109,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							Timestamp:          &core.Timestamp{Timestamp: 0},
+							Timestamp:          timestampOf(0),
 							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
 						}),
 						Type:        "VectorSelector",
@@ -131,7 +131,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							Timestamp:          &core.Timestamp{Timestamp: 3000},
+							Timestamp:          timestampOf(3000),
 							ExpressionPosition: core.PositionRange{Start: 0, End: 21},
 						}),
 						Type:        "VectorSelector",
@@ -153,7 +153,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							Timestamp:          &core.Timestamp{Timestamp: 5000},
+							Timestamp:          timestampOf(5000),
 							ExpressionPosition: core.PositionRange{Start: 0, End: 19},
 						}),
 						Type:        "VectorSelector",
@@ -220,7 +220,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							Timestamp:          &core.Timestamp{Timestamp: 0},
+							Timestamp:          timestampOf(0),
 							ExpressionPosition: core.PositionRange{Start: 0, End: 19},
 						}),
 						Type:        "MatrixSelector",
@@ -243,7 +243,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							Timestamp:          &core.Timestamp{Timestamp: 3000},
+							Timestamp:          timestampOf(3000),
 							ExpressionPosition: core.PositionRange{Start: 5, End: 30},
 						}),
 						Type:        "MatrixSelector",
@@ -276,7 +276,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							Timestamp:          &core.Timestamp{Timestamp: 5000},
+							Timestamp:          timestampOf(5000),
 							ExpressionPosition: core.PositionRange{Start: 5, End: 28},
 						}),
 						Type:        "MatrixSelector",
@@ -1003,7 +1003,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
-							Timestamp:          &core.Timestamp{Timestamp: 0},
+							Timestamp:          timestampOf(0),
 							ExpressionPosition: core.PositionRange{Start: 0, End: 24},
 						}),
 						Type:           "Subquery",
@@ -1499,4 +1499,8 @@ func requireHistogramCounts(t *testing.T, reg *prometheus.Registry, name string,
 	}
 
 	require.Equal(t, strings.TrimSpace(expected), builder.String())
+}
+
+func timestampOf(ts int64) *time.Time {
+	return core.TimeFromTimestamp(&ts)
 }

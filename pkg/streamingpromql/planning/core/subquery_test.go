@@ -40,7 +40,7 @@ func TestSubquery_Describe(t *testing.T) {
 				SubqueryDetails: &SubqueryDetails{
 					Range:     time.Minute,
 					Step:      20 * time.Second,
-					Timestamp: &Timestamp{Timestamp: 123456},
+					Timestamp: timestampOf(123456),
 				},
 			},
 			expected: "[1m0s:20s] @ 123456 (1970-01-01T00:02:03.456Z)",
@@ -51,7 +51,7 @@ func TestSubquery_Describe(t *testing.T) {
 					Range:     time.Minute,
 					Step:      20 * time.Second,
 					Offset:    time.Hour,
-					Timestamp: &Timestamp{Timestamp: 123456},
+					Timestamp: timestampOf(123456),
 				},
 			},
 			expected: "[1m0s:20s] @ 123456 (1970-01-01T00:02:03.456Z) offset 1h0m0s",
@@ -212,7 +212,7 @@ func TestSubquery_Equivalence(t *testing.T) {
 				SubqueryDetails: &SubqueryDetails{
 					Range:              time.Minute,
 					Step:               20 * time.Second,
-					Timestamp:          &Timestamp{Timestamp: 123},
+					Timestamp:          timestampOf(123),
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Inner: numberLiteralOf(12),
@@ -224,7 +224,7 @@ func TestSubquery_Equivalence(t *testing.T) {
 				SubqueryDetails: &SubqueryDetails{
 					Range:              time.Minute,
 					Step:               20 * time.Second,
-					Timestamp:          &Timestamp{Timestamp: 123},
+					Timestamp:          timestampOf(123),
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Inner: numberLiteralOf(12),
@@ -233,7 +233,7 @@ func TestSubquery_Equivalence(t *testing.T) {
 				SubqueryDetails: &SubqueryDetails{
 					Range:              time.Minute,
 					Step:               20 * time.Second,
-					Timestamp:          &Timestamp{Timestamp: 456},
+					Timestamp:          timestampOf(456),
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Inner: numberLiteralOf(12),

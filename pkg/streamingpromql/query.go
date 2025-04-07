@@ -419,7 +419,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			step = time.Duration(q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())) * time.Millisecond
 		}
 
-		subqueryTimeRange := core.SubqueryTimeRange(timeRange, e.Range, step, e.Timestamp, e.OriginalOffset)
+		subqueryTimeRange := core.SubqueryTimeRange(timeRange, e.Range, step, core.TimeFromTimestamp(e.Timestamp), e.OriginalOffset)
 		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange)
 		if err != nil {
 			return nil, err
