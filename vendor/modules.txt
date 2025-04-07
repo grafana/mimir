@@ -649,8 +649,8 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20250403190227-84872c0c2572
-## explicit; go 1.21
+# github.com/grafana/dskit v0.0.0-20250407073127-5ff25a4351b6
+## explicit; go 1.22.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
 github.com/grafana/dskit/cache
@@ -1185,9 +1185,9 @@ github.com/sean-/seed
 # github.com/segmentio/fasthash v1.0.3
 ## explicit; go 1.11
 github.com/segmentio/fasthash/fnv1a
-# github.com/sercand/kuberesolver/v5 v5.1.1
-## explicit; go 1.18
-github.com/sercand/kuberesolver/v5
+# github.com/sercand/kuberesolver/v6 v6.0.0
+## explicit; go 1.22.0
+github.com/sercand/kuberesolver/v6
 # github.com/shirou/gopsutil/v4 v4.24.12
 ## explicit; go 1.18
 github.com/shirou/gopsutil/v4/common
@@ -1609,7 +1609,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.71.0 => google.golang.org/grpc v1.65.0
+# google.golang.org/grpc v1.71.1 => google.golang.org/grpc v1.65.0
 ## explicit; go 1.21
 google.golang.org/grpc
 google.golang.org/grpc/attributes
