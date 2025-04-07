@@ -1378,8 +1378,8 @@ github.com/hashicorp/vault/api v1.16.0 h1:nbEYGJiAPGzT9U4oWgaaB0g+Rj8E59QuHKyA5L
 github.com/hashicorp/vault/api v1.16.0/go.mod h1:KhuUhzOD8lDSk29AtzNjgAu2kxRA9jL9NAbkFlqvkBA=
 github.com/hashicorp/vault/api/auth/approle v0.9.0 h1:FdpspwGVWnGiWmAxd5L1Yd+T+fX2kYnyAIvI5oGdvNs=
 github.com/hashicorp/vault/api/auth/approle v0.9.0/go.mod h1:fvtJhBs3AYMs2fXk4U5+u+7unhUGuboiKzFpLPpIazw=
-github.com/hashicorp/vault/api/auth/kubernetes v0.8.0 h1:6jPcORq7OHwf+MCbaaUmiBvMhETAaZ7+i97WfZtF5kc=
-github.com/hashicorp/vault/api/auth/kubernetes v0.8.0/go.mod h1:nfl5sRUUork0ZSfV3xf+pgAFQSD5kSkL0k9axg523DM=
+github.com/hashicorp/vault/api/auth/kubernetes v0.9.0 h1:xV3xXMtSV8tq5iefueAw3OOdhhXyjnyhrQkIFM5fh54=
+github.com/hashicorp/vault/api/auth/kubernetes v0.9.0/go.mod h1:3K6uEUKZLBQ3d+eXAa4Ubp4UocswU90zY4QP5Az3Vw8=
 github.com/hashicorp/vault/api/auth/userpass v0.8.0 h1:JFFzMld+VO/S1v8HQNJzcy+3o+xfx/iH49dsiQ1G5jk=
 github.com/hashicorp/vault/api/auth/userpass v0.8.0/go.mod h1:+XbsSnbbyo+yjySfKcIsyl28kO4C/c4Czo7og0XCtUo=
 github.com/hetznercloud/hcloud-go/v2 v2.20.1 h1:1wnKY6keRb6ip1kGPAtnU/ugjMxNkQ4tkulS6uc+vfk=
