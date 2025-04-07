@@ -20,6 +20,7 @@ func TestCollapseConstants(t *testing.T) {
 		"(2 + 3)":              "5",
 		"2 - 3":                "-1",
 		"2 * 3":                "6",
+		"10 + 2 * 3":           "16", // Ensure order of operations is respected.
 		"3 / 2":                "1.5",
 		"5 % 2":                "1",
 		"2 ^ 3":                "8",
@@ -29,6 +30,9 @@ func TestCollapseConstants(t *testing.T) {
 		"vector(2 + 3)[1m:1m]": "vector(5)[1m:1m]",
 		"sum(vector(2 + 3))":   "sum(vector(5))",
 		"topk(2 + 3, metric)":  "topk(5, metric)",
+
+		// Check a complex expression with multiple operations, some of which can't be collapsed to respect the order of operations.
+		`abs(foo) + (sum(vector(2+3)) / (sum(series) + sum(min(series)))) * 600 + 3000`: `abs(foo) + (sum(vector(5)) / (sum(series) + sum(min(series)))) * 600 + 3000`,
 
 		"foo * 2":    "foo * 2",
 		"2 * foo":    "2 * foo",
