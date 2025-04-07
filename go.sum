@@ -1769,8 +1769,8 @@ github.com/tklauser/numcpus v0.6.1/go.mod h1:1XfjsgE2zo8GVw7POkMbHENHzVg3GzmoZ9f
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/twmb/franz-go/pkg/kadm v1.14.0 h1:nAn1co1lXzJQocpzyIyOFOjUBf4WHWs5/fTprXy2IZs=
 github.com/twmb/franz-go/pkg/kadm v1.14.0/go.mod h1:XjOPz6ZaXXjrW2jVCfLuucP8H1w2TvD6y3PT2M+aAM4=
-github.com/twmb/franz-go/pkg/kfake v0.0.0-20250328061601-0a757d1a4731 h1:iPTiUqWs/9tZrmZe+EGpbAkixlA5Rr8JlcRzY9nKK3g=
-github.com/twmb/franz-go/pkg/kfake v0.0.0-20250328061601-0a757d1a4731/go.mod h1:zCgWGv7Rg9B70WV6T+tUbifRJnx60gGTFU/U4xZpyUA=
+github.com/twmb/franz-go/pkg/kfake v0.0.0-20250401233345-1af508be1179 h1:LBRIzAnU2aT4nOqn06U37rBX1AWCSeh1brB04QRXnKA=
+github.com/twmb/franz-go/pkg/kfake v0.0.0-20250401233345-1af508be1179/go.mod h1:zCgWGv7Rg9B70WV6T+tUbifRJnx60gGTFU/U4xZpyUA=
 github.com/twmb/franz-go/pkg/kmsg v1.9.0 h1:JojYUph2TKAau6SBtErXpXGC7E3gg4vGZMv9xFU/B6M=
 github.com/twmb/franz-go/pkg/kmsg v1.9.0/go.mod h1:CMbfazviCyY6HM0SXuG5t9vOwYDHRCSrJJyBAe5paqg=
 github.com/twmb/franz-go/plugin/kotel v1.5.0 h1:TiPfGUbQK384OO7ZYGdo7JuPCbJn+/8njQ/D9Je9CDE=
