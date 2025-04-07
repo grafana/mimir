@@ -16,9 +16,11 @@ type EngineOpts struct {
 	// Should only be used in tests.
 	Pedantic bool `yaml:"-"`
 
-	UseQueryPlanning bool `yaml:"use_query_planning" category:"experimental"`
+	UseQueryPlanning                     bool `yaml:"use_query_planning" category:"experimental"`
+	EnableCommonSubexpressionElimination bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.UseQueryPlanning, "querier.mimir-query-engine.use-query-planning", false, "Use query planner when evaluating queries.")
+	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled.")
 }

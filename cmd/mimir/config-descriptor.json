@@ -2257,6 +2257,17 @@
               "fieldFlag": "querier.mimir-query-engine.use-query-planning",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_common_subexpression_elimination",
+              "required": false,
+              "desc": "Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
