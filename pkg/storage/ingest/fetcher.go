@@ -297,6 +297,32 @@ func newConcurrentFetchers(
 	fetchBackoffConfig backoff.Config,
 	metrics *readerMetrics,
 ) (*concurrentFetchers, error) {
+	f, err := newConcurrentFetchersWithoutStart(ctx, client, logger, topic, partition, startOffset, maxBufferedBytesLimit, trackCompressedBytes, minBytesWaitTime, offsetReader, startOffsetsReader, fetchBackoffConfig, metrics)
+	if err != nil {
+		return nil, err
+	}
+
+	f.wg.Add(1)
+	go f.start(ctx, startOffset, concurrency)
+
+	return f, nil
+}
+
+func newConcurrentFetchersWithoutStart(
+	ctx context.Context,
+	client *kgo.Client,
+	logger log.Logger,
+	topic string,
+	partition int32,
+	startOffset int64,
+	maxBufferedBytesLimit int32,
+	trackCompressedBytes bool,
+	minBytesWaitTime time.Duration,
+	offsetReader *partitionOffsetClient,
+	startOffsetsReader *genericOffsetReader[int64],
+	fetchBackoffConfig backoff.Config,
+	metrics *readerMetrics,
+) (*concurrentFetchers, error) {
 	if fetchBackoffConfig.MaxBackoff == 0 {
 		// Ensure it's not the zero value, which means we haven't got the backoff config due to a bug.
 		return nil, errors.New("fetchBackoffConfig.MaxBackoff has not been set")
@@ -354,9 +380,6 @@ func newConcurrentFetchers(
 		return nil, fmt.Errorf("failed to find topic ID: %w", err)
 	}
 	f.topicID = topics[topic].ID
-
-	f.wg.Add(1)
-	go f.start(ctx, startOffset, concurrency)
 
 	return f, nil
 }
