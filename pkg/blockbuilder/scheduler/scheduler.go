@@ -196,21 +196,25 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	// Job computation was based on a snapshot of the committed offsets that may
 	// have changed. Nix any jobs that are now before the committed offsets.
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	jobs = filterJobsBeforeCommittedOffsets(jobs, s.committed)
+	s.mu.Unlock()
 
-	jobs = slices.DeleteFunc(jobs, func(job *schedulerpb.JobSpec) bool {
-		committedOff, ok := s.committed.Lookup(job.Topic, job.Partition)
+	for _, job := range jobs {
+		jobID := fmt.Sprintf("%s/%d/%d", job.Topic, job.Partition, job.StartOffset)
+		s.jobs.addOrUpdate(jobID, *job)
+	}
+}
+
+// filterJobsBeforeCommittedOffsets returns a slice of jobs that are not before the committed offsets.
+func filterJobsBeforeCommittedOffsets(jobs []*schedulerpb.JobSpec, committed kadm.Offsets) []*schedulerpb.JobSpec {
+	return slices.DeleteFunc(jobs, func(job *schedulerpb.JobSpec) bool {
+		committedOff, ok := committed.Lookup(job.Topic, job.Partition)
 		if !ok {
 			// create the job even if there is no committed offset.
 			return false
 		}
 		return job.StartOffset < committedOff.At
 	})
-
-	for _, job := range jobs {
-		jobID := fmt.Sprintf("%s/%d/%d", job.Topic, job.Partition, job.StartOffset)
-		s.jobs.addOrUpdate(jobID, *job)
-	}
 }
 
 type partitionOffsets struct {

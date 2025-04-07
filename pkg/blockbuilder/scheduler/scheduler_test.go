@@ -373,7 +373,7 @@ func TestKafkaFlush(t *testing.T) {
 	}, "should be able to advance an existing offset")
 }
 
-func TestMonitor(t *testing.T) {
+func TestUpdateSchedule(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -414,6 +414,53 @@ func TestMonitor(t *testing.T) {
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
+}
+
+func TestFilterJobsBeforeCommittedOffsets(t *testing.T) {
+	committed := kadm.Offsets{}
+	committed.AddOffset("ingest", 0, 5, 0)
+	committed.AddOffset("ingest", 1, 10, 0)
+
+	jobs := []*schedulerpb.JobSpec{
+		{
+			Topic:       "ingest",
+			Partition:   0,
+			StartOffset: 4,
+		},
+		{
+			Topic:       "ingest",
+			Partition:   0,
+			StartOffset: 5,
+		},
+		{
+			Topic:       "ingest",
+			Partition:   1,
+			StartOffset: 8,
+		},
+		{
+			Topic:       "ingest",
+			Partition:   2,
+			StartOffset: 9,
+		},
+	}
+
+	filtered := filterJobsBeforeCommittedOffsets(jobs, committed)
+
+	require.EqualValues(t, []*schedulerpb.JobSpec{
+		{
+			Topic:       "ingest",
+			Partition:   0,
+			StartOffset: 5,
+		},
+		{
+			Topic:       "ingest",
+			Partition:   2,
+			StartOffset: 9,
+		},
+	}, filtered)
+
+	filtered2 := filterJobsBeforeCommittedOffsets([]*schedulerpb.JobSpec{}, committed)
+	require.Empty(t, filtered2)
 }
 
 type timeOffset struct {

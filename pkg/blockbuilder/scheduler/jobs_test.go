@@ -146,7 +146,6 @@ func TestImportJob(t *testing.T) {
 	require.Equal(t, "w2", j.assignee)
 }
 
-// TestJobCreationPolicies tests the behavior of different job creation policies.
 func TestJobCreationPolicies(t *testing.T) {
 	t.Run("noOpJobCreationPolicy", func(t *testing.T) {
 		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
@@ -156,8 +155,8 @@ func TestJobCreationPolicies(t *testing.T) {
 		s.addOrUpdate("job2", testSpec{topic: "topic2"})
 
 		_, ok1 := s.jobs["job1"]
-		_, ok2 := s.jobs["job2"]
 		require.True(t, ok1, "job1 should be created")
+		_, ok2 := s.jobs["job2"]
 		require.True(t, ok2, "job2 should be created")
 	})
 
@@ -169,8 +168,8 @@ func TestJobCreationPolicies(t *testing.T) {
 		s.addOrUpdate("job2", testSpec{topic: "topic2"})
 
 		_, ok1 := s.jobs["job1"]
-		_, ok2 := s.jobs["job2"]
 		require.False(t, ok1, "job1 should not be created")
+		_, ok2 := s.jobs["job2"]
 		require.False(t, ok2, "job2 should not be created")
 	})
 }
