@@ -13,6 +13,8 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -36,12 +38,18 @@ type QueryPlanner struct {
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
+	planStageLatency         *prometheus.HistogramVec
 }
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	return &QueryPlanner{
 		features:                 opts.Features,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
+			Help:                        "Latency of each stage of the query planning process.",
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"stage_type", "stage"}),
 	}
 }
 
@@ -67,7 +75,7 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
-	expr, err := runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
+	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +86,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 	}
 
-	expr, err = runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
+	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
 		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT)), nil
 	})
 
@@ -87,7 +95,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	for _, o := range p.astOptimizationPasses {
-		expr, err = runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
+		expr, err = p.runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
 
 		if err != nil {
 			return nil, err
@@ -98,7 +106,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		return nil, err
 	}
 
-	plan, err := runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
+	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
 		root, err := p.nodeFromExpr(expr)
 		if err != nil {
 			return nil, err
@@ -119,7 +127,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	for _, o := range p.planOptimizationPasses {
-		plan, err = runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
+		plan, err = p.runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
 
 		if err != nil {
 			return nil, err
@@ -133,7 +141,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	return plan, err
 }
 
-func runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {
+func (p *QueryPlanner) runASTStage(stageName string, observer PlanningObserver, stage func() (parser.Expr, error)) (parser.Expr, error) {
 	start := time.Now()
 	expr, err := stage()
 	if err != nil {
@@ -141,6 +149,7 @@ func runASTStage(stageName string, observer PlanningObserver, stage func() (pars
 	}
 
 	duration := timeSince(start)
+	p.planStageLatency.WithLabelValues("AST", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnASTStageComplete(stageName, expr, duration); err != nil {
 		return nil, err
@@ -149,7 +158,7 @@ func runASTStage(stageName string, observer PlanningObserver, stage func() (pars
 	return expr, nil
 }
 
-func runPlanningStage(stageName string, observer PlanningObserver, stage func() (*planning.QueryPlan, error)) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObserver, stage func() (*planning.QueryPlan, error)) (*planning.QueryPlan, error) {
 	start := time.Now()
 	plan, err := stage()
 	if err != nil {
@@ -157,6 +166,7 @@ func runPlanningStage(stageName string, observer PlanningObserver, stage func() 
 	}
 
 	duration := timeSince(start)
+	p.planStageLatency.WithLabelValues("plan", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
 		return nil, err
