@@ -29,7 +29,10 @@ spec:
     spec:
       serviceAccountName: openshift-values-rollout-operator
       securityContext:
+        fsGroup: null
+        runAsGroup: null
         runAsNonRoot: true
+        runAsUser: null
         seccompProfile:
           type: RuntimeDefault
       containers:
