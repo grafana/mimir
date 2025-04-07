@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(matchers []*LabelMatcher, ts *Timestamp, offset time.Duration, rng *time.Duration) string {
+func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range matchers {
@@ -33,9 +33,9 @@ func describeSelector(matchers []*LabelMatcher, ts *Timestamp, offset time.Durat
 
 	if ts != nil {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(ts.Timestamp, 10))
+		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
 		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(ts.Timestamp).Format(time.RFC3339Nano))
+		builder.WriteString(ts.Format(time.RFC3339Nano))
 		builder.WriteRune(')')
 	}
 

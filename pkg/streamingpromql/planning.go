@@ -171,7 +171,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
 				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
-				Timestamp:          core.TimestampFrom(expr.Timestamp),
+				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
@@ -186,7 +186,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
 				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
-				Timestamp:          core.TimestampFrom(vs.Timestamp),
+				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
@@ -302,7 +302,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return &core.Subquery{
 			Inner: inner,
 			SubqueryDetails: &core.SubqueryDetails{
-				Timestamp:          core.TimestampFrom(expr.Timestamp),
+				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				Range:              expr.Range,
 				Step:               step,

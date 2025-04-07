@@ -55,7 +55,7 @@ func TestVectorSelector_Describe(t *testing.T) {
 			node: &VectorSelector{
 				VectorSelectorDetails: &VectorSelectorDetails{
 					Matchers:  singleMatcher,
-					Timestamp: &Timestamp{Timestamp: 123456},
+					Timestamp: timestampOf(123456),
 				},
 			},
 			expected: `{__name__="foo"} @ 123456 (1970-01-01T00:02:03.456Z)`,
@@ -65,7 +65,7 @@ func TestVectorSelector_Describe(t *testing.T) {
 				VectorSelectorDetails: &VectorSelectorDetails{
 					Matchers:  singleMatcher,
 					Offset:    time.Hour,
-					Timestamp: &Timestamp{Timestamp: 123456},
+					Timestamp: timestampOf(123456),
 				},
 			},
 			expected: `{__name__="foo"} @ 123456 (1970-01-01T00:02:03.456Z) offset 1h0m0s`,
@@ -170,7 +170,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					Matchers: []*LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
-					Timestamp:          &Timestamp{Timestamp: 123},
+					Timestamp:          timestampOf(123),
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 			},
@@ -182,7 +182,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					Matchers: []*LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
-					Timestamp:          &Timestamp{Timestamp: 123},
+					Timestamp:          timestampOf(123),
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 			},
@@ -191,7 +191,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					Matchers: []*LabelMatcher{
 						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 					},
-					Timestamp:          &Timestamp{Timestamp: 456},
+					Timestamp:          timestampOf(456),
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 			},
@@ -265,4 +265,8 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			require.True(t, testCase.b.EquivalentTo(testCase.b))
 		})
 	}
+}
+
+func timestampOf(ts int64) *time.Time {
+	return TimeFromTimestamp(&ts)
 }

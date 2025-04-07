@@ -32,9 +32,9 @@ func (s *Subquery) Describe() string {
 
 	if s.Timestamp != nil {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(s.Timestamp.Timestamp, 10))
+		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*s.Timestamp), 10))
 		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(s.Timestamp.Timestamp).Format(time.RFC3339Nano))
+		builder.WriteString(s.Timestamp.Format(time.RFC3339Nano))
 		builder.WriteRune(')')
 	}
 
@@ -47,17 +47,11 @@ func (s *Subquery) Describe() string {
 }
 
 func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
-	var ts *int64
-
-	if s.Timestamp != nil {
-		ts = &s.Timestamp.Timestamp
-	}
-
-	return SubqueryTimeRange(timeRange, s.Range, s.Step, ts, s.Offset)
+	return SubqueryTimeRange(timeRange, s.Range, s.Step, s.Timestamp, s.Offset)
 }
 
 // FIXME: inline this into the method above once we no longer support directly converting from PromQL expressions to operators
-func SubqueryTimeRange(parentTimeRange types.QueryTimeRange, rng time.Duration, step time.Duration, ts *int64, offset time.Duration) types.QueryTimeRange {
+func SubqueryTimeRange(parentTimeRange types.QueryTimeRange, rng time.Duration, step time.Duration, ts *time.Time, offset time.Duration) types.QueryTimeRange {
 	// Subqueries are evaluated as a single range query with steps aligned to Unix epoch time 0.
 	// They are not evaluated as queries aligned to the individual step timestamps.
 	// See https://www.robustperception.io/promql-subqueries-and-alignment/ for an explanation.
@@ -77,8 +71,8 @@ func SubqueryTimeRange(parentTimeRange types.QueryTimeRange, rng time.Duration, 
 	stepMilliseconds := step.Milliseconds()
 
 	if ts != nil {
-		start = *ts
-		end = *ts
+		start = timestamp.FromTime(*ts)
+		end = start
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
@@ -114,7 +108,7 @@ func (s *Subquery) EquivalentTo(other planning.Node) bool {
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Timestamp == otherSubquery.Timestamp.Timestamp)) &&
+		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
 		s.Step == otherSubquery.Step &&
@@ -135,7 +129,7 @@ func (s *Subquery) OperatorFactory(children []types.Operator, timeRange types.Qu
 		return nil, fmt.Errorf("expected InstantVectorOperator as child of Subquery, got %T", children[0])
 	}
 
-	o := operators.NewSubquery(inner, timeRange, s.Timestamp.ToInt64(), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
+	o := operators.NewSubquery(inner, timeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

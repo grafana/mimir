@@ -4,8 +4,10 @@ package core
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -26,14 +28,6 @@ func PositionRangeFrom(pos posrange.PositionRange) PositionRange {
 
 func (p PositionRange) ToPrometheusType() posrange.PositionRange {
 	return posrange.PositionRange(p)
-}
-
-func TimestampFrom(t *int64) *Timestamp {
-	if t == nil {
-		return nil
-	}
-
-	return &Timestamp{*t}
 }
 
 func LabelMatchersFrom(matchers []*labels.Matcher) []*LabelMatcher {
@@ -198,10 +192,20 @@ func invert[A, B comparable](original map[A]B) map[B]A {
 	return inverted
 }
 
-func (t *Timestamp) ToInt64() *int64 {
+func TimeFromTimestamp(ts *int64) *time.Time {
+	if ts == nil {
+		return nil
+	}
+
+	t := timestamp.Time(*ts)
+	return &t
+}
+
+func TimestampFromTime(t *time.Time) *int64 {
 	if t == nil {
 		return nil
 	}
 
-	return &t.Timestamp
+	ts := timestamp.FromTime(*t)
+	return &ts
 }

@@ -46,7 +46,7 @@ func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
-		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Timestamp == otherMatrixSelector.Timestamp.Timestamp)) &&
+		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range
 }
@@ -64,7 +64,7 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	selector := &selectors.Selector{
 		Queryable:          params.Queryable,
 		TimeRange:          timeRange,
-		Timestamp:          m.Timestamp.ToInt64(),
+		Timestamp:          TimestampFromTime(m.Timestamp),
 		Offset:             m.Offset.Milliseconds(),
 		Range:              m.Range,
 		Matchers:           matchers,
