@@ -580,7 +580,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
 
 	t.Run("happy cases", func(t *testing.T) {
-		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
+		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series, nil)
 	})
 
 	t.Run("happy cases with index cache", func(t *testing.T) {
@@ -589,7 +589,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			b.indexCache = newInMemoryIndexCache(t)
 			return b
 		}
-		benchmarkExpandedPostings(test.NewTB(t), newBlockWithIndexCache, series)
+		benchmarkExpandedPostings(test.NewTB(t), newBlockWithIndexCache, series, nil)
 	})
 
 	t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
@@ -1040,7 +1040,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	const series = 50e5
 
 	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
-	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
+	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series, []int{1, 16, 32})
 }
 
 func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucketBlock {
@@ -1171,35 +1171,56 @@ func benchmarkExpandedPostings(
 	tb test.TB,
 	newTestBucketBlock func() *bucketBlock,
 	series int,
+	numConcurrentCases []int,
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	tb.Cleanup(cancel)
+	if numConcurrentCases == nil {
+		numConcurrentCases = []int{1}
+	}
 
 	for _, testCase := range seriesSelectionTestCases(tb, series) {
-		tb.Run(testCase.name, func(tb test.TB) {
-			indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
+		for _, numConcurrent := range numConcurrentCases {
+			tb.Run(fmt.Sprintf("%s/numConcurrent=%d", testCase.name, numConcurrent), func(tb test.TB) {
+				runFunc := func() {
+					indexr := newBucketIndexReader(newTestBucketBlock(), selectAllStrategy{})
 
-			var allSeries []labels.Labels
-			if !tb.IsBenchmark() {
-				allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
-				require.NoError(tb, err)
-				allSeries = loadSeries(ctx, tb, allPostings, indexr)
-			}
+					var allSeries []labels.Labels
+					if !tb.IsBenchmark() {
+						allPostings, _, err := indexr.ExpandedPostings(ctx, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "my_made_up_label", "")}, newSafeQueryStats())
+						require.NoError(tb, err)
+						allSeries = loadSeries(ctx, tb, allPostings, indexr)
+					}
 
-			indexrStats := newSafeQueryStats()
+					indexrStats := newSafeQueryStats()
 
-			tb.ResetTimer()
-			for i := 0; i < tb.N(); i++ {
-				p, _, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
-				assert.NoError(tb, err)
-				assert.Equal(tb, testCase.expectedSeriesLen, len(p))
-				if !tb.IsBenchmark() {
-					seriesThatMatch := filterSeries(allSeries, testCase.matchers)
-					seriesForPostings := loadSeries(ctx, tb, p, indexr)
-					testutil.RequireEqual(tb, seriesThatMatch, seriesForPostings)
+					tb.ResetTimer()
+					for i := 0; i < tb.N(); i++ {
+						p, _, err := indexr.ExpandedPostings(ctx, testCase.matchers, indexrStats)
+						assert.NoError(tb, err)
+						assert.Equal(tb, testCase.expectedSeriesLen, len(p))
+						if !tb.IsBenchmark() {
+							seriesThatMatch := filterSeries(allSeries, testCase.matchers)
+							seriesForPostings := loadSeries(ctx, tb, p, indexr)
+							testutil.RequireEqual(tb, seriesThatMatch, seriesForPostings)
+						}
+					}
 				}
-			}
-		})
+
+				startChan := make(chan struct{})
+				wg := sync.WaitGroup{}
+				for j := 0; j < numConcurrent; j++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						<-startChan
+						runFunc()
+					}()
+				}
+				close(startChan)
+				wg.Wait()
+			})
+		}
 	}
 }
 
