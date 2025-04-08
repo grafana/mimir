@@ -202,6 +202,32 @@ func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVect
 	}
 }
 
+func (b *BinaryExpression) ResultType() (parser.ValueType, error) {
+	lhs, err := b.LHS.ResultType()
+	if err != nil {
+		return parser.ValueTypeNone, err
+	}
+
+	rhs, err := b.RHS.ResultType()
+	if err != nil {
+		return parser.ValueTypeNone, err
+	}
+
+	if lhs == parser.ValueTypeScalar && rhs == parser.ValueTypeScalar {
+		return parser.ValueTypeScalar, nil
+	}
+
+	if lhs != parser.ValueTypeVector && lhs != parser.ValueTypeScalar {
+		return parser.ValueTypeNone, fmt.Errorf("left side of binary expression must be scalar or vector, got %v", lhs)
+	}
+
+	if rhs != parser.ValueTypeVector && rhs != parser.ValueTypeScalar {
+		return parser.ValueTypeNone, fmt.Errorf("right side of binary expression must be scalar or vector, got %v", rhs)
+	}
+
+	return parser.ValueTypeVector, nil
+}
+
 func (v *VectorMatching) Equals(other *VectorMatching) bool {
 	if v == nil && other == nil {
 		// Both are nil.

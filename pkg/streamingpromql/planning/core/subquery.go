@@ -10,6 +10,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -132,4 +133,8 @@ func (s *Subquery) OperatorFactory(children []types.Operator, timeRange types.Qu
 	o := operators.NewSubquery(inner, timeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
+}
+
+func (s *Subquery) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeMatrix, nil
 }

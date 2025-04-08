@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -55,4 +56,8 @@ func (s *StringLiteral) OperatorFactory(_ []types.Operator, _ types.QueryTimeRan
 	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition.ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
+}
+
+func (s *StringLiteral) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeString, nil
 }

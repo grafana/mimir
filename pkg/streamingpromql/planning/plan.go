@@ -10,6 +10,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -73,6 +74,11 @@ type Node interface {
 
 	// OperatorFactory returns a factory that produces operators for this node.
 	OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
+
+	// ResultType returns the kind of result this node produces.
+	//
+	// May return an error if the kind of result cannot be determined (eg. because the node references an unknown function).
+	ResultType() (parser.ValueType, error)
 
 	// FIXME: implementations for many of the above methods can be generated automatically
 }

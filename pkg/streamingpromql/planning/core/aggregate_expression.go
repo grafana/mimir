@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
@@ -166,4 +167,8 @@ func (a *AggregateExpression) OperatorFactory(children []types.Operator, timeRan
 	}
 
 	return planning.NewSingleUseOperatorFactory(o), nil
+}
+
+func (a *AggregateExpression) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeVector, nil
 }
