@@ -720,7 +720,8 @@ func (rw rw1and2RecordDeserializer) deserialize(r record, index int) parsedRecor
 
 	if isv2 {
 		rwv2 := &mimirpb.WriteRequestV2{}
-		err := rwv2.FastUnmarshal(r.content)
+		// TODO: Fast vs regular testing
+		err := rwv2.Unmarshal(r.content)
 		if err != nil {
 			parsed.err = fmt.Errorf("parsing ingest consumer write request v2: %w", err)
 		}

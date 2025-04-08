@@ -3,10 +3,12 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1257,4 +1259,73 @@ func BenchmarkRecordDeserializer(b *testing.B) {
 			}
 		}
 	})
+
+	pushes := 1000
+	b.Run("multiple deserializations v2", func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			for _ = range pushes {
+				_ = v2d.deserialize(v2r, 1)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	})
+	/*
+		pushes := 1000
+		b.Run("multiple pushes", func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				for _ = range pushes {
+					_, err := v2s.serialize(req, req.Size())
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	*/
+}
+
+func TestRepeatedSerDeser(t *testing.T) {
+	reps := 10000
+	checkpointCounter := 0
+
+	for _ = range reps {
+		// Generate a WriteRequest.
+		req := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, 10000)}
+		for i := 0; i < len(req.Timeseries); i++ {
+			req.Timeseries[i] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+		}
+
+		// Serialize it to v2
+		v2s := remoteWriteV2RecordSerializer{}
+		v2bytes, err := v2s.serialize(req, req.Size())
+		require.NoError(t, err)
+
+		// Simulate it being reallocated by franz-go.
+		v2bytesCopy := bytes.Clone(v2bytes)
+
+		v2r := record{
+			ctx:      context.Background(),
+			tenantID: "user-1",
+			content:  v2bytesCopy,
+		}
+
+		// Deserialize it from v2
+		v2d := rw1and2RecordDeserializer{}
+		rec := v2d.deserialize(v2r, 1)
+		require.NoError(t, rec.err)
+		require.Len(t, rec.Timeseries, 10000)
+
+		// Print memory stats
+		printEvery := 100
+		if checkpointCounter == printEvery {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			t.Logf("HeapAlloc: %d, HeapInuse: %d", m.HeapAlloc, m.HeapInuse)
+			checkpointCounter = 0
+		}
+		checkpointCounter++
+	}
+
 }
