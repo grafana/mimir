@@ -264,7 +264,6 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
 
 				consumeOffset = committedOff.At
-				level.Debug(s.logger).Log("msg", "found commit offset", "topic", t, "partition", partition, "offset", consumeOffset)
 			} else {
 				// Nothing committed for this partition. Rewind to fallback offset instead.
 				o, ok := fallbackOffsets.Lookup(t, partition)
