@@ -64,9 +64,10 @@ type PostingOffsetTableV1 struct {
 }
 
 func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (PostingOffsetTable, error) {
-	if indexVersion == index.FormatV1 {
+	switch indexVersion {
+	case index.FormatV1:
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound)
-	} else if indexVersion == index.FormatV2 {
+	case index.FormatV2:
 		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound, postingOffsetsInMemSampling, doChecksum)
 	}
 

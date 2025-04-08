@@ -543,8 +543,8 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
 				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/path/to/alertmanager/"
 			},
 			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/"`,
 		},
@@ -552,8 +552,8 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
 				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/subdir"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/path/to/alertmanager/subdir"
 			},
 			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/subdir"`,
 		},
@@ -561,8 +561,8 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
 				cfg.Alertmanager.DataDir = "/path/to/alertmanager/alerts"
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/path/to/alertmanager"
 			},
 			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager/alerts" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager"`,
 		},
@@ -570,16 +570,16 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
 				cfg.Alertmanager.DataDir = "/path/to/alertmanager/data"
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/path/to/alertmanager"
 			},
 		},
 		"should fail if alertmanager data directory (relative) is a subdirectory of alertmanager filesystem backend directory (absolute), and matches with the prefix used to store alertmanager config": {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
 				cfg.Alertmanager.DataDir = "./data/alertmanager"
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
-				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = filepath.Join(cwd, "data")
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = filepath.Join(cwd, "data")
 			},
 			expectedErr: fmt.Sprintf(`the configured alertmanager data directory "./data/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "%s"`, filepath.Join(cwd, "data")),
 		},
@@ -587,8 +587,8 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{Ruler}
 				cfg.Ruler.RulePath = "/path/to/ruler"
-				cfg.RulerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
-				cfg.RulerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/ruler/"
+				cfg.RulerStorage.Backend = bucket.Filesystem
+				cfg.RulerStorage.Filesystem.Directory = "/path/to/ruler/"
 			},
 			expectedErr: `the configured ruler data directory "/path/to/ruler" cannot overlap with the configured ruler storage filesystem directory "/path/to/ruler/"`,
 		},

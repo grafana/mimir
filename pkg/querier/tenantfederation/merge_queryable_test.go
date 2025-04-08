@@ -146,7 +146,7 @@ func (m *mockSeriesSet) Warnings() annotations.Annotations {
 // Select implements the storage.Querier interface.
 func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	logger, _ := spanlogger.NewWithLogger(ctx, m.logger, "mockTenantQuerier.select")
-	defer logger.Span.Finish()
+	defer logger.Finish()
 	var matrix model.Matrix
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -713,14 +713,14 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 		t.Run(scenario.mergeQueryableScenario.name, func(t *testing.T) {
 			t.Run(scenario.labelNamesTestCase.name, func(t *testing.T) {
 				ctx, reg, querier := scenario.init(t)
-				labelNames, warnings, err := querier.LabelNames(ctx, &storage.LabelHints{}, scenario.labelNamesTestCase.matchers...)
-				if scenario.labelNamesTestCase.expectedQueryErr != nil {
-					require.EqualError(t, err, scenario.labelNamesTestCase.expectedQueryErr.Error())
+				labelNames, warnings, err := querier.LabelNames(ctx, &storage.LabelHints{}, scenario.matchers...)
+				if scenario.expectedQueryErr != nil {
+					require.EqualError(t, err, scenario.expectedQueryErr.Error())
 				} else {
 					require.NoError(t, err)
-					assert.Equal(t, scenario.labelNamesTestCase.expectedLabelNames, labelNames)
-					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(scenario.labelNamesTestCase.expectedMetrics), "cortex_querier_federation_tenants_queried"))
-					assertEqualWarnings(t, scenario.labelNamesTestCase.expectedWarnings, warnings)
+					assert.Equal(t, scenario.expectedLabelNames, labelNames)
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(scenario.expectedMetrics), "cortex_querier_federation_tenants_queried"))
+					assertEqualWarnings(t, scenario.expectedWarnings, warnings)
 				}
 			})
 		})

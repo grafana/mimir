@@ -487,6 +487,11 @@ func (e errFirstRecordInFuture) Error() string {
 	return fmt.Sprintf("first record in the partition has a timestamp greater than the section end time: %s", e.recordTs.UTC().String())
 }
 
+func (e errFirstRecordInFuture) Is(err error) bool {
+	_, ok := err.(*errFirstRecordInFuture)
+	return ok
+}
+
 func (b *BlockBuilder) consumePartitionSection(
 	ctx context.Context,
 	logger log.Logger,

@@ -769,7 +769,7 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 
 		// Ensure the service is running. Some subservices used below are created when starting
 		// so they're not available before that.
-		if state := r.Service.State(); state != services.Running {
+		if state := r.State(); state != services.Running {
 			return struct{}{}, fmt.Errorf("partition reader service is not running (state: %s)", state.String())
 		}
 

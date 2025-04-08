@@ -262,14 +262,15 @@ func (p *ProxyEndpoint) executeBackendRequests(req *http.Request, backends []Pro
 		}
 
 		result, err := p.compareResponses(expectedResponse, actualResponse, evaluationTime)
-		if result == ComparisonFailed {
+		switch result {
+		case ComparisonFailed:
 			level.Error(logger).Log(
 				"msg", "response comparison failed",
 				"err", err,
 				"expected_response_duration", expectedResponse.elapsedTime,
 				"actual_response_duration", actualResponse.elapsedTime,
 			)
-		} else if result == ComparisonSkipped {
+		case ComparisonSkipped:
 			level.Warn(logger).Log(
 				"msg", "response comparison skipped",
 				"err", err,

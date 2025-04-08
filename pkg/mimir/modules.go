@@ -60,6 +60,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -97,6 +99,7 @@ const (
 	QueryFrontendCodec               string = "query-frontend-codec"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
+	QueryPlanner                     string = "query-planner"
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
 	Ruler                            string = "ruler"
@@ -208,24 +211,24 @@ func (t *Mimir) initVault() (services.Service, error) {
 
 	// Update Configs - KVStore
 	// lint:sorted
-	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Distributor.HATrackerConfig.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Ingester.IngesterPartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Compactor.ShardingRing.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Distributor.DistributorRing.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Distributor.HATrackerConfig.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ingester.IngesterPartitionRing.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ingester.IngesterRing.KVStore.Etcd.TLS.Reader = t.Vault
 	t.Cfg.MemberlistKV.TCPTransport.TLS.Reader = t.Vault
-	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.OverridesExporter.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ruler.Ring.Common.KVStore.Etcd.TLS.Reader = t.Vault
+	t.Cfg.StoreGateway.ShardingRing.KVStore.Etcd.TLS.Reader = t.Vault
 
 	// Update Configs - Redis Clients
 	// lint:sorted
-	t.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader = t.Vault
-	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
-	t.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader = t.Vault
-	t.Cfg.Frontend.QueryMiddleware.ResultsCacheConfig.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader = t.Vault
+	t.Cfg.Frontend.QueryMiddleware.Redis.TLS.Reader = t.Vault
 
 	// Update Configs - GRPC Clients
 	// lint:sorted
@@ -504,7 +507,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
-		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker,
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QueryPlanner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
@@ -664,10 +667,10 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	// The cost attribution service is only initilized if the custom registry path is provided.
 	if t.Cfg.CostAttributionRegistryPath != "" {
-		reg := prometheus.NewRegistry()
+		costAttributionReg := prometheus.NewRegistry()
 		var err error
-		t.CostAttributionManager, err = costattribution.NewManager(t.Cfg.CostAttributionCleanupInterval, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
-		t.API.RegisterCostAttribution(t.Cfg.CostAttributionRegistryPath, reg)
+		t.CostAttributionManager, err = costattribution.NewManager(t.Cfg.CostAttributionCleanupInterval, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, t.Registerer, costAttributionReg)
+		t.API.RegisterCostAttribution(t.Cfg.CostAttributionRegistryPath, costAttributionReg)
 		return t.CostAttributionManager, err
 	}
 	return nil, nil
@@ -856,6 +859,23 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}), nil
 }
 
+func (t *Mimir) initQueryPlanner() (services.Service, error) {
+	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
+		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
+
+		t.QueryPlanner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+		t.QueryPlanner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+	}
+
+	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
+	// error message in this case, indicating that query planning is disabled.
+	analysisHandler := streamingpromql.AnalysisHandler(t.QueryPlanner)
+	t.API.RegisterQueryAnalysisAPI(analysisHandler)
+
+	return nil, nil
+}
+
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// If the ruler is not configured and Mimir is running in monolithic or read-write mode, then we just skip starting the ruler.
 	if t.Cfg.isAnyModuleEnabled(Backend, All) && t.Cfg.RulerStorage.IsDefaults() {
@@ -903,7 +923,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
@@ -1191,6 +1211,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryPlanner, t.initQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
@@ -1233,10 +1254,11 @@ func (t *Mimir) setupModuleManager() error {
 		Querier:                          {TenantFederation, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
+		QueryPlanner:                     {API},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
+		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},

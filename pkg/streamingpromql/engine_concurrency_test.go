@@ -186,7 +186,7 @@ func TestConcurrentQueries(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, data)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	engine, err := NewEngine(NewTestEngineOpts(), NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	engine, err := NewEngine(NewTestEngineOpts(), NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Populate the expected result for each query.

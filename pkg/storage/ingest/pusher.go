@@ -100,7 +100,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := parsed.WriteRequest.Unmarshal(r.content)
+			err := parsed.Unmarshal(r.content)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}
@@ -447,7 +447,7 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 	// By design of the queue, we must drain the queue, otherwise a deadlock could happen.
 	for wr := range queue.Channel() {
 		p.metrics.batchAge.Observe(time.Since(wr.startedAt).Seconds())
-		p.metrics.timeSeriesPerFlush.Observe(float64(len(wr.WriteRequest.Timeseries)))
+		p.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 		processingStart := time.Now()
 
 		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
