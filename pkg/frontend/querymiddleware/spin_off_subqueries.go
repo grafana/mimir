@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -127,11 +128,9 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	for _, tenantID := range tenantIDs {
-		if !s.limits.SubquerySpinOffEnabled(tenantID) {
-			spanLog.DebugLog("msg", "subquery spin-off is disabled for this tenant")
-			return s.next.Do(ctx, req)
-		}
+	if !validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.SubquerySpinOffEnabled) {
+		spanLog.DebugLog("msg", "subquery spin-off is disabled for this tenant")
+		return s.next.Do(ctx, req)
 	}
 
 	// Increment total number of instant queries attempted to spin-off subqueries from.
