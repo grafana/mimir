@@ -54,7 +54,6 @@ func (d *EliminateCommonSubexpressions) Name() string {
 // b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
 
 func (d *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
-	// FIXME: there's certainly a more efficient way to do this
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
 	// - introduce "TimeRange(parent types.QueryTimeRange) types.QueryTimeRange" method on Node?
 	// FIXME: when expression is something like (a + b) / (a + b), we'll do some duplicate work or potentially do the wrong thing:
@@ -264,7 +263,6 @@ func (p *path) ChildIndexAtOffsetFromLeaf(offset int) int {
 	return p.childIndices[len(p.nodes)-offset-1]
 }
 
-// TODO: pooling?
 func (p *path) Clone() *path {
 	return &path{
 		nodes:        slices.Clone(p.nodes),
