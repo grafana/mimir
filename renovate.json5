@@ -57,5 +57,6 @@
       "enabled": true,
       "labels": ["security-update"]
     },
-    "osvVulnerabilityAlerts": true
+    "osvVulnerabilityAlerts": true,
+    "dependencyDashboard": false
 }
