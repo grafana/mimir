@@ -125,7 +125,12 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 	return r, nil
 }
 
-// Stop implements fetcher
+// Start implements fetcher.
+func (r *PartitionReader) Start(context.Context) {
+	// Given the partition reader has no concurrency it doesn't support starting anything.
+}
+
+// Stop implements fetcher.
 func (r *PartitionReader) Stop() {
 	// Given the partition reader has no concurrency it doesn't support stopping anything.
 }
@@ -245,6 +250,8 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
+		f.Start(ctx)
+
 		r.setFetcher(f)
 	} else {
 		// When concurrent fetch is disabled we read records directly from the Kafka client, so we want it

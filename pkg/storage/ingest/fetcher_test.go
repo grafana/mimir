@@ -326,7 +326,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// This should not block forever now
 		fetches, fetchCtx := fetchers.PollFetches(ctx)
@@ -350,7 +350,7 @@ func TestConcurrentFetchers(t *testing.T) {
 			produceRecord(ctx, t, client, topicName, partitionID, []byte(fmt.Sprintf("record-%d", i)))
 		}
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		fetches := longPollFetches(fetchers, 5, 2*time.Second)
 		assert.Equal(t, fetches.NumRecords(), 5)
@@ -368,7 +368,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// Produce some records after starting the fetchers
 		for i := 0; i < 3; i++ {
@@ -389,7 +389,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// Produce some records
 		for i := 0; i < 5; i++ {
@@ -440,7 +440,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// Produce some records
 		for i := 0; i < 10; i++ {
@@ -471,7 +471,7 @@ func TestConcurrentFetchers(t *testing.T) {
 				_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 				client := newKafkaProduceClient(t, clusterAddr)
 
-				fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+				fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 				// Produce some records
 				for i := 0; i < 20; i++ {
@@ -507,7 +507,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		lastOffset := produceRecord(ctx, t, client, topicName, partitionID, []byte("last-initial-record"))
 
 		// Start fetchers from the offset after the initial records
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, lastOffset-1, concurrency, 0, true)
 
 		// Produce some more records
 		for i := 0; i < 3; i++ {
@@ -542,7 +542,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		for round := 0; round < 3; round++ {
 			t.Log("starting round", round)
@@ -587,7 +587,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// Produce enough records to saturate each fetcher.
 		const initiallyProducedRecords = concurrency * 10
@@ -648,7 +648,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		fetchRequestCount := atomic.NewInt64(0)
 		maxRequestedOffset := atomic.NewInt64(-1)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// Produce initial records
 		var producedRecordsBytes [][]byte
@@ -770,7 +770,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		client := newKafkaProduceClient(t, clusterAddr)
 
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0, true)
 
 		// Produce some records.
 		for i := 0; i < 10; i++ {
@@ -818,7 +818,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		}
 
 		// Create fetchers with tracking of uncompressed bytes
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true)
 
 		// Wait for buffered records to stabilize, we expect that they stabilize because the limit is in effect.
 		waitForStableBufferedRecords(t, fetchers)
@@ -874,7 +874,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		client := newKafkaProduceClient(t, clusterAddr)
 
 		// Create fetchers early to ensure we don't miss any records
-		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes)
+		fetchers, _ := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, maxInflightBytes, true)
 
 		// Produce large records
 		largeValue := bytes.Repeat([]byte{'a'}, largeRecordSize)
@@ -943,7 +943,9 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			ctx                  = context.Background()
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
 			client               = newKafkaProduceClient(t, clusterAddr)
-			fetchers, reg        = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+
+			// Do not start the fetchers, because we want to be in control of the single Fetch request.
+			fetchers, reg = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0, false)
 		)
 		t.Cleanup(cluster.Close)
 
@@ -1066,7 +1068,9 @@ func TestConcurrentFetchers_parseFetchResponse(t *testing.T) {
 		ctx            = context.Background()
 		_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
 		client         = newKafkaProduceClient(t, clusterAddr)
-		fetchers, _    = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+
+		// Do not start the fetchers because we want to test a single function in isolation.
+		fetchers, _ = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0, false)
 	)
 
 	t.Run("should return error if the response does not contain any topic", func(t *testing.T) {
@@ -1178,7 +1182,7 @@ func TestFetchResult_Merge(t *testing.T) {
 	})
 }
 
-func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32) (*concurrentFetchers, prometheus.Gatherer) {
+func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Client, topic string, partition int32, startOffset int64, concurrency int, maxInflightBytes int32, start bool) (*concurrentFetchers, prometheus.Gatherer) {
 	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
@@ -1211,7 +1215,11 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 		&metrics,
 	)
 	require.NoError(t, err)
-	t.Cleanup(f.Stop)
+
+	if start {
+		f.Start(ctx)
+		t.Cleanup(f.Stop)
+	}
 
 	return f, reg
 }
