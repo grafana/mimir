@@ -424,20 +424,30 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 	start, resume, end int64, boundaryTime time.Time, jobSize time.Duration,
 	minScanTime time.Time, logger log.Logger) ([]*schedulerpb.JobSpec, error) {
 
+	// This routine begins at the given boundary time and iterates backwards by jobSize,
+	// stopping when we've crossed the committed offset or the min scan time.
+	//
+	// The general idea is that we know the commit offset, but we don't know
+	// whether that commit is hour-aligned. By picking an hour-aligned boundary
+	// time, we can create jobs that *are* generally hour-aligned.
+
 	if resume >= end || start >= end {
 		// No new data to consume.
 		return []*schedulerpb.JobSpec{}, nil
 	}
 
-	// boundaryTime is intended to be exclusive. (i.e., consume up to but not including 11:00 AM.)
-	// Subtract 1ms to turn it into an inclusive boundary for fetching start offsets.
+	// ListOffsetsAfterMilli will return all offsets strictly after some time.
+	// Any time we're asking for offsets for a time, we subtract 1ms so that the
+	// returned offset has a timestamp greater than or equal to whatever time we're
+	// interested in.
 
 	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
 	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
 	if err != nil {
 		return nil, err
 	}
-	level.Debug(logger).Log("msg", "found window-end offset", "ts", boundaryTime, "topic", topic, "partition", partition, "offset", windowEndOffset)
+	level.Debug(logger).Log("msg", "found window-end offset", "ts", boundaryTime,
+		"topic", topic, "partition", partition, "offset", windowEndOffset)
 
 	if resume >= windowEndOffset {
 		// No new data to consume.
@@ -453,7 +463,8 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 		if err != nil {
 			return nil, err
 		}
-		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb, "topic", topic, "partition", partition, "offset", off)
+		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb,
+			"topic", topic, "partition", partition, "offset", off)
 
 		if off >= windowEndOffset {
 			// Found an offset later than our boundary time. Keep looking.
