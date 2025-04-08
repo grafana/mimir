@@ -270,12 +270,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.max-partial-query-length":                      "30d",
-		"-query-frontend.cache-results":                          "true",
-		"-query-frontend.results-cache.backend":                  "memcached",
-		"-query-frontend.results-cache.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":                    strconv.FormatBool(cfg.queryStatsEnabled),
-		"-query-frontend.instant-queries-with-subquery-spin-off": ".*",
+		"-querier.max-partial-query-length":                 "30d",
+		"-query-frontend.cache-results":                     "true",
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.subquery-spin-off-enabled":         "true",
 	})
 
 	// Start the query-scheduler if enabled.
