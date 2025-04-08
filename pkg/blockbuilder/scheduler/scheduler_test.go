@@ -152,6 +152,58 @@ func TestStartup(t *testing.T) {
 	require.Equal(t, "ingest/65/256", a1key.id)
 }
 
+// Verify that we skip jobs that are before the committed offset due to extraneous bug situations.
+func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode()
+	// Add some jobs, then move the committed offsets past some of them.
+	s1 := &schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   1,
+		StartOffset: 256,
+		EndOffset:   9111,
+	}
+	s2 := &schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   2,
+		StartOffset: 50,
+		EndOffset:   128,
+	}
+	s3 := &schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   2,
+		StartOffset: 700,
+		EndOffset:   900,
+	}
+
+	sched.addOrUpdateJobs(s1, s2, s3)
+
+	require.Equal(t, 3, sched.jobs.count())
+
+	sched.advanceCommittedOffset("ingest", 1, 256)
+	sched.advanceCommittedOffset("ingest", 2, 500)
+
+	// Advancing offsets doesn't actually remove any jobs.
+	require.Equal(t, 3, sched.jobs.count())
+
+	var assignedJobs []*schedulerpb.JobSpec
+
+	for {
+		_, s, err := sched.assignJob("big-time-worker-64")
+		if errors.Is(err, errNoJobAvailable) {
+			break
+		}
+		require.NoError(t, err)
+		assignedJobs = append(assignedJobs, &s)
+	}
+
+	require.ElementsMatch(t,
+		[]*schedulerpb.JobSpec{s1, s3}, assignedJobs,
+		"s2 should be skipped because its start offset is behind p2's committed offset",
+	)
+}
+
 func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	// Initially we're in observation mode. We have Kafka's start offsets, but no client jobs.

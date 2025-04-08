@@ -193,9 +193,14 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		return
 	}
 
-	// Job computation was based on a snapshot of the committed offsets that may
-	// have changed. Nix any jobs that are now before the committed offsets.
+	s.addOrUpdateJobs(jobs...)
+}
+
+func (s *BlockBuilderScheduler) addOrUpdateJobs(jobs ...*schedulerpb.JobSpec) {
 	s.mu.Lock()
+	// Filter out any jobs that are now before the committed offsets, as we
+	// cannot afford to hold the scheduler lock during the entirety of job
+	// computation.
 	jobs = filterJobsBeforeCommittedOffsets(jobs, s.committed)
 	s.mu.Unlock()
 
@@ -650,13 +655,13 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			return k, spec, err
 		}
 
-		off, ok := s.committed.Lookup(spec.Topic, spec.Partition)
-		if !ok || spec.StartOffset >= off.At {
-			return k, spec, nil
+		if c, ok := s.committed.Lookup(spec.Topic, spec.Partition); ok && spec.StartOffset < c.At {
+			// Job is before the committed offset. Remove it.
+			s.jobs.removeJob(k)
+			continue
 		}
 
-		// Job is before the committed offset. Remove it.
-		s.jobs.removeJob(k)
+		return k, spec, nil
 	}
 }
 
