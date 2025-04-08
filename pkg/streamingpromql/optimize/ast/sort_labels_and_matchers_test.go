@@ -162,7 +162,11 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 
 		result, err := sortLabelsAndMatchers.Apply(context.Background(), expr)
 		require.NoError(t, err)
-		require.Equal(t, expected, result)
+
+		// Compare the expected and result expressions formatted as strings for clearer diffs.
+		// Note that we can't use the VectorSelector and MatrixSelector String() methods because these
+		// sort the matchers when printing.
+		require.Equal(t, formatSelector(expected), formatSelector(result))
 	}
 
 	for input, expected := range testCases {
@@ -182,5 +186,17 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		t.Run(matrixSelector, func(t *testing.T) {
 			run(t, matrixSelector, matrixSelectorExpected)
 		})
+	}
+}
+
+func formatSelector(expr parser.Expr) string {
+	switch e := expr.(type) {
+	case *parser.VectorSelector:
+		return fmt.Sprintf("%v, name=%q, position=%v", e.LabelMatchers, e.Name, e.PositionRange())
+	case *parser.MatrixSelector:
+		vs := e.VectorSelector.(*parser.VectorSelector)
+		return fmt.Sprintf("%v, name=%q, range=%v, position=%v", vs.LabelMatchers, vs.Name, e.Range, e.PositionRange())
+	default:
+		panic(fmt.Sprintf("unexpected expression type: %T", expr))
 	}
 }
