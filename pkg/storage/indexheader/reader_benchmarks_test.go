@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -188,47 +189,82 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 }
 
 func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
-	ctx := context.Background()
+	testCases := []struct {
+		numLabelNames  int
+		numLabelValues int
+		numConcurrent  int
+	}{
+		{1, 10, 1},
+		{10, 10, 1},
+		{10, 100, 1},
+		{10, 1000, 1},
+		{1, 10, 16},
+		{10, 10, 16},
+		{10, 100, 16},
+		{10, 1000, 16},
+		{1, 10, 32},
+		{10, 10, 32},
+		{10, 100, 32},
+		{10, 1000, 32},
+	}
+	for _, tc := range testCases {
+		ctx := context.Background()
 
-	bucketDir := b.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
-	require.NoError(b, err)
-	b.Cleanup(func() {
-		require.NoError(b, bkt.Close())
-	})
+		bucketDir := b.TempDir()
+		bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, bkt.Close())
+		})
 
-	nameSymbols := generateSymbols("name", 10)
-	valueSymbols := generateSymbols("value", 100)
-	idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
+		nameSymbols := generateSymbols("name", tc.numLabelNames)
+		valueSymbols := generateSymbols("value", tc.numLabelValues)
+		idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+		require.NoError(b, err)
+		require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
-	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+		indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+		require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
-	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, br.Close()) })
+		br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+		require.NoError(b, err)
+		b.Cleanup(func() { require.NoError(b, br.Close()) })
 
-	names, err := br.LabelNames(ctx)
-	require.NoError(b, err)
+		names, err := br.LabelNames(ctx)
+		require.NoError(b, err)
 
-	rand.Shuffle(len(names), func(i, j int) {
-		names[i], names[j] = names[j], names[i]
-	})
+		rand.Shuffle(len(names), func(i, j int) {
+			names[i], names[j] = names[j], names[i]
+		})
 
-	b.Run(fmt.Sprintf("%vNames%vValues", len(nameSymbols), len(valueSymbols)), func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			name := names[i%len(names)]
+		b.Run(fmt.Sprintf("numNames=%v/numValues=%v/numConcurrent=%v", len(nameSymbols), len(valueSymbols), tc.numConcurrent), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				startChan := make(chan struct{})
+				runFunc := func() {
+					name := names[i%len(names)]
 
-			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
-				return true
-			})
+					values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
+						return true
+					})
 
-			require.NoError(b, err)
-			require.NotEmpty(b, values)
-		}
-	})
+					require.NoError(b, err)
+					require.NotEmpty(b, values)
+				}
+				wg := sync.WaitGroup{}
+				for j := 0; j < tc.numConcurrent; j++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						<-startChan
+						runFunc()
+					}()
+				}
+				close(startChan)
+				wg.Wait()
+			}
+		})
+
+	}
 }
 
 func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
