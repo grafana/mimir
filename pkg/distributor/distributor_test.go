@@ -6591,7 +6591,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
 				Chunkseries: []client.TimeSeriesChunk{
 					{
-						Labels: ts.Labels,
+						Labels: slices.Clone(ts.Labels), // Clone labels to avoid data races between reading label values in this mock ingester and cloning them in receiveResponse().
 						Chunks: wireChunks,
 					},
 				},
