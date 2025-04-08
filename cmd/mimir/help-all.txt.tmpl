@@ -2381,8 +2381,6 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
-  -query-frontend.instant-queries-with-subquery-spin-off comma-separated-list-of-strings
-    	[experimental] List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings
@@ -2539,6 +2537,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+  -query-frontend.subquery-spin-off-enabled
+    	[experimental] Enable spinning off subqueries from instant queries as range queries to optimize their performance.
   -query-frontend.use-active-series-decoder
     	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-scheduler.grpc-client-config.backoff-max-period duration

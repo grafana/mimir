@@ -203,7 +203,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	downstreamErr := errors.Errorf("some err")
 	downstream := mockHandlerWith(nil, downstreamErr)
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
 
 	// Run the query with subquery spin-off middleware wrapping the downstream one.
 	// We expect to get the downstream error.
@@ -320,7 +320,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			reg := prometheus.NewPedanticRegistry()
 			spinoffMiddleware := newSpinOffSubqueriesMiddleware(
 				mockLimits{
-					instantQueriesWithSubquerySpinOff: []string{".*"},
+					subquerySpinOffEnabled: true,
 				},
 				log.NewNopLogger(),
 				engine,

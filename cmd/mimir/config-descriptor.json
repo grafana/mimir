@@ -4930,13 +4930,13 @@
         },
         {
           "kind": "field",
-          "name": "instant_queries_with_subquery_spin_off",
+          "name": "subquery_spin_off_enabled",
           "required": false,
-          "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "desc": "Enable spinning off subqueries from instant queries as range queries to optimize their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.instant-queries-with-subquery-spin-off",
-          "fieldType": "string",
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
