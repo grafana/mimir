@@ -24,6 +24,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -40,7 +42,7 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
-	return &QueryPlanner{
+	planner := &QueryPlanner{
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
@@ -48,6 +50,19 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 			NativeHistogramBucketFactor: 1.1,
 		}, []string{"stage_type", "stage"}),
 	}
+
+	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
+	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
+	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
+	//  2. We don't want to register these optimization passes in queriers.
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+
+	if opts.EnableCommonSubexpressionElimination {
+		planner.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
+	}
+
+	return planner
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
