@@ -34,6 +34,7 @@ type (
 		batches []partBatch
 		dir     string
 
+		p                int32 // partition number
 		highWatermark    int64
 		lastStableOffset int64
 		logStartOffset   int64
@@ -111,7 +112,8 @@ func (d *data) mkt(t string, nparts int, nreplicas int, configs map[string]*stri
 		d.tcfgs[t] = configs
 	}
 	for i := 0; i < nparts; i++ {
-		d.tps.mkp(t, int32(i), d.c.newPartData)
+		p := int32(i)
+		d.tps.mkp(t, p, d.c.newPartData(p))
 	}
 }
 
@@ -122,12 +124,15 @@ func (c *Cluster) noLeader() *broker {
 	}
 }
 
-func (c *Cluster) newPartData() *partData {
-	return &partData{
-		dir:       defLogDir,
-		leader:    c.bs[rand.Intn(len(c.bs))],
-		watch:     make(map[*watchFetch]struct{}),
-		createdAt: time.Now(),
+func (c *Cluster) newPartData(p int32) func() *partData {
+	return func() *partData {
+		return &partData{
+			p:         p,
+			dir:       defLogDir,
+			leader:    c.bs[rand.Intn(len(c.bs))],
+			watch:     make(map[*watchFetch]struct{}),
+			createdAt: time.Now(),
+		}
 	}
 }
 

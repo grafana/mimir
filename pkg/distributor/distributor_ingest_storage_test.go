@@ -262,8 +262,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	limits := prepareDefaultLimits()
 	limits.MaxLabelValueLength = hugeLabelValueLength
 
-	overrides, err := validation.NewOverrides(*limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(*limits, nil)
 
 	testConfig := prepConfig{
 		numDistributors:         1,

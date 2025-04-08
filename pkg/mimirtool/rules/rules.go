@@ -233,13 +233,13 @@ func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode) []error {
 
 	for i, g := range r.Groups {
 		if g.Name == "" {
-			errs = append(errs, fmt.Errorf("Groupname should not be empty"))
+			errs = append(errs, fmt.Errorf("group name should not be empty"))
 		}
 
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
-				fmt.Errorf("groupname: \"%s\" is repeated in the same namespace", g.Name),
+				fmt.Errorf("group name: %q is repeated in the same namespace", g.Name),
 			)
 		}
 

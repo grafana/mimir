@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
@@ -623,10 +624,14 @@ route:
 }
 
 func TestGrafanaAlertmanager(t *testing.T) {
+	limits := mockAlertManagerLimits{
+		emailNotificationRateLimit: rate.Inf,
+	}
+
 	am, err := New(&Config{
 		UserID:            "test",
 		Logger:            log.NewNopLogger(),
-		Limits:            &mockAlertManagerLimits{},
+		Limits:            &limits,
 		Features:          featurecontrol.NoopFlags{},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},

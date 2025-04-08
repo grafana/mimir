@@ -207,7 +207,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	}
 
 	// We need to update the manager only if it was just created or rules on disk have changed.
-	if !(created || update) {
+	if !created && !update {
 		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
 		return
 	}

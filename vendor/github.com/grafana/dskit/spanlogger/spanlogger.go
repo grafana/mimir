@@ -137,7 +137,7 @@ func (s *SpanLogger) spanLog(kvps ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	s.Span.LogFields(fields...)
+	s.LogFields(fields...)
 	return nil
 }
 
@@ -147,7 +147,7 @@ func (s *SpanLogger) Error(err error) error {
 		return err
 	}
 	ext.Error.Set(s.Span, true)
-	s.Span.LogFields(otlog.Error(err))
+	s.LogFields(otlog.Error(err))
 	return err
 }
 
@@ -183,7 +183,7 @@ func (s *SpanLogger) getLogger() log.Logger {
 // It is safe to call this method at the same time as calling other SpanLogger methods, however, this may produce
 // inconsistent results (eg. some log lines may be emitted with the provided key/value pair, and others may not).
 func (s *SpanLogger) SetSpanAndLogTag(key string, value interface{}) {
-	s.Span.SetTag(key, value)
+	s.SetTag(key, value)
 
 	logger := s.getLogger()
 	wrappedLogger := log.With(logger, key, value)

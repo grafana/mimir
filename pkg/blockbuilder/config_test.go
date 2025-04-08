@@ -97,15 +97,14 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	// Block storage related options.
 	flagext.DefaultValues(&cfg.BlocksStorage)
-	cfg.BlocksStorage.Bucket.StorageBackendConfig.Backend = bucket.Filesystem
+	cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
 	cfg.BlocksStorage.Bucket.Filesystem.Directory = t.TempDir()
 
 	limits := defaultLimitsTestConfig()
 	limits.OutOfOrderTimeWindow = 2 * model.Duration(time.Hour)
 	limits.OutOfOrderBlocksExternalLabelEnabled = true // Needed to reproduce a panic.
 	limits.NativeHistogramsIngestionEnabled = true
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(limits, nil)
 
 	return cfg, overrides
 }

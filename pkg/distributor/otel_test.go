@@ -351,11 +351,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	limits, err := validation.NewOverrides(
-		validation.Limits{},
-		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-	)
-	require.NoError(b, err)
+	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -798,13 +794,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
 			}
-			limits, err := validation.NewOverrides(
+			limits := validation.NewOverrides(
 				validation.Limits{},
 				validation.NewMockTenantLimits(map[string]*validation.Limits{
 					"test": testLimits,
 				}),
 			)
-			require.NoError(t, err)
 			pusher := func(_ context.Context, pushReq *Request) error {
 				t.Helper()
 				t.Cleanup(pushReq.CleanUp)
@@ -884,11 +879,10 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
-	limits, err := validation.NewOverrides(
+	limits := validation.NewOverrides(
 		validation.Limits{},
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
-	require.NoError(t, err)
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
@@ -930,11 +924,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
-	limits, err := validation.NewOverrides(
-		validation.Limits{},
-		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-	)
-	require.NoError(t, err)
+	limits := validation.MockDefaultOverrides()
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()

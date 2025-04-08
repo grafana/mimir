@@ -72,8 +72,8 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 				require.NoError(t, cfg.Target.Set("ruler"))
 
 				// Configure alertmanager storage to fail, but expect to succeed.
-				cfg.AlertmanagerStorage.Config.Backend = bucket.GCS
-				cfg.AlertmanagerStorage.Config.GCS.BucketName = "invalid"
+				cfg.AlertmanagerStorage.Backend = bucket.GCS
+				cfg.AlertmanagerStorage.GCS.BucketName = "invalid"
 			},
 			expected: "",
 		},
