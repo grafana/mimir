@@ -131,6 +131,8 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 }
 
 func (f *FunctionCall) ResultType() (parser.ValueType, error) {
+	// absent and absent_over_time are special cases that aren't present in InstantVectorFunctionOperatorFactories,
+	// so we have to handle them specifically.
 	if _, ok := functions.InstantVectorFunctionOperatorFactories[f.FunctionName]; ok || f.FunctionName == "absent" || f.FunctionName == "absent_over_time" {
 		return parser.ValueTypeVector, nil
 	}
