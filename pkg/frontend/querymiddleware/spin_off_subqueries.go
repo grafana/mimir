@@ -129,7 +129,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	}
 
 	if !validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.SubquerySpinOffEnabled) {
-		spanLog.DebugLog("msg", "subquery spin-off is disabled for this tenant")
+		spanLog.DebugLog("msg", "subquery spin-off is disabled for a tenant", "tenant_ids", tenantIDs)
 		return s.next.Do(ctx, req)
 	}
 
