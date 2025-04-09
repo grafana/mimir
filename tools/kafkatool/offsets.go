@@ -11,6 +11,13 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+const (
+	offsetTypeStart     = "start"
+	offsetTypeCommitted = "committed"
+	offsetTypeEnd       = "end"
+	offsetTypeAfterMs   = "after_ms"
+)
+
 // OffsetsCommand allows inspecting offsets for a given topic.
 type OffsetsCommand struct {
 	getKafkaClient func() *kgo.Client
@@ -29,7 +36,7 @@ func (c *OffsetsCommand) Register(app *kingpin.Application, getKafkaClient func(
 	cmd := app.Command("offsets", "Describes offsets for a given topic and partition.")
 	listOffsetsCmd := cmd.Command("list", "List all offsets of a given topic and partition.").Action(c.listOffsets)
 	listOffsetsCmd.Flag("topic", "Kafka topic to dump").Required().StringVar(&c.topic)
-	listOffsetsCmd.Flag("type", "offset type to list").Default("end").EnumVar(&c.offsetType, "start", "committed", "end", "after_ms")
+	listOffsetsCmd.Flag("type", "offset type to list").Default(offsetTypeEnd).EnumVar(&c.offsetType, offsetTypeStart, offsetTypeCommitted, offsetTypeEnd, offsetTypeAfterMs)
 	listOffsetsCmd.Flag("millis", "millisecond timestamp to list offsets after when --type=after_ms").Int64Var(&c.millis)
 }
 
@@ -62,13 +69,13 @@ func fetchOffsets(adm *kadm.Client, topic string, t string, milli int64) (kadm.L
 	var err error
 
 	switch t {
-	case "start":
+	case offsetTypeStart:
 		offs, err = adm.ListStartOffsets(context.Background(), topic)
-	case "end":
+	case offsetTypeEnd:
 		offs, err = adm.ListEndOffsets(context.Background(), topic)
-	case "committed":
+	case offsetTypeCommitted:
 		offs, err = adm.ListCommittedOffsets(context.Background(), topic)
-	case "after_ms":
+	case offsetTypeAfterMs:
 		offs, err = adm.ListOffsetsAfterMilli(context.Background(), milli, topic)
 	}
 	if err != nil {
