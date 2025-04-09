@@ -3,8 +3,6 @@
 package aggregations
 
 import (
-	"strings"
-
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -40,30 +38,6 @@ var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
 //
 // Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
 var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
-
-// The aggregation names are not exported, but their item types are. It's safe to assume the names will not change.
-// (ie, "avg" will be parser.AVG).
-var aggregationItemKey = map[string]parser.ItemType{
-	"avg":          parser.AVG,
-	"bottomk":      parser.BOTTOMK,
-	"count_values": parser.COUNT_VALUES,
-	"count":        parser.COUNT,
-	"group":        parser.GROUP,
-	"limit_ratio":  parser.LIMIT_RATIO,
-	"limitk":       parser.LIMITK,
-	"max":          parser.MAX,
-	"min":          parser.MIN,
-	"quantile":     parser.QUANTILE,
-	"stddev":       parser.STDDEV,
-	"stdvar":       parser.STDVAR,
-	"sum":          parser.SUM,
-	"topk":         parser.TOPK,
-}
-
-func GetAggregationItemType(aggregation string) (parser.ItemType, bool) {
-	item, ok := aggregationItemKey[strings.ToLower(aggregation)]
-	return item, ok
-}
 
 // SeriesToGroupLabelsBytesFunc is a function that computes a string-like representation of the output group labels for the given input series.
 //
