@@ -146,7 +146,7 @@ func NewOverridesExporter(
 	log log.Logger,
 	registerer prometheus.Registerer,
 ) (*OverridesExporter, error) {
-	enabledMetrics := util.NewAllowedTenants(config.EnabledMetrics, nil)
+	enabledMetrics := util.NewAllowList(config.EnabledMetrics, nil)
 
 	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
@@ -180,7 +180,7 @@ func NewOverridesExporter(
 	return exporter, nil
 }
 
-func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []ExportedMetric) []ExportedMetric {
+func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []ExportedMetric) []ExportedMetric {
 	var exportedMetrics []ExportedMetric
 
 	// Write path limits
