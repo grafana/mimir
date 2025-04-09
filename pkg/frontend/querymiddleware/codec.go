@@ -1054,11 +1054,27 @@ func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *ht
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
+		Body: &prometheusReadCloser{
+			Reader:    bytes.NewBuffer(b),
+			finalizer: res.Close,
+		},
 		StatusCode:    http.StatusOK,
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
+}
+
+// prometheusReadCloser wraps an io.Reader and executes finalizer on Close
+type prometheusReadCloser struct {
+	io.Reader
+	finalizer func()
+}
+
+func (prc *prometheusReadCloser) Close() error {
+	if prc.finalizer != nil {
+		prc.finalizer()
+	}
+	return nil
 }
 
 func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {

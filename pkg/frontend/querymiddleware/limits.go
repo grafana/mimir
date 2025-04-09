@@ -266,10 +266,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	// TODO Check if it's safe to close the response here. I suspect EncodeMetricsQueryResponse does not do a deep copy and thus it is not yet safe.
-	// We'll likely need to wrap the encoded response with a closer
-	response.Close()
-
+	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
