@@ -18,6 +18,9 @@ type AggregationGroup interface {
 	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
 	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
+	// Close releases any resources held by the group.
+	// Close is guaranteed to be called at most once per group.
+	Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker)
 }
 
 type AggregationGroupFactory func() AggregationGroup

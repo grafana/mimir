@@ -299,13 +299,15 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 		}
 	}
 
+	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
+}
+
+func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
+	types.BoolSlicePool.Put(g.incrementalMeans, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(g.histograms, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.incrementalMeans, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-
-	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
 }

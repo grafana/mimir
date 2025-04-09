@@ -236,6 +236,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 		a.haveEmittedMixedFloatsAndHistogramsWarning = true
 	}
 
+	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
 	return seriesData, nil
 }
@@ -272,6 +273,13 @@ func (a *Aggregation) Close() {
 	// The wrapping operator is responsible for returning any a.ParamData slice
 	// since it is responsible for setting them up.
 	a.Inner.Close()
+
+	for _, g := range a.remainingGroups {
+		g.aggregation.Close(a.MemoryConsumptionTracker)
+		groupPool.Put(g)
+	}
+
+	a.remainingGroups = nil
 }
 
 type groupSorter struct {

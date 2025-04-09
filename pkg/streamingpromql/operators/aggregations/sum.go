@@ -201,10 +201,12 @@ func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 		}
 	}
 
+	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
+}
+
+func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.Float64SlicePool.Put(g.floatSums, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(g.floatCompensatingValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
-
-	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
 }
