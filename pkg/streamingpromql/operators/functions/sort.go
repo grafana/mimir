@@ -161,5 +161,9 @@ func (s *Sort) ExpressionPosition() posrange.PositionRange {
 func (s *Sort) Close() {
 	s.Inner.Close()
 
-	// We don't need to do anything with s.allData here: we passed ownership of the data to the calling operator when we returned it in NextSeries.
+	// Return any remaining data to the pool.
+	for s.seriesReturned < len(s.allData) {
+		types.PutInstantVectorSeriesData(s.allData[s.seriesReturned], s.MemoryConsumptionTracker)
+		s.seriesReturned++
+	}
 }
