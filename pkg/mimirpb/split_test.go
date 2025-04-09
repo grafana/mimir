@@ -175,6 +175,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"SkipLabelValidation",
 		"SkipLabelCountValidation",
 		"skipUnmarshalingExemplars",
+		"unmarshalFromRW2",
 		"rw2symbols",
 	}, fieldNames)
 }

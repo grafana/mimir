@@ -50,7 +50,7 @@ func (ps *rw2PagedSymbols) releasePages() {
 		*page = (*page)[:0]
 		rw2PagedSymbolsPool.Put(page)
 	}
-	ps.pages = ps.pages[:0]
+	ps.pages = nil
 	ps.count = 0
 }
 
