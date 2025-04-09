@@ -66,6 +66,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] `kafkatool`: Add `offsets` command for querying various partition offsets. #11115
+
 ## 2.16.0
 
 ### Grafana Mimir
