@@ -118,9 +118,8 @@ type Limits interface {
 	// IngestStorageReadConsistency returns the default read consistency for the tenant.
 	IngestStorageReadConsistency(userID string) string
 
-	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
-	// If the list is empty, the feature is disabled.
-	InstantQueriesWithSubquerySpinOff(userID string) []string
+	// SubquerySpinOffEnabled returns if the feature of spinning off subqueries from instant queries as range queries is enabled.
+	SubquerySpinOffEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {

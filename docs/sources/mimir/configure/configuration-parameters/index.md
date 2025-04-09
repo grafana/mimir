@@ -1623,10 +1623,15 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
-  # (experimental) Comma-separated list of function names to disable support
-  # for. Only applies if MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.disabled-functions
-  [disabled_functions: <string> | default = ""]
+  features:
+    # (experimental) Comma-separated list of function names to disable support
+    # for. Only applies if MQE is in use.
+    # CLI flag: -querier.mimir-query-engine.disabled-functions
+    [disabled_functions: <string> | default = ""]
+
+  # (experimental) Use query planner when evaluating queries.
+  # CLI flag: -querier.mimir-query-engine.use-query-planning
+  [use_query_planning: <boolean> | default = false]
 ```
 
 ### frontend
@@ -3698,11 +3703,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.prom2-range-compat
 [prom2_range_compat: <boolean> | default = false]
 
-# (experimental) List of regular expression patterns matching instant queries.
-# Subqueries within those instant queries will be spun off as range queries to
-# optimize their performance.
-# CLI flag: -query-frontend.instant-queries-with-subquery-spin-off
-[instant_queries_with_subquery_spin_off: <string> | default = ""]
+# (experimental) Enable spinning off subqueries from instant queries as range
+# queries to optimize their performance.
+# CLI flag: -query-frontend.subquery-spin-off-enabled
+[subquery_spin_off_enabled: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

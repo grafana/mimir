@@ -3,9 +3,9 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
-FROM alpine/helm:3.14.4 as helm
-FROM golang:1.23.7-bookworm
+FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
+FROM alpine/helm:3.17.2 AS helm
+FROM golang:1.24.2-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -48,7 +48,7 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
-	go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
 	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
 	go install github.com/fatih/faillint@v1.15.0 && \
