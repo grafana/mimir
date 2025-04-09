@@ -26,6 +26,11 @@ message WriteRequest {
   SourceEnum Source = 2;
   repeated MetricMetadata metadata = 3 [(gogoproto.nullable) = true];
 
+  // Remote Write 2.0 specific fields. Only used when the extra internal
+  // field UnmarshalFromRW2 is true.
+  repeated string symbolsRW2 = 4;
+  repeated TimeSeriesRW2 timeseriesRW2 = 5 [(gogoproto.nullable) = false];
+
   // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
 
   // Skip validation of label names and values.

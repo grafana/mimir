@@ -111,7 +111,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Query the metadata
-	metadataResult, err := c.GetPrometheusMetadata()
+	metadataResult, err := c.GetPrometheusMetadata("")
 	require.NoError(t, err)
 	require.Equal(t, 200, metadataResult.StatusCode)
 
@@ -178,7 +178,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 		}
 	`, sfx, sfx)
 
-	metadataResult, err = c.GetPrometheusMetadata()
+	metadataResult, err = c.GetPrometheusMetadata("")
 	require.NoError(t, err)
 	require.Equal(t, 200, metadataResult.StatusCode)
 

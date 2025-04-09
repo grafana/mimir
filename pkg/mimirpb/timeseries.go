@@ -63,6 +63,9 @@ type PreallocWriteRequest struct {
 
 	// SkipUnmarshalingExemplars is an optimization to not unmarshal exemplars when they are disabled by the config anyway.
 	SkipUnmarshalingExemplars bool
+
+	// UnmarshalRW2 is set to true if the Unmarshal method should unmarshal the data as a remote write 2.0 message.
+	UnmarshalFromRW2 bool
 }
 
 // Unmarshal implements proto.Message.
@@ -71,7 +74,46 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	return p.WriteRequest.Unmarshal(dAtA)
+}
+
+// getMetricName cuts the mandatory OpenMetrics suffix from the
+// seriesName and returns the metric name and whether it cut the suffix.
+// Based on https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
+func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
+	switch metricType {
+	case METRIC_TYPE_SUMMARY:
+		retval, ok := strings.CutSuffix(seriesName, "_count")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_sum")
+	case METRIC_TYPE_HISTOGRAM:
+		retval, ok := strings.CutSuffix(seriesName, "_bucket")
+		if ok {
+			return retval, true
+		}
+		retval, ok = strings.CutSuffix(seriesName, "_count")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_sum")
+	case METRIC_TYPE_GAUGEHISTOGRAM:
+		retval, ok := strings.CutSuffix(seriesName, "_bucket")
+		if ok {
+			return retval, true
+		}
+		retval, ok = strings.CutSuffix(seriesName, "_gcount")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_gsum")
+	default:
+		// Note that _total for counters and _info for info metrics are not
+		// removed.
+		return seriesName, false
+	}
 }
 
 func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
@@ -215,14 +257,20 @@ func (p *PreallocTimeseries) clearUnmarshalData() {
 var TimeseriesUnmarshalCachingEnabled = true
 
 // Unmarshal implements proto.Message. Input data slice is retained.
-// Copied from the protobuf generated code, the only change is that in case 3 the exemplars don't get unmarshaled
-// if p.skipUnmarshalingExemplars is false.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
-	if TimeseriesUnmarshalCachingEnabled {
+// Copied from the protobuf generated code, change are that:
+//   - in case 3 the exemplars don't get unmarshaled if
+//     p.skipUnmarshalingExemplars is false,
+//   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
+		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
 	}
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
+	if symbols != nil {
+		return p.UnmarshalRW2(dAtA, symbols, metadata)
+	}
 	return p.TimeSeries.Unmarshal(dAtA)
 }
 

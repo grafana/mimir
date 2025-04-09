@@ -1,18 +1,21 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index a19c8047ed..07010d8344 100644
+index 1d662c7bcb..3d3b15da3b 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
-@@ -282,9 +282,6 @@ type WriteRequest struct {
+@@ -286,12 +286,6 @@ type WriteRequest struct {
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
 -
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
+-	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
+-	unmarshalFromRW2 bool
+-	rw2symbols       rw2PagedSymbols
  }
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
-@@ -437,9 +434,6 @@ type TimeSeries struct {
+@@ -458,9 +452,6 @@ type TimeSeries struct {
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
@@ -22,15 +25,102 @@ index a19c8047ed..07010d8344 100644
  }
  
  func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
-@@ -7287,7 +7281,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7318,8 +7309,6 @@ func valueToStringMimir(v interface{}) string {
+ 	return fmt.Sprintf("*%v", pv)
+ }
+ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+-	var metadata map[string]*MetricMetadata
+-
+ 	l := len(dAtA)
+ 	iNdEx := 0
+ 	for iNdEx < l {
+@@ -7349,9 +7338,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 		}
+ 		switch fieldNum {
+ 		case 1:
+-			if m.unmarshalFromRW2 {
+-				return errorUnexpectedRW1Timeseries
+-			}
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
+ 			}
+@@ -7381,8 +7367,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 -			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
- 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil); err != nil {
++			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
-@@ -7651,11 +7644,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+ 			iNdEx = postIndex
+@@ -7406,9 +7391,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 				}
+ 			}
+ 		case 3:
+-			if m.unmarshalFromRW2 {
+-				return errorUnexpectedRW1Metadata
+-			}
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+ 			}
+@@ -7443,9 +7425,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 			}
+ 			iNdEx = postIndex
+ 		case 4:
+-			if !m.unmarshalFromRW2 {
+-				return errorUnexpectedRW2Symbols
+-			}
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field SymbolsRW2", wireType)
+ 			}
+@@ -7475,12 +7454,9 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
++			m.SymbolsRW2 = append(m.SymbolsRW2, string(dAtA[iNdEx:postIndex]))
+ 			iNdEx = postIndex
+ 		case 5:
+-			if !m.unmarshalFromRW2 {
+-				return errorUnexpectedRW2Timeseries
+-			}
+ 			if wireType != 2 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field TimeseriesRW2", wireType)
+ 			}
+@@ -7509,12 +7485,8 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+-			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
+-			if metadata == nil {
+-				metadata = make(map[string]*MetricMetadata)
+-			}
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
++			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
++			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+ 			iNdEx = postIndex
+@@ -7577,16 +7549,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 	if iNdEx > l {
+ 		return io.ErrUnexpectedEOF
+ 	}
+-
+-	if m.unmarshalFromRW2 {
+-		m.Metadata = make([]*MetricMetadata, 0, len(metadata))
+-		for _, metadata := range metadata {
+-			m.Metadata = append(m.Metadata, metadata)
+-		}
+-		m.rw2symbols.releasePages()
+-		m.unmarshalFromRW2 = false
+-	}
+-
+ 	return nil
+ }
+ func (m *WriteResponse) Unmarshal(dAtA []byte) error {
+@@ -7834,11 +7796,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -45,3 +135,310 @@ index a19c8047ed..07010d8344 100644
  			}
  			iNdEx = postIndex
  		case 4:
+@@ -11147,10 +11107,6 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
+ 	return nil
+ }
+ func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
+-	return errorInternalRW2
+-}
+-func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+-	var metricName string
+ 	l := len(dAtA)
+ 	iNdEx := 0
+ 	for iNdEx < l {
+@@ -11181,7 +11137,22 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+ 		switch fieldNum {
+ 		case 1:
+ 			if wireType == 0 {
+-				return errorOddNumberOfLabelRefs
++				var v uint32
++				for shift := uint(0); ; shift += 7 {
++					if shift >= 64 {
++						return ErrIntOverflowMimir
++					}
++					if iNdEx >= l {
++						return io.ErrUnexpectedEOF
++					}
++					b := dAtA[iNdEx]
++					iNdEx++
++					v |= uint32(b&0x7F) << shift
++					if b < 0x80 {
++						break
++					}
++				}
++				m.LabelsRefs = append(m.LabelsRefs, v)
+ 			} else if wireType == 2 {
+ 				var packedLen int
+ 				for shift := uint(0); ; shift += 7 {
+@@ -11216,14 +11187,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+ 					}
+ 				}
+ 				elementCount = count
+-				if elementCount%2 != 0 {
+-					return errorOddNumberOfLabelRefs
++				if elementCount != 0 && len(m.LabelsRefs) == 0 {
++					m.LabelsRefs = make([]uint32, 0, elementCount)
+ 				}
+-				if elementCount != 0 && len(m.Labels) == 0 {
+-					m.Labels = make([]LabelAdapter, 0, elementCount/2)
+-				}
+-				idx := 0
+-				metricNameLabel := false
+ 				for iNdEx < postIndex {
+ 					var v uint32
+ 					for shift := uint(0); ; shift += 7 {
+@@ -11240,27 +11206,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+ 							break
+ 						}
+ 					}
+-					if idx%2 == 0 {
+-						labelName, err := symbols.get(v)
+-						if err != nil {
+-							return errorInvalidLabelRef
+-						}
+-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+-						if labelName == "__name__" {
+-							metricNameLabel = true
+-						}
+-					} else {
+-						labelValue, err := symbols.get(v)
+-						if err != nil {
+-							return errorInvalidLabelRef
+-						}
+-						m.Labels[len(m.Labels)-1].Value = labelValue
+-						if metricNameLabel {
+-							metricName = labelValue
+-							metricNameLabel = false
+-						}
+-					}
+-					idx++
++					m.LabelsRefs = append(m.LabelsRefs, v)
+ 				}
+ 			} else {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field LabelsRefs", wireType)
+@@ -11362,11 +11308,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			if !m.SkipUnmarshalingExemplars {
+-				m.Exemplars = append(m.Exemplars, Exemplar{})
+-				if err := m.Exemplars[len(m.Exemplars)-1].UnmarshalRW2(dAtA[iNdEx:postIndex], symbols); err != nil {
+-					return err
+-				}
++			m.Exemplars = append(m.Exemplars, ExemplarRW2{})
++			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
++				return err
+ 			}
+ 			iNdEx = postIndex
+ 		case 5:
+@@ -11398,7 +11342,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			if err := MetricMetadataUnmarshalRW2(dAtA[iNdEx:postIndex], symbols, metadata, metricName); err != nil {
++			if err := m.Metadata.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+ 			iNdEx = postIndex
+@@ -11443,10 +11387,6 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+ 	return nil
+ }
+ func (m *ExemplarRW2) Unmarshal(dAtA []byte) error {
+-	return errorInternalRW2
+-}
+-
+-func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 	l := len(dAtA)
+ 	iNdEx := 0
+ 	for iNdEx < l {
+@@ -11477,7 +11417,22 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 		switch fieldNum {
+ 		case 1:
+ 			if wireType == 0 {
+-				return errorOddNumberOfExemplarLabelRefs
++				var v uint32
++				for shift := uint(0); ; shift += 7 {
++					if shift >= 64 {
++						return ErrIntOverflowMimir
++					}
++					if iNdEx >= l {
++						return io.ErrUnexpectedEOF
++					}
++					b := dAtA[iNdEx]
++					iNdEx++
++					v |= uint32(b&0x7F) << shift
++					if b < 0x80 {
++						break
++					}
++				}
++				m.LabelsRefs = append(m.LabelsRefs, v)
+ 			} else if wireType == 2 {
+ 				var packedLen int
+ 				for shift := uint(0); ; shift += 7 {
+@@ -11512,13 +11467,9 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 					}
+ 				}
+ 				elementCount = count
+-				if elementCount%2 != 0 {
+-					return errorOddNumberOfExemplarLabelRefs
+-				}
+-				if elementCount != 0 && len(m.Labels) == 0 {
+-					m.Labels = make([]LabelAdapter, 0, elementCount/2)
++				if elementCount != 0 && len(m.LabelsRefs) == 0 {
++					m.LabelsRefs = make([]uint32, 0, elementCount)
+ 				}
+-				idx := 0
+ 				for iNdEx < postIndex {
+ 					var v uint32
+ 					for shift := uint(0); ; shift += 7 {
+@@ -11535,20 +11486,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 							break
+ 						}
+ 					}
+-					if idx%2 == 0 {
+-						labelName, err := symbols.get(v)
+-						if err != nil {
+-							return errorInvalidExemplarLabelRef
+-						}
+-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+-					} else {
+-						labelValue, err := symbols.get(v)
+-						if err != nil {
+-							return errorInvalidExemplarLabelRef
+-						}
+-						m.Labels[len(m.Labels)-1].Value = labelValue
+-					}
+-					idx++
++					m.LabelsRefs = append(m.LabelsRefs, v)
+ 				}
+ 			} else {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field LabelsRefs", wireType)
+@@ -11568,7 +11506,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 			if wireType != 0 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
+ 			}
+-			m.TimestampMs = 0
++			m.Timestamp = 0
+ 			for shift := uint(0); ; shift += 7 {
+ 				if shift >= 64 {
+ 					return ErrIntOverflowMimir
+@@ -11578,7 +11516,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 				}
+ 				b := dAtA[iNdEx]
+ 				iNdEx++
+-				m.TimestampMs |= int64(b&0x7F) << shift
++				m.Timestamp |= int64(b&0x7F) << shift
+ 				if b < 0x80 {
+ 					break
+ 				}
+@@ -11605,16 +11543,6 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+ 	return nil
+ }
+ func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
+-	return errorInternalRW2
+-}
+-func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata, metricName string) error {
+-	var (
+-		err error
+-		help string
+-		metricType MetadataRW2_MetricType
+-		normalizeMetricName string
+-		unit string
+-	)
+ 	l := len(dAtA)
+ 	iNdEx := 0
+ 	for iNdEx < l {
+@@ -11647,7 +11575,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+ 			if wireType != 0 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+ 			}
+-			metricType = 0
++			m.Type = 0
+ 			for shift := uint(0); ; shift += 7 {
+ 				if shift >= 64 {
+ 					return ErrIntOverflowMimir
+@@ -11657,23 +11585,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+ 				}
+ 				b := dAtA[iNdEx]
+ 				iNdEx++
+-				metricType |= MetadataRW2_MetricType(b&0x7F) << shift
++				m.Type |= MetadataRW2_MetricType(b&0x7F) << shift
+ 				if b < 0x80 {
+ 					break
+ 				}
+ 			}
+-			normalizeMetricName, _ = getMetricName(metricName, metricType)
+-			if _, ok := metadata[normalizeMetricName]; ok {
+-				// Already have metadata for this metric familiy name.
+-				// Since we cannot have multiple definitions of the same
+-				// metric family name, we ignore this metadata.
+-				return nil
+-			}
+ 		case 3:
+ 			if wireType != 0 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field HelpRef", wireType)
+ 			}
+-			helpRef := uint32(0)
++			m.HelpRef = 0
+ 			for shift := uint(0); ; shift += 7 {
+ 				if shift >= 64 {
+ 					return ErrIntOverflowMimir
+@@ -11683,20 +11604,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+ 				}
+ 				b := dAtA[iNdEx]
+ 				iNdEx++
+-				helpRef |= uint32(b&0x7F) << shift
++				m.HelpRef |= uint32(b&0x7F) << shift
+ 				if b < 0x80 {
+ 					break
+ 				}
+ 			}
+-			help, err = symbols.get(helpRef)
+-			if err != nil {
+-				return errorInvalidHelpRef
+-			}
+ 		case 4:
+ 			if wireType != 0 {
+ 				return fmt.Errorf("proto: wrong wireType = %d for field UnitRef", wireType)
+ 			}
+-			unitRef := uint32(0)
++			m.UnitRef = 0
+ 			for shift := uint(0); ; shift += 7 {
+ 				if shift >= 64 {
+ 					return ErrIntOverflowMimir
+@@ -11706,15 +11623,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+ 				}
+ 				b := dAtA[iNdEx]
+ 				iNdEx++
+-				unitRef |= uint32(b&0x7F) << shift
++				m.UnitRef |= uint32(b&0x7F) << shift
+ 				if b < 0x80 {
+ 					break
+ 				}
+ 			}
+-			unit, err = symbols.get(unitRef)
+-			if err != nil {
+-				return errorInvalidUnitRef
+-			}
+ 		default:
+ 			iNdEx = preIndex
+ 			skippy, err := skipMimir(dAtA[iNdEx:])
+@@ -11734,18 +11647,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+ 	if iNdEx > l {
+ 		return io.ErrUnexpectedEOF
+ 	}
+-	if len(normalizeMetricName) == 0 {
+-		return nil
+-	}
+-	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
+-		metadata[normalizeMetricName] = &MetricMetadata{
+-			MetricFamilyName: normalizeMetricName,
+-			Help:             help,
+-			Unit:             unit,
+-			Type:             MetricMetadata_MetricType(metricType),
+-		}
+-	}
+-
+ 	return nil
+ }
+ func skipMimir(dAtA []byte) (n int, err error) {

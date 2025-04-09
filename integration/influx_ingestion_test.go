@@ -95,6 +95,6 @@ func TestInfluxIngestion(t *testing.T) {
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// No metadata to query, but we do the query anyway.
-	_, err = c.GetPrometheusMetadata()
+	_, err = c.GetPrometheusMetadata("")
 	require.NoError(t, err)
 }
