@@ -69,6 +69,9 @@
     // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#stabilization-window
     ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds: $.util.parseDuration('30m'),
     ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds: $.util.parseDuration('1h'),
+
+    // Optional overrides to the HPA behavior.
+    ingest_storage_ingester_hpa_behavior: {},
   },
 
   // Validate the configuration.
@@ -169,7 +172,7 @@
                 selectPolicy: 'Max',  // This would only have effect if there were multiple policies.
                 stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds,
               },
-            },
+            } + $._config.ingest_storage_ingester_hpa_behavior,
           },
         },
       },
