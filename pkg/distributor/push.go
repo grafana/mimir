@@ -302,11 +302,11 @@ func contextWithWriteResponseStats(ctx context.Context) context.Context {
 func addWriteResponseStats(ctx context.Context, w http.ResponseWriter) error {
 	rsValue := ctx.Value(pushResponseStatsContextKey)
 	if rsValue == nil {
-		return errors.New("error write response stats not found in context")
+		return errors.New("remote write response stats not found in context")
 	}
 	prs, ok := rsValue.(*promRemote.WriteResponseStats)
 	if !ok {
-		return errors.New("error write response stats not of type *promRemote.WriteResponseStats")
+		return errors.New("remote write response stats not of type *promRemote.WriteResponseStats")
 	}
 	headers := w.Header()
 	headers.Set(rw20WrittenSamplesHeader, strconv.Itoa(prs.Samples))

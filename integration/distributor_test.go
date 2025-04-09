@@ -1002,6 +1002,13 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 		}
 
 		t.Run(testName, func(t *testing.T) {
+			bodiesToClose := []io.ReadCloser{}
+			t.Cleanup(func() {
+				for _, b := range bodiesToClose {
+					b.Close()
+				}
+			})
+
 			if tc.runtimeConfig != previousRuntimeConfig {
 				currentRuntimeConfig, err := getURL(runtimeConfigURL)
 				require.NoError(t, err)
@@ -1057,7 +1064,7 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 			for q, expected := range tc.metadataQueries {
 				result, err := client.GetPrometheusMetadata(q)
 				require.NoError(t, err)
-				defer result.Body.Close()
+				bodiesToClose = append(bodiesToClose, result.Body)
 				require.Equal(t, http.StatusOK, result.StatusCode)
 				data, err := io.ReadAll(result.Body)
 				require.NoError(t, err)
