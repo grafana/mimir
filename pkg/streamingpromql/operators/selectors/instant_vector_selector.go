@@ -179,4 +179,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (v *InstantVectorSelector) Close() {
 	v.Selector.Close()
+	v.memoizedIterator = nil
+	v.chunkIterator = nil
 }
