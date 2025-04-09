@@ -37,15 +37,15 @@ func (c *OffsetsCommand) Register(app *kingpin.Application, getKafkaClient func(
 	listOffsetsCmd := cmd.Command("list", "List all offsets of a given topic and partition.").Action(c.listOffsets)
 	listOffsetsCmd.Flag("topic", "Kafka topic to dump").Required().StringVar(&c.topic)
 	listOffsetsCmd.Flag("type", "offset type to list").Default(offsetTypeEnd).EnumVar(&c.offsetType, offsetTypeStart, offsetTypeCommitted, offsetTypeEnd, offsetTypeAfterMs)
-	listOffsetsCmd.Flag("millis", "millisecond timestamp to list offsets after when --type=after_ms").Int64Var(&c.millis)
+	listOffsetsCmd.Flag("millis", "millisecond timestamp to list offsets after when --type="+offsetTypeAfterMs).Int64Var(&c.millis)
 }
 
 func (c *OffsetsCommand) listOffsets(_ *kingpin.ParseContext) error {
-	if c.offsetType == "after_ms" && c.millis == 0 {
-		return fmt.Errorf("--millis is required when --type=after_ms")
+	if c.offsetType == offsetTypeAfterMs && c.millis == 0 {
+		return fmt.Errorf("--millis is required when --type=" + offsetTypeAfterMs)
 	}
-	if c.millis != 0 && c.offsetType != "after_ms" {
-		return fmt.Errorf("--millis is only valid when --type=after_ms")
+	if c.millis != 0 && c.offsetType != offsetTypeAfterMs {
+		return fmt.Errorf("--millis is only valid when --type=" + offsetTypeAfterMs)
 	}
 
 	client := c.getKafkaClient()

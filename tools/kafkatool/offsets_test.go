@@ -42,7 +42,7 @@ func TestOffsets(t *testing.T) {
 
 	t.Run("start offsets", func(t *testing.T) {
 		printer.Reset()
-		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "start"})
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", offsetTypeStart})
 		require.NoError(t, err)
 		require.Len(t, printer.Lines, partitions)
 
@@ -54,7 +54,7 @@ func TestOffsets(t *testing.T) {
 
 	t.Run("end offsets", func(t *testing.T) {
 		printer.Reset()
-		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "end"})
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", offsetTypeEnd})
 		require.NoError(t, err)
 		require.Len(t, printer.Lines, partitions)
 
@@ -66,7 +66,7 @@ func TestOffsets(t *testing.T) {
 
 	t.Run("committed offsets", func(t *testing.T) {
 		printer.Reset()
-		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "committed"})
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", offsetTypeCommitted})
 		require.NoError(t, err)
 		require.Len(t, printer.Lines, partitions)
 
@@ -78,18 +78,18 @@ func TestOffsets(t *testing.T) {
 
 	t.Run("after ms", func(t *testing.T) {
 		printer.Reset()
-		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "after_ms"})
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", offsetTypeAfterMs})
 		require.Error(t, err)
-		require.ErrorContains(t, err, "--millis is required when --type=after_ms")
+		require.ErrorContains(t, err, "--millis is required when --type="+offsetTypeAfterMs)
 
 		printer.Reset()
-		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "end", "--millis", "1234"})
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", offsetTypeEnd, "--millis", "1234"})
 		require.Error(t, err)
-		require.ErrorContains(t, err, "--millis is only valid when --type=after_ms")
+		require.ErrorContains(t, err, "--millis is only valid when --type="+offsetTypeAfterMs)
 
 		printer.Reset()
 		tomorrow := time.Now().Add(24 * time.Hour)
-		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", "after_ms", "--millis", fmt.Sprint(tomorrow.UnixMilli())})
+		_, err = app.Parse([]string{"offsets", "list", "--topic", topic, "--type", offsetTypeAfterMs, "--millis", fmt.Sprint(tomorrow.UnixMilli())})
 		require.NoError(t, err)
 		require.Len(t, printer.Lines, partitions)
 
