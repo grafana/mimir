@@ -290,7 +290,8 @@ type WriteRequest struct {
 	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
 	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
-	rw2symbols *rw2PagedSymbols
+	unmarshalFromRW2 bool
+	rw2symbols       rw2PagedSymbols
 }
 
 func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
@@ -7348,7 +7349,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if m.rw2symbols != nil {
+			if m.unmarshalFromRW2 {
 				return errorUnexpectedRW1Timeseries
 			}
 			if wireType != 2 {
@@ -7405,7 +7406,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 				}
 			}
 		case 3:
-			if m.rw2symbols != nil {
+			if m.unmarshalFromRW2 {
 				return errorUnexpectedRW1Metadata
 			}
 			if wireType != 2 {
@@ -7442,7 +7443,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			iNdEx = postIndex
 		case 4:
-			if m.rw2symbols == nil {
+			if !m.unmarshalFromRW2 {
 				return errorUnexpectedRW2Symbols
 			}
 			if wireType != 2 {
@@ -7477,7 +7478,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		case 5:
-			if m.rw2symbols == nil {
+			if !m.unmarshalFromRW2 {
 				return errorUnexpectedRW2Timeseries
 			}
 			if wireType != 2 {
@@ -7513,7 +7514,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if metadata == nil {
 				metadata = make(map[string]*MetricMetadata)
 			}
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], m.rw2symbols, metadata); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -7577,13 +7578,12 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 		return io.ErrUnexpectedEOF
 	}
 
-	if m.rw2symbols != nil {
+	if m.unmarshalFromRW2 {
 		m.Metadata = make([]*MetricMetadata, 0, len(metadata))
 		for _, metadata := range metadata {
 			m.Metadata = append(m.Metadata, metadata)
 		}
 		m.rw2symbols.releasePages()
-		m.rw2symbols = nil
 	}
 
 	return nil

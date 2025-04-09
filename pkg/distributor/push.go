@@ -41,7 +41,7 @@ type PushFunc func(ctx context.Context, req *Request) error
 type pushResponseStatsContextMarker struct{}
 
 var (
-	PushResponseStatsContextKey = &pushResponseStatsContextMarker{}
+	pushResponseStatsContextKey = &pushResponseStatsContextMarker{}
 )
 
 // parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
@@ -296,11 +296,11 @@ const (
 )
 
 func contextWithWriteResponseStats(ctx context.Context) context.Context {
-	return context.WithValue(ctx, PushResponseStatsContextKey, &promRemote.WriteResponseStats{})
+	return context.WithValue(ctx, pushResponseStatsContextKey, &promRemote.WriteResponseStats{})
 }
 
 func addWriteResponseStats(ctx context.Context, w http.ResponseWriter) error {
-	rsValue := ctx.Value(PushResponseStatsContextKey)
+	rsValue := ctx.Value(pushResponseStatsContextKey)
 	if rsValue == nil {
 		return errors.New("error write response stats not found in context")
 	}
@@ -316,7 +316,7 @@ func addWriteResponseStats(ctx context.Context, w http.ResponseWriter) error {
 }
 
 func updateWriteResponseStatsCtx(ctx context.Context, samples, histograms, exemplars int) {
-	prs := ctx.Value(PushResponseStatsContextKey)
+	prs := ctx.Value(pushResponseStatsContextKey)
 	if prs == nil {
 		// Only present for RW2.0.
 		return

@@ -74,9 +74,7 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
-	if p.UnmarshalFromRW2 {
-		p.rw2symbols = &rw2PagedSymbols{}
-	}
+	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 

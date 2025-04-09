@@ -33,29 +33,31 @@ const rw2SymbolPageSize = 16
 // or do reallocation. This is a compromise between the two.
 type rw2PagedSymbols struct {
 	count uint32
-	pages [][]string
+	pages []*[]string
 }
 
 func (ps *rw2PagedSymbols) append(symbol string) {
-	nextPage := ps.count >> rw2SymbolPageSize
-	if int(nextPage) >= len(ps.pages) {
-		ps.pages = append(ps.pages, rw2PagedSymbolsPool.Get().([]string))
+	symbolPage := ps.count >> rw2SymbolPageSize
+	if int(symbolPage) >= len(ps.pages) {
+		ps.pages = append(ps.pages, rw2PagedSymbolsPool.Get().(*[]string))
 	}
-	ps.pages[nextPage] = append(ps.pages[nextPage], symbol)
+	*ps.pages[symbolPage] = append(*ps.pages[symbolPage], symbol)
 	ps.count++
 }
 
 func (ps *rw2PagedSymbols) releasePages() {
 	for _, page := range ps.pages {
-		page = page[:0]
-		rw2PagedSymbolsPool.Put(page) //nolint:staticcheck
+		*page = (*page)[:0]
+		rw2PagedSymbolsPool.Put(page)
 	}
+	ps.pages = ps.pages[:0]
+	ps.count = 0
 }
 
 func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
 	if ref < ps.count {
 		page := ps.pages[ref>>rw2SymbolPageSize]
-		return page[ref&((1<<rw2SymbolPageSize)-1)], nil
+		return (*page)[ref&((1<<rw2SymbolPageSize)-1)], nil
 	}
 	return "", fmt.Errorf("symbol reference %d is out of bounds", ref)
 }
@@ -63,7 +65,8 @@ func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
 var (
 	rw2PagedSymbolsPool = sync.Pool{
 		New: func() interface{} {
-			return make([]string, 0, 1<<rw2SymbolPageSize)
+			page := make([]string, 0, 1<<rw2SymbolPageSize)
+			return &page
 		},
 	}
 )
