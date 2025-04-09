@@ -60,6 +60,8 @@ func newTestHooksFixture(t *testing.T) *testHooksFixture {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/test/hook", r.URL.Path)
 
+		assert.Equal(t, "user", r.Header.Get("X-Scope-OrgID"))
+
 		body, err := io.ReadAll(r.Body)
 		assert.NoError(t, err)
 

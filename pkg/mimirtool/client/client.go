@@ -85,6 +85,7 @@ func New(cfg Config) (*MimirClient, error) {
 			"tls-cert": cfg.TLS.CertPath,
 			"tls-key":  cfg.TLS.KeyPath,
 		}).Errorf("error loading TLS files")
+		//nolint:staticcheck
 		return nil, fmt.Errorf("Mimir client initialization unsuccessful")
 	}
 

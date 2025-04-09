@@ -349,8 +349,8 @@ func getRangeStart(m *block.Meta, tr int64) int64 {
 
 func sortMetasByMinTime(metas []*block.Meta) []*block.Meta {
 	sort.Slice(metas, func(i, j int) bool {
-		if metas[i].BlockMeta.MinTime != metas[j].BlockMeta.MinTime {
-			return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		if metas[i].MinTime != metas[j].MinTime {
+			return metas[i].MinTime < metas[j].MinTime
 		}
 
 		// Compare labels in case of same MinTime to get stable results.

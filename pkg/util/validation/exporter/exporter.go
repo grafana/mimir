@@ -146,7 +146,7 @@ func NewOverridesExporter(
 	log log.Logger,
 	registerer prometheus.Registerer,
 ) (*OverridesExporter, error) {
-	enabledMetrics := util.NewAllowedTenants(config.EnabledMetrics, nil)
+	enabledMetrics := util.NewAllowList(config.EnabledMetrics, nil)
 
 	exporter := &OverridesExporter{
 		defaultLimits: defaultLimits,
@@ -180,7 +180,7 @@ func NewOverridesExporter(
 	return exporter, nil
 }
 
-func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []ExportedMetric) []ExportedMetric {
+func setupExportedMetrics(enabledMetrics *util.AllowList, extraMetrics []ExportedMetric) []ExportedMetric {
 	var exportedMetrics []ExportedMetric
 
 	// Write path limits
@@ -321,7 +321,7 @@ func (oe *OverridesExporter) isLeader() bool {
 		// If the ring is not enabled, export all metrics
 		return true
 	}
-	if oe.Service.State() != services.Running {
+	if oe.State() != services.Running {
 		// We haven't finished startup yet, likely waiting for ring stability.
 		return false
 	}

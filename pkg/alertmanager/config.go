@@ -36,7 +36,7 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 		if err != nil {
 			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
-		amCfg.AlertmanagerConfig.Config.Global = cfg.Config.Global
+		amCfg.AlertmanagerConfig.Global = cfg.Global
 	}
 
 	// Check for duplicate receiver names.

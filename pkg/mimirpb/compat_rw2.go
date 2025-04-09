@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package mimirpb
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+)
+
+// Remote Write 2.0 related variables and functions.
+var (
+	errorUnexpectedRW1Timeseries      = errors.New("proto: Remote Write 1.0 field Timeseries in non-Remote Write 1.0 message")
+	errorUnexpectedRW1Metadata        = errors.New("proto: Remote Write 1.0 field Metadata in non-Remote Write 1.0 message")
+	errorUnexpectedRW2Timeseries      = errors.New("proto: Remote Write 2.0 field Timeseries in non-Remote Write 2.0 message")
+	errorUnexpectedRW2Symbols         = errors.New("proto: Remote Write 2.0 field Symbols in non-Remote Write 2.0 message")
+	errorOddNumberOfLabelRefs         = errors.New("proto: Remote Write 2.0 odd number of label references")
+	errorOddNumberOfExemplarLabelRefs = errors.New("proto: Remote Write 2.0 odd number of exemplar label references")
+	errorInvalidLabelRef              = errors.New("proto: Remote Write 2.0 invalid label reference")
+	errorInvalidExemplarLabelRef      = errors.New("proto: Remote Write 2.0 invalid exemplar label reference")
+	errorInternalRW2                  = errors.New("proto: Remote Write 2.0 internal error")
+	errorInvalidHelpRef               = errors.New("proto: Remote Write 2.0 invalid help reference")
+	errorInvalidUnitRef               = errors.New("proto: Remote Write 2.0 invalid unit reference")
+)
+
+// rw2SymbolPageSize is the size of each page in bits.
+const rw2SymbolPageSize = 16
+
+// rw2PagedSymbols is a structure that holds symbols in pages.
+// The problem this solves is that protobuf doesn't tell us
+// how many symbols there are in advance. Without this paging
+// mechanism, we would have to allocate a large amount of memory
+// or do reallocation. This is a compromise between the two.
+type rw2PagedSymbols struct {
+	count uint32
+	pages []*[]string
+}
+
+func (ps *rw2PagedSymbols) append(symbol string) {
+	symbolPage := ps.count >> rw2SymbolPageSize
+	if int(symbolPage) >= len(ps.pages) {
+		ps.pages = append(ps.pages, rw2PagedSymbolsPool.Get().(*[]string))
+	}
+	*ps.pages[symbolPage] = append(*ps.pages[symbolPage], symbol)
+	ps.count++
+}
+
+func (ps *rw2PagedSymbols) releasePages() {
+	for _, page := range ps.pages {
+		*page = (*page)[:0]
+		rw2PagedSymbolsPool.Put(page)
+	}
+	ps.pages = nil
+	ps.count = 0
+}
+
+func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
+	if ref < ps.count {
+		page := ps.pages[ref>>rw2SymbolPageSize]
+		return (*page)[ref&((1<<rw2SymbolPageSize)-1)], nil
+	}
+	return "", fmt.Errorf("symbol reference %d is out of bounds", ref)
+}
+
+var (
+	rw2PagedSymbolsPool = sync.Pool{
+		New: func() interface{} {
+			page := make([]string, 0, 1<<rw2SymbolPageSize)
+			return &page
+		},
+	}
+)

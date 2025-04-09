@@ -188,11 +188,11 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 		}
 
 		if rp.includeSamples {
-			t.Samples = ts.TimeSeries.Samples
-			t.Exemplars = ts.TimeSeries.Exemplars
+			t.Samples = ts.Samples
+			t.Exemplars = ts.Exemplars
 		} else {
-			t.SamplesCount = len(ts.TimeSeries.Samples)
-			t.ExemplarsCount = len(ts.TimeSeries.Exemplars)
+			t.SamplesCount = len(ts.Samples)
+			t.ExemplarsCount = len(ts.Exemplars)
 		}
 
 		res.TimeSeries = append(res.TimeSeries, t)

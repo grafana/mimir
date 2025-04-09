@@ -33,11 +33,12 @@ type BenchCase struct {
 func (c BenchCase) Name() string {
 	name := c.Expr
 
-	if c.Steps == 0 {
+	switch c.Steps {
+	case 0:
 		name += ", instant query"
-	} else if c.Steps == 1 {
+	case 1:
 		name += fmt.Sprintf(", range query with %d step", c.Steps)
-	} else {
+	default:
 		name += fmt.Sprintf(", range query with %d steps", c.Steps)
 	}
 

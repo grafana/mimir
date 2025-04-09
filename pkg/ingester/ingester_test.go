@@ -3703,7 +3703,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 					var cam *costattribution.Manager
 					if caCase.customRegistry != nil {
 						var err error
-						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, registry, caCase.customRegistry)
 						require.NoError(b, err)
 					}
 
@@ -11795,7 +11795,7 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 func (i *failingIngester) shutDownWaitAndCheck(ctx context.Context, t *testing.T) {
 	// We properly shut down ingester, and ensure that it lifecycler is terminated.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
-	require.Equal(t, services.Terminated, i.lifecycler.BasicService.State())
+	require.Equal(t, services.Terminated, i.lifecycler.State())
 }
 
 func (i *failingIngester) starting(parentCtx context.Context) error {

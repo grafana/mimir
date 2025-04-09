@@ -98,7 +98,7 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				var gCfg GrafanaAlertmanagerConfig
 				require.NoError(t, json.Unmarshal([]byte(test.grafanaConfig.RawConfig), &gCfg))
 
-				gCfg.AlertmanagerConfig.Global = mCfg.Config.Global
+				gCfg.AlertmanagerConfig.Global = mCfg.Global
 				b, err := json.Marshal(gCfg.AlertmanagerConfig)
 				require.NoError(t, err)
 
