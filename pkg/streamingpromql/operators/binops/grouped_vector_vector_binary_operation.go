@@ -194,6 +194,9 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	}
 
 	if len(allMetadata) == 0 {
+		types.PutSeriesMetadataSlice(allMetadata)
+		types.BoolSlicePool.Put(oneSideSeriesUsed, g.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(manySideSeriesUsed, g.MemoryConsumptionTracker)
 		g.Close()
 		return nil, nil
 	}

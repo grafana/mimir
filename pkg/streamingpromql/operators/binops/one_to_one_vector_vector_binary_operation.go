@@ -175,6 +175,9 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	}
 
 	if len(allMetadata) == 0 {
+		types.PutSeriesMetadataSlice(allMetadata)
+		types.BoolSlicePool.Put(leftSeriesUsed, b.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(rightSeriesUsed, b.MemoryConsumptionTracker)
 		b.Close()
 		return nil, nil
 	}
