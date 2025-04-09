@@ -1,8 +1,8 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 817dddf44e..3d3b15da3b 100644
+index df6cae7ac4..3d3b15da3b 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
-@@ -286,11 +286,6 @@ type WriteRequest struct {
+@@ -286,12 +286,6 @@ type WriteRequest struct {
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
@@ -10,11 +10,12 @@ index 817dddf44e..3d3b15da3b 100644
 -	// Skip unmarshaling of exemplars.
 -	skipUnmarshalingExemplars bool
 -	// Unmarshal from Remote Write 2.0. if rw2symbols is not nil.
--	rw2symbols *rw2PagedSymbols
+-	unmarshalFromRW2 bool
+-	rw2symbols       rw2PagedSymbols
  }
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
-@@ -457,9 +452,6 @@ type TimeSeries struct {
+@@ -458,9 +452,6 @@ type TimeSeries struct {
  	// Zero value means value not set. If you need to use exactly zero value for
  	// the timestamp, use 1 millisecond before or after.
  	CreatedTimestamp int64 `protobuf:"varint,6,opt,name=created_timestamp,json=createdTimestamp,proto3" json:"created_timestamp,omitempty"`
@@ -24,7 +25,7 @@ index 817dddf44e..3d3b15da3b 100644
  }
  
  func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
-@@ -7317,8 +7309,6 @@ func valueToStringMimir(v interface{}) string {
+@@ -7318,8 +7309,6 @@ func valueToStringMimir(v interface{}) string {
  	return fmt.Sprintf("*%v", pv)
  }
  func (m *WriteRequest) Unmarshal(dAtA []byte) error {
@@ -33,17 +34,17 @@ index 817dddf44e..3d3b15da3b 100644
  	l := len(dAtA)
  	iNdEx := 0
  	for iNdEx < l {
-@@ -7348,9 +7338,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7349,9 +7338,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  		}
  		switch fieldNum {
  		case 1:
--			if m.rw2symbols != nil {
+-			if m.unmarshalFromRW2 {
 -				return errorUnexpectedRW1Timeseries
 -			}
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Timeseries", wireType)
  			}
-@@ -7380,8 +7367,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7381,8 +7367,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
@@ -53,27 +54,27 @@ index 817dddf44e..3d3b15da3b 100644
  				return err
  			}
  			iNdEx = postIndex
-@@ -7405,9 +7391,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7406,9 +7391,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  				}
  			}
  		case 3:
--			if m.rw2symbols != nil {
+-			if m.unmarshalFromRW2 {
 -				return errorUnexpectedRW1Metadata
 -			}
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
  			}
-@@ -7442,9 +7425,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7443,9 +7425,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  			}
  			iNdEx = postIndex
  		case 4:
--			if m.rw2symbols == nil {
+-			if !m.unmarshalFromRW2 {
 -				return errorUnexpectedRW2Symbols
 -			}
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field SymbolsRW2", wireType)
  			}
-@@ -7474,12 +7454,9 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7475,12 +7454,9 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -81,13 +82,13 @@ index 817dddf44e..3d3b15da3b 100644
 +			m.SymbolsRW2 = append(m.SymbolsRW2, string(dAtA[iNdEx:postIndex]))
  			iNdEx = postIndex
  		case 5:
--			if m.rw2symbols == nil {
+-			if !m.unmarshalFromRW2 {
 -				return errorUnexpectedRW2Timeseries
 -			}
  			if wireType != 2 {
  				return fmt.Errorf("proto: wrong wireType = %d for field TimeseriesRW2", wireType)
  			}
-@@ -7508,12 +7485,8 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7509,12 +7485,8 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -96,24 +97,23 @@ index 817dddf44e..3d3b15da3b 100644
 -			if metadata == nil {
 -				metadata = make(map[string]*MetricMetadata)
 -			}
--			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], m.rw2symbols, metadata); err != nil {
+-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata); err != nil {
 +			m.TimeseriesRW2 = append(m.TimeseriesRW2, TimeSeriesRW2{})
 +			if err := m.TimeseriesRW2[len(m.TimeseriesRW2)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
  			iNdEx = postIndex
-@@ -7576,16 +7549,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7577,15 +7549,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
 -
--	if m.rw2symbols != nil {
+-	if m.unmarshalFromRW2 {
 -		m.Metadata = make([]*MetricMetadata, 0, len(metadata))
 -		for _, metadata := range metadata {
 -			m.Metadata = append(m.Metadata, metadata)
 -		}
 -		m.rw2symbols.releasePages()
--		m.rw2symbols = nil
 -	}
 -
  	return nil
