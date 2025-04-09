@@ -49,7 +49,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Increase the allowed number of rule groups for small, medium_small, extra_small user tiers by 20%. #11152
+* [CHANGE] Increase the allowed number of rule groups for small, medium_small, and extra_small user tiers by 20%. #11152
 
 ### Mimirtool
 
