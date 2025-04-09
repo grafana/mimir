@@ -89,8 +89,10 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
-		// TODO Check if it's safe to close the response here. I suspect EncodeMetricsQueryResponse does not do a deep copy and thus it is not yet safe.
-		// We'll likely need to wrap samples in a closer
+
+		// FIXME: newSeriesSetFromEmbeddedQueriesResults copies samples, but does not do a deep copy of histogram spans.
+		// We either need to do a deep copy of the histogram spans or somehow wrap the SeriesSets with a closer.
+		// Labels also need closer inspection as they appear to be pointers too.
 		defer resp.Close()
 
 		promRes, ok := resp.GetPrometheusResponse()
@@ -183,8 +185,9 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			if err != nil {
 				return storage.ErrSeriesSet(fmt.Errorf("error running subquery: %w", err))
 			}
-			// TODO Check if it's safe to close the response here. I suspect EncodeMetricsQueryResponse does not do a deep copy and thus it is not yet safe.
-			// We'll likely need to wrap samples in a closer
+			// FIXME: newSeriesSetFromEmbeddedQueriesResults copies samples, but does not do a deep copy of histogram spans.
+			// We either need to do a deep copy of the histogram spans or somehow wrap the SeriesSets with a closer.
+			// Labels also need closer inspection as they appear to be pointers too.
 			defer resp.Close()
 
 			promRes, ok := resp.GetPrometheusResponse()
@@ -200,9 +203,6 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			q.annotationAccumulator.addWarnings(promRes.Warnings)
 		}
 
-		// TODO: Check that nothing needs to be retained. If we do, we might need a wrapper around storage.SeriesSet to move
-		// finalizers into there.
-		// However newSeriesSetFromEmbeddedQueriesResults should copy most of the values. The main concern is Histograms.
 		return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	default:
 		return storage.ErrSeriesSet(errors.Errorf("invalid metric name for the spin-off middleware: %s", name))
