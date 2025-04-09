@@ -372,6 +372,7 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 	mergedExtents := make([]Extent, 0, len(extents))
 
 	for i := 1; i < len(extents); i++ {
+		// If the extent starts after the current accumulator ends, we can merge the current accumulator and start a new one.
 		if accumulator.End+r.GetStep() < extents[i].Start {
 			mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 			if err != nil {
@@ -384,10 +385,16 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			continue
 		}
 
+		// If extent ends before the current accumulator ends, we can skip it.
 		if accumulator.End >= extents[i].End {
 			continue
 		}
 		accumulator.TraceId = jaegerTraceID(ctx)
+
+		// Calculate overlap between current accumulator and the new extent.
+		overlap := extents[i].End - max(accumulator.End, extents[i].Start)
+		accumulator.SamplesProcessed += calculateSamplesInTimeRange(extents[i], overlap)
+
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
@@ -407,6 +414,7 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
 			accumulator.QueryTimestampMs = max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
 		}
+
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -428,6 +436,7 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		Response:         marshalled,
 		TraceId:          acc.TraceId,
 		QueryTimestampMs: acc.QueryTimestampMs,
+		SamplesProcessed: acc.SamplesProcessed,
 	}), nil
 }
 
@@ -442,7 +451,7 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time) (Extent, error) {
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, samplesProcessed uint64) (Extent, error) {
 	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
@@ -453,15 +462,17 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 		Response:         marshalled,
 		TraceId:          jaegerTraceID(ctx),
 		QueryTimestampMs: queryTime.UnixMilli(),
+		SamplesProcessed: samplesProcessed,
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, uint64, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
+	var cachedSamplesProcessed uint64 = 0
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -483,17 +494,21 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
+
+		// Calculate overlap between request and extent.
+		overlap := min(req.GetEnd(), extent.End) - max(start, extent.Start)
+		cachedSamplesProcessed += calculateSamplesInTimeRange(extent, overlap)
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -515,7 +530,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 
 		requests = append(requests, r)
@@ -527,7 +542,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	return requests, cachedResponses, nil
+	return requests, cachedResponses, cachedSamplesProcessed, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -535,6 +550,10 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
+			// Calculate the proportion of samples based on the truncated time range
+			retainedTimeRange := maxCacheTime - extents[i].Start
+			extents[i].SamplesProcessed = calculateSamplesInTimeRange(extents[i], retainedTimeRange)
+
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
 			if err != nil {
@@ -646,4 +665,15 @@ func cacheHashKey(key string) string {
 
 	// Hex because memcache keys must be non-whitespace non-control ASCII
 	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// calculateSamplesInTimeRange counts the appropriate number of samples for the time range within the extent.
+func calculateSamplesInTimeRange(extent Extent, overlap int64) uint64 {
+	extentTimeRange := extent.End - extent.Start
+	if extentTimeRange > 0 {
+		ratio := float64(overlap) / float64(extentTimeRange)
+		return uint64(float64(extent.SamplesProcessed) * ratio)
+	} else {
+		return extent.SamplesProcessed
+	}
 }

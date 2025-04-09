@@ -48,6 +48,7 @@ type splitAndCacheMiddlewareMetrics struct {
 	splitQueriesCount              prometheus.Counter
 	queryResultCacheAttemptedCount prometheus.Counter
 	queryResultCacheSkippedCount   *prometheus.CounterVec
+	samplesProcessedFromCache      prometheus.Counter
 }
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
@@ -65,6 +66,11 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 			Name: "cortex_frontend_query_result_cache_skipped_total",
 			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
 		}, []string{"reason"}),
+		samplesProcessedFromCache: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			// It's called "cortex_query_..." to match with "cortex_query_samples_processed_total" metric.
+			Name: "cortex_query_samples_processed_from_cache_total",
+			Help: "Approximate number of cached samples processed to execute a query.",
+		}),
 	}
 
 	// Initialize known label values.
@@ -187,9 +193,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			requests, responses, cachedSamplesProcessed, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
 			if err != nil {
 				return nil, err
+			}
+
+			// Track samples processed from cache in metrics
+			if cachedSamplesProcessed > 0 {
+				s.metrics.samplesProcessedFromCache.Add(float64(cachedSamplesProcessed))
 			}
 
 			if len(requests) == 0 {
@@ -262,11 +273,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
+				downstreamStats := splitReq.downstreamStatistics[downstreamIdx]
 				if !isResponseCachable(downstreamRes) {
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime)
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.SamplesProcessed)
 				if err != nil {
 					return nil, err
 				}
@@ -486,6 +498,8 @@ type splitRequest struct {
 	// response is stored at the same index.
 	downstreamRequests  []MetricsQueryRequest
 	downstreamResponses []Response
+	// Query statistics for each downstream request, stored at the same index too.
+	downstreamStatistics []*stats.Stats
 }
 
 // splitRequests holds a list of splitRequest.
@@ -552,6 +566,7 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 
 		execReqs = append(execReqs, splitReq.downstreamRequests...)
 		splitReq.downstreamResponses = make([]Response, len(splitReq.downstreamRequests))
+		splitReq.downstreamStatistics = make([]*stats.Stats, len(splitReq.downstreamRequests))
 	}
 
 	return execReqs, nil
@@ -562,6 +577,7 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 // that any downstream request got its response associated.
 func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
+	execStatsByID := make(map[int64]*stats.Stats, len(responses))
 
 	// Map responses by (unique) request IDs.
 	for _, resp := range responses {
@@ -572,6 +588,7 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 		}
 
 		execRespsByID[resp.Request.GetID()] = resp.Response
+		execStatsByID[resp.Request.GetID()] = resp.Stats
 	}
 
 	mappedDownstreamRequests := 0
@@ -585,6 +602,7 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 			}
 
 			splitReq.downstreamResponses[downstreamIdx] = downstreamRes
+			splitReq.downstreamStatistics[downstreamIdx] = execStatsByID[downstreamReq.GetID()]
 			mappedDownstreamRequests++
 		}
 	}
@@ -597,10 +615,11 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 	return nil
 }
 
-// requestResponse contains a request response and the respective request that was used.
+// requestResponse contains a request response, respective request that was used and its stats.
 type requestResponse struct {
 	Request  MetricsQueryRequest
 	Response Response
+	Stats    *stats.Stats
 }
 
 // doRequests executes a list of requests in parallel.
@@ -627,7 +646,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			}
 
 			mtx.Lock()
-			resps = append(resps, requestResponse{req, resp})
+			resps = append(resps, requestResponse{req, resp, partialStats})
 			mtx.Unlock()
 
 			return nil
