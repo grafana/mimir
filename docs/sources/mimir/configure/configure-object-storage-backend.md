@@ -84,7 +84,7 @@ ruler_storage:
 ```
 
 {{< admonition type="note" >}}
-The endpoint value must not be prefixed with your bucket name (e.g., if your bucket is "my-storage-bucket", the endpoint cannot be "my-storage-bucket.s3.amazonaws.com").
+Don't prefix the endpoint value with your bucket name. For example, if your bucket is named "my-storage-bucket", you cannot name the endpoint "my-storage-bucket.s3.amazonaws.com".
 {{< /admonition >}}
 
 ### GCS
