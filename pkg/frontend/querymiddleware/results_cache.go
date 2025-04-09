@@ -372,7 +372,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 	mergedExtents := make([]Extent, 0, len(extents))
 
 	for i := 1; i < len(extents); i++ {
-		// If the extent starts after the current accumulator ends, we can merge the current accumulator and start a new one.
 		if accumulator.End+r.GetStep() < extents[i].Start {
 			mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 			if err != nil {
@@ -385,7 +384,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			continue
 		}
 
-		// If extent ends before the current accumulator ends, we can skip it.
 		if accumulator.End >= extents[i].End {
 			continue
 		}
@@ -414,7 +412,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
 			accumulator.QueryTimestampMs = max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
 		}
-
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -506,7 +503,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
 
-		// Calculate overlap between request and extent.
+		// Calculate the proportion of samples used from extent, based on the overlap between request and extent.
 		overlap := min(req.GetEnd(), extent.End) - max(start, extent.Start)
 		cachedSamplesProcessed += calculateSamplesInTimeRange(extent, overlap)
 
@@ -550,7 +547,7 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
-			// Calculate the proportion of samples based on the truncated time range
+			// Calculate new number of samples in the extent based on the truncated time range
 			retainedTimeRange := maxCacheTime - extents[i].Start
 			extents[i].SamplesProcessed = calculateSamplesInTimeRange(extents[i], retainedTimeRange)
 
