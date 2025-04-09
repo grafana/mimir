@@ -49,6 +49,13 @@ message CachedError {
   string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
 }
 
+message CachedLimitedQuery {
+  string key = 1 [(gogoproto.jsontag) = "key"];
+  string limitedQuery = 2 [(gogoproto.jsontag) = "limitedQuery"];
+  // Unix timestamp of last allowed query execution time
+  int64 lastAllowedTime = 3 [(gogoproto.jsontag) = "lastAllowedTime"];
+}
+
 message CachedResponse  {
   string key = 1 [(gogoproto.jsontag) = "key"];
 

@@ -370,7 +370,7 @@ func newQueryMiddlewares(
 	}, []string{"user", "reason"})
 
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, blockedQueriesCounter)
-	queryLimiterMiddleware := newQueryLimiterMiddleware(limits, log, blockedQueriesCounter)
+	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
 	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
