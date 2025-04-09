@@ -202,10 +202,32 @@ func (a *Alerts) Put(alerts ...*types.Alert) error {
 
 		existing := false
 
+		level.Debug(a.logger).Log("msg",
+			"current alert",
+			"alert",
+			alert,
+			"starts_at",
+			alert.StartsAt,
+			"ends_at",
+			alert.EndsAt,
+			"updated_at",
+			alert.UpdatedAt)
+
 		// Check that there's an alert existing within the store before
 		// trying to merge.
 		if old, err := a.alerts.Get(fp); err == nil {
 			existing = true
+
+			level.Debug(a.logger).Log("msg",
+				"found existing alert in store, merging with current",
+				"alert",
+				old,
+				"starts_at",
+				old.StartsAt,
+				"ends_at",
+				old.EndsAt,
+				"updated_at",
+				old.UpdatedAt)
 
 			// Merge alerts if there is an overlap in activity range.
 			if (alert.EndsAt.After(old.StartsAt) && alert.EndsAt.Before(old.EndsAt)) ||
@@ -213,6 +235,17 @@ func (a *Alerts) Put(alerts ...*types.Alert) error {
 				alert = old.Merge(alert)
 			}
 		}
+
+		level.Debug(a.logger).Log("msg",
+			"resulting alert",
+			"alert",
+			alert,
+			"starts_at",
+			alert.StartsAt,
+			"ends_at",
+			alert.EndsAt,
+			"updated_at",
+			alert.UpdatedAt)
 
 		if err := a.callback.PreStore(alert, existing); err != nil {
 			level.Error(a.logger).Log("msg", "pre-store callback returned error on set alert", "err", err)
