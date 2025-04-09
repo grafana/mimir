@@ -125,6 +125,12 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	}
 }
 
+func mkExtentWithSamplesProcessed(start, end int64, samplesProcessed uint64) Extent {
+	ext := mkExtentWithStepAndQueryTime(start, end, 10, 0)
+	ext.SamplesProcessed = samplesProcessed
+	return ext
+}
+
 func TestIsRequestCachable(t *testing.T) {
 	maxCacheTime := int64(150 * 1000)
 
@@ -550,7 +556,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			extractor := PrometheusResponseExtractor{}
 			minCacheExtent := int64(10)
 
-			reqs, resps, err := partitionCacheExtents(tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
+			reqs, resps, _, err := partitionCacheExtents(tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
@@ -596,6 +602,240 @@ func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	}
 }
 
+func TestMergeCacheExtentsForRequest(t *testing.T) {
+	ctx := context.Background()
+	merger := &prometheusCodec{}
+
+	tests := []struct {
+		name             string
+		extents          []Extent
+		request          MetricsQueryRequest
+		expectedExtents  int
+		expectedSamples  []uint64
+		expectedTimespan [][2]int64 // [start, end] pairs
+	}{
+		{
+			name:            "Single extent covering full request",
+			extents:         []Extent{{Start: 100, End: 200, SamplesProcessed: 100}},
+			request:         &PrometheusRangeQueryRequest{start: 100, end: 200, step: 10},
+			expectedExtents: 1,
+			expectedSamples: []uint64{100},
+			expectedTimespan: [][2]int64{
+				{100, 200},
+			},
+		},
+		{
+			name: "Two extents separated by gap",
+			extents: []Extent{
+				{Start: 100, End: 200, SamplesProcessed: 1000},
+				{Start: 220, End: 300, SamplesProcessed: 800},
+			},
+			request:         &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedExtents: 2,
+			expectedSamples: []uint64{1000, 800},
+			expectedTimespan: [][2]int64{
+				{100, 200},
+				{220, 300},
+			},
+		},
+		{
+			name: "Two extents with overlap",
+			extents: []Extent{
+				{Start: 100, End: 250, SamplesProcessed: 150},
+				{Start: 200, End: 300, SamplesProcessed: 100},
+			},
+			request:         &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedExtents: 1,
+			// - Second extent overlaps 50/100 of its range, contributing half of its samples
+			expectedSamples: []uint64{200},
+			expectedTimespan: [][2]int64{
+				{100, 300},
+			},
+		},
+
+		{
+			name: "Two extents with overlap within a step",
+			extents: []Extent{
+				{Start: 100, End: 200, SamplesProcessed: 100},
+				{Start: 205, End: 300, SamplesProcessed: 95},
+			},
+			request:         &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedExtents: 1,
+			expectedSamples: []uint64{195},
+			expectedTimespan: [][2]int64{
+				{100, 300},
+			},
+		},
+		{
+			name: "Zero length extent at boundary",
+			extents: []Extent{
+				{Start: 100, End: 200, SamplesProcessed: 1000},
+				// This extent has zero time range, but within a step range from previous extent.
+				{Start: 201, End: 201, SamplesProcessed: 1},
+			},
+			request:         &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
+			expectedExtents: 1,
+			expectedSamples: []uint64{1001},
+			expectedTimespan: [][2]int64{
+				{100, 201},
+			},
+		},
+		{
+			name: "Extent with zero samples",
+			extents: []Extent{
+				{Start: 100, End: 200, SamplesProcessed: 1000},
+				{Start: 150, End: 250, SamplesProcessed: 0},
+			},
+			request:         &PrometheusRangeQueryRequest{start: 100, end: 250, step: 10},
+			expectedExtents: 1,
+			expectedSamples: []uint64{1000},
+			expectedTimespan: [][2]int64{
+				{100, 250},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create extents with valid responses for merging
+			testExtents := make([]Extent, len(tc.extents))
+			for i, e := range tc.extents {
+				resp := mkAPIResponse(e.Start, e.End, 10)
+				marshalled, err := types.MarshalAny(resp)
+				require.NoError(t, err)
+
+				testExtents[i] = Extent{
+					Start:            e.Start,
+					End:              e.End,
+					Response:         marshalled,
+					SamplesProcessed: e.SamplesProcessed,
+				}
+			}
+
+			// Merge the extents
+			result, err := mergeCacheExtentsForRequest(ctx, tc.request, merger, testExtents)
+			require.NoError(t, err)
+
+			// Verify the number of result extents
+			assert.Equal(t, tc.expectedExtents, len(result), "got %d extents, want %d", len(result), tc.expectedExtents)
+
+			// Verify the time spans and sample counts for each extent
+			for i, expected := range tc.expectedTimespan {
+				assert.Equal(t, expected[0], result[i].Start, "extent %d start: got %d, want %d", i, result[i].Start, expected[0])
+				assert.Equal(t, expected[1], result[i].End, "extent %d end: got %d, want %d", i, result[i].End, expected[1])
+				// Custom assertion for SamplesProcessed to avoid hexadecimal display
+				if tc.expectedSamples[i] != result[i].SamplesProcessed {
+					t.Errorf("extent %d samples processed: got %d, want %d",
+						i, result[i].SamplesProcessed, tc.expectedSamples[i])
+				}
+			}
+		})
+	}
+}
+
 func toMs(t time.Duration) int64 {
 	return int64(t / time.Millisecond)
+}
+
+func TestFilterRecentCacheExtents(t *testing.T) {
+	// Use time.Time for calculations and convert to milliseconds for the extents
+	now := time.Now()
+	step := int64(10)
+
+	tests := []struct {
+		name           string
+		extents        []Extent
+		maxFreshness   time.Duration
+		expectedCounts []uint64
+		shouldTruncate []bool
+	}{
+		{
+			name: "Extent within max freshness period gets truncated with adjusted samples",
+			extents: []Extent{
+				{
+					Start:            now.Add(-2 * time.Hour).UnixMilli(),
+					End:              now.UnixMilli(),
+					SamplesProcessed: 1000,
+					Response:         mustMarshalResponse(t, mkAPIResponse(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), step)),
+				},
+			},
+			maxFreshness:   time.Hour,
+			expectedCounts: []uint64{500}, // 50% of samples (1 hour of 2 hours timespan)
+			shouldTruncate: []bool{true},
+		},
+		{
+			name: "Extent fully before max freshness period is unchanged",
+			extents: []Extent{
+				{
+					Start:            now.Add(-3 * time.Hour).UnixMilli(),
+					End:              now.Add(-2 * time.Hour).UnixMilli(),
+					SamplesProcessed: 1000,
+					Response:         mustMarshalResponse(t, mkAPIResponse(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), step)),
+				},
+			},
+			maxFreshness:   time.Hour,
+			expectedCounts: []uint64{1000}, // Unchanged
+			shouldTruncate: []bool{false},
+		},
+		{
+			name: "Multiple extents with some truncated",
+			extents: []Extent{
+				{
+					Start:            now.Add(-3 * time.Hour).UnixMilli(),
+					End:              now.Add(-2 * time.Hour).UnixMilli(),
+					SamplesProcessed: 1000,
+					Response:         mustMarshalResponse(t, mkAPIResponse(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), step)),
+				},
+				{
+					Start:            now.Add(-1 * time.Hour).UnixMilli(),
+					End:              now.UnixMilli(),
+					SamplesProcessed: 1000,
+					Response:         mustMarshalResponse(t, mkAPIResponse(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), step)),
+				},
+			},
+			maxFreshness:   30 * time.Minute,
+			expectedCounts: []uint64{1000, 500}, // Second one gets 50% of samples (30min of 1 hour)
+			shouldTruncate: []bool{false, true},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			extractor := PrometheusResponseExtractor{}
+			req := &PrometheusRangeQueryRequest{
+				start: now.Add(-24 * time.Hour).UnixMilli(),
+				end:   now.UnixMilli(),
+				step:  step,
+			}
+
+			// Store original end times to check truncation
+			originalEnds := make([]int64, len(tc.extents))
+			for i := range tc.extents {
+				originalEnds[i] = tc.extents[i].End
+			}
+
+			result, err := filterRecentCacheExtents(req, tc.maxFreshness, extractor, tc.extents)
+			require.NoError(t, err)
+			require.Equal(t, len(tc.extents), len(result))
+
+			for i := range result {
+				if tc.shouldTruncate[i] {
+					assert.Less(t, result[i].End, originalEnds[i], "Extent %d should be truncated", i)
+				} else {
+					assert.Equal(t, originalEnds[i], result[i].End, "Extent %d should not be truncated", i)
+				}
+
+				assert.Equal(t, tc.expectedCounts[i], result[i].SamplesProcessed,
+					"SamplesProcessed for extent %d: got %d, want %d", i, result[i].SamplesProcessed, tc.expectedCounts[i])
+			}
+		})
+	}
+}
+
+// Helper to marshal response for testing
+func mustMarshalResponse(t *testing.T, resp Response) *types.Any {
+	t.Helper()
+	marshalled, err := types.MarshalAny(resp)
+	require.NoError(t, err)
+	return marshalled
 }
