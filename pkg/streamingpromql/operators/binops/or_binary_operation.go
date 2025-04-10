@@ -71,11 +71,24 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		return nil, err
 	}
 
+	if len(leftMetadata) == 0 && len(rightMetadata) == 0 {
+		// Nothing to return.
+		types.PutSeriesMetadataSlice(leftMetadata)
+		types.PutSeriesMetadataSlice(rightMetadata)
+
+		o.Left.Close()
+		o.Right.Close()
+
+		return nil, nil
+	}
+
 	if len(leftMetadata) == 0 {
 		// We can just return everything from the right side.
 		o.nextSeriesIsFromLeft = false
 		o.rightSeriesCount = []int{len(rightMetadata)}
 		types.PutSeriesMetadataSlice(leftMetadata)
+
+		o.Left.Close()
 
 		return rightMetadata, nil
 	}
@@ -85,6 +98,8 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		o.nextSeriesIsFromLeft = true
 		o.leftSeriesCount = []int{len(leftMetadata)}
 		types.PutSeriesMetadataSlice(rightMetadata)
+
+		o.Right.Close()
 
 		return leftMetadata, nil
 	}
@@ -204,12 +219,21 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 }
 
 func (o *OrBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	if len(o.rightSeriesCount) == 0 && len(o.leftSeriesCount) == 0 {
+		return types.InstantVectorSeriesData{}, types.EOS
+	}
+
 	if o.nextSeriesIsFromLeft {
 		o.leftSeriesCount[0]--
 
 		if o.leftSeriesCount[0] == 0 {
 			o.nextSeriesIsFromLeft = false
 			o.leftSeriesCount = o.leftSeriesCount[1:]
+
+			if len(o.leftSeriesCount) == 0 {
+				// No more series from left side remaining, close it after we read this next series.
+				defer o.Left.Close()
+			}
 		}
 
 		return o.nextLeftSeries(ctx)
@@ -220,6 +244,11 @@ func (o *OrBinaryOperation) NextSeries(ctx context.Context) (types.InstantVector
 	if o.rightSeriesCount[0] == 0 {
 		o.nextSeriesIsFromLeft = true
 		o.rightSeriesCount = o.rightSeriesCount[1:]
+
+		if len(o.rightSeriesCount) == 0 {
+			// No more series from right side remaining, close it after we read this next series.
+			defer o.Right.Close()
+		}
 	}
 
 	return o.nextRightSeries(ctx)
