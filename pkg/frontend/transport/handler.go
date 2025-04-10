@@ -93,13 +93,14 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds          *prometheus.CounterVec
-	querySeries           *prometheus.CounterVec
-	queryChunkBytes       *prometheus.CounterVec
-	queryChunks           *prometheus.CounterVec
-	queryIndexBytes       *prometheus.CounterVec
-	querySamplesProcessed *prometheus.CounterVec
-	activeUsers           *util.ActiveUsersCleanupService
+	querySeconds                       *prometheus.CounterVec
+	querySeries                        *prometheus.CounterVec
+	queryChunkBytes                    *prometheus.CounterVec
+	queryChunks                        *prometheus.CounterVec
+	queryIndexBytes                    *prometheus.CounterVec
+	querySamplesProcessed              *prometheus.CounterVec
+	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
+	activeUsers                        *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -148,6 +149,10 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Name: "cortex_query_samples_processed_total",
 			Help: "Number of samples processed to execute a query.",
 		}, []string{"user"})
+		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_cache_adjusted_total",
+			Help: "Number of samples processed to execute a query if no query results cache was enabled. Note, that this number is approximate.",
+		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
@@ -157,6 +162,7 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
 			h.querySamplesProcessed.DeleteLabelValues(user)
+			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -334,6 +340,7 @@ func (f *Handler) reportQueryStats(
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
+	samplesProcessedCacheAdjusted := samplesProcessed + stats.LoadSamplesProcessedFromCache()
 
 	if stats != nil {
 		// Track stats.
@@ -343,6 +350,7 @@ func (f *Handler) reportQueryStats(
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
+		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
