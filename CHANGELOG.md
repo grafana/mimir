@@ -36,6 +36,7 @@
 * [ENHANCEMENT] Update Go to 1.24.2. #11114
 * [ENHANCEMENT] Ingester/Distributor: Add `cortex_cost_attribution_*` metrics to observe the state of the cost-attribution trackers. #11112
 * [ENHANCEMENT] gRPC/HTTP servers: Add `cortex_server_invalid_cluster_validation_label_requests_total` metric, that is increased for every request with an invalid cluster validation label. #11241
+* [ENHANCEMENT] Add configurable per-tenant `limited_queries`, which may only be executed at or less than a certain frequency. #11097
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
