@@ -7,11 +7,11 @@ This program displays information about blocks in object storage.
 - `--user` (required) The user (tenant) that owns the blocks to be listed
 - `--format` (defaults to `tabbed`) The format of the output. Must be one of `tabbed`, `json`, or `yaml`
 - `--show-deleted` (defaults to `false`) Show blocks marked for deletion
-- `--show-labels` (defaults to `false`) Show block labels 
-- `--show-ulid-time` (defaults to `false`) Show time from ULID 
-- `--show-sources` (defaults to `false`) Show compaction sources 
-- `--show-parents` (defaults to `false`) Show parent blocks 
-- `--show-compaction-level` (defaults to `false`) Show compaction level 
+- `--show-labels` (defaults to `false`) Show block labels
+- `--show-ulid-time` (defaults to `false`) Show time from ULID
+- `--show-sources` (defaults to `false`) Show compaction sources
+- `--show-parents` (defaults to `false`) Show parent blocks
+- `--show-compaction-level` (defaults to `false`) Show compaction level
 - `--show-block-size` (defaults to `false`) Show size of block based on details in meta.json, if available
 - `--show-stats` (defaults to `false`) Show block stats (number of series, chunks, samples)
 - `--split-count` (defaults to `0`) If not 0, shows split number that would be used for grouping blocks during split compaction
@@ -26,6 +26,7 @@ Each supported object storage service also has an additional set of flags (see e
 The default `tabbed` output format is suitable for human consumption without the use of other tools. The `json` and `yaml` formats are more easily parsed and can be used in combination with other tools like `jq` and `yq` respectively.
 
 `tabbed`
+
 ```
 Block ID                     Min Time               Max Time               Duration        No Compact                                    Size
 01HRB9NDFKKYM8CKGPBEY0E8QX   2024-03-06T00:00:00Z   2024-03-07T00:00:00Z   24h0m0s         [Time: 2025-04-10T19:48:56Z Reason: manual]   687 MiB
@@ -33,6 +34,7 @@ Block ID                     Min Time               Max Time               Durat
 ```
 
 `json` (Note: pretty-printed here for readability)
+
 ```json
 [
   {
@@ -61,6 +63,7 @@ Block ID                     Min Time               Max Time               Durat
 ```
 
 `yaml`
+
 ```yaml
 - blockID: 01HRB9NDFKKYM8CKGPBEY0E8QX
   duration: 24h0m0s
