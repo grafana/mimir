@@ -569,6 +569,128 @@ func TestPartitionCacheExtents(t *testing.T) {
 	}
 }
 
+func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		request                  MetricsQueryRequest
+		cachedExtents            []Extent
+		expectedSamplesProcessed uint64
+	}{
+		{
+			name: "Extent equal query range - all samples counted",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   200,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(100, 200, 50),
+			},
+			expectedSamplesProcessed: 50,
+		},
+		{
+			name: "Extent within query range - all samples counted",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   200,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(150, 190, 40),
+			},
+			expectedSamplesProcessed: 40,
+		},
+		{
+			name: "Left half of extent is within query range - half of samples counted",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   150,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(100, 200, 100),
+			},
+			expectedSamplesProcessed: 50, // Expect half the samples
+		},
+		{
+			name: "Right half of extent is within query range - half of samples counted",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   200,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(50, 150, 100),
+			},
+			expectedSamplesProcessed: 50, // Expect half the samples
+		},
+		{
+			name: "Multiple extents fully within query range - all samples summed",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   300,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(100, 150, 50),
+				mkExtentWithSamplesProcessed(200, 300, 100),
+			},
+			expectedSamplesProcessed: 150,
+		},
+		{
+			name: "Overlapping extents - samples are counted proportionally",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   200,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(100, 150, 50),
+				mkExtentWithSamplesProcessed(125, 200, 75),
+			},
+			expectedSamplesProcessed: 100,
+		},
+		{
+			name: "No relevant extents - zero samples",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   200,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(300, 400, 1000),
+			},
+			expectedSamplesProcessed: 0,
+		},
+		{
+			name: "Zero samples in extent",
+			request: &PrometheusRangeQueryRequest{
+				start: 100,
+				end:   200,
+				step:  10,
+			},
+			cachedExtents: []Extent{
+				mkExtentWithSamplesProcessed(100, 200, 0),
+			},
+			expectedSamplesProcessed: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			extractor := PrometheusResponseExtractor{}
+			minCacheExtent := int64(10)
+
+			_, _, samplesProcessed, err := partitionCacheExtents(tc.request, tc.cachedExtents, minCacheExtent, extractor)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.expectedSamplesProcessed, samplesProcessed,
+				"Expected %d samples processed but got %d",
+				tc.expectedSamplesProcessed, samplesProcessed)
+		})
+	}
+}
+
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewPedanticRegistry()
@@ -738,7 +860,6 @@ func toMs(t time.Duration) int64 {
 }
 
 func TestFilterRecentCacheExtents(t *testing.T) {
-	// Use time.Time for calculations and convert to milliseconds for the extents
 	now := time.Now()
 	step := int64(10)
 
