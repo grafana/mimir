@@ -33,6 +33,11 @@ block_builder:
     update_interval: 5s
     max_update_age: 30m
 
+block_builder_scheduler:
+  scheduling_interval: 30s
+  job_size: 1m
+  startup_observe_time: 5s
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
