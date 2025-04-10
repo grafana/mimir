@@ -159,10 +159,11 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 	// state on both sides.
 
 	nextLeftSeriesToRead := 0
-	lastSeriesFromLeft := false
 	series := types.GetSeriesMetadataSlice(len(leftMetadata) + len(rightMetadata))
 
 	for nextRightSeriesToRead, rightGroup := range o.rightSeriesGroups {
+		lastSeriesFromLeft := false
+
 		// Check if we need to advance through some left series first.
 		if rightGroup != nil && rightGroup.lastLeftSeriesIndex >= nextLeftSeriesToRead {
 			seriesCount := rightGroup.lastLeftSeriesIndex - nextLeftSeriesToRead + 1
@@ -196,11 +197,7 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 		seriesCount := len(leftMetadata) - nextLeftSeriesToRead
 		series = append(series, leftMetadata[nextLeftSeriesToRead:]...)
 
-		if lastSeriesFromLeft {
-			o.leftSeriesCount[len(o.leftSeriesCount)-1] += seriesCount
-		} else {
-			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
-		}
+		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
 
 	return series
