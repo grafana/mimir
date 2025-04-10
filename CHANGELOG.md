@@ -9,6 +9,7 @@
 * [CHANGE] Distributor: removed the `cortex_distributor_label_values_with_newlines_total` metric. #10977
 * [CHANGE] Ingester/Distributor: renamed the experimental `max_cost_attribution_cardinality_per_user` config to `max_cost_attribution_cardinality`. #11092
 * [CHANGE] Frontend: The subquery spin-off feature is now enabled with `-query-frontend.subquery-spin-off-enabled=true` instead of `-query-frontend.instant-queries-with-subquery-spin-off=.*` #11153
+* [CHANGE] Overrides-exporter: Don't export per-tenant overrides that are set to their default values. #11173
 * [FEATURE] Distributor: experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: created timestamp is ignored, native histograms with custom buckets are rejected, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192
 * [ENHANCEMENT] Ingester: Add support for exporting native histogram cost attribution metrics (`cortex_ingester_attributed_active_native_histogram_series` and `cortex_ingester_attributed_active_native_histogram_buckets`) with labels specified by customers to a custom Prometheus registry. #10892
 * [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879 #11072.
