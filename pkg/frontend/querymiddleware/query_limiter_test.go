@@ -34,20 +34,20 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "non-empty limit should block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: "rate(metric_counter[5m])", MaxFrequency: time.Minute},
+				{Query: "rate(metric_counter[5m])", AllowedFrequency: time.Minute},
 			}},
 			expectSecondQueryBlocked: true,
 		},
 		{
 			name: "short max frequency should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: "rate(metric_counter[5m])", MaxFrequency: time.Nanosecond},
+				{Query: "rate(metric_counter[5m])", AllowedFrequency: time.Nanosecond},
 			}},
 		},
 		{
 			name: "non-matching pattern should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: "increase(metric_counter[5m])", MaxFrequency: time.Minute},
+				{Query: "increase(metric_counter[5m])", AllowedFrequency: time.Minute},
 			}},
 		},
 	}
@@ -117,20 +117,20 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "matching query should block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: `{__name__="metric_counter",pod=~"app-.*"}`, MaxFrequency: time.Minute},
+				{Query: `{__name__="metric_counter",pod=~"app-.*"}`, AllowedFrequency: time.Minute},
 			}},
 			expectSecondQueryBlocked: true,
 		},
 		{
 			name: "non-matching query should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: `{__name__="sample_counter",pod=~"app-.*"}`, MaxFrequency: time.Minute},
+				{Query: `{__name__="sample_counter",pod=~"app-.*"}`, AllowedFrequency: time.Minute},
 			}},
 		},
 		{
 			name: "short max frequency should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: `{__name__="metric_counter",pod=~"app-.*"}`, MaxFrequency: time.Nanosecond},
+				{Query: `{__name__="metric_counter",pod=~"app-.*"}`, AllowedFrequency: time.Nanosecond},
 			}},
 		},
 	}
