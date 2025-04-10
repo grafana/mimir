@@ -33,7 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
 
-## 5.7.0-rc.1
+## 5.7.0
 
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Tokengen: Added k8s secret storage for the admin token. #5237
