@@ -4,8 +4,4 @@
 # multi_kv_config:
 #  mirror_enabled: false
 #  primary: consul
-overrides:
-    "anonymous":
-      limited_queries:
-        - pattern: "activity_tracker_failed_total"
-          frequency: 1m
+
