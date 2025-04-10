@@ -40,6 +40,6 @@ message Stats {
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
   uint32 spun_off_subqueries = 12;
-  // SamplesProcessedFromCache represents the total number of samples processed from the Query Frontend cache.
+  // SamplesProcessedFromCache represents the total number of samples processed by queriers to produce the result that has been stored in the query-frontend cache and then fetched to produce the current full query result.
   uint64 samples_processed_from_cache = 13;
 }
