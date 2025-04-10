@@ -43,20 +43,7 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
-	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
-	if activeQueryTracker == nil {
-		activeQueryTracker = &NoopQueryTracker{}
-	}
-
-	planner := &QueryPlanner{
-		activeQueryTracker:       activeQueryTracker,
-		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
-		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
-			Help:                        "Latency of each stage of the query planning process.",
-			NativeHistogramBucketFactor: 1.1,
-		}, []string{"stage_type", "stage"}),
-	}
+	planner := NewQueryPlannerWithoutOptimizationPasses(opts)
 
 	// FIXME: it makes sense to register these common optimization passes here, but we'll likely need to rework this once
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
@@ -70,6 +57,26 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	}
 
 	return planner
+}
+
+// NewQueryPlannerWithoutOptimizationPasses creates a new query planner without any optimization passes registered.
+//
+// This is intended for use in tests only.
+func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
+	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	if activeQueryTracker == nil {
+		activeQueryTracker = &NoopQueryTracker{}
+	}
+
+	return &QueryPlanner{
+		activeQueryTracker:       activeQueryTracker,
+		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
+			Help:                        "Latency of each stage of the query planning process.",
+			NativeHistogramBucketFactor: 1.1,
+		}, []string{"stage_type", "stage"}),
+	}
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
