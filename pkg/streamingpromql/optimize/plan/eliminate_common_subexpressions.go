@@ -5,7 +5,9 @@ package plan
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/gogo/protobuf/proto"
 
@@ -22,28 +24,6 @@ func (e *EliminateCommonSubexpressions) Name() string {
 
 // TODO: tests
 // Some interesting test cases:
-//
-// # Duplicate expression
-// foo + foo
-//
-// # Duplicated many times
-// foo + foo + foo
-//
-// foo + foo + foo + bar + foo
-//
-// # Duplicated with aggregation
-// max(foo) - min(foo)
-//
-// # Duplicated aggregation
-// max(foo) + max(foo)
-//
-// # Multiple levels of duplication: a and sum(a)
-// a + sum(a) + sum(a)
-//
-// # Duplicated binary operations
-// (a - a) + (a - a)
-//
-// (a * b) + (a * b)
 //
 // (a - a) + (a - a) + (a * b) + (a * b)
 // ((a - a) + (a - a)) + ((a * b) + (a * b))
@@ -131,7 +111,7 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 	alreadyGrouped := make([]bool, len(paths))
 	groups := make([][]*path, 0)
 
-	// FIXME: find a better way to do this, this is currently O(n!) in the worst case
+	// FIXME: find a better way to do this, this is currently O(n!) in the worst case (where n is the number of selectors)
 	// Maybe generate some kind of key for each node and then sort and group by that? (use same key that we'd use for caching?)
 	for pathIdx, p := range paths {
 		if alreadyGrouped[pathIdx] {
@@ -268,6 +248,29 @@ func (p *path) Clone() *path {
 		nodes:        slices.Clone(p.nodes),
 		childIndices: slices.Clone(p.childIndices),
 	}
+}
+
+// String returns a string representation of the path, useful for debugging.
+func (p *path) String() string {
+	b := &strings.Builder{}
+	b.WriteRune('[')
+
+	for i, n := range p.nodes {
+		if i != 0 {
+			b.WriteString(" -> ")
+		}
+
+		b.WriteString(reflect.TypeOf(n).Elem().Name())
+		desc := n.Describe()
+
+		if desc != "" {
+			b.WriteString(": ")
+			b.WriteString(desc)
+		}
+	}
+
+	b.WriteRune(']')
+	return b.String()
 }
 
 type Duplicate struct {
