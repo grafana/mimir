@@ -142,7 +142,7 @@ func InfluxHandler(
 			} else {
 				level.Warn(logger).Log("msg", errorMsg, "response_code", httpCode, "err", err)
 			}
-			addHeaders(w, err, r, httpCode, retryCfg)
+			addHeaders(w, err, r, httpCode, retryCfg, req.artificialDelay)
 			w.WriteHeader(httpCode)
 		} else {
 			w.WriteHeader(http.StatusNoContent) // Needed for Telegraf, otherwise it tries to marshal JSON and considers the write a failure.
