@@ -56,7 +56,7 @@ func main() {
 	cfg := config{}
 	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "The user (tenant) that owns the blocks to be listed")
-	flag.StringVar(&cfg.format, "format", "tabbed", "The format of the output. Must be one of \"tabbed\" (the default), \"json\", or \"yaml\"")
+	flag.StringVar(&cfg.format, "format", "tabbed", "The format of the output. Must be one of \"tabbed\", \"json\", or \"yaml\"")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show blocks marked for deletion")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
 	flag.BoolVar(&cfg.showUlidTime, "show-ulid-time", false, "Show time from ULID")
