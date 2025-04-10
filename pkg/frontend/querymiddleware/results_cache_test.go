@@ -802,12 +802,7 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			testExtents := make([]Extent, len(tc.extents))
-			for i, e := range tc.extents {
-				testExtents[i] = e
-			}
-
-			result, err := mergeCacheExtentsForRequest(ctx, tc.request, merger, testExtents)
+			result, err := mergeCacheExtentsForRequest(ctx, tc.request, merger, tc.extents)
 			require.NoError(t, err)
 
 			assert.Equal(t, len(tc.expectedExtents), len(result), "got %d extents, want %d", len(result), len(tc.expectedExtents))
@@ -854,13 +849,13 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			expectedSamples: []uint64{100},
 		},
 		{
-			name: "Two extents with one overlapping with max freshness period - one extent truncated",
+			name: "Two extents, one overlapping with max freshness period - one extent truncated",
 			extents: []Extent{
 				mkExtentWithSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 100),
-				mkExtentWithSamplesProcessed(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 100),
+				mkExtentWithSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 100),
 			},
 			shouldTruncate:  []bool{false, true},
-			expectedSamples: []uint64{100, 1},
+			expectedSamples: []uint64{100, 50},
 		},
 	}
 
@@ -895,11 +890,4 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mustMarshalResponse(t *testing.T, resp Response) *types.Any {
-	t.Helper()
-	marshalled, err := types.MarshalAny(resp)
-	require.NoError(t, err)
-	return marshalled
 }
