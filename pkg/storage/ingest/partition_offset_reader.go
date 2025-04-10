@@ -20,8 +20,8 @@ var (
 	errPartitionOffsetReaderStopped = errors.New("partition offset reader is stopped")
 )
 
-// genericOffsetReader is the base implementation used by offset readers.
-type genericOffsetReader[O any] struct {
+// GenericOffsetReader is the base implementation used by offset readers.
+type GenericOffsetReader[O any] struct {
 	services.Service
 
 	logger log.Logger
@@ -38,8 +38,8 @@ type genericOffsetReader[O any] struct {
 	lastResultPromise *atomic.Pointer[resultPromise[O]]
 }
 
-func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *genericOffsetReader[O] {
-	p := &genericOffsetReader[O]{
+func NewGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context) (O, error), pollInterval time.Duration, logger log.Logger) *GenericOffsetReader[O] {
+	p := &GenericOffsetReader[O]{
 		logger:                  logger,
 		fetchLastProducedOffset: fetchLastProducedOffset,
 		nextResultPromise:       newResultPromise[O](),
@@ -52,7 +52,7 @@ func newGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context)
 	return p
 }
 
-func (r *genericOffsetReader[O]) onPollInterval(ctx context.Context) error {
+func (r *GenericOffsetReader[O]) onPollInterval(ctx context.Context) error {
 	// The following call blocks until the last produced offset has been fetched from Kafka. If fetching
 	// the offset takes longer than the poll interval, than we'll poll less frequently than configured.
 	r.getAndNotifyLastProducedOffset(ctx)
@@ -61,7 +61,7 @@ func (r *genericOffsetReader[O]) onPollInterval(ctx context.Context) error {
 	return nil
 }
 
-func (r *genericOffsetReader[O]) stopping(_ error) error {
+func (r *GenericOffsetReader[O]) stopping(_ error) error {
 	var zero O
 
 	// Release any waiting goroutine without swapping the result promise so that if any other goroutine
@@ -75,7 +75,7 @@ func (r *genericOffsetReader[O]) stopping(_ error) error {
 
 // getAndNotifyLastProducedOffset fetches the last produced offset for a partition and notifies all waiting
 // goroutines (if any).
-func (r *genericOffsetReader[O]) getAndNotifyLastProducedOffset(ctx context.Context) {
+func (r *GenericOffsetReader[O]) getAndNotifyLastProducedOffset(ctx context.Context) {
 	// Swap the next promise with a new one.
 	r.nextResultPromiseMx.Lock()
 	promise := r.nextResultPromise
@@ -100,7 +100,7 @@ func (r *genericOffsetReader[O]) getAndNotifyLastProducedOffset(ctx context.Cont
 //
 // The "last produced offset" is the offset of the last message written to the partition (starting from 0), or -1 if no
 // message has been written yet.
-func (r *genericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Context) (O, error) {
+func (r *GenericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Context) (O, error) {
 	// Get the promise for the result of the next request that will be issued.
 	r.nextResultPromiseMx.RLock()
 	promise := r.nextResultPromise
@@ -110,14 +110,14 @@ func (r *genericOffsetReader[O]) WaitNextFetchLastProducedOffset(ctx context.Con
 }
 
 // CachedOffset returns the last result of fetching the offset. This is likely outdated, but it's useful to get a directionally correct value quickly.
-func (r *genericOffsetReader[O]) CachedOffset() (O, error) {
+func (r *GenericOffsetReader[O]) CachedOffset() (O, error) {
 	c := r.lastResultPromise.Load()
 	return c.resultValue, c.resultErr
 }
 
 // partitionOffsetReader is responsible to read the offsets of a single partition.
 type partitionOffsetReader struct {
-	*genericOffsetReader[int64]
+	*GenericOffsetReader[int64]
 
 	client      *partitionOffsetClient
 	logger      log.Logger
@@ -136,7 +136,7 @@ func newPartitionOffsetReaderWithOffsetClient(offsetClient *partitionOffsetClien
 		logger:      logger, // Do not wrap with partition ID because it's already done by the caller.
 	}
 
-	r.genericOffsetReader = newGenericOffsetReader[int64](r.FetchLastProducedOffset, pollInterval, logger)
+	r.GenericOffsetReader = NewGenericOffsetReader[int64](r.FetchLastProducedOffset, pollInterval, logger)
 
 	return r
 }
@@ -159,7 +159,7 @@ type GetPartitionIDsFunc func(ctx context.Context) ([]int32, error)
 
 // TopicOffsetsReader is responsible to read the offsets of partitions in a topic.
 type TopicOffsetsReader struct {
-	*genericOffsetReader[map[int32]int64]
+	*GenericOffsetReader[map[int32]int64]
 
 	client          *partitionOffsetClient
 	topic           string
@@ -175,7 +175,7 @@ func NewTopicOffsetsReader(client *kgo.Client, topic string, getPartitionIDs Get
 		logger:          logger,
 	}
 
-	r.genericOffsetReader = newGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffset, pollInterval, logger)
+	r.GenericOffsetReader = NewGenericOffsetReader[map[int32]int64](r.FetchLastProducedOffset, pollInterval, logger)
 
 	return r
 }

@@ -553,6 +553,28 @@ func (b *BlockBuilder) consumePartitionSection(
 		commitRec *kgo.Record
 	)
 
+	fetcher, err := ingest.NewConcurrentFetchers(
+		ctx,
+		b.kafkaClient,
+		logger,
+		state.Commit.Topic,
+		state.Commit.Partition,
+		state.Commit.At,
+		4,
+		100_000_000,
+		false,
+		5*time.Second,
+		nil,
+		ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+		backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: 1 * time.Second,
+		},
+		nil)
+	if err != nil {
+		return state, err
+	}
+
 consumerLoop:
 	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
 		if err := context.Cause(ctx); err != nil {
@@ -563,7 +585,7 @@ consumerLoop:
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
+		fetches, _ := fetcher.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
@@ -616,6 +638,8 @@ consumerLoop:
 		}
 	}
 
+	fetcher.Stop()
+
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
 		level.Info(logger).Log("msg", "no records were consumed")
@@ -633,7 +657,6 @@ consumerLoop:
 		commitRec = lastRec
 	}
 
-	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return state, err
