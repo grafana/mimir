@@ -271,7 +271,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.SamplesProcessed)
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessed())
 				if err != nil {
 					return nil, err
 				}
@@ -593,9 +593,14 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 				// Should never happen unless a bug.
 				return errors.New("consistency check failed: missing downstream response")
 			}
+			downstreamStats, ok := execStatsByID[downstreamReq.GetID()]
+			if !ok {
+				// Should never happen unless a bug.
+				return errors.New("consistency check failed: missing downstream stats")
+			}
 
 			splitReq.downstreamResponses[downstreamIdx] = downstreamRes
-			splitReq.downstreamStatistics[downstreamIdx] = execStatsByID[downstreamReq.GetID()]
+			splitReq.downstreamStatistics[downstreamIdx] = downstreamStats
 			mappedDownstreamRequests++
 		}
 	}
