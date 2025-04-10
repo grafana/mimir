@@ -16,7 +16,7 @@ import (
 
 type EliminateCommonSubexpressions struct{}
 
-func (d *EliminateCommonSubexpressions) Name() string {
+func (e *EliminateCommonSubexpressions) Name() string {
 	return "Eliminate common subexpressions"
 }
 
@@ -53,7 +53,7 @@ func (d *EliminateCommonSubexpressions) Name() string {
 // # Combinations of all of the above
 // b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
 
-func (d *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
 	// - introduce "TimeRange(parent types.QueryTimeRange) types.QueryTimeRange" method on Node?
 	// FIXME: when expression is something like (a + b) / (a + b), we'll do some duplicate work or potentially do the wrong thing:
@@ -66,10 +66,10 @@ func (d *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.
 	// TODO: don't deduplicate range vector selectors or subqueries directly - only deduplicate expressions that produce instant vectors
 
 	// Figure out all the paths to leaves
-	paths := d.accumulatePaths(plan.Root)
+	paths := e.accumulatePaths(plan.Root)
 
 	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
-	err := d.groupAndApplyDeduplication(paths, 0)
+	err := e.groupAndApplyDeduplication(paths, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -77,11 +77,11 @@ func (d *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.
 	return plan, nil
 }
 
-func (d *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path, offset int) error {
-	groups := d.groupPaths(paths, offset)
+func (e *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path, offset int) error {
+	groups := e.groupPaths(paths, offset)
 
 	for _, group := range groups {
-		if err := d.applyDeduplication(group, offset); err != nil {
+		if err := e.applyDeduplication(group, offset); err != nil {
 			return err
 		}
 	}
@@ -90,14 +90,14 @@ func (d *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path
 }
 
 // accumulatePaths returns a list of paths from root that terminate in VectorSelector or MatrixSelector nodes.
-func (d *EliminateCommonSubexpressions) accumulatePaths(root planning.Node) []*path {
-	return d.accumulatePath(root, &path{
+func (e *EliminateCommonSubexpressions) accumulatePaths(root planning.Node) []*path {
+	return e.accumulatePath(root, &path{
 		nodes:        []planning.Node{root},
 		childIndices: []int{0},
 	})
 }
 
-func (d *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar *path) []*path {
+func (e *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar *path) []*path {
 	_, isVS := node.(*core.VectorSelector)
 	_, isMS := node.(*core.MatrixSelector)
 
@@ -117,7 +117,7 @@ func (d *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar
 		path := soFar.Clone()
 		path.nodes = append(path.nodes, child)
 		path.childIndices = append(path.childIndices, childIdx)
-		childPaths := d.accumulatePath(child, path)
+		childPaths := e.accumulatePath(child, path)
 		paths = append(paths, childPaths...)
 	}
 
@@ -127,7 +127,7 @@ func (d *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar
 // groupPaths returns paths grouped by the node at offset from the leaf.
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
 // paths that have a unique grouping node are not returned.
-func (d *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) [][]*path {
+func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) [][]*path {
 	alreadyGrouped := make([]bool, len(paths))
 	groups := make([][]*path, 0)
 
@@ -179,8 +179,8 @@ func (d *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 	return groups
 }
 
-func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset int) error {
-	duplicatePathLength := d.findCommonSubexpressionLength(group, offset+1)
+func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset int) error {
+	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 	duplicate := &Duplicate{Inner: group[0].NodeAtOffsetFromLeaf(duplicatePathLength - 1), DuplicateDetails: &DuplicateDetails{}}
 
 	for _, path := range group {
@@ -199,7 +199,7 @@ func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 	// Check if a subset of the paths we just examined share an even longer common subexpression.
 	// eg. if the expression is "a + max(a) + max(a)", then we may have just deduplicated the "a" selectors,
 	// but we can also deduplicate the "max(a)" expressions.
-	if err := d.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
+	if err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
 		return err
 	}
 
@@ -210,7 +210,7 @@ func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 // in group, starting at offset.
 // offset 0 means start from leaf of all paths.
 // If a non-zero offset is provided, then it is assumed all paths in group already have a common subexpression of length offset.
-func (d *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*path, offset int) int {
+func (e *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*path, offset int) int {
 	length := offset
 	firstPath := group[0]
 
