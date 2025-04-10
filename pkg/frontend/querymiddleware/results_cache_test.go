@@ -610,7 +610,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 			cachedExtents: []Extent{
 				mkExtentWithSamplesProcessed(100, 200, 100),
 			},
-			expectedSamplesProcessed: 50, // Expect half the samples
+			expectedSamplesProcessed: 50,
 		},
 		{
 			name: "Right half of extent is within query range - half of samples counted",
@@ -622,7 +622,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 			cachedExtents: []Extent{
 				mkExtentWithSamplesProcessed(50, 150, 100),
 			},
-			expectedSamplesProcessed: 50, // Expect half the samples
+			expectedSamplesProcessed: 50,
 		},
 		{
 			name: "Multiple extents fully within query range - all samples summed",
@@ -777,10 +777,9 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "Zero length extent at boundary - merged with base extent",
+			name: "Zero length within a step range from base extent - merged with base extent",
 			extents: []Extent{
 				mkExtentWithSamplesProcessed(100, 200, 100),
-				// This extent has zero time range, but within a step range from previous extent.
 				mkExtentWithSamplesProcessed(201, 201, 1),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
@@ -803,20 +802,15 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create extents with valid responses for merging
 			testExtents := make([]Extent, len(tc.extents))
 			for i, e := range tc.extents {
 				testExtents[i] = e
 			}
 
-			// Merge the extents
 			result, err := mergeCacheExtentsForRequest(ctx, tc.request, merger, testExtents)
 			require.NoError(t, err)
 
-			// Verify the number of result extents
 			assert.Equal(t, len(tc.expectedExtents), len(result), "got %d extents, want %d", len(result), len(tc.expectedExtents))
-
-			// Verify each extent's properties
 			for i, expected := range tc.expectedExtents {
 				assert.Equal(t, expected.Start, result[i].Start, "extent %d start: got %d, want %d", i, result[i].Start, expected.Start)
 				assert.Equal(t, expected.End, result[i].End, "extent %d end: got %d, want %d", i, result[i].End, expected.End)
@@ -844,12 +838,12 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 		expectedSamples []uint64
 	}{
 		{
-			name: "Extent overlaps with max freshness period - truncated",
+			name: "Half of the extent overlaps with max freshness period - truncated",
 			extents: []Extent{
 				mkExtentWithSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 100),
 			},
 			shouldTruncate:  []bool{true},
-			expectedSamples: []uint64{50}, // Expect ~half of samples since half the time range is truncated
+			expectedSamples: []uint64{50},
 		},
 		{
 			name: "Extent doesn't overlap with max freshness period - unchanged",
@@ -857,16 +851,16 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				mkExtentWithSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 100),
 			},
 			shouldTruncate:  []bool{false},
-			expectedSamples: []uint64{100}, // Should remain unchanged
+			expectedSamples: []uint64{100},
 		},
 		{
-			name: "Multiple extents with some truncated",
+			name: "Two extents with one overlapping with max freshness period - one extent truncated",
 			extents: []Extent{
 				mkExtentWithSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 100),
 				mkExtentWithSamplesProcessed(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 100),
 			},
 			shouldTruncate:  []bool{false, true},
-			expectedSamples: []uint64{100, 1}, // First unchanged, second fully truncated
+			expectedSamples: []uint64{100, 1},
 		},
 	}
 
@@ -895,7 +889,6 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				} else {
 					assert.Equal(t, originalEnds[i], result[i].End, "Extent %d should not be truncated", i)
 				}
-
 				assert.Equal(t, tc.expectedSamples[i], result[i].SamplesProcessed,
 					"Expected %d samples processed but got %d",
 					tc.expectedSamples[i], result[i].SamplesProcessed)
@@ -904,7 +897,6 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 	}
 }
 
-// Helper to marshal response for testing
 func mustMarshalResponse(t *testing.T, resp Response) *types.Any {
 	t.Helper()
 	marshalled, err := types.MarshalAny(resp)
