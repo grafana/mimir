@@ -5,19 +5,19 @@ This program displays information about blocks in object storage.
 ## Flags
 
 - `--user` (required) The user (tenant) that owns the blocks to be listed
-- `--format` (defaults to `tabbed`) The format of the output. Must be one of `tabbed`, `json`, or `yaml`
-- `--show-deleted` (defaults to `false`) Show blocks marked for deletion
-- `--show-labels` (defaults to `false`) Show block labels
-- `--show-ulid-time` (defaults to `false`) Show time from ULID
-- `--show-sources` (defaults to `false`) Show compaction sources
-- `--show-parents` (defaults to `false`) Show parent blocks
-- `--show-compaction-level` (defaults to `false`) Show compaction level
-- `--show-block-size` (defaults to `false`) Show size of block based on details in meta.json, if available
-- `--show-stats` (defaults to `false`) Show block stats (number of series, chunks, samples)
-- `--split-count` (defaults to `0`) If not 0, shows split number that would be used for grouping blocks during split compaction
+- `--format` The format of the output. Must be one of `tabbed`, `json`, or `yaml` (default `tabbed`)
+- `--show-deleted` Show blocks marked for deletion (default `false`)
+- `--show-labels` Show block labels (default `false`)
+- `--show-ulid-time` Show time from ULID (default `false`)
+- `--show-sources` Show compaction sources (default `false`)
+- `--show-parents` Show parent blocks (default `false`)
+- `--show-compaction-level` Show compaction level (default `false`)
+- `--show-block-size` Show size of block based on details in meta.json, if available (default `false`)
+- `--show-stats` Show block stats (number of series, chunks, samples) (default `false`)
+- `--split-count` If not 0, shows split number that would be used for grouping blocks during split compaction (default `0`)
 - `--min-time` If set, only blocks with minTime >= this value are printed
 - `--max-time` If set, only blocks with maxTime <= this value are printed
-- `--use-ulid-time-for-min-time-check` (defaults to `false`) If true, meta.json files for blocks with ULID time before `--min-time` are not loaded. This may incorrectly skip blocks
+- `--use-ulid-time-for-min-time-check` If true, meta.json files for blocks with ULID time before `--min-time` are not loaded. This may incorrectly skip blocks (default `false`)
 
 Each supported object storage service also has an additional set of flags (see examples in [Running](##Running)).
 
