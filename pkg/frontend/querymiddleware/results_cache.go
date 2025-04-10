@@ -388,10 +388,8 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			continue
 		}
 		accumulator.TraceId = jaegerTraceID(ctx)
-
-		// Calculate overlap between current accumulator and the new extent.
-		overlap := extents[i].End - max(accumulator.End, extents[i].Start)
-		accumulator.SamplesProcessed += calculateSamplesInTimeRange(extents[i], overlap)
+		// Calculate the number of samples in the subrange of the extent that is being merged with the accumulator.
+		accumulator.SamplesProcessed += extentSamplesInSubrange(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
 
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
@@ -502,10 +500,8 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-
 		// Calculate the proportion of samples used from extent, based on the overlap between request and extent.
-		overlap := min(req.GetEnd(), extent.End) - max(start, extent.Start)
-		cachedSamplesProcessed += calculateSamplesInTimeRange(extent, overlap)
+		cachedSamplesProcessed += extentSamplesInSubrange(extent, max(start, extent.Start), min(req.GetEnd(), extent.End))
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -547,10 +543,8 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
-			// Calculate new number of samples in the extent based on the truncated time range
-			retainedTimeRange := maxCacheTime - extents[i].Start
-			extents[i].SamplesProcessed = calculateSamplesInTimeRange(extents[i], retainedTimeRange)
-
+			// Calculate the number of samples in the subrange of the extent that is within the maxCacheTime.
+			extents[i].SamplesProcessed = extentSamplesInSubrange(extents[i], extents[i].Start, maxCacheTime)
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
 			if err != nil {
@@ -664,11 +658,13 @@ func cacheHashKey(key string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// calculateSamplesInTimeRange counts the appropriate number of samples for the time range within the extent.
-func calculateSamplesInTimeRange(extent Extent, overlap int64) uint64 {
+// extentSamplesInSubrange counts the appropriate number of samples for the subrange within the extent.
+// subrangeStart and subrangeEnd must be within the extent.
+func extentSamplesInSubrange(extent Extent, subrangeStart int64, subrangeEnd int64) uint64 {
 	extentTimeRange := extent.End - extent.Start
+	subrange := subrangeEnd - subrangeStart
 	if extentTimeRange > 0 {
-		ratio := float64(overlap) / float64(extentTimeRange)
+		ratio := float64(subrange) / float64(extentTimeRange)
 		return uint64(float64(extent.SamplesProcessed) * ratio)
 	} else {
 		return extent.SamplesProcessed
