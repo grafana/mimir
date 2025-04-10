@@ -48,7 +48,6 @@ type splitAndCacheMiddlewareMetrics struct {
 	splitQueriesCount              prometheus.Counter
 	queryResultCacheAttemptedCount prometheus.Counter
 	queryResultCacheSkippedCount   *prometheus.CounterVec
-	samplesProcessedFromCache      prometheus.Counter
 }
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
@@ -66,11 +65,6 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 			Name: "cortex_frontend_query_result_cache_skipped_total",
 			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
 		}, []string{"reason"}),
-		samplesProcessedFromCache: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			// It's called "cortex_query_..." to match with "cortex_query_samples_processed_total" metric.
-			Name: "cortex_query_samples_processed_from_cache_total",
-			Help: "Approximate number of cached samples processed to execute a query.",
-		}),
 	}
 
 	// Initialize known label values.
@@ -199,9 +193,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Track samples processed from cache in metrics
-			if cachedSamplesProcessed > 0 {
-				s.metrics.samplesProcessedFromCache.Add(float64(cachedSamplesProcessed))
-			}
+			reqStats := stats.FromContext(ctx)
+			reqStats.AddSamplesProcessedFromCache(cachedSamplesProcessed)
 
 			if len(requests) == 0 {
 				// The full response has been picked up from the cache so we can merge it and store it.

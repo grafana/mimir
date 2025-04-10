@@ -226,9 +226,6 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
 		# TYPE cortex_frontend_query_result_cache_requests_total counter
 		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
-		# HELP cortex_query_samples_processed_from_cache_total Approximate number of cached samples processed to execute a query.
-		# TYPE cortex_query_samples_processed_from_cache_total counter
-		cortex_query_samples_processed_from_cache_total 0
 	`)))
 
 	// Assert query stats from context
@@ -370,10 +367,6 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
 		# TYPE cortex_frontend_query_result_cache_hits_total counter
 		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 2
-
-		# HELP cortex_query_samples_processed_from_cache_total Approximate number of cached samples processed to execute a query.
-		# TYPE cortex_query_samples_processed_from_cache_total counter
-		cortex_query_samples_processed_from_cache_total 0
 	`)))
 }
 
@@ -500,10 +493,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		# HELP cortex_frontend_query_result_cache_hits_total Total number of requests (or partial requests) fetched from the results cache.
 		# TYPE cortex_frontend_query_result_cache_hits_total counter
 		cortex_frontend_query_result_cache_hits_total{request_type="query_range"} 0
-
-		# HELP cortex_query_samples_processed_from_cache_total Approximate number of cached samples processed to execute a query.
-		# TYPE cortex_query_samples_processed_from_cache_total counter
-		cortex_query_samples_processed_from_cache_total 0
 	`)))
 }
 
@@ -614,9 +603,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
 		# TYPE cortex_frontend_query_result_cache_requests_total counter
 		cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
-		# HELP cortex_query_samples_processed_from_cache_total Approximate number of cached samples processed to execute a query.
-		# TYPE cortex_query_samples_processed_from_cache_total counter
-		cortex_query_samples_processed_from_cache_total 0
 	`)))
 }
 
@@ -767,9 +753,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				# HELP cortex_frontend_query_result_cache_requests_total Total number of requests (or partial requests) looked up in the results cache.
 				# TYPE cortex_frontend_query_result_cache_requests_total counter
 				cortex_frontend_query_result_cache_requests_total{request_type="query_range"} 0
-				# HELP cortex_query_samples_processed_from_cache_total Approximate number of cached samples processed to execute a query.
-				# TYPE cortex_query_samples_processed_from_cache_total counter
-				cortex_query_samples_processed_from_cache_total 0
 			`,
 		},
 		"should cache a response up until max cache freshness time ago": {
