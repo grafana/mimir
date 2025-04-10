@@ -24,7 +24,7 @@ Two operating modes are supported:
 
 ```bash
 docker pull "grafana/mimir:latest"
-docker container run --rm -ti grafana/mimir -target=continuous-test
+docker run --rm -ti grafana/mimir -target=continuous-test
 ```
 
 - Using a local binary:
