@@ -1516,7 +1516,7 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 			expected: splitRequests{{
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses:  []Response{&PrometheusResponse{Status: "response-1"}, &PrometheusResponse{Status: "response-2"}},
-				downstreamStatistics: []*stats.Stats{&stats.Stats{}, &stats.Stats{}},
+				downstreamStatistics: []*stats.Stats{new(stats.Stats), new(stats.Stats)},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{},
 				downstreamResponses:  []Response{},
@@ -1524,7 +1524,7 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses:  []Response{&PrometheusResponse{Status: "response-3"}},
-				downstreamStatistics: []*stats.Stats{&stats.Stats{}},
+				downstreamStatistics: []*stats.Stats{new(stats.Stats)},
 			}},
 		},
 		"should return error if a downstream response is missing": {
