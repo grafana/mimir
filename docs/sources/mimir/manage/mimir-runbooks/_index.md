@@ -1922,7 +1922,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 ### err-mimir-native-histogram-custom-buckets-mismatch
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
-with custom buckets where more buckets are present than the upper bound is specified for. In technical terms: the
+with custom buckets where more buckets are present than the upper bound is specified for. In technical terms, the
 number of bucket values from spans is higher than the number of custom values.
 
 {{< admonition type="note" >}}
