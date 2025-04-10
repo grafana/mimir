@@ -13683,7 +13683,7 @@
               "kind": "field",
               "name": "address",
               "required": false,
-              "desc": "GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.",
+              "desc": "Can be either the GRPC listen address of the query-frontend(s) or the HTTP/HTTPS address of a Prometheus-compatible server. Must be a DNS address (prefixed with dns:///) to enable GRPC client side load balancing.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler.query-frontend.address",
@@ -13967,6 +13967,27 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "http_client_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "connect_timeout",
+                  "required": false,
+                  "desc": "Timeout for establishing a connection to the query-frontend.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 30000000000,
+                  "fieldFlag": "ruler.query-frontend.http-client-config.connect-timeout",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

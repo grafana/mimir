@@ -200,6 +200,10 @@ To configure gRPC compression, use the following CLI flags or their YAML equival
 | `-alertmanager.alertmanager-client.grpc-compression`        | `query_scheduler.grpc_client_config.grpc_compression`      |
 | `-ingester.client.grpc-compression`                         | `ruler.query_frontend.grpc_client_config.grpc_compression` |
 
+{{< admonition type="note" >}}
+`-ruler.query-frontend.grpc-client-config.grpc-compression` is only applicable when the ruler uses gRPC to communicate with the query-frontend. Refer to [Remote ruler mode](../../../references/architecture/components/ruler/#remote-over-http-https).
+{{< /admonition >}}
+
 ## Heavy multi-tenancy
 
 For each tenant, Mimir opens and maintains a TSDB in memory. If you have a significant number of tenants, the memory overhead might become prohibitive.
