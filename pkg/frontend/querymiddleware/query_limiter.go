@@ -83,7 +83,7 @@ func (ql *queryLimiterMiddleware) shouldBlock(
 				return true
 			}
 			// If the query matches a query that should be limited, but it shouldn't be blocked this time,
-			// we should cache it so that it's blocked if it's run again within limitedQuery.MaxFrequency.
+			// we should cache it so that it's blocked if it's run again within limitedQuery.AllowedFrequency.
 			now := time.Now().UnixMilli()
 			bytes, err := proto.Marshal(&CachedLimitedQuery{
 				Key:             key,
@@ -99,7 +99,7 @@ func (ql *queryLimiterMiddleware) shouldBlock(
 					"err", err,
 				)
 			}
-			ql.cache.SetAsync(hashedKey, bytes, limitedQuery.MaxFrequency)
+			ql.cache.SetAsync(hashedKey, bytes, limitedQuery.AllowedFrequency)
 		}
 	}
 	return false
@@ -108,7 +108,7 @@ func (ql *queryLimiterMiddleware) shouldBlock(
 func (ql *queryLimiterMiddleware) enoughTimeSinceLastQuery(ctx context.Context, key, hashedKey string, limitedQuery *validation.LimitedQuery, spanLog *spanlogger.SpanLogger) bool {
 	query, lastAllowedQueryTime := ql.loadLimitedQueryFromCache(ctx, key, hashedKey, spanLog)
 	if query != "" && !lastAllowedQueryTime.IsZero() {
-		if time.Since(lastAllowedQueryTime) < limitedQuery.MaxFrequency {
+		if time.Since(lastAllowedQueryTime) < limitedQuery.AllowedFrequency {
 			return false
 		}
 	}
