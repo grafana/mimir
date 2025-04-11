@@ -12,7 +12,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -383,6 +385,207 @@ func (d *Duplicate) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (d *Duplicate) OperatorFactory(_ []types.Operator, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	panic("TODO")
+func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	if len(children) != 1 {
+		return nil, fmt.Errorf("expected exactly 1 child for Duplicate, got %v", len(children))
+	}
+
+	inner, ok := children[0].(types.InstantVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected InstantVectorOperator as child of Duplicate, got %T", children[0])
+	}
+
+	return &DuplicationConsumerOperatorFactory{
+		Buffer: &DuplicationBuffer{
+			Inner:                    inner,
+			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+			buffer:                   make(map[int]types.InstantVectorSeriesData, 1),
+		},
+	}, nil
+}
+
+type DuplicationConsumerOperatorFactory struct {
+	Buffer *DuplicationBuffer
+}
+
+func (d *DuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
+	return d.Buffer.AddConsumer(), nil
+}
+
+// DuplicationBuffer buffers the results of an inner operator that is used by multiple consuming operators.
+//
+// DuplicationBuffer is not thread-safe.
+type DuplicationBuffer struct {
+	Inner                    types.InstantVectorOperator
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+
+	consumerCount int
+
+	seriesMetadataCount int
+	seriesMetadata      []types.SeriesMetadata
+
+	nextSeriesIndex []int                                 // One entry per consumer.
+	buffer          map[int]types.InstantVectorSeriesData // TODO: a ring buffer would be better here
+
+	closeCount int
+}
+
+func (b *DuplicationBuffer) AddConsumer() *DuplicationConsumer {
+	b.consumerCount++
+	b.nextSeriesIndex = append(b.nextSeriesIndex, 0)
+
+	return &DuplicationConsumer{
+		Buffer:        b,
+		consumerIndex: b.consumerCount - 1,
+	}
+}
+
+func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	if b.seriesMetadataCount == 0 {
+		// Haven't loaded series metadata yet, load it now.
+		var err error
+		b.seriesMetadata, err = b.Inner.SeriesMetadata(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	b.seriesMetadataCount++
+
+	if b.seriesMetadataCount == b.consumerCount {
+		// We can safely return the original series metadata, as we're not going to return this to another consumer.
+		metadata := b.seriesMetadata
+		b.seriesMetadata = nil
+
+		return metadata, nil
+	}
+
+	// Return a copy of the original series metadata.
+	// slices.Clone does a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
+	return slices.Clone(b.seriesMetadata), nil
+}
+
+func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
+	nextSeriesIndex := b.nextSeriesIndex[consumerIndex]
+	isLastReaderOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
+	b.nextSeriesIndex[consumerIndex]++
+
+	d, buffered := b.buffer[nextSeriesIndex]
+	if !buffered {
+		var err error
+		d, err = b.Inner.NextSeries(ctx)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		b.buffer[nextSeriesIndex] = d
+	}
+
+	if isLastReaderOfThisSeries {
+		// We can safely return the series as-is, as we're not going to return this to another consumer.
+		delete(b.buffer, nextSeriesIndex)
+		return d, nil
+	}
+
+	return b.cloneSeries(d)
+}
+
+func (b *DuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int) bool {
+	thisConsumerPosition := b.nextSeriesIndex[consumerIndex]
+
+	for otherConsumerIndex, otherConsumerPosition := range b.nextSeriesIndex {
+		if otherConsumerIndex == consumerIndex {
+			continue
+		}
+
+		if otherConsumerPosition <= thisConsumerPosition {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (b *DuplicationBuffer) cloneSeries(original types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
+	clone := types.InstantVectorSeriesData{}
+
+	var err error
+	clone.Floats, err = types.FPointSlicePool.Get(len(original.Floats), b.MemoryConsumptionTracker)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	clone.Floats = clone.Floats[:len(original.Floats)]
+	copy(clone.Floats, original.Floats) // We can do a simple copy here, as FPoints don't contain pointers.
+
+	clone.Histograms, err = types.HPointSlicePool.Get(len(original.Histograms), b.MemoryConsumptionTracker)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	clone.Histograms = clone.Histograms[:len(original.Histograms)]
+
+	for i, p := range original.Histograms {
+		clone.Histograms[i].T = p.T
+
+		// Reuse existing FloatHistogram instance if we can.
+		if clone.Histograms[i].H == nil {
+			clone.Histograms[i].H = p.H.Copy()
+		} else {
+			p.H.CopyTo(clone.Histograms[i].H)
+		}
+	}
+
+	return clone, nil
+}
+
+func (b *DuplicationBuffer) Close() {
+	b.closeCount++
+
+	if b.closeCount != b.consumerCount {
+		// Other consumers are still using this buffer, so we can't close anything yet.
+		return
+	}
+
+	types.PutSeriesMetadataSlice(b.seriesMetadata)
+	b.seriesMetadata = nil
+
+	for _, d := range b.buffer {
+		types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+	}
+
+	b.buffer = nil
+
+	b.Inner.Close()
+}
+
+type DuplicationConsumer struct {
+	Buffer *DuplicationBuffer
+
+	consumerIndex int
+	closed        bool
+}
+
+var _ types.InstantVectorOperator = &DuplicationConsumer{}
+
+func (d *DuplicationConsumer) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	return d.Buffer.SeriesMetadata(ctx)
+}
+
+func (d *DuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	return d.Buffer.NextSeries(ctx, d.consumerIndex)
+}
+
+func (d *DuplicationConsumer) ExpressionPosition() posrange.PositionRange {
+	return d.Buffer.Inner.ExpressionPosition()
+}
+
+func (d *DuplicationConsumer) Close() {
+	if d.closed {
+		// Already closed, don't call d.Buffer.Close() again to avoid closing early.
+		return
+	}
+
+	d.closed = true
+	d.Buffer.Close()
 }
