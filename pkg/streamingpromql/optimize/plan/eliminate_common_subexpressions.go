@@ -35,18 +35,8 @@ func (e *EliminateCommonSubexpressions) Name() string {
 	return "Eliminate common subexpressions"
 }
 
-// TODO: tests
-// Some interesting test cases:
-//
-// (a - a) + (a - a) + (a * b) + (a * b)
-// (foo + foo) + sum(rate(foo[1m]))
-//
-// # Combinations of all of the above
-// b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
-
 func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
-	// - introduce "TimeRange(parent types.QueryTimeRange) types.QueryTimeRange" method on Node?
 
 	// Figure out all the paths to leaves
 	paths := e.accumulatePaths(plan.Root)
@@ -58,18 +48,6 @@ func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.
 	}
 
 	return plan, nil
-}
-
-func (e *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path, offset int) error {
-	groups := e.groupPaths(paths, offset)
-
-	for _, group := range groups {
-		if err := e.applyDeduplication(group, offset); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // accumulatePaths returns a list of paths from root that terminate in VectorSelector or MatrixSelector nodes.
@@ -105,6 +83,18 @@ func (e *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar
 	}
 
 	return paths
+}
+
+func (e *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path, offset int) error {
+	groups := e.groupPaths(paths, offset)
+
+	for _, group := range groups {
+		if err := e.applyDeduplication(group, offset); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // groupPaths returns paths grouped by the node at offset from the leaf.
