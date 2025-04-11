@@ -42,6 +42,10 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 			expr:            `1 + 1`,
 			expectUnchanged: true,
 		},
+		"duplicated string literal": {
+			expr:            `label_join(foo, "abc", "-") + label_join(bar, "def", ",")`,
+			expectUnchanged: true,
+		},
 		"vector selector duplicated twice": {
 			expr: `foo + foo`,
 			expectedPlan: `
