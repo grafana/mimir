@@ -87,7 +87,10 @@ func (g *CountGroupAggregationGroup) ComputeOutputSeries(_ types.ScalarData, tim
 		}
 	}
 
-	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *CountGroupAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
+	g.values = nil
 }

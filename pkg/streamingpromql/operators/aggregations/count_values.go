@@ -245,4 +245,10 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 func (c *CountValues) Close() {
 	c.Inner.Close()
 	c.LabelName.Close()
+
+	for _, d := range c.series {
+		types.FPointSlicePool.Put(d, c.MemoryConsumptionTracker)
+	}
+
+	c.series = nil
 }

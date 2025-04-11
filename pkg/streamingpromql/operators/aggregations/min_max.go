@@ -114,8 +114,13 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRan
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *MinMaxAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
+	g.floatValues = nil
+
+	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
+	g.floatPresent = nil
 }
