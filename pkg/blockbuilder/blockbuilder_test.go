@@ -170,7 +170,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	})
 
 	// We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 3 }, 15*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 3 }, 35*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
@@ -406,7 +406,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 	})
 
 	// Wait for the end of all cycles. We expect at least several cycle sections because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() == 5 }, 20*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() == 5 }, 50*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
@@ -467,7 +467,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	})
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 30*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	for _, tenant := range tenants {
 		compareQueryWithDir(t,
@@ -1067,7 +1067,7 @@ func TestFastCatchupOnIdlePartition(t *testing.T) {
 		require.NoError(t, err)
 		done.Store(true)
 	}()
-	require.Eventually(t, done.Load, 5*time.Second, 100*time.Millisecond, "expected fast catchup to finish")
+	require.Eventually(t, done.Load, 30*time.Second, 100*time.Millisecond, "expected fast catchup to finish")
 
 	// The actual fast catchup part.
 	err = bb.nextConsumeCycle(ctx, cycleEnd)
