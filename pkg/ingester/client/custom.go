@@ -10,6 +10,7 @@ import (
 	io "io"
 	"slices"
 	"sync"
+	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -21,11 +22,6 @@ import (
 )
 
 var (
-	chunkDataPool = sync.Pool{
-		New: func() any {
-			return mimirpb.UnsafeByteSlice{}
-		},
-	}
 	timeSeriesChunkPool = sync.Pool{
 		New: func() any {
 			return &TimeSeriesChunk{}
@@ -100,20 +96,17 @@ type CustomTimeSeriesChunk struct {
 	*TimeSeriesChunk
 
 	labelBuf protobuf.LabelBuffer
+	chunkBuf chunkBuffer
 }
 
 // Release back to pool.
 func (m *CustomTimeSeriesChunk) Release() {
-	for _, chk := range m.Chunks {
-		//nolint:staticcheck
-		chunkDataPool.Put(chk.Data[:0])
-		chk.Data = nil
-	}
 	m.Labels = m.Labels[:0]
 	m.Chunks = m.Chunks[:0]
 	timeSeriesChunkPool.Put(m.TimeSeriesChunk)
 	m.TimeSeriesChunk = nil
 	m.labelBuf.Release()
+	m.chunkBuf.Release()
 }
 
 func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
@@ -121,6 +114,7 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 	m.Labels = m.Labels[:0]
 	m.Chunks = m.Chunks[:0]
 	m.labelBuf = protobuf.NewLabelBuffer()
+	m.chunkBuf = newChunkBuffer()
 
 	l := len(data)
 	index := 0
@@ -280,7 +274,7 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			var chk Chunk
-			if err := unmarshalChunk(&chk, data[index:postIndex]); err != nil {
+			if err := unmarshalChunk(&chk, data[index:postIndex], &m.chunkBuf); err != nil {
 				return err
 			}
 			m.Chunks = append(m.Chunks, chk)
@@ -310,7 +304,7 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 	return nil
 }
 
-func unmarshalChunk(chk *Chunk, data []byte) error {
+func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
 	l := len(data)
 	index := 0
 	for index < l {
@@ -425,8 +419,7 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			chk.Data = slices.Grow(chunkDataPool.Get().(mimirpb.UnsafeByteSlice)[:0], byteLen)[0:byteLen]
-			copy(chk.Data, data[index:postIndex])
+			chk.Data = mimirpb.UnsafeByteSlice(buf.Add(data[index:postIndex]))
 			index = postIndex
 		default:
 			index = preIndex
@@ -581,16 +574,14 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 
 type CustomQueryStreamSeriesChunks struct {
 	*QueryStreamSeriesChunks
+
+	chunkBuf chunkBuffer
 }
 
 // Release back to pool.
 func (m *CustomQueryStreamSeriesChunks) Release() {
-	for _, chk := range m.Chunks {
-		//nolint:staticcheck
-		chunkDataPool.Put(chk.Data[:0])
-		chk.Data = nil
-	}
 	m.Chunks = m.Chunks[:0]
+	m.chunkBuf.Release()
 	queryStreamSeriesChunksPool.Put(m.QueryStreamSeriesChunks)
 	m.QueryStreamSeriesChunks = nil
 }
@@ -598,6 +589,7 @@ func (m *CustomQueryStreamSeriesChunks) Release() {
 func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 	m.QueryStreamSeriesChunks = queryStreamSeriesChunksPool.Get().(*QueryStreamSeriesChunks)
 	m.Chunks = m.Chunks[:0]
+	m.chunkBuf = newChunkBuffer()
 
 	l := len(data)
 	index := 0
@@ -678,7 +670,7 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 
 			newLen := len(m.Chunks) + 1
 			m.Chunks = slices.Grow(m.Chunks, 1)[0:newLen]
-			if err := unmarshalChunk(&m.Chunks[newLen-1], data[index:postIndex]); err != nil {
+			if err := unmarshalChunk(&m.Chunks[newLen-1], data[index:postIndex], &m.chunkBuf); err != nil {
 				return err
 			}
 			index = postIndex
@@ -745,8 +737,39 @@ func (m *ExemplarQueryResponse) Release() {
 	m.Timeseries = nil
 }
 
-// ReleaseChunk puts chk back in pool.
-func ReleaseChunk(chk Chunk) {
+var (
+	chunkBufferPool = sync.Pool{
+		New: func() any {
+			return []byte{}
+		},
+	}
+)
+
+type chunkBuffer struct {
+	buf []byte
+}
+
+func newChunkBuffer() chunkBuffer {
+	return chunkBuffer{
+		buf: chunkBufferPool.Get().([]byte)[:0],
+	}
+}
+
+func (b *chunkBuffer) Add(data []byte) string {
+	oldLen := len(b.buf)
+	newLen := oldLen + len(data)
+	b.buf = slices.Grow(b.buf, len(data))[0:newLen]
+	copy(b.buf[oldLen:newLen], data)
+
+	return yoloString(b.buf[oldLen:newLen])
+}
+
+func (b *chunkBuffer) Release() {
 	//nolint:staticcheck
-	chunkDataPool.Put(chk.Data[:0])
+	chunkBufferPool.Put(b.buf[:0])
+	b.buf = nil
+}
+
+func yoloString(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b)) // nolint:gosec
 }
