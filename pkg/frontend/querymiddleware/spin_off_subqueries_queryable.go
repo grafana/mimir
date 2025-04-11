@@ -89,9 +89,15 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
-		promRes, ok := resp.(*PrometheusResponse)
+
+		// FIXME: newSeriesSetFromEmbeddedQueriesResults copies samples, but does not do a deep copy of histogram spans.
+		// We either need to do a deep copy of the histogram spans or somehow wrap the SeriesSets with a closer.
+		// Labels also need closer inspection as they appear to be pointers too.
+		defer resp.Close()
+
+		promRes, ok := resp.GetPrometheusResponse()
 		if !ok {
-			return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{}))
+			return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected a Prometheus response", resp))
 		}
 		resStreams, err := ResponseToSamples(promRes)
 		if err != nil {
@@ -179,9 +185,14 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			if err != nil {
 				return storage.ErrSeriesSet(fmt.Errorf("error running subquery: %w", err))
 			}
-			promRes, ok := resp.(*PrometheusResponse)
+			// FIXME: newSeriesSetFromEmbeddedQueriesResults copies samples, but does not do a deep copy of histogram spans.
+			// We either need to do a deep copy of the histogram spans or somehow wrap the SeriesSets with a closer.
+			// Labels also need closer inspection as they appear to be pointers too.
+			defer resp.Close()
+
+			promRes, ok := resp.GetPrometheusResponse()
 			if !ok {
-				return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{}))
+				return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected a Prometheus response", resp))
 			}
 			resStreams, err := ResponseToSamples(promRes)
 			if err != nil {

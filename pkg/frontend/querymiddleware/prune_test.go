@@ -67,25 +67,29 @@ func TestQueryPruning(t *testing.T) {
 			// Run the query without pruning.
 			expectedRes, err := downstream.Do(injectedContext, req)
 			require.Nil(t, err)
+			expectedPrometheusResponse, ok := expectedRes.GetPrometheusResponse()
+			require.True(t, ok)
 
 			if !template.IsEmpty {
 				// Ensure the query produces some results.
-				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
-				requireValidSamples(t, expectedRes.(*PrometheusResponse).Data.Result)
+				require.NotEmpty(t, expectedPrometheusResponse.Data.Result)
+				requireValidSamples(t, expectedPrometheusResponse.Data.Result)
 			}
 
 			// Run the query with pruning.
 			prunedRes, err := pruningware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
+			prunedPromethusResponse, ok := prunedRes.GetPrometheusResponse()
+			require.True(t, ok)
 
 			if !template.IsEmpty {
 				// Ensure the query produces some results.
-				require.NotEmpty(t, prunedRes.(*PrometheusResponse).Data.Result)
-				requireValidSamples(t, prunedRes.(*PrometheusResponse).Data.Result)
+				require.NotEmpty(t, prunedPromethusResponse.Data.Result)
+				requireValidSamples(t, prunedPromethusResponse.Data.Result)
 			}
 
 			// Ensure the results are approximately equal.
-			approximatelyEqualsSamples(t, expectedRes.(*PrometheusResponse), prunedRes.(*PrometheusResponse))
+			approximatelyEqualsSamples(t, expectedPrometheusResponse, prunedPromethusResponse)
 		})
 	}
 }
