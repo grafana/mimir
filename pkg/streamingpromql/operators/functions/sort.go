@@ -149,6 +149,7 @@ func (s *Sort) NextSeries(_ context.Context) (types.InstantVectorSeriesData, err
 	}
 
 	data := s.allData[s.seriesReturned]
+	s.allData[s.seriesReturned] = types.InstantVectorSeriesData{} // Clear our reference to the data, so it can be garbage collected.
 	s.seriesReturned++
 
 	return data, nil
@@ -168,4 +169,6 @@ func (s *Sort) Close() {
 		types.PutInstantVectorSeriesData(s.allData[s.seriesReturned], s.MemoryConsumptionTracker)
 		s.seriesReturned++
 	}
+
+	s.allData = nil
 }
