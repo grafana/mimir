@@ -675,11 +675,12 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			var chk Chunk
-			if err := unmarshalChunk(&chk, data[index:postIndex]); err != nil {
+
+			newLen := len(m.Chunks) + 1
+			m.Chunks = slices.Grow(m.Chunks, 1)[0:newLen]
+			if err := unmarshalChunk(&m.Chunks[newLen-1], data[index:postIndex]); err != nil {
 				return err
 			}
-			m.Chunks = append(m.Chunks, chk)
 			index = postIndex
 		default:
 			index = preIndex
