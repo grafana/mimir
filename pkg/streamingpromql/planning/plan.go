@@ -176,7 +176,7 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	if e.includeDescriptions {
-		encoded.Type = nodeType(n)
+		encoded.Type = NodeTypeName(n)
 		encoded.Description = n.Describe()
 		encoded.ChildrenLabels = n.ChildrenLabels()
 	}
@@ -188,7 +188,10 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	return idx, nil
 }
 
-func nodeType(n Node) string {
+// NodeTypeName returns the human-readable name of the type of n.
+//
+// This should not be used in performance-sensitive code.
+func NodeTypeName(n Node) string {
 	return reflect.TypeOf(n).Elem().Name()
 }
 
@@ -354,7 +357,7 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 		p.builder.WriteRune(' ')
 
 		if printedAlready {
-			p.builder.WriteString(nodeType(n))
+			p.builder.WriteString(NodeTypeName(n))
 			p.builder.WriteString(" ...\n")
 			return
 		}
@@ -362,7 +365,7 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 		p.repeatedNodesPrintedAlready[n] = struct{}{}
 	}
 
-	p.builder.WriteString(nodeType(n))
+	p.builder.WriteString(NodeTypeName(n))
 
 	description := n.Describe()
 	if description != "" {

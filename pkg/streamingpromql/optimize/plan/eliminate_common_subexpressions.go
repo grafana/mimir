@@ -5,7 +5,6 @@ package plan
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -260,7 +259,7 @@ func (p *path) String() string {
 			b.WriteString(" -> ")
 		}
 
-		b.WriteString(reflect.TypeOf(n).Elem().Name())
+		b.WriteString(planning.NodeTypeName(n))
 		desc := n.Describe()
 
 		if desc != "" {
