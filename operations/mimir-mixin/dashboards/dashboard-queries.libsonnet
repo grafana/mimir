@@ -244,14 +244,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         // Notifications / sec successfully sent to the Alertmanager.
         successPerSecond: |||
+          (
           sum(rate(cortex_prometheus_notifications_sent_total{%(rulerMatcher)s}[$__rate_interval]))
             -
           sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval]))
+          ) > 0
+          or on () vector(0)
         ||| % variables,
 
         // Notifications / sec failed to be sent to the Alertmanager.
         failurePerSecond: |||
-          sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval]))
+          sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval])) or on () vector(0)
         ||| % variables,
       },
     },
