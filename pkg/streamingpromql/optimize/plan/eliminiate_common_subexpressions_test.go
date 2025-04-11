@@ -237,6 +237,24 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 			`,
 			expectedDuplicateNodes: 1,
 		},
+		"duplicate nested subqueries": {
+			expr: `max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[10m:])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: max_over_time(...)
+							- Subquery: [10m0s:1m0s]
+								- FunctionCall: rate(...)
+									- Subquery: [5m0s:1m0s]
+										- VectorSelector: {__name__="foo"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"duplicate subqueries with different ranges": {
+			expr:            `max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[7m:])`,
+			expectUnchanged: true, // We don't support deduplicating common expressions that are evaluated over different ranges.
+		},
 	}
 
 	ctx := context.Background()

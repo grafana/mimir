@@ -196,3 +196,11 @@ func (q *QueryTimeRange) PointIndex(t int64) int64 {
 func (q *QueryTimeRange) IndexTime(p int64) int64 {
 	return q.StartT + p*q.IntervalMilliseconds
 }
+
+func (q *QueryTimeRange) Equal(other QueryTimeRange) bool {
+	return q.StartT == other.StartT &&
+		q.EndT == other.EndT &&
+		q.IntervalMilliseconds == other.IntervalMilliseconds &&
+		q.StepCount == other.StepCount &&
+		q.IsInstant == other.IsInstant
+}
