@@ -172,7 +172,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 							- RHS: VectorSelector: {__name__="b"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes: 1,
+			expectedDuplicateNodes: 1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
 		},
 		"same selector used for both vector and matrix selector": {
 			expr:            `foo + rate(foo[5m])`,
@@ -208,6 +208,22 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 							- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes: 1,
+		},
+		"duplicate subqueries with different outer function and multiple child selectors": {
+			expr: `rate((a - b)[5m:]) + increase((a - b)[5m:])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: rate(...)
+						- Subquery: [5m0s:1m0s]
+							- ref#1 Duplicate
+								- BinaryExpression: LHS - RHS
+									- LHS: VectorSelector: {__name__="a"}
+									- RHS: VectorSelector: {__name__="b"}
+					- RHS: FunctionCall: increase(...)
+						- Subquery: [5m0s:1m0s]
+							- ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
 		},
 		"duplicate subqueries with same outer function": {
 			expr: `rate(foo[5m:]) + rate(foo[5m:])`,
