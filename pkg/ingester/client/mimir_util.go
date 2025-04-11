@@ -73,8 +73,6 @@ func AccumulateChunks(a, b []Chunk) []Chunk {
 	for j := range b {
 		if !containsChunk(a, b[j]) {
 			ret = append(ret, b[j])
-		} else {
-			ReleaseChunk(b[j])
 		}
 	}
 	return ret
