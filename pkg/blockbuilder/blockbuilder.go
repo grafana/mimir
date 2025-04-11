@@ -562,7 +562,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		state.Commit.Topic,
 		state.Commit.Partition,
 		state.Commit.At,
-		4,
+		b.cfg.ConcurrentFetcherConcurrency,
 		100_000_000,
 		false,
 		5*time.Second,
