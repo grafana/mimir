@@ -194,4 +194,6 @@ func (m *FunctionOverRangeVector) Close() {
 	for _, d := range m.scalarArgsData {
 		types.FPointSlicePool.Put(d.Samples, m.MemoryConsumptionTracker)
 	}
+
+	m.scalarArgsData = nil
 }

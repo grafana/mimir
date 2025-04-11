@@ -164,4 +164,5 @@ func (m *RangeVectorSelector) Close() {
 	m.Selector.Close()
 	m.floats.Close()
 	m.histograms.Close()
+	m.chunkIterator = nil
 }

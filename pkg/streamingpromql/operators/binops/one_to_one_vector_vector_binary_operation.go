@@ -97,6 +97,13 @@ func (g *oneToOneBinaryOperationRightSide) updatePresence(timestampIdx int64, se
 	return -1
 }
 
+// latestSeriesIndex returns the index of the last right series used in this side.
+//
+// It assumes that rightSeriesIndices is sorted in ascending order.
+func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
+	return g.rightSeriesIndices[len(g.rightSeriesIndices)-1]
+}
+
 type oneToOneBinaryOperationOutputSeriesWithLabels struct {
 	labels labels.Labels
 	series *oneToOneBinaryOperationOutputSeries
@@ -158,19 +165,28 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	if canProduceAnySeries, err := b.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
+		b.Close()
 		return nil, nil
 	}
 
-	allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, err := b.computeOutputSeries()
+	allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, err := b.computeOutputSeries()
 	if err != nil {
 		return nil, err
+	}
+
+	if len(allMetadata) == 0 {
+		types.PutSeriesMetadataSlice(allMetadata)
+		types.BoolSlicePool.Put(leftSeriesUsed, b.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(rightSeriesUsed, b.MemoryConsumptionTracker)
+		b.Close()
+		return nil, nil
 	}
 
 	b.sortSeries(allMetadata, allSeries)
 	b.remainingSeries = allSeries
 
-	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, b.MemoryConsumptionTracker)
-	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, b.MemoryConsumptionTracker)
+	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, lastLeftSeriesUsedIndex, b.MemoryConsumptionTracker)
+	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -213,8 +229,10 @@ func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Con
 // - a list of all possible series this operator could return
 // - a corresponding list of the source series for each output series
 // - a list indicating which series from the left side are needed to compute the output
+// - the index of the last series from the left side that is needed to compute the output
 // - a list indicating which series from the right side are needed to compute the output
-func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, []bool, error) {
+// - the index of the last series from the right side that is needed to compute the output
+func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, int, []bool, int, error) {
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
 
 	// If the left side is smaller than the right, build a map of the possible groups from the left side
@@ -234,16 +252,18 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, -1, nil, -1, err
 	}
 
 	rightSeriesUsed, err := types.BoolSlicePool.Get(len(b.rightMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, -1, nil, -1, err
 	}
 
 	leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
+	lastLeftSeriesUsedIndex := -1
 	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
+	lastRightSeriesUsedIndex := -1
 	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
 	outputSeriesLabelsBytes := make([]byte, 0, 1024)
 
@@ -268,6 +288,8 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 				for _, rightSeriesIndex := range rightSide.rightSeriesIndices {
 					rightSeriesUsed[rightSeriesIndex] = true
 				}
+
+				lastRightSeriesUsedIndex = max(lastRightSeriesUsedIndex, rightSide.latestRightSeriesIndex())
 			}
 
 			rightSide.outputSeriesCount++
@@ -282,6 +304,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 		outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
 		leftSeriesUsed[leftSeriesIndex] = true
+		lastLeftSeriesUsedIndex = leftSeriesIndex
 	}
 
 	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
@@ -292,7 +315,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		allSeries = append(allSeries, outputSeries.series)
 	}
 
-	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, nil
+	return allMetadata, allSeries, leftSeriesUsed, lastLeftSeriesUsedIndex, rightSeriesUsed, lastRightSeriesUsedIndex, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) computeLeftSideGroups(groupKeyFunc func(labels.Labels) []byte) map[string]struct{} {
@@ -547,17 +570,21 @@ func (b *OneToOneVectorVectorBinaryOperation) Close() {
 
 	if b.leftMetadata != nil {
 		types.PutSeriesMetadataSlice(b.leftMetadata)
+		b.leftMetadata = nil
 	}
 
 	if b.rightMetadata != nil {
 		types.PutSeriesMetadataSlice(b.rightMetadata)
+		b.rightMetadata = nil
 	}
 
 	if b.leftBuffer != nil {
 		b.leftBuffer.Close()
+		b.leftBuffer = nil
 	}
 
 	if b.rightBuffer != nil {
 		b.rightBuffer.Close()
+		b.rightBuffer = nil
 	}
 }

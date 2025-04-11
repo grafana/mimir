@@ -7584,7 +7584,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			m.Metadata = append(m.Metadata, metadata)
 		}
 		m.rw2symbols.releasePages()
-		m.unmarshalFromRW2 = false
 	}
 
 	return nil
