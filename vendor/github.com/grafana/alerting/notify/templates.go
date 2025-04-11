@@ -125,7 +125,12 @@ func (am *GrafanaAlertmanager) GetTemplate() (*template.Template, error) {
 
 // parseTestTemplate parses the test template and returns the top-level definitions that should be interpolated as results.
 func parseTestTemplate(name string, text string) ([]string, error) {
-	tmpl, err := tmpltext.New(name).Funcs(tmpltext.FuncMap(template.DefaultFuncs)).Parse(text)
+	tmpl, err := templates.NewRawTemplate()
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err = tmpl.New(name).Parse(text)
 	if err != nil {
 		return nil, err
 	}

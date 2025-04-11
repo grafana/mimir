@@ -580,8 +580,10 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 
 	// Prepare the context.
 	alerts := OpenAPIAlertsToAlerts(c.Alerts)
+	labels := model.LabelSet{DefaultGroupLabel: DefaultGroupLabelValue}
+	ctx = notify.WithGroupKey(ctx, fmt.Sprintf("%s-%s-%d", DefaultReceiverName, labels.Fingerprint(), time.Now().Unix()))
 	ctx = notify.WithReceiverName(ctx, DefaultReceiverName)
-	ctx = notify.WithGroupLabels(ctx, model.LabelSet{DefaultGroupLabel: DefaultGroupLabelValue})
+	ctx = notify.WithGroupLabels(ctx, labels)
 
 	promTmplData := notify.GetTemplateData(ctx, newTmpl, alerts, logger)
 	data := templates.ExtendData(promTmplData, logger)

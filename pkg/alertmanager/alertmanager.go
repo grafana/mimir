@@ -647,11 +647,8 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		if rcv.Type() == definition.GrafanaReceiverType {
 			// Create the Grafana template struct if it has not already been created.
 			if gTmpl == nil {
-				gTmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
+				gTmpl, err = alertingTemplates.FromContent(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
-					return nil, err
-				}
-				if err := gTmpl.Parse(strings.NewReader(alertingTemplates.DefaultTemplateString)); err != nil {
 					return nil, err
 				}
 				gTmpl.ExternalURL = tmpl.ExternalURL
