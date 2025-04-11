@@ -50,14 +50,17 @@ func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.
 
 // accumulatePaths returns a list of paths from root that terminate in VectorSelector or MatrixSelector nodes.
 func (e *EliminateCommonSubexpressions) accumulatePaths(plan *planning.QueryPlan) []*path {
-	return e.accumulatePath(plan.Root, &path{
+	return e.accumulatePath(&path{
 		nodes:        []planning.Node{plan.Root},
 		childIndices: []int{0},
 		timeRanges:   []types.QueryTimeRange{plan.TimeRange},
 	})
 }
 
-func (e *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar *path) []*path {
+func (e *EliminateCommonSubexpressions) accumulatePath(soFar *path) []*path {
+	nodeIdx := len(soFar.nodes) - 1
+	node := soFar.nodes[nodeIdx]
+
 	_, isVS := node.(*core.VectorSelector)
 	_, isMS := node.(*core.MatrixSelector)
 
@@ -71,16 +74,20 @@ func (e *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar
 		return nil
 	}
 
-	childTimeRange := node.ChildrenTimeRange(soFar.timeRanges[len(soFar.nodes)-1])
+	childTimeRange := node.ChildrenTimeRange(soFar.timeRanges[nodeIdx])
 
-	paths := make([]*path, 0, len(children)) // FIXME: could avoid an allocation here when there's only one child: just return the slice from the recursive call
+	if len(children) == 1 {
+		// If there's only one child, we can reuse soFar.
+		soFar.Append(children[0], 0, childTimeRange)
+		return e.accumulatePath(soFar)
+	}
+
+	paths := make([]*path, 0, len(children))
 
 	for childIdx, child := range children {
 		path := soFar.Clone()
-		path.nodes = append(path.nodes, child)
-		path.childIndices = append(path.childIndices, childIdx)
-		path.timeRanges = append(path.timeRanges, childTimeRange)
-		childPaths := e.accumulatePath(child, path)
+		path.Append(child, childIdx, childTimeRange)
+		childPaths := e.accumulatePath(path)
 		paths = append(paths, childPaths...)
 	}
 
@@ -277,6 +284,12 @@ type path struct {
 	nodes        []planning.Node
 	childIndices []int                  // childIndices[x] contains the position of node x in its parent
 	timeRanges   []types.QueryTimeRange // timeRanges[x] contains the time range that node x will be evaluated over
+}
+
+func (p *path) Append(n planning.Node, childIndex int, timeRange types.QueryTimeRange) {
+	p.nodes = append(p.nodes, n)
+	p.childIndices = append(p.childIndices, childIndex)
+	p.timeRanges = append(p.timeRanges, timeRange)
 }
 
 func (p *path) NodeAtOffsetFromLeaf(offset int) (planning.Node, types.QueryTimeRange) {
