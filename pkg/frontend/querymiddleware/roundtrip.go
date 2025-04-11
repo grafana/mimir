@@ -253,7 +253,18 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, engineOpts.NoStepSubqueryIntervalFn, registerer)
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
+		cfg,
+		log,
+		limits,
+		codec,
+		c,
+		cacheKeyGenerator,
+		cacheExtractor,
+		engine,
+		engineOpts.NoStepSubqueryIntervalFn,
+		registerer,
+	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
@@ -376,11 +387,27 @@ func newQueryMiddlewares(
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
+	queryInstantMiddleware = append(queryInstantMiddleware,
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
+		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
+		queryBlockerMiddleware,
+		newInstrumentMiddleware("prom2_compat", metrics),
+		prom2CompatMiddleware,
+	)
+
 	if cfg.CacheResults && cfg.CacheErrors {
+		errorCachingMiddleware := newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, cacheKeyGenerator, log, registerer)
+
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			newInstrumentMiddleware("error_caching", metrics),
-			newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, cacheKeyGenerator, log, registerer),
+			errorCachingMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("error_caching", metrics),
+			errorCachingMiddleware,
 		)
 	}
 
@@ -403,15 +430,6 @@ func newQueryMiddlewares(
 
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)
 	}
-
-	queryInstantMiddleware = append(queryInstantMiddleware,
-		queryStatsMiddleware,
-		newLimitsMiddleware(limits, log),
-		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
-		queryBlockerMiddleware,
-		newInstrumentMiddleware("prom2_compat", metrics),
-		prom2CompatMiddleware,
-	)
 
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
