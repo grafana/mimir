@@ -103,7 +103,7 @@ func main() {
 
 	blocks := buildBlocksList(metas, deleteMarkerDetails, noCompactMarkerDetails, cfg)
 	if cfg.format == "tabbed" {
-		printMetas(blocks, cfg)
+		printTabbedOutput(blocks, cfg)
 		return
 	}
 
@@ -126,6 +126,8 @@ type noCompactSummary struct {
 	Reason string `json:"reason" yaml:"reason"`
 }
 
+// buildBlocksList constructs a map of fields for each block that will be later marshalled by printTabbedOutput or into JSON/YAML
+// printTabbedOutput uses key names created in this function directly so synchronize changes there (some keys aren't used by it)
 func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg config) []map[string]any {
 	blocks := make([]map[string]any, 0, len(metas))
 	for _, b := range listblocks.SortBlocks(metas) {
@@ -141,7 +143,7 @@ func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ul
 
 		m := make(map[string]any)
 
-		m["blockID"] = b.ULID.String()
+		m["blockID"] = b.ULID
 		if cfg.splitCount > 0 {
 			m["splitID"] = tsdb.HashBlockID(b.ULID) % uint32(cfg.splitCount)
 		}
@@ -206,7 +208,7 @@ func buildBlocksList(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ul
 // nolint:errcheck
 //
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(blocks []map[string]any, cfg config) {
+func printTabbedOutput(blocks []map[string]any, cfg config) {
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
 	defer tabber.Flush()
@@ -294,8 +296,6 @@ func printMetas(blocks []map[string]any, cfg config) {
 
 		if cfg.showLabels {
 			fmt.Fprintf(tabber, "%s\t", b["labels"])
-		} else {
-			fmt.Fprintf(tabber, "\t")
 		}
 
 		if cfg.showSources {
