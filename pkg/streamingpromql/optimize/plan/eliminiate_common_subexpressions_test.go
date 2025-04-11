@@ -142,6 +142,26 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 			`,
 			expectedDuplicateNodes: 2,
 		},
+		"multiple levels of duplication: multiple vector selectors and binary operation": {
+			expr: `(a - a) + (a - a) + (a * b) + (a * b)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: BinaryExpression: LHS + RHS
+							- LHS: ref#2 Duplicate
+								- BinaryExpression: LHS - RHS
+									- LHS: ref#1 Duplicate
+										- VectorSelector: {__name__="a"}
+									- RHS: ref#1 Duplicate ...
+							- RHS: ref#2 Duplicate ...
+						- RHS: ref#3 Duplicate
+							- BinaryExpression: LHS * RHS
+								- LHS: ref#1 Duplicate ...
+								- RHS: VectorSelector: {__name__="b"}
+					- RHS: ref#3 Duplicate ...
+			`,
+			expectedDuplicateNodes: 3,
+		},
 		"duplicated binary operation with different vector selectors": {
 			expr: `(a - b) + (a - b)`,
 			expectedPlan: `
@@ -150,6 +170,53 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 						- BinaryExpression: LHS - RHS
 							- LHS: VectorSelector: {__name__="a"}
 							- RHS: VectorSelector: {__name__="b"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"same selector used for both vector and matrix selector": {
+			expr:            `foo + rate(foo[5m])`,
+			expectUnchanged: true,
+		},
+		"duplicate matrix selectors with different outer function": {
+			// We do not want to deduplicate matrix selectors.
+			expr:            `rate(foo[5m]) + increase(foo[5m])`,
+			expectUnchanged: true,
+		},
+		"duplicate matrix selectors with same outer function": {
+			expr: `rate(foo[5m]) + rate(foo[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"duplicate subqueries with different outer function": {
+			// We do not want to deduplicate subqueries directly, but do want to deduplicate their contents if they are the same.
+			expr: `rate(foo[5m:]) + increase(foo[5m:])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: rate(...)
+						- Subquery: [5m0s:1m0s]
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+					- RHS: FunctionCall: increase(...)
+						- Subquery: [5m0s:1m0s]
+							- ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"duplicate subqueries with same outer function": {
+			expr: `rate(foo[5m:]) + rate(foo[5m:])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: rate(...)
+							- Subquery: [5m0s:1m0s]
+								- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes: 1,
