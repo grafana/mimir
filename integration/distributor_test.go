@@ -995,6 +995,8 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 
 	runtimeConfigURL := fmt.Sprintf("http://%s/runtime_config?mode=diff", distributor.HTTPEndpoint())
 
+	requestCount := 0
+
 	for testName, tc := range testCases {
 		if rwVersion == "rw1" && tc.rw1request == nil || rwVersion == "rw2" && tc.rw2request == nil {
 			// Skip test case if no remote write request for the the current rwVersion.
@@ -1034,6 +1036,12 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
 					assertNoStats(t, res)
 				}
+
+				requestCount += len(tc.rw1request)
+				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
+					labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")))
+				require.NoError(t, err)
+
 			case "rw2":
 				for i, wreq := range tc.rw2request {
 					res, err := client.PushRW2(&wreq)
@@ -1043,6 +1051,12 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 						assertStats(t, tc.expectedStats[i], res)
 					}
 				}
+
+				requestCount += len(tc.rw2request)
+				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
+					labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")))
+				require.NoError(t, err)
+
 			default:
 				t.Fatalf("unknown rwVersion %s", rwVersion)
 			}

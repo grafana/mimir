@@ -133,6 +133,7 @@ func TestRW2Unmarshal(t *testing.T) {
 					Unit:             "test_metric_unit",
 				},
 			},
+			unmarshalFromRW2: true,
 		},
 		UnmarshalFromRW2: true,
 	}
