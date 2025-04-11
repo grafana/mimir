@@ -165,16 +165,7 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset int) error {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
-	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
-	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
-	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
-	// when searching from the "b" selectors.
 	firstPath := group[0]
-	parentOfDuplicate := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
-	if _, isDuplicate := parentOfDuplicate.Children()[firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1)].(*Duplicate); isDuplicate {
-		return nil
-	}
-
 	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
@@ -184,14 +175,18 @@ func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 
 	// We only want to deduplicate instant vectors.
 	if resultType == parser.ValueTypeVector {
-		if err := e.introduceDuplicateNode(group, duplicatePathLength); err != nil {
+		if skipLongerExpressions, err := e.introduceDuplicateNode(group, duplicatePathLength); err != nil {
 			return err
+		} else if skipLongerExpressions {
+			return nil
 		}
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
 		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
-		if err := e.introduceDuplicateNode(group, duplicatePathLength-1); err != nil {
+		if skipLongerExpressions, err := e.introduceDuplicateNode(group, duplicatePathLength-1); err != nil {
 			return err
+		} else if skipLongerExpressions {
+			return nil
 		}
 	}
 
@@ -213,10 +208,21 @@ func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 	return nil
 }
 
-func (e *EliminateCommonSubexpressions) introduceDuplicateNode(group []*path, duplicatePathLength int) error {
+// introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
+// If a Duplicate node already exists at the expected location, then introduceDuplicateNode does not introduce a new node and returns true.
+func (e *EliminateCommonSubexpressions) introduceDuplicateNode(group []*path, duplicatePathLength int) (skipLongerExpressions bool, err error) {
+	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
+	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
+	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
+	// when searching from the "b" selectors.
 	firstPath := group[0]
-	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	parentOfDuplicate := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
+	expectedDuplicatedExpression := parentOfDuplicate.Children()[firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1)] // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
+	if _, isDuplicate := expectedDuplicatedExpression.(*Duplicate); isDuplicate {
+		return true, nil
+	}
 
+	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
@@ -224,11 +230,11 @@ func (e *EliminateCommonSubexpressions) introduceDuplicateNode(group []*path, du
 		parentOfDuplicate := path.NodeAtOffsetFromLeaf(duplicatePathLength)
 		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1), duplicate)
 		if err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // findCommonSubexpressionLength returns the length of the common expression present at the end of each path
