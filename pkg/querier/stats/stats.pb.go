@@ -54,7 +54,7 @@ type Stats struct {
 	SamplesProcessed uint64 `protobuf:"varint,11,opt,name=samples_processed,json=samplesProcessed,proto3" json:"samples_processed,omitempty"`
 	// The number of subqueries that were spun off as actual range queries in order to execute the full query
 	SpunOffSubqueries uint32 `protobuf:"varint,12,opt,name=spun_off_subqueries,json=spunOffSubqueries,proto3" json:"spun_off_subqueries,omitempty"`
-	// SamplesProcessedFromCache represents the total number of samples processed from the Query Frontend cache.
+	// SamplesProcessedFromCache represents the total number of samples processed by queriers to produce the result that has been stored in the query-frontend cache and then fetched to produce the current full query result.
 	SamplesProcessedFromCache uint64 `protobuf:"varint,13,opt,name=samples_processed_from_cache,json=samplesProcessedFromCache,proto3" json:"samples_processed_from_cache,omitempty"`
 }
 

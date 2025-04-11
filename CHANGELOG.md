@@ -48,6 +48,7 @@
 * [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
 * [BUGFIX] Ingester: read reactive limiters should activate and deactivate when the ingester changes state. #11234
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
+* [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_cache_adjusted_total` metric. #11164
 
 ### Mixin
 
