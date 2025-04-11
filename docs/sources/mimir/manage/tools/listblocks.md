@@ -33,6 +33,8 @@ Block ID                     Min Time               Max Time               Durat
 Listblocks has many options you can use to modify the output. The following list contains the most important listblocks options:
 
 ```
+  -format string
+    	The format of the output. Must be one of "tabbed", "json", or "yaml" (default "tabbed")
   -max-time value
     	If set, only blocks with MaxTime <= this value is printed
   -min-time value
