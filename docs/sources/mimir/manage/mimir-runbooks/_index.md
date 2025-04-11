@@ -1949,7 +1949,7 @@ When you configure `-ingester.error-sample-rate` to a value of `N` that is great
 ### err-mimir-native-histogram-custom-buckets-infinite
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
-with custom buckets where one of the boundaries is +Inf, which should not be specified as it is the default implicit
+with custom buckets where one of the boundaries is `+Inf`, which should not be specified as it is the default implicit
 last boundary.
 
 {{< admonition type="note" >}}
