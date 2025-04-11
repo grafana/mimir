@@ -18,6 +18,12 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+func init() {
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &Duplicate{DuplicateDetails: &DuplicateDetails{}}
+	})
+}
+
 type EliminateCommonSubexpressions struct {
 	duplicationNodesIntroduced prometheus.Counter
 }
