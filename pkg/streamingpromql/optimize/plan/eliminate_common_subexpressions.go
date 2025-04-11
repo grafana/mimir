@@ -11,6 +11,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -113,7 +114,7 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 	alreadyGrouped := make([]bool, len(paths))
 	groups := make([][]*path, 0)
 
-	// FIXME: find a better way to do this, this is currently O(n!) in the worst case (where n is the number of selectors)
+	// FIXME: find a better way to do this, this is currently O(n!) in the worst case (where n is the number of paths)
 	// Maybe generate some kind of key for each node and then sort and group by that? (use same key that we'd use for caching?)
 	for pathIdx, p := range paths {
 		if alreadyGrouped[pathIdx] {
@@ -174,14 +175,22 @@ func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 		return nil
 	}
 
-	inner := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
-	duplicate := &Duplicate{Inner: inner, DuplicateDetails: &DuplicateDetails{}}
-	e.duplicationNodesIntroduced.Inc()
+	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	resultType, err := duplicatedExpression.ResultType()
 
-	for _, path := range group {
-		parentOfDuplicate := path.NodeAtOffsetFromLeaf(duplicatePathLength)
-		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1), duplicate)
-		if err != nil {
+	if err != nil {
+		return err
+	}
+
+	// We only want to deduplicate instant vectors.
+	if resultType == parser.ValueTypeVector {
+		if err := e.introduceDuplicateNode(group, duplicatePathLength); err != nil {
+			return err
+		}
+	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
+		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
+		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
+		if err := e.introduceDuplicateNode(group, duplicatePathLength-1); err != nil {
 			return err
 		}
 	}
@@ -194,8 +203,29 @@ func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 	// Check if a subset of the paths we just examined share an even longer common subexpression.
 	// eg. if the expression is "a + max(a) + max(a)", then we may have just deduplicated the "a" selectors,
 	// but we can also deduplicate the "max(a)" expressions.
+	// This applies even if we just saw a common subexpression that returned something other than an instant vector
+	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
+	// but we can also deduplicate the "rate(foo[5m])" expressions.
 	if err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (e *EliminateCommonSubexpressions) introduceDuplicateNode(group []*path, duplicatePathLength int) error {
+	firstPath := group[0]
+	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+
+	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
+	e.duplicationNodesIntroduced.Inc()
+
+	for _, path := range group {
+		parentOfDuplicate := path.NodeAtOffsetFromLeaf(duplicatePathLength)
+		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1), duplicate)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -327,6 +357,10 @@ func (d *Duplicate) ChildrenLabels() []string {
 
 func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
+}
+
+func (d *Duplicate) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeVector, nil
 }
 
 func (d *Duplicate) OperatorFactory(_ []types.Operator, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
