@@ -4,6 +4,8 @@ package streamingpromql
 
 import (
 	"flag"
+	"math"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/promql"
@@ -41,4 +43,24 @@ var EnableAllFeatures = Features{
 
 func (t *Features) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&t.DisabledFunctions, "querier.mimir-query-engine.disabled-functions", "Comma-separated list of function names to disable support for. Only applies if MQE is in use.")
+}
+
+func NewTestEngineOpts() EngineOpts {
+	return EngineOpts{
+		CommonOpts: promql.EngineOpts{
+			Logger:                   nil,
+			Reg:                      nil,
+			MaxSamples:               math.MaxInt,
+			Timeout:                  100 * time.Second,
+			EnableAtModifier:         true,
+			EnableNegativeOffset:     true,
+			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
+		},
+
+		Features: EnableAllFeatures,
+		Pedantic: true,
+
+		// Don't enable query planning by default, but do enable common subexpression elimination if query planning is enabled.
+		EnableCommonSubexpressionElimination: true,
+	}
 }
