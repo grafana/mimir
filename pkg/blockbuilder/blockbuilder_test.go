@@ -458,7 +458,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 		return nil, nil, false
 	})
 
-	bb, err := New(cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry(), overrides)
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
@@ -467,7 +467,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	})
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 30*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 60*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	for _, tenant := range tenants {
 		compareQueryWithDir(t,

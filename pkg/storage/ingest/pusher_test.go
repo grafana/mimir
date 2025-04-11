@@ -283,7 +283,7 @@ func TestPushErrorHandler_IsServerError(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := newPushErrorHandler(newStoragePusherMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
+			c := newPushErrorHandler(NewStoragePusherMetrics(prometheus.NewPedanticRegistry()), tc.sampler, log.NewNopLogger())
 
 			sampled, reason := c.shouldLogClientError(context.Background(), tc.err)
 			assert.Equal(t, tc.expectedSampled, sampled)
@@ -838,7 +838,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			// run with a buffer of one, so some of the tests can fill the buffer and test the error handling
 			const buffer = 1
 			reg := prometheus.NewPedanticRegistry()
-			metrics := newStoragePusherMetrics(reg)
+			metrics := NewStoragePusherMetrics(reg)
 			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
 			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
 
@@ -1031,8 +1031,8 @@ func TestParallelStoragePusher(t *testing.T) {
 				samplesPerTenant[req.tenantID] += len(req.Timeseries)
 			}
 
-			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, 80, logger)
+			metrics := NewStoragePusherMetrics(prometheus.NewPedanticRegistry())
+			psp := NewParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, 80, logger)
 
 			// Process requests
 			for _, req := range tc.requests {
@@ -1112,13 +1112,13 @@ func TestParallelStoragePusher_idealShardsFor(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			psp := &parallelStoragePusher{
+			psp := &ParallelStoragePusher{
 				bytesPerTenant: map[string]int{"tenant1": tc.bytesPerTenant},
 				bytesPerSample: tc.bytesPerSample,
 				batchSize:      tc.batchSize,
 				targetFlushes:  tc.targetFlushes,
 				maxShards:      tc.maxShards,
-				metrics:        newStoragePusherMetrics(prometheus.NewPedanticRegistry()),
+				metrics:        NewStoragePusherMetrics(prometheus.NewPedanticRegistry()),
 			}
 
 			idealShards := psp.idealShardsFor("tenant1")
@@ -1188,8 +1188,8 @@ func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 		bytesPerTenant[fmt.Sprintf("tenant-%d", tenantID)] = 5
 	}
 
-	metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-	psp := newParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, targetFlushes, nil)
+	metrics := NewStoragePusherMetrics(prometheus.NewPedanticRegistry())
+	psp := NewParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, targetFlushes, nil)
 
 	// Keep pushing batches of write requests until we hit an error.
 	for batchID := 0; batchID < numWriteRequests; batchID++ {

@@ -13,13 +13,13 @@ import (
 type pusherConsumerMetrics struct {
 	processingTimeSeconds prometheus.Observer
 
-	storagePusherMetrics *storagePusherMetrics
+	storagePusherMetrics *StoragePusherMetrics
 }
 
 // newPusherConsumerMetrics creates a new pusherConsumerMetrics instance.
 func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics {
 	return &pusherConsumerMetrics{
-		storagePusherMetrics: newStoragePusherMetrics(reg),
+		storagePusherMetrics: NewStoragePusherMetrics(reg),
 		processingTimeSeconds: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_records_processing_time_seconds",
 			Help:                            "Time taken to process a batch of fetched records. Fetched records are effectively a set of WriteRequests read from Kafka. This is the latency of a single attempt and does not include retries.",
@@ -31,9 +31,9 @@ func newPusherConsumerMetrics(reg prometheus.Registerer) *pusherConsumerMetrics 
 	}
 }
 
-// storagePusherMetrics holds the metrics for both the sequentialStoragePusher and the parallelStoragePusher.
-type storagePusherMetrics struct {
-	// batchAge is not really important unless we're pushing many things at once, so it's only used as part of parallelStoragePusher.
+// StoragePusherMetrics holds the metrics for both the sequentialStoragePusher and the ParallelStoragePusher.
+type StoragePusherMetrics struct {
+	// batchAge is not really important unless we're pushing many things at once, so it's only used as part of ParallelStoragePusher.
 	batchAge             prometheus.Histogram
 	processingTime       *prometheus.HistogramVec
 	timeSeriesPerFlush   prometheus.Histogram
@@ -46,14 +46,14 @@ type storagePusherMetrics struct {
 	totalRequests        prometheus.Counter
 }
 
-// newStoragePusherMetrics creates a new storagePusherMetrics instance.
-func newStoragePusherMetrics(reg prometheus.Registerer) *storagePusherMetrics {
+// NewStoragePusherMetrics creates a new StoragePusherMetrics instance.
+func NewStoragePusherMetrics(reg prometheus.Registerer) *StoragePusherMetrics {
 	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingest_storage_reader_requests_failed_total",
 		Help: "Number of write requests which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
 	}, []string{"cause"})
 
-	return &storagePusherMetrics{
+	return &StoragePusherMetrics{
 		batchingQueueMetrics: newBatchingQueueMetrics(reg),
 		batchAge: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_pusher_batch_age_seconds",

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"os"
 	"path"
 	"time"
@@ -582,6 +584,11 @@ func (b *BlockBuilder) consumePartitionSection(
 	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprintf("%d", partition))
 	metricUpdatePending := 0
 
+	pusher := partitionPusher{
+		partition: partition,
+		builder:   builder,
+	}
+
 consumerLoop:
 	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
 		if err := context.Cause(ctx); err != nil {
@@ -620,33 +627,23 @@ consumerLoop:
 
 			metricUpdatePending++
 
-			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
-			allSamplesProcessed, err := builder.Process(
-				ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(),
-				recordAlreadyProcessed, b.cfg.NoPartiallyConsumedRegion)
+			req := mimirpb.PreallocWriteRequest{
+				SkipUnmarshalingExemplars: true,
+			}
+			err = req.Unmarshal(rec.Value)
+			if err != nil {
+				mimirpb.ReuseSlice(req.Timeseries)
+				return state, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
+			}
+
+			userCtx := user.InjectOrgID(ctx, string(rec.Key))
+			err = pusher.PushToStorage(userCtx, &req.WriteRequest)
+			mimirpb.ReuseSlice(req.Timeseries)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
 				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
 			}
-			if !allSamplesProcessed {
-				if lastRec == nil {
-					// The first record was not fully processed, meaning the record before this is the commit point.
-					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
-					// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
-					commitRec = &kgo.Record{
-						Topic:     state.Commit.Topic,
-						Partition: state.Commit.Partition,
-						// This offset points at the previous commit's offset-1, meaning on commit, we will store the offset-1+1 (minus-one-plus-one),
-						// which is the offset of the previous commit itself (details https://github.com/grafana/mimir/pull/9199#discussion_r1772979364).
-						Offset:      state.Commit.At - 1,
-						Timestamp:   state.CommitRecordTimestamp,
-						LeaderEpoch: state.Commit.LeaderEpoch,
-					}
-				} else if commitRec == nil {
-					// The commit offset should be the last record that was fully processed and not the first record that was not fully processed.
-					commitRec = lastRec
-				}
-			}
+
 			lastRec = rec
 		}
 	}
@@ -709,6 +706,15 @@ consumerLoop:
 	}
 
 	return newState, nil
+}
+
+type partitionPusher struct {
+	partition int32
+	builder   *TSDBBuilder
+}
+
+func (p *partitionPusher) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+	return p.builder.PushToStorage(ctx, p.partition, req)
 }
 
 // consumePartitionSectionPullMode is for the use of scheduler based architecture.
