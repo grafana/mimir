@@ -545,6 +545,8 @@ func (b *BlockBuilder) consumePartitionSection(
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
+	b.kafkaClient.ForceMetadataRefresh()
+
 	level.Info(logger).Log("msg", "start consuming")
 
 	var (
@@ -575,6 +577,9 @@ func (b *BlockBuilder) consumePartitionSection(
 		return state, err
 	}
 
+	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprintf("%d", partition))
+	metricUpdatePending := 0
+
 consumerLoop:
 	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
 		if err := context.Cause(ctx); err != nil {
@@ -594,6 +599,10 @@ consumerLoop:
 		})
 
 		for recIter := fetches.RecordIter(); !recIter.Done(); {
+			if metricUpdatePending > 100 {
+				consumeMetric.Add(float64(metricUpdatePending))
+				metricUpdatePending = 0
+			}
 			rec := recIter.Next()
 			recOffset = rec.Offset
 
@@ -606,6 +615,8 @@ consumerLoop:
 			if rec.Timestamp.After(sectionEndTime) {
 				break consumerLoop
 			}
+
+			metricUpdatePending++
 
 			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
 			allSamplesProcessed, err := builder.Process(
@@ -639,6 +650,9 @@ consumerLoop:
 	}
 
 	fetcher.Stop()
+
+	consumeMetric.Add(float64(metricUpdatePending))
+	metricUpdatePending = 0
 
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
