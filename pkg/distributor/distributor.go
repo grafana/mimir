@@ -1209,6 +1209,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
+		dedupedPerMetric := make(map[string]int, len(req.Timeseries))
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1224,10 +1225,22 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
+			rawSamples := len(ts.Samples)
+			rawHistograms := len(ts.Histograms)
 			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
+			}
+
+			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			if dedupedSamplesAndHistograms > 0 {
+				for _, l := range ts.Labels {
+					if l.Name == labels.MetricName {
+						dedupedPerMetric[l.Value] += dedupedSamplesAndHistograms
+						break
+					}
+				}
 			}
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
@@ -1245,6 +1258,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+		}
+
+		for m, c := range dedupedPerMetric {
+			level.Warn(d.log).Log("msg", "deduplicated samples/histograms with conflicting timestamps from write request",
+				"metric", m, "count", c, "tenant", userID)
 		}
 
 		if droppedNativeHistograms > 0 {
