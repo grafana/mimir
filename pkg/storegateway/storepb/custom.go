@@ -563,8 +563,7 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			l := postIndex - index
-			chk.Data = slices.Grow(chunkDataPool.Get().(mimirpb.UnsafeByteSlice)[:0], l)[0:l]
+			chk.Data = slices.Grow(chunkDataPool.Get().(mimirpb.UnsafeByteSlice)[:0], byteLen)[0:byteLen]
 			copy(chk.Data, data[index:postIndex])
 			index = postIndex
 		default:
