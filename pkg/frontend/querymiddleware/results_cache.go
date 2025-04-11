@@ -658,15 +658,22 @@ func cacheHashKey(key string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// extentSamplesInSubrange counts the appropriate number of samples for the subrange within the extent.
+// extentSamplesInSubrange counts the approximate number of samples for the subrange within the extent.
 // subrangeStart and subrangeEnd must be within the extent.
+// TODO: calculate samples based on PerStepStats, if it will be supported by the MQE.
 func extentSamplesInSubrange(extent Extent, subrangeStart int64, subrangeEnd int64) uint64 {
+	// Validate the subrange is valid and within the extent.
+	if subrangeEnd < subrangeStart || subrangeStart < extent.Start || subrangeEnd > extent.End {
+		return 0
+	}
+
 	extentTimeRange := extent.End - extent.Start
-	subrange := subrangeEnd - subrangeStart
-	if extentTimeRange > 0 {
-		ratio := float64(subrange) / float64(extentTimeRange)
-		return uint64(float64(extent.SamplesProcessed) * ratio)
-	} else {
+	// Zero length extent might contain samples.
+	if extentTimeRange == 0 {
 		return extent.SamplesProcessed
 	}
+
+	// Calculate proportional samples in the subrange
+	subrange := subrangeEnd - subrangeStart
+	return uint64(float64(extent.SamplesProcessed) * float64(subrange) / float64(extentTimeRange))
 }
