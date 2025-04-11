@@ -53,7 +53,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateCommonSubexpressions(opts.CommonOpts.Reg))
 	}
 
 	return planner

@@ -4,10 +4,13 @@ package plan_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -18,9 +21,10 @@ import (
 
 func TestEliminateCommonSubexpressions(t *testing.T) {
 	testCases := map[string]struct {
-		expr            string
-		expectedPlan    string
-		expectUnchanged bool
+		expr                   string
+		expectedPlan           string
+		expectUnchanged        bool
+		expectedDuplicateNodes int // Check that we don't do unnecessary work introducing a duplicate node multiple times when starting from different selectors (eg. when handling (a+b) + (a+b)).
 	}{
 		"single vector selector": {
 			expr:            `foo`,
@@ -46,6 +50,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 						- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes: 1,
 		},
 		"vector selector duplicated twice with other selector": {
 			expr: `foo + foo + bar`,
@@ -57,6 +62,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 						- RHS: ref#1 Duplicate ...
 					- RHS: VectorSelector: {__name__="bar"}
 			`,
+			expectedDuplicateNodes: 1,
 		},
 		"vector selector duplicated three times": {
 			expr: `foo + foo + foo`,
@@ -68,6 +74,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 						- RHS: ref#1 Duplicate ...
 					- RHS: ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes: 1,
 		},
 		"vector selector duplicated many times": {
 			expr: `foo + foo + foo + bar + foo`,
@@ -83,6 +90,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 						- RHS: VectorSelector: {__name__="bar"}
 					- RHS: ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes: 1,
 		},
 		"duplicated vector selector with different aggregations": {
 			expr: `max(foo) - min(foo)`,
@@ -94,6 +102,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 					- RHS: AggregateExpression: min
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes: 1,
 		},
 		"duplicated vector selector with same aggregations": {
 			expr: `max(foo) + max(foo)`,
@@ -104,6 +113,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 							- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes: 1,
 		},
 		"multiple levels of duplication: vector selector and aggregation": {
 			expr: `a + sum(a) + sum(a)`,
@@ -117,6 +127,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 								- ref#1 Duplicate ...
 					- RHS: ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes: 2,
 		},
 		"multiple levels of duplication: vector selector and binary operation": {
 			expr: `(a - a) + (a - a)`,
@@ -129,6 +140,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 							- RHS: ref#1 Duplicate ...
 					- RHS: ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes: 2,
 		},
 		"duplicated binary operation with different vector selectors": {
 			expr: `(a - b) + (a - b)`,
@@ -140,17 +152,9 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 							- RHS: VectorSelector: {__name__="b"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			// TODO: verify that we don't inject the duplicate multiple times (need to detect this in applyDeduplication and short-circuit)
+			expectedDuplicateNodes: 1,
 		},
 	}
-
-	opts := streamingpromql.NewTestEngineOpts()
-	plannerWithoutOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
-	plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-
-	plannerWithOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
-	plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-	plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
 
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
@@ -158,6 +162,15 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			opts := streamingpromql.NewTestEngineOpts()
+			plannerWithoutOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+
+			reg := prometheus.NewPedanticRegistry()
+			plannerWithOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
+			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(plan.NewEliminateCommonSubexpressions(reg))
+
 			if testCase.expectUnchanged {
 				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
 				require.NoError(t, err)
@@ -168,8 +181,21 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, trimIndent(testCase.expectedPlan), actual)
+
+			requireDuplicateNodeCount(t, reg, testCase.expectedDuplicateNodes)
 		})
 	}
+}
+
+func requireDuplicateNodeCount(t *testing.T, g prometheus.Gatherer, expected int) {
+	const metricName = "cortex_mimir_query_engine_duplication_nodes_introduced"
+
+	expectedMetrics := fmt.Sprintf(`# HELP %v Number of duplication nodes introduced by the eliminate common subexpressions optimization pass.
+# TYPE %v counter
+%v %v
+`, metricName, metricName, metricName, expected)
+
+	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricName))
 }
 
 func trimIndent(s string) string {

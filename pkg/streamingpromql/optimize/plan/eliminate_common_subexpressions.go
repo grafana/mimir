@@ -9,13 +9,26 @@ import (
 	"strings"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type EliminateCommonSubexpressions struct{}
+type EliminateCommonSubexpressions struct {
+	duplicationNodesIntroduced prometheus.Counter
+}
+
+func NewEliminateCommonSubexpressions(reg prometheus.Registerer) *EliminateCommonSubexpressions {
+	return &EliminateCommonSubexpressions{
+		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_duplication_nodes_introduced",
+			Help: "Number of duplication nodes introduced by the eliminate common subexpressions optimization pass.",
+		}),
+	}
+}
 
 func (e *EliminateCommonSubexpressions) Name() string {
 	return "Eliminate common subexpressions"
@@ -25,9 +38,7 @@ func (e *EliminateCommonSubexpressions) Name() string {
 // Some interesting test cases:
 //
 // (a - a) + (a - a) + (a * b) + (a * b)
-// ((a - a) + (a - a)) + ((a * b) + (a * b))
-// (a - a) + ((a - a) / (a * b)) % (a * b)
-// ((aa - ab) + (ac - ad)) + ((a * b) + (a * b))
+// (foo + foo) + sum(rate(foo[1m]))
 //
 // # Combinations of all of the above
 // b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
@@ -35,14 +46,6 @@ func (e *EliminateCommonSubexpressions) Name() string {
 func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
 	// - introduce "TimeRange(parent types.QueryTimeRange) types.QueryTimeRange" method on Node?
-	// FIXME: when expression is something like (a + b) / (a + b), we'll do some duplicate work or potentially do the wrong thing:
-	// - first we'll process the duplicate "a" selectors
-	//   - we'll replace the "a" selectors with a single reference
-	//   - then we'll continue up the path and replace the (a + b) expressions with a single reference
-	// - then we'll process the duplicate "b" selectors
-	//   - we'll replace the "b" selectors with a single reference (but this is not necessary any more - there's only one reference to "b")
-	//   - we'll replace the (a + b) expressions with another single reference (wasteful but not wrong)
-	// TODO: don't deduplicate range vector selectors or subqueries directly - only deduplicate expressions that produce instant vectors
 
 	// Figure out all the paths to leaves
 	paths := e.accumulatePaths(plan.Root)
@@ -160,7 +163,20 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 
 func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset int) error {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
-	duplicate := &Duplicate{Inner: group[0].NodeAtOffsetFromLeaf(duplicatePathLength - 1), DuplicateDetails: &DuplicateDetails{}}
+
+	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
+	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
+	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
+	// when searching from the "b" selectors.
+	firstPath := group[0]
+	parentOfDuplicate := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
+	if _, isDuplicate := parentOfDuplicate.Children()[firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1)].(*Duplicate); isDuplicate {
+		return nil
+	}
+
+	inner := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicate := &Duplicate{Inner: inner, DuplicateDetails: &DuplicateDetails{}}
+	e.duplicationNodesIntroduced.Inc()
 
 	for _, path := range group {
 		parentOfDuplicate := path.NodeAtOffsetFromLeaf(duplicatePathLength)
