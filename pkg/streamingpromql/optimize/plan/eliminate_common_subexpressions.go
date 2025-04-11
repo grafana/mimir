@@ -36,10 +36,8 @@ func (e *EliminateCommonSubexpressions) Name() string {
 }
 
 func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
-	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
-
-	// Figure out all the paths to leaves
-	paths := e.accumulatePaths(plan.Root)
+	// Find all the paths to leaves
+	paths := e.accumulatePaths(plan)
 
 	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
 	err := e.groupAndApplyDeduplication(paths, 0)
@@ -51,10 +49,11 @@ func (e *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.
 }
 
 // accumulatePaths returns a list of paths from root that terminate in VectorSelector or MatrixSelector nodes.
-func (e *EliminateCommonSubexpressions) accumulatePaths(root planning.Node) []*path {
-	return e.accumulatePath(root, &path{
-		nodes:        []planning.Node{root},
+func (e *EliminateCommonSubexpressions) accumulatePaths(plan *planning.QueryPlan) []*path {
+	return e.accumulatePath(plan.Root, &path{
+		nodes:        []planning.Node{plan.Root},
 		childIndices: []int{0},
+		timeRanges:   []types.QueryTimeRange{plan.TimeRange},
 	})
 }
 
@@ -72,12 +71,15 @@ func (e *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar
 		return nil
 	}
 
+	childTimeRange := node.ChildrenTimeRange(soFar.timeRanges[len(soFar.nodes)-1])
+
 	paths := make([]*path, 0, len(children)) // FIXME: could avoid an allocation here when there's only one child: just return the slice from the recursive call
 
 	for childIdx, child := range children {
 		path := soFar.Clone()
 		path.nodes = append(path.nodes, child)
 		path.childIndices = append(path.childIndices, childIdx)
+		path.timeRanges = append(path.timeRanges, childTimeRange)
 		childPaths := e.accumulatePath(child, path)
 		paths = append(paths, childPaths...)
 	}
@@ -112,7 +114,7 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 		}
 
 		alreadyGrouped[pathIdx] = true
-		leaf := p.NodeAtOffsetFromLeaf(offset)
+		leaf, leafTimeRange := p.NodeAtOffsetFromLeaf(offset)
 		var group []*path
 
 		for otherPathOffset, otherPath := range paths[pathIdx+1:] {
@@ -122,7 +124,7 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 				continue
 			}
 
-			otherPathLeaf := otherPath.NodeAtOffsetFromLeaf(offset)
+			otherPathLeaf, otherPathTimeRange := otherPath.NodeAtOffsetFromLeaf(offset)
 			if leaf == otherPathLeaf {
 				// If we've found two paths with the same ancestor, then we don't consider these the same, as there's no duplication.
 				// eg. if the expression is "a + a":
@@ -131,7 +133,7 @@ func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 				continue
 			}
 
-			if !leaf.EquivalentTo(otherPathLeaf) {
+			if !leaf.EquivalentTo(otherPathLeaf) || !leafTimeRange.Equal(otherPathTimeRange) {
 				continue
 			}
 
@@ -156,7 +158,7 @@ func (e *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
-	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
 	if err != nil {
@@ -206,18 +208,18 @@ func (e *EliminateCommonSubexpressions) introduceDuplicateNode(group []*path, du
 	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
 	// when searching from the "b" selectors.
 	firstPath := group[0]
-	parentOfDuplicate := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
+	parentOfDuplicate, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
 	expectedDuplicatedExpression := parentOfDuplicate.Children()[firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1)] // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
 	if _, isDuplicate := expectedDuplicatedExpression.(*Duplicate); isDuplicate {
 		return true, nil
 	}
 
-	duplicatedExpression := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
+	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
 	for _, path := range group {
-		parentOfDuplicate := path.NodeAtOffsetFromLeaf(duplicatePathLength)
+		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
 		err := replaceChild(parentOfDuplicate, path.ChildIndexAtOffsetFromLeaf(duplicatePathLength-1), duplicate)
 		if err != nil {
 			return false, err
@@ -236,7 +238,7 @@ func (e *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*p
 	firstPath := group[0]
 
 	for length < len(firstPath.nodes)-1 { // -1 to exclude root node (otherwise the longest common subexpression for "a + a" would be 2, not 1)
-		firstNode := firstPath.NodeAtOffsetFromLeaf(length)
+		firstNode, firstNodeTimeRange := firstPath.NodeAtOffsetFromLeaf(length)
 
 		for _, path := range group[1:] {
 			if length >= len(path.nodes) {
@@ -244,7 +246,7 @@ func (e *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*p
 				return length
 			}
 
-			otherNode := path.NodeAtOffsetFromLeaf(length)
+			otherNode, otherNodeTimeRange := path.NodeAtOffsetFromLeaf(length)
 			if firstNode == otherNode {
 				// If we've found two paths with the same ancestor, then we don't consider these the same, as there's no duplication.
 				// eg. if the expression is "a + a":
@@ -253,7 +255,7 @@ func (e *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*p
 				return length
 			}
 
-			if !firstNode.EquivalentTo(otherNode) {
+			if !firstNode.EquivalentTo(otherNode) || !firstNodeTimeRange.Equal(otherNodeTimeRange) {
 				// Nodes aren't the same, so the longest common subexpression is the length of the path not including the current node.
 				return length
 			}
@@ -273,11 +275,13 @@ func replaceChild(parent planning.Node, childIndex int, newChild planning.Node) 
 
 type path struct {
 	nodes        []planning.Node
-	childIndices []int // childIndices[x] contains the position of node x in its parent
+	childIndices []int                  // childIndices[x] contains the position of node x in its parent
+	timeRanges   []types.QueryTimeRange // timeRanges[x] contains the time range that node x will be evaluated over
 }
 
-func (p *path) NodeAtOffsetFromLeaf(offset int) planning.Node {
-	return p.nodes[len(p.nodes)-offset-1]
+func (p *path) NodeAtOffsetFromLeaf(offset int) (planning.Node, types.QueryTimeRange) {
+	idx := len(p.nodes) - offset - 1
+	return p.nodes[idx], p.timeRanges[idx]
 }
 
 func (p *path) ChildIndexAtOffsetFromLeaf(offset int) int {
@@ -288,6 +292,7 @@ func (p *path) Clone() *path {
 	return &path{
 		nodes:        slices.Clone(p.nodes),
 		childIndices: slices.Clone(p.childIndices),
+		timeRanges:   slices.Clone(p.timeRanges),
 	}
 }
 
