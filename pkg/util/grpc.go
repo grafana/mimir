@@ -38,6 +38,13 @@ func CloseAndExhaust[T any](stream Stream[T]) error {
 				return
 			}
 
+			// If the message can be released, do so.
+			if releaser, ok := any(msg).(interface {
+				Release()
+			}); ok {
+				releaser.Release()
+			}
+
 			// If the message has a buffer reference, free it.
 			if buffer, ok := any(msg).(mimirpb.MessageWithBufferRef); ok {
 				buffer.FreeBuffer()
