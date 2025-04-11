@@ -48,6 +48,7 @@
 * [ENHANCEMENT] Dashboards: Add panels to the `Mimir / Tenants` and `Mimir / Top Tenants` dashboards showing the rate of gateway requests. #10978
 * [ENHANCEMENT] Alerts: Improve `MimirIngesterFailsToProcessRecordsFromKafka` to not fire during forced TSDB head compaction. #11006
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
+* [CHANGE] Alerts: increasing threshold for `MimirBucketIndexNotUpdated` alert by 5m to avoid false positives. #11193
 
 ### Jsonnet
 

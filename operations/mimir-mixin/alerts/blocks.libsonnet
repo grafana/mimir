@@ -226,7 +226,7 @@
           // by default).
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
-            min by(%(alert_aggregation_labels)s, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
+            min by(%(alert_aggregation_labels)s, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2400
           ||| % $._config,
           labels: {
             severity: 'critical',
