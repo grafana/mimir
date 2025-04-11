@@ -22,15 +22,6 @@ import (
 func TestErrorCachingHandler_Do(t *testing.T) {
 	keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), time.Second)
 
-	newDefaultRequest := func() *PrometheusRangeQueryRequest {
-		return &PrometheusRangeQueryRequest{
-			queryExpr: parseQuery(t, "up"),
-			start:     100,
-			end:       200,
-			step:      10,
-		}
-	}
-
 	runHandler := func(ctx context.Context, inner MetricsQueryHandler, c cache.Cache, req MetricsQueryRequest) (Response, error) {
 		limits := &mockLimits{resultsCacheTTLForErrors: time.Minute}
 		middleware := newErrorCachingMiddleware(c, limits, resultsCacheEnabledByOption, keyGen, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
@@ -38,184 +29,212 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 		return handler.Do(ctx, req)
 	}
 
-	t.Run("no user set", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
+	testCases := map[string]struct {
+		newQueryRequest func(Options) MetricsQueryRequest
+	}{
+		"range query": {
+			newQueryRequest: func(o Options) MetricsQueryRequest {
+				return &PrometheusRangeQueryRequest{
+					queryExpr: parseQuery(t, "up"),
+					start:     100,
+					end:       200,
+					step:      10,
+					options:   o,
+				}
+			},
+		},
+		"instant query": {
+			newQueryRequest: func(o Options) MetricsQueryRequest {
+				return &PrometheusInstantQueryRequest{
+					queryExpr: parseQuery(t, "up"),
+					time:      100,
+					options:   o,
+				}
+			},
+		},
+	}
 
-		innerRes := newEmptyPrometheusResponse()
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+	for testCaseName, tc := range testCases {
+		t.Run(testCaseName, func(t *testing.T) {
+			t.Run("no user set", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
 
-		ctx := context.Background()
-		req := newDefaultRequest()
-		res, err := runHandler(ctx, inner, c, req)
+				innerRes := newEmptyPrometheusResponse()
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
-		require.NoError(t, err)
-		require.Equal(t, innerRes, res)
-		require.Equal(t, 0, c.CountFetchCalls())
-		require.Equal(t, 0, c.CountStoreCalls())
-	})
+				ctx := context.Background()
+				req := tc.newQueryRequest(Options{})
+				res, err := runHandler(ctx, inner, c, req)
 
-	t.Run("disabled by option", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
+				require.NoError(t, err)
+				require.Equal(t, innerRes, res)
+				require.Equal(t, 0, c.CountFetchCalls())
+				require.Equal(t, 0, c.CountStoreCalls())
+			})
 
-		innerRes := newEmptyPrometheusResponse()
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+			t.Run("disabled by option", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
 
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-		req.options = Options{
-			CacheDisabled: true,
-		}
-		res, err := runHandler(ctx, inner, c, req)
+				innerRes := newEmptyPrometheusResponse()
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
-		require.NoError(t, err)
-		require.Equal(t, innerRes, res)
-		require.Equal(t, 0, c.CountFetchCalls())
-		require.Equal(t, 0, c.CountStoreCalls())
-	})
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{
+					CacheDisabled: true,
+				})
+				res, err := runHandler(ctx, inner, c, req)
 
-	t.Run("cache hit", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
+				require.NoError(t, err)
+				require.Equal(t, innerRes, res)
+				require.Equal(t, 0, c.CountFetchCalls())
+				require.Equal(t, 0, c.CountStoreCalls())
+			})
 
-		inner := &mockHandler{}
+			t.Run("cache hit", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
 
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-		key := keyGen.QueryRequestError(ctx, "1234", req)
-		bytes, err := proto.Marshal(&CachedError{
-			Key:          key,
-			ErrorType:    string(apierror.TypeExec),
-			ErrorMessage: "limits error",
+				inner := &mockHandler{}
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+				key := keyGen.QueryRequestError(ctx, "1234", req)
+				bytes, err := proto.Marshal(&CachedError{
+					Key:          key,
+					ErrorType:    string(apierror.TypeExec),
+					ErrorMessage: "limits error",
+				})
+				require.NoError(t, err)
+
+				// NOTE: We rely on this mock cache being synchronous
+				c.SetAsync(cacheHashKey(key), bytes, time.Minute)
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.Error(t, err)
+				require.Nil(t, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 1, c.CountStoreCalls())
+			})
+
+			t.Run("cache hit key collision", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				innerRes := newEmptyPrometheusResponse()
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+
+				key := keyGen.QueryRequestError(ctx, "1234", req)
+				bytes, err := proto.Marshal(&CachedError{
+					Key:          "different key that is stored under the same hashed key",
+					ErrorType:    string(apierror.TypeExec),
+					ErrorMessage: "limits error",
+				})
+				require.NoError(t, err)
+
+				// NOTE: We rely on this mock cache being synchronous
+				c.SetAsync(cacheHashKey(key), bytes, time.Minute)
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.NoError(t, err)
+				require.Equal(t, innerRes, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 1, c.CountStoreCalls())
+			})
+
+			t.Run("corrupt cache data", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				innerRes := newEmptyPrometheusResponse()
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+
+				key := keyGen.QueryRequestError(ctx, "1234", req)
+				bytes := []byte{0x0, 0x0, 0x0, 0x0}
+
+				// NOTE: We rely on this mock cache being synchronous
+				c.SetAsync(cacheHashKey(key), bytes, time.Minute)
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.NoError(t, err)
+				require.Equal(t, innerRes, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 1, c.CountStoreCalls())
+			})
+
+			t.Run("cache miss no error", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				innerRes := newEmptyPrometheusResponse()
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.NoError(t, err)
+				require.Equal(t, innerRes, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 0, c.CountStoreCalls())
+			})
+
+			t.Run("non-api error", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				innerErr := errors.New("something unexpected happened")
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.Error(t, err)
+				require.Nil(t, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 0, c.CountStoreCalls())
+			})
+
+			t.Run("api error not cachable", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				innerErr := apierror.New(apierror.TypeUnavailable, "service unavailable")
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.Error(t, err)
+				require.Nil(t, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 0, c.CountStoreCalls())
+			})
+
+			t.Run("api error cachable", func(t *testing.T) {
+				c := cache.NewInstrumentedMockCache()
+
+				innerErr := apierror.New(apierror.TypeTooLargeEntry, "response is too big")
+				inner := &mockHandler{}
+				inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
+
+				ctx := user.InjectOrgID(context.Background(), "1234")
+				req := tc.newQueryRequest(Options{})
+				res, err := runHandler(ctx, inner, c, req)
+
+				require.Error(t, err)
+				require.Nil(t, res)
+				require.Equal(t, 1, c.CountFetchCalls())
+				require.Equal(t, 1, c.CountStoreCalls())
+			})
 		})
-		require.NoError(t, err)
-
-		// NOTE: We rely on this mock cache being synchronous
-		c.SetAsync(cacheHashKey(key), bytes, time.Minute)
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.Error(t, err)
-		require.Nil(t, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 1, c.CountStoreCalls())
-	})
-
-	t.Run("cache hit key collision", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
-
-		innerRes := newEmptyPrometheusResponse()
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
-
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-
-		key := keyGen.QueryRequestError(ctx, "1234", req)
-		bytes, err := proto.Marshal(&CachedError{
-			Key:          "different key that is stored under the same hashed key",
-			ErrorType:    string(apierror.TypeExec),
-			ErrorMessage: "limits error",
-		})
-		require.NoError(t, err)
-
-		// NOTE: We rely on this mock cache being synchronous
-		c.SetAsync(cacheHashKey(key), bytes, time.Minute)
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.NoError(t, err)
-		require.Equal(t, innerRes, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 1, c.CountStoreCalls())
-	})
-
-	t.Run("corrupt cache data", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
-
-		innerRes := newEmptyPrometheusResponse()
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
-
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-
-		key := keyGen.QueryRequestError(ctx, "1234", req)
-		bytes := []byte{0x0, 0x0, 0x0, 0x0}
-
-		// NOTE: We rely on this mock cache being synchronous
-		c.SetAsync(cacheHashKey(key), bytes, time.Minute)
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.NoError(t, err)
-		require.Equal(t, innerRes, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 1, c.CountStoreCalls())
-	})
-
-	t.Run("cache miss no error", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
-
-		innerRes := newEmptyPrometheusResponse()
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
-
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.NoError(t, err)
-		require.Equal(t, innerRes, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 0, c.CountStoreCalls())
-	})
-
-	t.Run("non-api error", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
-
-		innerErr := errors.New("something unexpected happened")
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
-
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.Error(t, err)
-		require.Nil(t, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 0, c.CountStoreCalls())
-	})
-
-	t.Run("api error not cachable", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
-
-		innerErr := apierror.New(apierror.TypeUnavailable, "service unavailable")
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
-
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.Error(t, err)
-		require.Nil(t, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 0, c.CountStoreCalls())
-	})
-
-	t.Run("api error cachable", func(t *testing.T) {
-		c := cache.NewInstrumentedMockCache()
-
-		innerErr := apierror.New(apierror.TypeTooLargeEntry, "response is too big")
-		inner := &mockHandler{}
-		inner.On("Do", mock.Anything, mock.Anything).Return((*PrometheusResponse)(nil), innerErr)
-
-		ctx := user.InjectOrgID(context.Background(), "1234")
-		req := newDefaultRequest()
-		res, err := runHandler(ctx, inner, c, req)
-
-		require.Error(t, err)
-		require.Nil(t, res)
-		require.Equal(t, 1, c.CountFetchCalls())
-		require.Equal(t, 1, c.CountStoreCalls())
-	})
+	}
 }
