@@ -1832,7 +1832,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system from using too much memory. To configure the limit on a per-tenant basis, use the `-validation.max-native-histogram-buckets` option.
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-not-reducible-native-histogram
@@ -1841,7 +1841,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 `-validation.max-native-histogram-buckets` option is set too low (<20).
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-invalid-native-histogram-schema
@@ -1849,7 +1849,7 @@ The series containing such samples are skipped during ingestion, and valid serie
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram with an invalid schema number. Currently, valid schema numbers are from the range [-4, 8].
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-count-mismatch
@@ -1859,11 +1859,11 @@ where the buckets counts don't add up to the overall count recorded in the nativ
 sum is a regular float number.
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-count-not-big-enough
@@ -1873,11 +1873,11 @@ where the buckets counts add up to a higher number than the overall count record
 that the overall sum is not a float number (NaN).
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-negative-bucket-count
@@ -1886,11 +1886,11 @@ This non-critical error occurs when Mimir receives a write request that contains
 where some bucket count is negative.
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-span-negative-offset
@@ -1899,11 +1899,11 @@ This non-critical error occurs when Mimir receives a write request that contains
 where a bucket span has a negative offset.
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-spans-buckets-mismatch
@@ -1912,11 +1912,11 @@ This non-critical error occurs when Mimir receives a write request that contains
 where the number of bucket counts does not agree with the number of buckets encoded in the bucket spans.
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-custom-buckets-mismatch
@@ -1930,7 +1930,7 @@ Series containing these samples are skipped during ingestion. Valid series in th
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When you configure `-ingester.error-sample-rate` to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-custom-buckets-invalid
@@ -1943,7 +1943,7 @@ Series containing these samples are skipped during ingestion. Valid series in th
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When you configure `-ingester.error-sample-rate` to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-custom-buckets-infinite
@@ -1957,7 +1957,7 @@ Series containing these samples are skipped during ingestion. Valid series in th
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When you configure `-ingester.error-sample-rate` to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-native-histogram-ooo-disabled
@@ -1966,11 +1966,11 @@ This non-critical error occurs when Mimir receives a write request that contains
 where another sample with a more recent timestamp has already been ingested and `-ingester.ooo-native-histograms-ingestion-enabled` is set to `false`.
 
 {{< admonition type="note" >}}
-The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
 ### err-mimir-label-invalid
@@ -2039,7 +2039,7 @@ Only series with invalid samples are skipped during the ingestion. Valid samples
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-exemplar-too-far-in-future
@@ -2273,7 +2273,7 @@ How to **fix** it:
 - Consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-user` option (or `max_global_series_per_user` in the runtime configuration).
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-max-series-per-metric
@@ -2294,7 +2294,7 @@ How to **fix** it:
 - Consider excluding specific metric names from this limit's check by using the `-ingester.ignore-series-limit-for-metric-names` option (or `max_global_series_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-max-metadata-per-user
@@ -2315,7 +2315,7 @@ How to **fix** it:
 - Consider increasing the per-tenant limit setting to a value greater than the number of unique metric names returned by the previous query.
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-max-metadata-per-metric
@@ -2337,7 +2337,7 @@ How to **fix** it:
 - If the different metadata is expected, consider increasing the per-tenant limit by using the `-ingester.max-global-series-per-metric` option (or `max_global_metadata_per_metric` in the runtime configuration).
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-max-chunks-per-query
@@ -2506,7 +2506,7 @@ If the out-of-order sample ingestion is enabled, then this error is similar to `
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-sample-out-of-order
@@ -2531,7 +2531,7 @@ You can learn more about out of order samples in Prometheus, in the blog post [D
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-sample-duplicate-timestamp
@@ -2546,7 +2546,7 @@ Common **causes**:
   Check if the alert name mentioned in the error message is defined multiple times, and if this is intentional, ensure each alert rule generates alerts with unique labels.
 
 {{< admonition type="note" >}}
-When `-ingester.error-sample-rate` is configured to a value greater than `0`, this error is logged only once every `-ingester.error-sample-rate` times.
+When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` error is logged.
 {{< /admonition >}}
 
 ### err-mimir-exemplar-series-missing
