@@ -39,6 +39,7 @@
 * [BUGFIX] Query-frontend: Fix `-query-frontend.query-sharding-max-sharded-queries` enforcement for instant queries with binary operators. #11086
 * [BUGFIX] Memberlist: Fix hash ring updates before the full-join has been completed, when `-memberlist.notify-interval` is configured. #11098
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
+* [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_cache_adjusted_total` metric. #11164
 
 ### Mixin
 
