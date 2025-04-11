@@ -1370,7 +1370,9 @@ func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
 			// Target delay - time spent processing the middleware chain including the push.
 			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
 			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
-				d.sleep(util.DurationWithJitter(delay, 0.10))
+				delay = util.DurationWithJitter(delay, 0.10)
+				pushReq.artificialDelay = delay
+				d.sleep(delay)
 			}
 			return err
 		}

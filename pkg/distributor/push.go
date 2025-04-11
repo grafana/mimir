@@ -246,7 +246,7 @@ func handler(
 				}
 				level.Error(logger).Log(msgs...)
 			}
-			addHeaders(w, err, r, code, retryCfg)
+			addHeaders(w, err, r, code, retryCfg, req.artificialDelay)
 			http.Error(w, validUTF8Message(msg), code)
 		}
 	})
@@ -370,10 +370,14 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
+func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig, delay time.Duration) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
+	}
+
+	if delay > 0 {
+		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%d", delay))
 	}
 
 	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
