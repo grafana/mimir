@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -82,6 +83,9 @@ type distributorQuerier struct {
 	mint, maxt   int64
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
+
+	streamReadersMtx sync.Mutex
+	streamReaders    []*client.SeriesChunksStreamReader
 }
 
 // Select implements storage.Querier interface.
@@ -122,7 +126,6 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
-
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -193,6 +196,11 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
+	// Store the stream readers so we can free their buffers when we're done using this Querier.
+	q.streamReadersMtx.Lock()
+	q.streamReaders = append(q.streamReaders, results.StreamReaders...)
+	q.streamReadersMtx.Unlock()
+
 	if len(sets) == 0 {
 		return storage.EmptySeriesSet()
 	}
@@ -249,6 +257,13 @@ func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 }
 
 func (q *distributorQuerier) Close() error {
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	for _, r := range q.streamReaders {
+		r.FreeBuffer()
+	}
+
 	return nil
 }
 
