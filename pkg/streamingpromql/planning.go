@@ -63,7 +63,6 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 // This is intended for use in tests only.
 func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts) *QueryPlanner {
 	return &QueryPlanner{
-		features:                 opts.Features,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
