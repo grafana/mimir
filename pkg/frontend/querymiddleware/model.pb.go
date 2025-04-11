@@ -395,7 +395,8 @@ type Extent struct {
 	// Unix timestamp when the query with this response was executed.
 	// If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
 	// When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
-	QueryTimestampMs int64  `protobuf:"varint,6,opt,name=query_timestamp_ms,json=queryTimestampMs,proto3" json:"query_timestamp_ms,omitempty"`
+	QueryTimestampMs int64 `protobuf:"varint,6,opt,name=query_timestamp_ms,json=queryTimestampMs,proto3" json:"query_timestamp_ms,omitempty"`
+	// Number of samples processed to create this Extent.
 	SamplesProcessed uint64 `protobuf:"varint,7,opt,name=samples_processed,json=samplesProcessed,proto3" json:"samples_processed,omitempty"`
 }
 
