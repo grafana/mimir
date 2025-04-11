@@ -206,7 +206,14 @@ func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 
 func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.Float64SlicePool.Put(g.floatSums, memoryConsumptionTracker)
+	g.floatSums = nil
+
 	types.Float64SlicePool.Put(g.floatCompensatingValues, memoryConsumptionTracker)
+	g.floatCompensatingValues = nil
+
 	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
+	g.floatPresent = nil
+
 	types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
+	g.histogramSums = nil
 }

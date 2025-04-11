@@ -92,4 +92,5 @@ func (g *CountGroupAggregationGroup) ComputeOutputSeries(_ types.ScalarData, tim
 
 func (g *CountGroupAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
+	g.values = nil
 }

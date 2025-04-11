@@ -183,4 +183,5 @@ func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiting.Memo
 	}
 
 	qGroupPool.Put(q.qGroups, memoryConsumptionTracker)
+	q.qGroups = nil
 }
