@@ -162,6 +162,8 @@ func (s *Sort) Close() {
 	s.Inner.Close()
 
 	// Return any remaining data to the pool.
+	// Any data in allData that was previously passed to the calling operator by NextSeries does not need to be returned to the pool,
+	// as the calling operator is responsible for returning it to the pool.
 	for s.seriesReturned < len(s.allData) {
 		types.PutInstantVectorSeriesData(s.allData[s.seriesReturned], s.MemoryConsumptionTracker)
 		s.seriesReturned++
