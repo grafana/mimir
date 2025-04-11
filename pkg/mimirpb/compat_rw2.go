@@ -70,3 +70,21 @@ var (
 		},
 	}
 )
+
+const (
+	// Confusingly the Remote Write 1.0 protocol is version 0.1.0.
+	// However we just want to track adoption and not confuse the
+	// user, so we'll stick to 1.0 and 2.0.
+	// https://prometheus.io/docs/specs/prw/remote_write_spec/#protocol
+	RemoteWriteVersion1 = "1.0"
+	// https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#x-prometheus-remote-write-version
+	RemoteWriteVersion2 = "2.0"
+)
+
+func (m *WriteRequest) ProtocolVersion() string {
+	// Always default to 1.0.
+	if m == nil || !m.unmarshalFromRW2 {
+		return RemoteWriteVersion1
+	}
+	return RemoteWriteVersion2
+}
