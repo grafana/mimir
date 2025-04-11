@@ -75,7 +75,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -222,7 +222,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -290,7 +290,7 @@ func TestBucketStores_ownedUsers(t *testing.T) {
 
 	tests := map[string]struct {
 		shardingStrategy ShardingStrategy
-		allowedTenants   *util.AllowedTenants
+		allowedTenants   *util.AllowList
 		expectedStores   int
 	}{
 		"when sharding is disabled all users should be synced": {
@@ -307,13 +307,13 @@ func TestBucketStores_ownedUsers(t *testing.T) {
 		},
 		"when user is disabled, their stores should not be created": {
 			shardingStrategy: newNoShardingStrategy(),
-			allowedTenants:   util.NewAllowedTenants(nil, []string{"user-2"}),
+			allowedTenants:   util.NewAllowList(nil, []string{"user-2"}),
 			expectedStores:   2,
 		},
 
 		"when single user is enabled, only their stores should be created": {
 			shardingStrategy: newNoShardingStrategy(),
-			allowedTenants:   util.NewAllowedTenants([]string{"user-3"}, nil),
+			allowedTenants:   util.NewAllowList([]string{"user-3"}, nil),
 			expectedStores:   1,
 		},
 	}
@@ -387,7 +387,7 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 
 			overrides := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
 
-			var allowedTenants *util.AllowedTenants
+			var allowedTenants *util.AllowList
 			reg := prometheus.NewPedanticRegistry()
 			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
 			require.NoError(t, err)
@@ -444,7 +444,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -552,7 +552,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	createBucketIndex(t, bkt, userID)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -719,7 +719,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	sharding := userShardingStrategy{}
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)

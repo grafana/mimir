@@ -78,7 +78,7 @@ type BucketStores struct {
 	stores   map[string]*BucketStore
 
 	// Tenants that are specifically enabled or disabled via configuration
-	allowedTenants *util.AllowedTenants
+	allowedTenants *util.AllowList
 
 	// Metrics.
 	syncTimes         prometheus.Histogram
@@ -89,7 +89,7 @@ type BucketStores struct {
 }
 
 // NewBucketStores makes a new BucketStores. After starting the returned BucketStores
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowedTenants, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
