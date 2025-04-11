@@ -2682,6 +2682,14 @@ func TestMapEngineError(t *testing.T) {
 			err:      fmt.Errorf("%w: oh no", context.Canceled),
 			expected: apierror.New(apierror.TypeCanceled, "context canceled"),
 		},
+		"deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
+		},
+		"deadline exceeded wrapped": {
+			err:      fmt.Errorf("%w: oh no", context.DeadlineExceeded),
+			expected: apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
+		},
 		"promql canceled": {
 			err:      promql.ErrQueryCanceled("something"),
 			expected: apierror.New(apierror.TypeCanceled, "query was canceled in something"),
