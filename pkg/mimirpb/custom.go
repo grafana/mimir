@@ -97,6 +97,8 @@ const (
 	// Currently, it is 8, hardcoded and not exported from either
 	// Prometheus or client_golang, so we define it here.
 	MaximumHistogramSchema = 8
+
+	NativeHistogramsWithCustomBucketsSchema = -53
 )
 
 func (h *Histogram) reduceFloatResolution() (int, error) {

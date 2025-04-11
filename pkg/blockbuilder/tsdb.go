@@ -52,6 +52,8 @@ var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
 	func([]mimirpb.LabelAdapter) {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func(error, int64, []mimirpb.LabelAdapter) {},
 )
 
 type tsdbTenant struct {

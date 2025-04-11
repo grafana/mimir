@@ -388,6 +388,18 @@ func TestIngester_Push(t *testing.T) {
 	histogramWithSpansBucketsMismatch := util_test.GenerateTestHistogram(1)
 	histogramWithSpansBucketsMismatch.PositiveSpans[1].Length++
 
+	histogramWithCustomBuckets := util_test.GenerateTestCustomBucketsHistogram(1)
+
+	histogramWithCustomBucketsMismatch := util_test.GenerateTestCustomBucketsHistogram(1)
+	histogramWithCustomBucketsMismatch.CustomValues = histogramWithCustomBucketsMismatch.CustomValues[:1]
+
+	histogramWithCustomBucketsInvalid := util_test.GenerateTestCustomBucketsHistogram(1)
+	histogramWithCustomBucketsInvalid.CustomValues[0] = 100.0
+	histogramWithCustomBucketsInvalid.CustomValues[1] = 50.0
+
+	histogramWithCustomBucketsInfinite := util_test.GenerateTestCustomBucketsHistogram(1)
+	histogramWithCustomBucketsInfinite.CustomValues[len(histogramWithCustomBucketsInfinite.CustomValues)-1] = math.Inf(1)
+
 	tests := map[string]struct {
 		reqs                      []*mimirpb.WriteRequest
 		expectedErr               error
@@ -1902,6 +1914,180 @@ func TestIngester_Push(t *testing.T) {
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
 			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: histogram spans specify different number of buckets than provided"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should succeed on valid histogram with custom buckets": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBuckets)},
+					nil,
+				),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestCustomBucketsHistogram(1)), Timestamp: 10}},
+				},
+			},
+			expectedMetrics: `
+                # HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+                # TYPE cortex_ingester_active_native_histogram_buckets gauge
+                cortex_ingester_active_native_histogram_buckets{user="test"} 4
+                # HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+                # TYPE cortex_ingester_active_native_histogram_series gauge
+                cortex_ingester_active_native_histogram_series{user="test"} 1
+                # HELP cortex_ingester_active_series Number of currently active series per user.
+                # TYPE cortex_ingester_active_series gauge
+                cortex_ingester_active_series{user="test"} 1
+                # HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+                # TYPE cortex_ingester_ingested_samples_failures_total counter
+                cortex_ingester_ingested_samples_failures_total{user="test"} 0
+                # HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+                # TYPE cortex_ingester_ingested_samples_total counter
+                cortex_ingester_ingested_samples_total{user="test"} 1
+                # HELP cortex_ingester_memory_series The current number of series in memory.
+                # TYPE cortex_ingester_memory_series gauge
+                cortex_ingester_memory_series 1
+                # HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+                # TYPE cortex_ingester_memory_series_created_total counter
+                cortex_ingester_memory_series_created_total{user="test"} 1
+                # HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+                # TYPE cortex_ingester_memory_series_removed_total counter
+                cortex_ingester_memory_series_removed_total{user="test"} 0
+                # HELP cortex_ingester_memory_users The current number of users in memory.
+                # TYPE cortex_ingester_memory_users gauge
+                cortex_ingester_memory_users 1
+                # HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+                # TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+                cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+                # HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+                # TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+                cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail if native histogram with custom buckets has too few custom values": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsMismatch)},
+					nil,
+				),
+			},
+			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, fmt.Errorf("custom buckets: only 1 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail if native histogram with custom buckets has invalid custom values": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsInvalid)},
+					nil,
+				),
+			},
+			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, fmt.Errorf("custom buckets: previous bound is 100.000000 and current is 50.000000: histogram custom bounds must be in strictly increasing order"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="invalid-native-histogram",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+			`,
+		},
+		"should soft fail if native histogram with custom buckets has explicit infinite boundary": {
+			nativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCustomBucketsInfinite)},
+					nil,
+				),
+			},
+			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, fmt.Errorf("custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter

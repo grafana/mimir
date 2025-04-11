@@ -1334,6 +1334,27 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
 				})
 			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, err, model.Time(timestamp), labels)
+				})
+			},
 		)
 	)
 

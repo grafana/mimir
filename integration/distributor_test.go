@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -520,6 +521,81 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 					Samples:    0,
 					Histograms: 1,
 					Exemplars:  0,
+				},
+			},
+		},
+
+		"simple nhcb histogram": {
+			rw1request: nil, // Not supported in RW1
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Histograms: []promRW2.Histogram{
+								{
+									Count:  &promRW2.Histogram_CountInt{CountInt: 200},
+									Sum:    1000,
+									Schema: -53,
+									PositiveSpans: []promRW2.BucketSpan{
+										{
+											Offset: 0,
+											Length: 2,
+										},
+									},
+									PositiveDeltas: []int64{150, -100},
+									CustomValues:   []float64{0.1},
+									Timestamp:      queryStart.UnixMilli(),
+								},
+							},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_HISTOGRAM,
+								HelpRef: 2,
+								UnitRef: 3,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "foobarNHCB", "some helpNHCB", "someunitNHCB"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarNHCB": {{
+					Metric: model.Metric{"__name__": "foobarNHCB"},
+					Histograms: []model.SampleHistogramPair{
+						{
+							Timestamp: model.Time(queryStart.UnixMilli()),
+							Histogram: &model.SampleHistogram{
+								Count: 200,
+								Sum:   1000,
+								Buckets: model.HistogramBuckets{
+									{
+										Boundaries: 3,
+										Lower:      model.FloatString(math.Inf(-1)),
+										Upper:      0.1,
+										Count:      150,
+									},
+									{
+										Boundaries: 0,
+										Lower:      0.1,
+										Upper:      model.FloatString(math.Inf(1)),
+										Count:      50,
+									},
+								},
+							},
+						},
+					},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarNHCB": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarNHCB": {{
+							Type: "histogram",
+							Help: "some helpNHCB",
+							Unit: "someunitNHCB",
+						}},
+					},
 				},
 			},
 		},
