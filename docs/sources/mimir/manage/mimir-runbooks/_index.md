@@ -1795,7 +1795,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 Each series must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-metric-name-invalid
@@ -1804,7 +1804,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 A metric name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-max-label-names-per-series
@@ -1813,7 +1813,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-series` option.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-max-label-names-per-info-series
@@ -1823,7 +1823,7 @@ An info series is a series where the metric name ends in `_info`.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-info-series` option.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during ingestion, and valid series in the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-max-native-histogram-buckets
@@ -1979,7 +1979,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 A label name name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-label-value-invalid
@@ -1988,7 +1988,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 A label value can only contain unicode characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-label-name-too-long
@@ -1997,7 +1997,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-name` option.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-label-value-too-long
@@ -2006,7 +2006,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-length-label-value` option.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-duplicate-label-names
@@ -2015,7 +2015,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 A series that contains a duplicated label name is invalid and gets skipped during the ingestion.
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-labels-not-sorted
@@ -2025,7 +2025,7 @@ However, Mimir internally sorts labels for series that it receives, so this erro
 If you experience this error, [open an issue in the Mimir repository](https://github.com/grafana/mimir/issues).
 
 {{< admonition type="note" >}}
-Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+Invalid series are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-too-far-in-future
@@ -2035,7 +2035,7 @@ Mimir accepts timestamps that are slightly in the future, due to skewed clocks f
 On a per-tenant basis, you can fine tune the tolerance by configuring the `creation_grace_period` option.
 
 {{< admonition type="note" >}}
-Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
@@ -2049,7 +2049,7 @@ Mimir accepts timestamps that are slightly in the future, due to skewed clocks f
 On a per-tenant basis, you can fine tune the tolerance by configuring the `creation_grace_period` option.
 
 {{< admonition type="note" >}}
-Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+Invalid exemplars are skipped during ingestion. Valid exemplars in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-too-far-in-past
@@ -2068,7 +2068,7 @@ How to **fix** it:
 - If the timestamps are correct, increase the `past_grace_period` setting, or set it to 0 to disable the limit.
 
 {{< admonition type="note" >}}
-Only the invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-exemplar-too-far-in-past
@@ -2083,7 +2083,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 An exemplar must have at least one valid label pair, otherwise it cannot be associated with any metric.
 
 {{< admonition type="note" >}}
-Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+Invalid exemplars are skipped during ingestion. Valid exemplars in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-exemplar-labels-too-long
@@ -2092,7 +2092,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit is used to protect the system’s stability from potential abuse or mistakes, and it cannot be configured.
 
 {{< admonition type="note" >}}
-Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+Invalid exemplars are skipped during ingestion. Valid exemplars in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-exemplar-timestamp-invalid
@@ -2101,7 +2101,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 An exemplar must have a valid timestamp, otherwise it cannot be correlated to any point in time.
 
 {{< admonition type="note" >}}
-Invalid exemplars are skipped during the ingestion, and valid exemplars within the same request are ingested.
+Invalid exemplars are skipped during ingestion. Valid exemplars in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-metadata-missing-metric-name
@@ -2110,7 +2110,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 Each metric metadata must have a metric name. Rarely it does not, in which case there might be a bug in the sender client.
 
 {{< admonition type="note" >}}
-Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-metric-name-too-long
@@ -2119,7 +2119,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 {{< admonition type="note" >}}
-Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-unit-too-long
@@ -2128,7 +2128,7 @@ This non-critical error occurs when Mimir receives a write request that contains
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 {{< admonition type="note" >}}
-Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
+Invalid metrics metadata are skipped during ingestion. Valid metadata in the same request are ingested.
 {{< /admonition >}}
 
 ### err-mimir-distributor-max-ingestion-rate
