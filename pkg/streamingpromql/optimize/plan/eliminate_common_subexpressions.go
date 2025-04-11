@@ -20,6 +20,18 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+// This file implements common subexpression elimination.
+//
+// This allows us to skip evaluating the same expression multiple times.
+// For example, in the expression "sum(a) / (sum(a) + sum(b))", we can skip evaluating the "sum(a)" expression a second time
+// and instead reuse the result from the first evaluation.
+//
+// EliminateCommonSubexpressions is an optimization pass that identifies common subexpressions and injects Duplicate nodes
+// into the query plan where needed.
+//
+// When the query plan is materialized, a DuplicationBuffer is created to buffer the results of the common subexpression,
+// and a DuplicationConsumer is created for each consumer of the common subexpression.
+
 func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &Duplicate{DuplicateDetails: &DuplicateDetails{}}
