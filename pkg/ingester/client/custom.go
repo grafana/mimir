@@ -8,9 +8,7 @@ package client
 import (
 	"fmt"
 	io "io"
-	"slices"
 	"sync"
-	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -116,6 +114,32 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 	m.labelBuf = protobuf.NewLabelBuffer()
 	m.chunkBuf = newChunkBuffer()
 
+	numLabels, labelBufSz, numChunks, chunkBufSz, err := m.unmarshal(data, true)
+	if err != nil {
+		return err
+	}
+
+	if cap(m.Labels) < numLabels {
+		m.Labels = make([]mimirpb.LabelAdapter, 0, numLabels)
+	}
+	m.labelBuf.Reserve(labelBufSz)
+	if cap(m.Chunks) < numChunks {
+		m.Chunks = make([]Chunk, 0, numChunks)
+	}
+	m.chunkBuf.Reserve(chunkBufSz)
+
+	_, _, _, _, err = m.unmarshal(data, false)
+	return err
+}
+
+func (m *CustomTimeSeriesChunk) unmarshal(data []byte, calcSizes bool) (int, int, int, int, error) {
+	var chk Chunk
+	var la mimirpb.LabelAdapter
+
+	numLabels := 0
+	labelBufSize := 0
+	numChunks := 0
+	chunkBufSize := 0
 	l := len(data)
 	index := 0
 	for index < l {
@@ -123,10 +147,10 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrIntOverflowIngester
 			}
 			if index >= l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 			}
 			b := data[index]
 			index++
@@ -138,23 +162,23 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: TimeSeriesChunk: wiretype end group for non-group")
+			return numLabels, labelBufSize, numChunks, chunkBufSize, fmt.Errorf("proto: TimeSeriesChunk: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: TimeSeriesChunk: illegal tag %d (wire type %d)", fieldNum, wire)
+			return numLabels, labelBufSize, numChunks, chunkBufSize, fmt.Errorf("proto: TimeSeriesChunk: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field FromIngesterId", wireType)
+				return numLabels, labelBufSize, numChunks, chunkBufSize, fmt.Errorf("proto: wrong wireType = %d for field FromIngesterId", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numLabels, labelBufSize, numChunks, chunkBufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -165,28 +189,28 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			postIndex := index + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 			}
 			m.FromIngesterId = string(data[index:postIndex])
 			index = postIndex
 		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field UserId", wireType)
+				return numLabels, labelBufSize, numChunks, chunkBufSize, fmt.Errorf("proto: wrong wireType = %d for field UserId", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numLabels, labelBufSize, numChunks, chunkBufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -197,28 +221,28 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			postIndex := index + intStringLen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 			}
 			m.UserId = string(data[index:postIndex])
 			index = postIndex
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+				return numLabels, labelBufSize, numChunks, chunkBufSize, fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numLabels, labelBufSize, numChunks, chunkBufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -228,33 +252,41 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			postIndex := index + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 			}
 
-			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
-				return err
+			if calcSizes {
+				numLabels++
+				sz, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf, true)
+				if err != nil {
+					return numLabels, labelBufSize, numChunks, chunkBufSize, err
+				}
+				labelBufSize += sz
+			} else {
+				if _, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf, false); err != nil {
+					return numLabels, labelBufSize, numChunks, chunkBufSize, err
+				}
+				m.Labels = append(m.Labels, la)
 			}
-			m.Labels = append(m.Labels, la)
 			index = postIndex
 		case 4:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Chunks", wireType)
+				return numLabels, labelBufSize, numChunks, chunkBufSize, fmt.Errorf("proto: wrong wireType = %d for field Chunks", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numLabels, labelBufSize, numChunks, chunkBufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -264,58 +296,68 @@ func (m *CustomTimeSeriesChunk) Unmarshal(data []byte) error {
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			postIndex := index + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 			}
-			var chk Chunk
-			if err := unmarshalChunk(&chk, data[index:postIndex], &m.chunkBuf); err != nil {
-				return err
+			if calcSizes {
+				numChunks++
+				sz, err := unmarshalChunk(&chk, data[index:postIndex], &m.chunkBuf, true)
+				if err != nil {
+					return numLabels, labelBufSize, numChunks, chunkBufSize, err
+				}
+				chunkBufSize += sz
+			} else {
+				if _, err := unmarshalChunk(&chk, data[index:postIndex], &m.chunkBuf, false); err != nil {
+					return numLabels, labelBufSize, numChunks, chunkBufSize, err
+				}
+				m.Chunks = append(m.Chunks, chk)
 			}
-			m.Chunks = append(m.Chunks, chk)
 			index = postIndex
 		default:
 			index = preIndex
 			skippy, err := skipIngester(data[index:])
 			if err != nil {
-				return err
+				return numLabels, labelBufSize, numChunks, chunkBufSize, err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			if (index + skippy) < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, labelBufSize, numChunks, chunkBufSize, ErrInvalidLengthIngester
 			}
 			if (index + skippy) > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 			}
 			index += skippy
 		}
 	}
 
 	if index > l {
-		return io.ErrUnexpectedEOF
+		return numLabels, labelBufSize, numChunks, chunkBufSize, io.ErrUnexpectedEOF
 	}
-	return nil
+	return numLabels, labelBufSize, numChunks, chunkBufSize, nil
 }
 
-func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
+func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer, calcSize bool) (int, error) {
+	bufSize := 0
 	l := len(data)
+	var byteLen int
 	index := 0
 	for index < l {
 		preIndex := index
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowIngester
+				return bufSize, ErrIntOverflowIngester
 			}
 			if index >= l {
-				return io.ErrUnexpectedEOF
+				return bufSize, io.ErrUnexpectedEOF
 			}
 			b := data[index]
 			index++
@@ -327,23 +369,23 @@ func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: Chunk: wiretype end group for non-group")
+			return bufSize, fmt.Errorf("proto: Chunk: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: Chunk: illegal tag %d (wire type %d)", fieldNum, wire)
+			return bufSize, fmt.Errorf("proto: Chunk: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field StartTimestampMs", wireType)
+				return bufSize, fmt.Errorf("proto: wrong wireType = %d for field StartTimestampMs", wireType)
 			}
 			chk.StartTimestampMs = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return bufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return bufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -354,15 +396,15 @@ func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
 			}
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field EndTimestampMs", wireType)
+				return bufSize, fmt.Errorf("proto: wrong wireType = %d for field EndTimestampMs", wireType)
 			}
 			chk.EndTimestampMs = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return bufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return bufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -373,15 +415,15 @@ func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
 			}
 		case 3:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Encoding", wireType)
+				return bufSize, fmt.Errorf("proto: wrong wireType = %d for field Encoding", wireType)
 			}
 			chk.Encoding = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return bufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return bufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -392,15 +434,16 @@ func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
 			}
 		case 4:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
+				return bufSize, fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
 			}
-			var byteLen int
+
+			byteLen = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return bufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return bufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -410,40 +453,44 @@ func unmarshalChunk(chk *Chunk, data []byte, buf *chunkBuffer) error {
 				}
 			}
 			if byteLen < 0 {
-				return ErrInvalidLengthIngester
+				return bufSize, ErrInvalidLengthIngester
 			}
 			postIndex := index + byteLen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return bufSize, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return bufSize, io.ErrUnexpectedEOF
 			}
-			chk.Data = mimirpb.UnsafeByteSlice(buf.Add(data[index:postIndex]))
+			if calcSize {
+				bufSize += postIndex - index
+			} else {
+				chk.Data = buf.Add(data[index:postIndex])
+			}
 			index = postIndex
 		default:
 			index = preIndex
 			skippy, err := skipIngester(data[index:])
 			if err != nil {
-				return err
+				return bufSize, err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthIngester
+				return bufSize, ErrInvalidLengthIngester
 			}
 			if (index + skippy) < 0 {
-				return ErrInvalidLengthIngester
+				return bufSize, ErrInvalidLengthIngester
 			}
 			if (index + skippy) > l {
-				return io.ErrUnexpectedEOF
+				return bufSize, io.ErrUnexpectedEOF
 			}
 			index += skippy
 		}
 	}
 
 	if index > l {
-		return io.ErrUnexpectedEOF
+		return bufSize, io.ErrUnexpectedEOF
 	}
-	return nil
+	return bufSize, nil
 }
 
 type CustomQueryStreamSeries struct {
@@ -465,17 +512,34 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 	m.Labels = m.Labels[:0]
 	m.labelBuf = protobuf.NewLabelBuffer()
 
+	numLabels, bufSz, err := m.unmarshal(data, true)
+	if err != nil {
+		return err
+	}
+
+	if cap(m.Labels) < numLabels {
+		m.Labels = make([]mimirpb.LabelAdapter, 0, numLabels)
+	}
+	m.labelBuf.Reserve(bufSz)
+	_, _, err = m.unmarshal(data, false)
+	return err
+}
+
+func (m *CustomQueryStreamSeries) unmarshal(data []byte, calcCounts bool) (int, int, error) {
+	bufSz := 0
+	numLabels := 0
 	l := len(data)
+	var la mimirpb.LabelAdapter
 	index := 0
 	for index < l {
 		preIndex := index
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowIngester
+				return numLabels, bufSz, ErrIntOverflowIngester
 			}
 			if index >= l {
-				return io.ErrUnexpectedEOF
+				return numLabels, bufSz, io.ErrUnexpectedEOF
 			}
 			b := data[index]
 			index++
@@ -487,23 +551,23 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: QueryStreamSeries: wiretype end group for non-group")
+			return numLabels, bufSz, fmt.Errorf("proto: QueryStreamSeries: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: QueryStreamSeries: illegal tag %d (wire type %d)", fieldNum, wire)
+			return numLabels, bufSz, fmt.Errorf("proto: QueryStreamSeries: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+				return numLabels, bufSz, fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numLabels, bufSz, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, bufSz, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -513,32 +577,40 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, bufSz, ErrInvalidLengthIngester
 			}
 			postIndex := index + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, bufSz, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, bufSz, io.ErrUnexpectedEOF
 			}
-			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
-				return err
+			if calcCounts {
+				numLabels++
+				sz, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf, true)
+				if err != nil {
+					return numLabels, bufSz, err
+				}
+				bufSz += sz
+			} else {
+				if _, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf, false); err != nil {
+					return numLabels, bufSz, err
+				}
+				m.Labels = append(m.Labels, la)
 			}
-			m.Labels = append(m.Labels, la)
 			index = postIndex
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ChunkCount", wireType)
+				return numLabels, bufSz, fmt.Errorf("proto: wrong wireType = %d for field ChunkCount", wireType)
 			}
 			m.ChunkCount = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numLabels, bufSz, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, bufSz, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -551,25 +623,25 @@ func (m *CustomQueryStreamSeries) Unmarshal(data []byte) error {
 			index = preIndex
 			skippy, err := skipIngester(data[index:])
 			if err != nil {
-				return err
+				return numLabels, bufSz, err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, bufSz, ErrInvalidLengthIngester
 			}
 			if (index + skippy) < 0 {
-				return ErrInvalidLengthIngester
+				return numLabels, bufSz, ErrInvalidLengthIngester
 			}
 			if (index + skippy) > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, bufSz, io.ErrUnexpectedEOF
 			}
 			index += skippy
 		}
 	}
 
 	if index > l {
-		return io.ErrUnexpectedEOF
+		return numLabels, bufSz, io.ErrUnexpectedEOF
 	}
-	return nil
+	return numLabels, bufSz, nil
 }
 
 type CustomQueryStreamSeriesChunks struct {
@@ -591,6 +663,23 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 	m.Chunks = m.Chunks[:0]
 	m.chunkBuf = newChunkBuffer()
 
+	numChunks, chunkBufSz, err := m.unmarshal(data, true)
+	if err != nil {
+		return err
+	}
+	if cap(m.Chunks) < numChunks {
+		m.Chunks = make([]Chunk, 0, numChunks)
+	}
+	m.chunkBuf.Reserve(chunkBufSz)
+
+	_, _, err = m.unmarshal(data, false)
+	return err
+}
+
+func (m *CustomQueryStreamSeriesChunks) unmarshal(data []byte, calcSizes bool) (int, int, error) {
+	numChunks := 0
+	bufSize := 0
+	var chk Chunk
 	l := len(data)
 	index := 0
 	for index < l {
@@ -598,10 +687,10 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowIngester
+				return numChunks, bufSize, ErrIntOverflowIngester
 			}
 			if index >= l {
-				return io.ErrUnexpectedEOF
+				return numChunks, bufSize, io.ErrUnexpectedEOF
 			}
 			b := data[index]
 			index++
@@ -613,23 +702,23 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: QueryStreamSeriesChunks: wiretype end group for non-group")
+			return numChunks, bufSize, fmt.Errorf("proto: QueryStreamSeriesChunks: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: QueryStreamSeriesChunks: illegal tag %d (wire type %d)", fieldNum, wire)
+			return numChunks, bufSize, fmt.Errorf("proto: QueryStreamSeriesChunks: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field SeriesIndex", wireType)
+				return numChunks, bufSize, fmt.Errorf("proto: wrong wireType = %d for field SeriesIndex", wireType)
 			}
 			m.SeriesIndex = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numChunks, bufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numChunks, bufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -640,15 +729,15 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 			}
 		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Chunks", wireType)
+				return numChunks, bufSize, fmt.Errorf("proto: wrong wireType = %d for field Chunks", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIngester
+					return numChunks, bufSize, ErrIntOverflowIngester
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numChunks, bufSize, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -658,59 +747,67 @@ func (m *CustomQueryStreamSeriesChunks) Unmarshal(data []byte) error {
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthIngester
+				return numChunks, bufSize, ErrInvalidLengthIngester
 			}
 			postIndex := index + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthIngester
+				return numChunks, bufSize, ErrInvalidLengthIngester
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numChunks, bufSize, io.ErrUnexpectedEOF
 			}
 
-			newLen := len(m.Chunks) + 1
-			m.Chunks = slices.Grow(m.Chunks, 1)[0:newLen]
-			if err := unmarshalChunk(&m.Chunks[newLen-1], data[index:postIndex], &m.chunkBuf); err != nil {
-				return err
+			if calcSizes {
+				numChunks++
+				sz, err := unmarshalChunk(&chk, data[index:postIndex], &m.chunkBuf, true)
+				if err != nil {
+					return numChunks, bufSize, err
+				}
+				bufSize += sz
+			} else {
+				m.Chunks = m.Chunks[0 : len(m.Chunks)+1]
+				if _, err := unmarshalChunk(&m.Chunks[len(m.Chunks)-1], data[index:postIndex], &m.chunkBuf, false); err != nil {
+					return numChunks, bufSize, err
+				}
 			}
 			index = postIndex
 		default:
 			index = preIndex
 			skippy, err := skipIngester(data[index:])
 			if err != nil {
-				return err
+				return numChunks, bufSize, err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthIngester
+				return numChunks, bufSize, ErrInvalidLengthIngester
 			}
 			if (index + skippy) < 0 {
-				return ErrInvalidLengthIngester
+				return numChunks, bufSize, ErrInvalidLengthIngester
 			}
 			if (index + skippy) > l {
-				return io.ErrUnexpectedEOF
+				return numChunks, bufSize, io.ErrUnexpectedEOF
 			}
 			index += skippy
 		}
 	}
 
 	if index > l {
-		return io.ErrUnexpectedEOF
+		return numChunks, bufSize, io.ErrUnexpectedEOF
 	}
-	return nil
+	return numChunks, bufSize, nil
 }
 
 // Release held resources to pool.
 func (m *QueryStreamResponse) Release() {
-	for _, s := range m.Chunkseries {
-		s.Release()
+	for i := range m.Chunkseries {
+		m.Chunkseries[i].Release()
 	}
 	m.Chunkseries = nil
-	for _, s := range m.Timeseries {
-		s.Release()
+	for i := range m.Timeseries {
+		m.Timeseries[i].Release()
 	}
 	m.Timeseries = nil
-	for _, s := range m.StreamingSeries {
-		s.Release()
+	for i := range m.StreamingSeries {
+		m.StreamingSeries[i].Release()
 	}
 	m.StreamingSeries = nil
 	/* TODO: Seems broken
@@ -723,16 +820,16 @@ func (m *QueryStreamResponse) Release() {
 
 // Release back to pool.
 func (m *MetricsForLabelMatchersResponse) Release() {
-	for _, me := range m.Metric {
-		me.Release()
+	for i := range m.Metric {
+		m.Metric[i].Release()
 	}
 	m.Metric = nil
 }
 
 // Release back to pool.
 func (m *ExemplarQueryResponse) Release() {
-	for _, s := range m.Timeseries {
-		s.Release()
+	for i := range m.Timeseries {
+		m.Timeseries[i].Release()
 	}
 	m.Timeseries = nil
 }
@@ -755,21 +852,26 @@ func newChunkBuffer() chunkBuffer {
 	}
 }
 
-func (b *chunkBuffer) Add(data []byte) string {
+func (b *chunkBuffer) Reserve(size int) {
+	if cap(b.buf) < size {
+		b.buf = make([]byte, 0, size)
+	}
+}
+
+func (b *chunkBuffer) Add(data []byte) mimirpb.UnsafeByteSlice {
 	oldLen := len(b.buf)
 	newLen := oldLen + len(data)
-	b.buf = slices.Grow(b.buf, len(data))[0:newLen]
+	if cap(b.buf)-len(b.buf) < len(data) {
+		panic(fmt.Errorf("only %d chunk bytes allocated, need %d", cap(b.buf), newLen))
+	}
+	b.buf = b.buf[0:newLen]
 	copy(b.buf[oldLen:newLen], data)
 
-	return yoloString(b.buf[oldLen:newLen])
+	return b.buf[oldLen:newLen]
 }
 
 func (b *chunkBuffer) Release() {
 	//nolint:staticcheck
 	chunkBufferPool.Put(b.buf[:0])
 	b.buf = nil
-}
-
-func yoloString(b []byte) string {
-	return unsafe.String(unsafe.SliceData(b), len(b)) // nolint:gosec
 }

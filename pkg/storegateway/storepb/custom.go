@@ -180,6 +180,11 @@ var (
 			return []mimirpb.LabelAdapter{}
 		},
 	}
+	labelBuffersPool = sync.Pool{
+		New: func() any {
+			return []protobuf.LabelBuffer{}
+		},
+	}
 )
 
 type CustomSeries struct {
@@ -275,7 +280,7 @@ func (m *CustomSeries) Unmarshal(data []byte) error {
 			}
 
 			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
+			if _, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf, false); err != nil {
 				return err
 			}
 			m.Labels = append(m.Labels, la)
@@ -591,10 +596,16 @@ func unmarshalChunk(chk *Chunk, data []byte) error {
 	return nil
 }
 
+type seriesStats struct {
+	labelBufSize int
+	labelCount   int
+}
+
 type CustomStreamingSeriesBatch struct {
 	*StreamingSeriesBatch
 
-	labelBuf protobuf.LabelBuffer
+	labelBufs   []protobuf.LabelBuffer
+	seriesStats []seriesStats
 }
 
 func (m *CustomStreamingSeriesBatch) Equal(other CustomStreamingSeriesBatch) bool {
@@ -611,14 +622,46 @@ func (m *CustomStreamingSeriesBatch) Release() {
 	m.Series = m.Series[:0]
 	streamingSeriesBatchPool.Put(m.StreamingSeriesBatch)
 	m.StreamingSeriesBatch = nil
-	m.labelBuf.Release()
+	m.seriesStats = m.seriesStats[:0]
+
+	for i := range m.labelBufs {
+		m.labelBufs[i].Release()
+	}
+	//nolint:staticcheck
+	labelBuffersPool.Put(m.labelBufs[:0])
 }
 
 func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 	m.StreamingSeriesBatch = streamingSeriesBatchPool.Get().(*StreamingSeriesBatch)
 	m.Series = m.Series[:0]
-	m.labelBuf = protobuf.NewLabelBuffer()
+	m.seriesStats = m.seriesStats[:0]
+	m.labelBufs = labelBuffersPool.Get().([]protobuf.LabelBuffer)[:0]
 
+	numSeries, err := m.unmarshal(data, true)
+	if err != nil {
+		return err
+	}
+
+	if cap(m.Series) < numSeries {
+		m.Series = make([]*StreamingSeries, 0, numSeries)
+	}
+	if cap(m.labelBufs) < numSeries {
+		m.labelBufs = make([]protobuf.LabelBuffer, 0, numSeries)
+	}
+	if len(m.seriesStats) != numSeries {
+		panic(fmt.Errorf("should have %d seriesStats, have %d", numSeries, len(m.seriesStats)))
+	}
+	m.labelBufs = m.labelBufs[0:numSeries]
+	for i := range m.labelBufs {
+		sz := m.seriesStats[i].labelBufSize
+		m.labelBufs[i].Reserve(sz)
+	}
+	_, err = m.unmarshal(data, false)
+	return err
+}
+
+func (m *CustomStreamingSeriesBatch) unmarshal(data []byte, calcSizes bool) (int, error) {
+	numSeries := 0
 	l := len(data)
 	index := 0
 	for index < l {
@@ -626,10 +669,10 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowTypes
+				return numSeries, ErrIntOverflowTypes
 			}
 			if index >= l {
-				return io.ErrUnexpectedEOF
+				return numSeries, io.ErrUnexpectedEOF
 			}
 			b := data[index]
 			index++
@@ -641,23 +684,23 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StreamingSeriesBatch: wiretype end group for non-group")
+			return numSeries, fmt.Errorf("proto: StreamingSeriesBatch: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StreamingSeriesBatch: illegal tag %d (wire type %d)", fieldNum, wire)
+			return numSeries, fmt.Errorf("proto: StreamingSeriesBatch: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Series", wireType)
+				return numSeries, fmt.Errorf("proto: wrong wireType = %d for field Series", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowTypes
+					return numSeries, ErrIntOverflowTypes
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numSeries, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -667,32 +710,53 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthTypes
+				return numSeries, ErrInvalidLengthTypes
 			}
 			postIndex := index + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthTypes
+				return numSeries, ErrInvalidLengthTypes
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numSeries, io.ErrUnexpectedEOF
 			}
-			var ss StreamingSeries
-			if err := m.unmarshalStreamingSeries(&ss, data[index:postIndex]); err != nil {
-				return err
+			if calcSizes {
+				numLabels, labelBufSz, err := m.unmarshalStreamingSeries(nil, data[index:postIndex], nil, numSeries, true)
+				if err != nil {
+					return numSeries, err
+				}
+				m.seriesStats = append(m.seriesStats, seriesStats{
+					labelCount:   numLabels,
+					labelBufSize: labelBufSz,
+				})
+			} else {
+				lb := &m.labelBufs[numSeries]
+				numLabels := m.seriesStats[numSeries].labelCount
+
+				// TODO: Get ss from pool.
+				ss := StreamingSeries{
+					Labels: labelAdaptersPool.Get().([]mimirpb.LabelAdapter)[:0],
+				}
+				if cap(ss.Labels) < numLabels {
+					ss.Labels = make([]mimirpb.LabelAdapter, 0, numLabels)
+				}
+				if _, _, err := m.unmarshalStreamingSeries(&ss, data[index:postIndex], lb, numSeries, false); err != nil {
+					return numSeries, err
+				}
+				m.Series = append(m.Series, &ss)
 			}
-			m.Series = append(m.Series, &ss)
+			numSeries++
 			index = postIndex
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field IsEndOfSeriesStream", wireType)
+				return numSeries, fmt.Errorf("proto: wrong wireType = %d for field IsEndOfSeriesStream", wireType)
 			}
 			var v int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowTypes
+					return numSeries, ErrIntOverflowTypes
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numSeries, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -706,30 +770,31 @@ func (m *CustomStreamingSeriesBatch) Unmarshal(data []byte) error {
 			index = preIndex
 			skippy, err := skipTypes(data[index:])
 			if err != nil {
-				return err
+				return numSeries, err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthTypes
+				return numSeries, ErrInvalidLengthTypes
 			}
 			if (index + skippy) < 0 {
-				return ErrInvalidLengthTypes
+				return numSeries, ErrInvalidLengthTypes
 			}
 			if (index + skippy) > l {
-				return io.ErrUnexpectedEOF
+				return numSeries, io.ErrUnexpectedEOF
 			}
 			index += skippy
 		}
 	}
 
 	if index > l {
-		return io.ErrUnexpectedEOF
+		return numSeries, io.ErrUnexpectedEOF
 	}
-	return nil
+	return numSeries, nil
 }
 
-func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSeries, data []byte) error {
-	ss.Labels = labelAdaptersPool.Get().([]mimirpb.LabelAdapter)[:0]
-
+func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSeries, data []byte, labelBuf *protobuf.LabelBuffer, idx int, calcSizes bool) (int, int, error) {
+	numLabels := 0
+	labelBufSz := 0
+	var la mimirpb.LabelAdapter
 	l := len(data)
 	index := 0
 	for index < l {
@@ -737,10 +802,10 @@ func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSerie
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowTypes
+				return numLabels, labelBufSz, ErrIntOverflowTypes
 			}
 			if index >= l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSz, io.ErrUnexpectedEOF
 			}
 			b := data[index]
 			index++
@@ -752,23 +817,23 @@ func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSerie
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StreamingSeries: wiretype end group for non-group")
+			return numLabels, labelBufSz, fmt.Errorf("proto: StreamingSeries: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StreamingSeries: illegal tag %d (wire type %d)", fieldNum, wire)
+			return numLabels, labelBufSz, fmt.Errorf("proto: StreamingSeries: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+				return numLabels, labelBufSz, fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowTypes
+					return numLabels, labelBufSz, ErrIntOverflowTypes
 				}
 				if index >= l {
-					return io.ErrUnexpectedEOF
+					return numLabels, labelBufSz, io.ErrUnexpectedEOF
 				}
 				b := data[index]
 				index++
@@ -778,44 +843,53 @@ func (m *CustomStreamingSeriesBatch) unmarshalStreamingSeries(ss *StreamingSerie
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthTypes
+				return numLabels, labelBufSz, ErrInvalidLengthTypes
 			}
 			postIndex := index + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthTypes
+				return numLabels, labelBufSz, ErrInvalidLengthTypes
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSz, io.ErrUnexpectedEOF
 			}
-			var la mimirpb.LabelAdapter
-			if err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], &m.labelBuf); err != nil {
-				return err
+			if calcSizes {
+				sz, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], labelBuf, true)
+				if err != nil {
+					return numLabels, labelBufSz, err
+				}
+				labelBufSz += sz
+				numLabels++
+			} else {
+				_, err := protobuf.UnmarshalLabelAdapter(&la, data[index:postIndex], labelBuf, false)
+				if err != nil {
+					return numLabels, labelBufSz, err
+				}
+				ss.Labels = append(ss.Labels, la)
 			}
-			ss.Labels = append(ss.Labels, la)
 			index = postIndex
 		default:
 			index = preIndex
 			skippy, err := skipTypes(data[index:])
 			if err != nil {
-				return err
+				return numLabels, labelBufSz, err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthTypes
+				return numLabels, labelBufSz, ErrInvalidLengthTypes
 			}
 			if (index + skippy) < 0 {
-				return ErrInvalidLengthTypes
+				return numLabels, labelBufSz, ErrInvalidLengthTypes
 			}
 			if (index + skippy) > l {
-				return io.ErrUnexpectedEOF
+				return numLabels, labelBufSz, io.ErrUnexpectedEOF
 			}
 			index += skippy
 		}
 	}
 
 	if index > l {
-		return io.ErrUnexpectedEOF
+		return numLabels, labelBufSz, io.ErrUnexpectedEOF
 	}
-	return nil
+	return numLabels, labelBufSz, nil
 }
 
 type CustomStreamingChunksBatch struct {
