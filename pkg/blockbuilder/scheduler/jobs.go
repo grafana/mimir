@@ -125,16 +125,7 @@ func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 		return
 	}
 
-	// Otherwise, we need to add a new job. See if the policy would allow it.
-
-	existingJobs := make([]*T, 0, len(s.jobs))
-	for _, j := range s.jobs {
-		existingJobs = append(existingJobs, &j.spec)
-	}
-	if !s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existingJobs) {
-		level.Debug(s.logger).Log("msg", "job creation policy disallowed job", "job_id", id)
-		return
-	}
+	// Otherwise, we need to add a new job.
 
 	j := &job[T]{
 		key: jobKey{

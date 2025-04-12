@@ -205,9 +205,12 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 		s.mu.Lock()
 		ps := s.getPartitionState(o.Partition)
-		job := ps.observeEndOffset(o.Offset, now)
+		job, err := ps.observeEndOffset(o.Offset, now)
 		s.mu.Unlock()
-
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
+			return
+		}
 		if job != nil {
 			s.addOrUpdateJobs(job)
 		}
@@ -220,48 +223,47 @@ type partitionState struct {
 	offset    int64
 	jobBucket time.Time
 	jobSize   time.Duration
-	logger    log.Logger
 }
 
-func (s *partitionState) observeEndOffset(end int64, ts time.Time) *schedulerpb.JobSpec {
+const (
+	bucketBefore = -1
+	bucketSame   = 0
+	bucketAfter  = 1
+)
+
+func (s *partitionState) observeEndOffset(end int64, ts time.Time) (*schedulerpb.JobSpec, error) {
 	newJobBucket := ts.Truncate(s.jobSize)
 
 	if s.jobBucket.IsZero() {
 		s.offset = end
 		s.jobBucket = newJobBucket
-		return nil
+		return nil, nil
 	}
 
-	var job *schedulerpb.JobSpec
-
-	if c := newJobBucket.Compare(s.jobBucket); c == 0 {
+	switch c := newJobBucket.Compare(s.jobBucket); c {
+	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
-	} else if c < 0 {
+	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		level.Warn(s.logger).Log(
-			"msg", "new bucket is before the existing one",
-			"last_bucket", s.jobBucket,
-			"new_bucket", newJobBucket,
-			"job_size", s.jobSize,
-		)
-	} else if c > 0 {
+		return nil, fmt.Errorf("new bucket is before the existing one: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
+	case bucketAfter:
 		// We've entered a new job bucket. Emit a job for the current
 		// bucket if it has data and start a new one.
 
+		var job *schedulerpb.JobSpec
 		if s.offset < end {
 			job = &schedulerpb.JobSpec{
 				StartOffset: s.offset,
 				EndOffset:   end,
 			}
 		}
-
 		s.offset = end
 		s.jobBucket = newJobBucket
-		return job
+		return job, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (s *BlockBuilderScheduler) addOrUpdateJobs(jobs ...*schedulerpb.JobSpec) {
@@ -303,7 +305,9 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 		ps := s.getPartitionState(off.partition)
 
 		for _, initialOffset := range o {
-			if job := ps.observeEndOffset(initialOffset.offset, initialOffset.time); job != nil {
+			if job, err := ps.observeEndOffset(initialOffset.offset, initialOffset.time); err != nil {
+				level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
+			} else if job != nil {
 				s.addOrUpdateJobs(&schedulerpb.JobSpec{
 					Topic:       off.topic,
 					Partition:   off.partition,
@@ -353,12 +357,6 @@ func (s *BlockBuilderScheduler) probeInitialJobOffsets(ctx context.Context, offs
 		return []*offsetTime{}, nil
 	}
 
-	// ListOffsetsAfterMilli will return all offsets strictly after some time.
-	// Any time we're asking for offsets for a time, we subtract 1ms so that the
-	// returned offset has a timestamp greater than or equal to whatever time we're
-	// interested in.
-
-	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
 	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
 	if err != nil {
 		return nil, err
@@ -404,9 +402,7 @@ func (s *BlockBuilderScheduler) probeInitialJobOffsets(ctx context.Context, offs
 		}
 	}
 
-	// We have a slice of jobs with start offsets. Put them in increasing order,
-	// then fill in the exclusive end offsets.
-
+	// Return them in increasing order,
 	slices.Reverse(sentinels)
 	return sentinels, nil
 }

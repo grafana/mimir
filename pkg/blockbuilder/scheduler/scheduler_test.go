@@ -523,18 +523,28 @@ func TestPartitionState(t *testing.T) {
 	z := time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC)
 
 	var job *schedulerpb.JobSpec
+	var err error
 
-	job = pt.observeEndOffset(100, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC))
+	job, err = pt.observeEndOffset(100, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC))
 	require.Nil(t, job)
-	job = pt.observeEndOffset(200, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC))
+	require.Nil(t, err)
+	job, err = pt.observeEndOffset(200, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC))
 	require.Equal(t, &schedulerpb.JobSpec{StartOffset: 100, EndOffset: 200}, job)
+	require.Nil(t, err)
 
-	require.Nil(t, pt.observeEndOffset(201, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC)))
-	require.Nil(t, pt.observeEndOffset(202, time.Date(2025, 3, 1, 11, 2, 10, 0, time.UTC)))
-	require.Nil(t, pt.observeEndOffset(203, time.Date(2025, 3, 1, 11, 3, 10, 0, time.UTC)))
+	job, err = pt.observeEndOffset(201, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC))
+	require.Nil(t, job)
+	require.NoError(t, err)
+	job, err = pt.observeEndOffset(202, time.Date(2025, 3, 1, 11, 2, 10, 0, time.UTC))
+	require.NoError(t, err)
+	require.Nil(t, job)
+	job, err = pt.observeEndOffset(203, time.Date(2025, 3, 1, 11, 3, 10, 0, time.UTC))
+	require.Nil(t, job)
+	require.Nil(t, err)
 
-	job = pt.observeEndOffset(300, z.Add(2*time.Hour))
+	job, err = pt.observeEndOffset(300, z.Add(2*time.Hour))
 	require.Equal(t, &schedulerpb.JobSpec{StartOffset: 200, EndOffset: 300}, job)
+	require.NoError(t, err)
 }
 
 func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
@@ -546,8 +556,9 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 
 	for i := 0; i < 1000; i++ {
 		z = z.Add(7 * time.Minute)
-		j := pt.observeEndOffset(0, z)
+		j, err := pt.observeEndOffset(0, z)
 		assert.Nil(t, j)
+		assert.NoError(t, err)
 	}
 }
 
@@ -558,27 +569,35 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 
 	// A bunch of data observed:
 	var j *schedulerpb.JobSpec
-	j = pt.observeEndOffset(10, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC))
+	var err error
+	j, err = pt.observeEndOffset(10, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC))
 	assert.Nil(t, j)
-	j = pt.observeEndOffset(11, time.Date(2025, 3, 1, 10, 1, 11, 0, time.UTC))
+	assert.NoError(t, err)
+	j, err = pt.observeEndOffset(11, time.Date(2025, 3, 1, 10, 1, 11, 0, time.UTC))
 	assert.Nil(t, j)
-	j = pt.observeEndOffset(12, time.Date(2025, 3, 1, 10, 1, 12, 0, time.UTC))
+	assert.NoError(t, err)
+	j, err = pt.observeEndOffset(12, time.Date(2025, 3, 1, 10, 1, 12, 0, time.UTC))
 	assert.Nil(t, j)
+	assert.NoError(t, err)
 	// data ceases. continue to get observations in the same bucket.
-	j = pt.observeEndOffset(12, time.Date(2025, 3, 1, 10, 1, 13, 0, time.UTC))
+	j, err = pt.observeEndOffset(12, time.Date(2025, 3, 1, 10, 1, 13, 0, time.UTC))
 	assert.Nil(t, j)
+	assert.NoError(t, err)
 
 	// as we cross into the next bucket, there's still no new data.
-	j = pt.observeEndOffset(12, time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC))
+	j, err = pt.observeEndOffset(12, time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC))
 	assert.Equal(t, &schedulerpb.JobSpec{StartOffset: 10, EndOffset: 12}, j)
-
+	assert.NoError(t, err)
 	// and we keep getting the same offset.
-	j = pt.observeEndOffset(12, time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC))
+	j, err = pt.observeEndOffset(12, time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC))
 	assert.Nil(t, j)
-	j = pt.observeEndOffset(12, time.Date(2025, 3, 1, 11, 3, 0, 0, time.UTC))
+	assert.NoError(t, err)
+	j, err = pt.observeEndOffset(12, time.Date(2025, 3, 1, 11, 3, 0, 0, time.UTC))
 	assert.Nil(t, j)
+	assert.NoError(t, err)
 
 	// And in the next job bucket, still no new data.
-	j = pt.observeEndOffset(12, time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC))
+	j, err = pt.observeEndOffset(12, time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC))
 	assert.Nil(t, j)
+	assert.NoError(t, err)
 }
