@@ -205,7 +205,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 		s.mu.Lock()
 		ps := s.getPartitionState(o.Partition)
-		job, err := ps.observeEndOffset(o.Offset, now)
+		job, err := ps.updateEndOffset(o.Offset, now, s.cfg.JobSize)
 		s.mu.Unlock()
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
@@ -222,7 +222,6 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 type partitionState struct {
 	offset    int64
 	jobBucket time.Time
-	jobSize   time.Duration
 }
 
 const (
@@ -231,8 +230,11 @@ const (
 	bucketAfter  = 1
 )
 
-func (s *partitionState) observeEndOffset(end int64, ts time.Time) (*schedulerpb.JobSpec, error) {
-	newJobBucket := ts.Truncate(s.jobSize)
+// updateEndOffset processes an end offset and returns a consumption job spec if
+// one is ready. This is expected to be called with monotonically increasing
+// end offsets, and called frequently, even in the absence of new data.
+func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*schedulerpb.JobSpec, error) {
+	newJobBucket := ts.Truncate(jobSize)
 
 	if s.jobBucket.IsZero() {
 		s.offset = end
@@ -246,7 +248,7 @@ func (s *partitionState) observeEndOffset(end int64, ts time.Time) (*schedulerpb
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("new bucket is before the existing one: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
 	case bucketAfter:
 		// We've entered a new job bucket. Emit a job for the current
 		// bucket if it has data and start a new one.
@@ -305,7 +307,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 		ps := s.getPartitionState(off.partition)
 
 		for _, initialOffset := range o {
-			if job, err := ps.observeEndOffset(initialOffset.offset, initialOffset.time); err != nil {
+			if job, err := ps.updateEndOffset(initialOffset.offset, initialOffset.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
 			} else if job != nil {
 				s.addOrUpdateJobs(&schedulerpb.JobSpec{
@@ -324,9 +326,7 @@ func (s *BlockBuilderScheduler) getPartitionState(partition int32) *partitionSta
 		return ps
 	}
 
-	ps := &partitionState{
-		jobSize: s.cfg.JobSize,
-	}
+	ps := &partitionState{}
 	s.partState[partition] = ps
 	return ps
 }
