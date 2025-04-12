@@ -42,6 +42,7 @@ type BlockBuilderScheduler struct {
 	committed           kadm.Offsets
 	observations        obsMap
 	observationComplete bool
+	partState           map[int32]*partitionState
 }
 
 func New(
@@ -58,6 +59,7 @@ func New(
 
 		committed:    make(kadm.Offsets),
 		observations: make(obsMap),
+		partState:    make(map[int32]*partitionState),
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -94,7 +96,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 		return fmt.Errorf("observe: %w", err)
 	}
 
-	s.completeObservationMode()
+	s.completeObservationMode(ctx)
 	level.Info(s.logger).Log("msg", "entering normal operation")
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
@@ -114,8 +116,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			}
 
 			s.updateSchedule(ctx)
-
-			s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
 
 		case <-ctx.Done():
 			return nil
@@ -157,7 +157,7 @@ func (s *BlockBuilderScheduler) observe(ctx context.Context) error {
 }
 
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
-func (s *BlockBuilderScheduler) completeObservationMode() {
+func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -175,6 +175,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, policy)
 	s.finalizeObservations()
+	s.populateInitialJobs(ctx)
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -187,39 +188,224 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
 
-	jobs, err := s.computeJobs(ctx)
+	now := time.Now()
+	endOffsets, err := s.adminClient.ListEndOffsets(ctx, s.cfg.Kafka.Topic)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to discover jobs", "err", err)
+		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", err)
+		return
+	}
+	if endOffsets.Error() != nil {
+		level.Warn(s.logger).Log("msg", "failed to list end offsets", "err", endOffsets.Error())
 		return
 	}
 
-	s.addOrUpdateJobs(jobs...)
+	endOffsets.Each(func(o kadm.ListedOffset) {
+		partStr := fmt.Sprint(o.Partition)
+		s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(o.Offset))
+
+		s.mu.Lock()
+		ps := s.getPartitionState(o.Partition)
+		job := ps.observeOffset(o.Offset, now)
+		s.mu.Unlock()
+
+		if job != nil {
+			s.addOrUpdateJobs(job)
+		}
+	})
+
+	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
+}
+
+type partitionState struct {
+	offset    int64
+	jobBucket time.Time
+	jobSize   time.Duration
+	logger    log.Logger
+}
+
+func (s *partitionState) observeOffset(end int64, ts time.Time) *schedulerpb.JobSpec {
+	newJobBucket := ts.Truncate(s.jobSize)
+
+	if s.jobBucket.IsZero() {
+		s.offset = end
+		s.jobBucket = newJobBucket
+		return nil
+	}
+
+	var job *schedulerpb.JobSpec
+
+	if c := newJobBucket.Compare(s.jobBucket); c < 0 {
+		// New bucket is before our current one. This shouldn't regularly happen.
+		level.Warn(s.logger).Log(
+			"msg", "new bucket is before the existing one",
+			"last_bucket", s.jobBucket,
+			"new_bucket", newJobBucket,
+			"job_size", s.jobSize,
+		)
+	} else if c > 0 {
+		// The new one is in a later job bucket. Emit a job for the current
+		// bucket if it has data and start a new one.
+
+		if s.offset < end {
+			job = &schedulerpb.JobSpec{
+				StartOffset: s.offset,
+				EndOffset:   end,
+			}
+		}
+
+		s.offset = end
+		s.jobBucket = newJobBucket
+		return job
+	}
+
+	return nil
 }
 
 func (s *BlockBuilderScheduler) addOrUpdateJobs(jobs ...*schedulerpb.JobSpec) {
-	s.mu.Lock()
-	// Filter out any jobs that are now before the committed offsets, as we
-	// cannot afford to hold the scheduler lock during the entirety of job
-	// computation.
-	jobs = filterJobsBeforeCommittedOffsets(jobs, s.committed)
-	s.mu.Unlock()
-
 	for _, job := range jobs {
 		jobID := fmt.Sprintf("%s/%d/%d", job.Topic, job.Partition, job.StartOffset)
 		s.jobs.addOrUpdate(jobID, *job)
 	}
 }
 
-// filterJobsBeforeCommittedOffsets returns a slice of jobs that are not before the committed offsets.
-func filterJobsBeforeCommittedOffsets(jobs []*schedulerpb.JobSpec, committed kadm.Offsets) []*schedulerpb.JobSpec {
-	return slices.DeleteFunc(jobs, func(job *schedulerpb.JobSpec) bool {
-		committedOff, ok := committed.Lookup(job.Topic, job.Partition)
-		if !ok {
-			// create the job even if there is no committed offset.
-			return false
-		}
-		return job.StartOffset < committedOff.At
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
+	// Note that the lock is already held because we're in startup mode.
+	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, s.committed, time.Now().Add(-s.cfg.LookbackOnNoCommit))
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
+		return
+	}
+
+	boundary := time.Now().Truncate(s.cfg.JobSize)
+	offFinder := newOffsetFinder(s.adminClient, s.logger)
+
+	// randomize partition order until we have a fair ordering mechanism.
+	rand.Shuffle(len(consumeOffs), func(i, j int) {
+		consumeOffs[i], consumeOffs[j] = consumeOffs[j], consumeOffs[i]
 	})
+
+	for _, off := range consumeOffs {
+		if off.resume >= off.end || off.start >= off.end {
+			// Nothing to consume, so skip.
+			continue
+		}
+
+		o, err := s.probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
+			off.start, off.resume, off.end, boundary, s.cfg.JobSize, time.Now().Add(-s.cfg.MaxScanAge), s.logger)
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
+			continue
+		}
+
+		ps := s.getPartitionState(off.partition)
+
+		for _, initialOffset := range o {
+			if job := ps.observeOffset(initialOffset.offset, initialOffset.time); job != nil {
+				s.addOrUpdateJobs(&schedulerpb.JobSpec{
+					Topic:       off.topic,
+					Partition:   off.partition,
+					StartOffset: job.StartOffset,
+					EndOffset:   job.EndOffset,
+				})
+			}
+		}
+	}
+}
+
+func (s *BlockBuilderScheduler) getPartitionState(partition int32) *partitionState {
+	if ps, ok := s.partState[partition]; ok {
+		return ps
+	}
+
+	ps := &partitionState{
+		jobSize: s.cfg.JobSize,
+	}
+	s.partState[partition] = ps
+	return ps
+}
+
+type offsetTime struct {
+	offset int64
+	time   time.Time
+}
+
+// computeInitialJobs computes an initial set of consumption jobs that exist
+// between each partition's committed offset and the end of the partition. This
+// is used to bootstrap the job queue when the scheduler starts up. After these
+// jobs are created, the scheduler is only concerned with keeping track of each
+// partition's end offsets.
+func (s *BlockBuilderScheduler) probeInitialJobOffsets(ctx context.Context, offs offsetStore,
+	topic string, partition int32, start, resume, end int64,
+	boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
+
+	// This routine begins at the given boundary time and iterates backwards by jobSize,
+	// stopping when we've crossed the committed offset or the min scan time.
+	//
+	// The general idea is that we know the commit offset, but we don't know
+	// whether that commit is hour-aligned. By picking an hour-aligned boundary
+	// time, we can create jobs that *are* generally hour-aligned.
+
+	if resume >= end || start >= end {
+		// No new data to consume.
+		return []*offsetTime{}, nil
+	}
+
+	// ListOffsetsAfterMilli will return all offsets strictly after some time.
+	// Any time we're asking for offsets for a time, we subtract 1ms so that the
+	// returned offset has a timestamp greater than or equal to whatever time we're
+	// interested in.
+
+	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
+	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
+	if err != nil {
+		return nil, err
+	}
+	level.Debug(logger).Log("msg", "found window-end offset", "ts", boundaryTime,
+		"topic", topic, "partition", partition, "offset", windowEndOffset)
+
+	if resume >= windowEndOffset {
+		// No new data to consume.
+		return []*offsetTime{}, nil
+	}
+
+	sentinels := []*offsetTime{}
+
+	// Iterate backwards from the boundary time by job size, stopping when we've
+	// either crossed the committed offset or the min scan time.
+	for pb := boundaryTime.Add(-jobSize); minScanTime.Before(pb); pb = pb.Add(-jobSize) {
+		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
+		if err != nil {
+			return nil, err
+		}
+		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb,
+			"topic", topic, "partition", partition, "offset", off)
+
+		if off >= windowEndOffset {
+			// Found an offset later than our boundary time. Keep looking.
+			continue
+		}
+
+		// Don't want to create jobs that are before the resume offset.
+		off = max(off, resume)
+
+		if len(sentinels) == 0 || off != sentinels[len(sentinels)-1].offset {
+			sentinels = append(sentinels, &offsetTime{
+				offset: off,
+				time:   pb,
+			})
+		}
+
+		if off == resume {
+			// We've reached the resumption offset, so we're done.
+			break
+		}
+	}
+
+	// We have a slice of jobs with start offsets. Put them in increasing order,
+	// then fill in the exclusive end offsets.
+
+	slices.Reverse(sentinels)
+	return sentinels, nil
 }
 
 type partitionOffsets struct {
@@ -305,64 +491,6 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 	return offs, nil
 }
 
-func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb.JobSpec, error) {
-	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, s.snapCommitted(), time.Now().Add(-s.cfg.LookbackOnNoCommit))
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
-		return nil, err
-	}
-
-	// We choose a boundary time that is the current time rounded down to the job size.
-	// We want to create jobs that will consume everything up but not including this boundary.
-	// A later run will create job(s) for the boundary and beyond.
-
-	boundary := time.Now().Truncate(s.cfg.JobSize)
-	offFinder := newOffsetFinder(s.adminClient, s.logger)
-	minScanTime := time.Now().Add(-s.cfg.MaxScanAge)
-	jobs := []*schedulerpb.JobSpec{}
-
-	// randomize partition order until we have a fair ordering mechanism.
-	rand.Shuffle(len(consumeOffs), func(i, j int) {
-		consumeOffs[i], consumeOffs[j] = consumeOffs[j], consumeOffs[i]
-	})
-
-	for _, off := range consumeOffs {
-		if off.resume >= off.end || off.start >= off.end {
-			// Nothing to consume, so skip.
-			continue
-		}
-
-		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", off.topic,
-			"partition", off.partition, "start", off.start, "resume", off.resume, "end", off.end, "boundary", boundary)
-
-		pj, err := computePartitionJobs(ctx, offFinder, off.topic, off.partition,
-			off.start, off.resume, off.end, boundary, s.cfg.JobSize, minScanTime, s.logger)
-		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
-			continue
-		}
-
-		for _, j := range pj {
-			level.Debug(s.logger).Log(
-				"msg", "computed job",
-				"topic", j.Topic,
-				"partition", j.Partition,
-				"startOffset", j.StartOffset,
-				"endOffset", j.EndOffset,
-			)
-		}
-
-		for _, err := range validateJobs(pj, off.start, off.resume, off.end) {
-			level.Warn(s.logger).Log("msg", "job failed validation", "topic", off.topic, "partition", off.partition,
-				"start", off.start, "resume", off.resume, "end", off.end, "boundary", boundary, "err", err)
-		}
-
-		jobs = append(jobs, pj...)
-	}
-
-	return jobs, nil
-}
-
 type offsetStore interface {
 	offsetAfterTime(context.Context, string, int32, time.Time) (int64, error)
 }
@@ -409,122 +537,6 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 }
 
 var _ offsetStore = (*offsetFinder)(nil)
-
-// computePartitionJobs returns the ranges of offsets that should be consumed
-// for the given topic and partition. Jobs are returned in increasing order of
-// start offset.
-//
-// start is the start offset of the partition.
-// resume is the offset to resume from.
-// end is the end offset of the partition.
-// boundaryTime is the time to stop consuming at.
-// jobSize is the size of the jobs to create.
-// minScanTime is the minimum time to scan for.
-func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
-	start, resume, end int64, boundaryTime time.Time, jobSize time.Duration,
-	minScanTime time.Time, logger log.Logger) ([]*schedulerpb.JobSpec, error) {
-
-	// This routine begins at the given boundary time and iterates backwards by jobSize,
-	// stopping when we've crossed the committed offset or the min scan time.
-	//
-	// The general idea is that we know the commit offset, but we don't know
-	// whether that commit is hour-aligned. By picking an hour-aligned boundary
-	// time, we can create jobs that *are* generally hour-aligned.
-
-	if resume >= end || start >= end {
-		// No new data to consume.
-		return []*schedulerpb.JobSpec{}, nil
-	}
-
-	// ListOffsetsAfterMilli will return all offsets strictly after some time.
-	// Any time we're asking for offsets for a time, we subtract 1ms so that the
-	// returned offset has a timestamp greater than or equal to whatever time we're
-	// interested in.
-
-	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
-	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
-	if err != nil {
-		return nil, err
-	}
-	level.Debug(logger).Log("msg", "found window-end offset", "ts", boundaryTime,
-		"topic", topic, "partition", partition, "offset", windowEndOffset)
-
-	if resume >= windowEndOffset {
-		// No new data to consume.
-		return []*schedulerpb.JobSpec{}, nil
-	}
-
-	jobs := []*schedulerpb.JobSpec{}
-
-	// Iterate backwards from the boundary time by job size, stopping when we've
-	// either crossed the committed offset or the min scan time.
-	for pb := boundaryTime.Add(-jobSize); minScanTime.Before(pb); pb = pb.Add(-jobSize) {
-		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
-		if err != nil {
-			return nil, err
-		}
-		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb,
-			"topic", topic, "partition", partition, "offset", off)
-
-		if off >= windowEndOffset {
-			// Found an offset later than our boundary time. Keep looking.
-			continue
-		}
-
-		// Don't want to create jobs that are before the resume offset.
-		off = max(off, resume)
-
-		if len(jobs) == 0 || off != jobs[len(jobs)-1].StartOffset {
-			jobs = append(jobs, &schedulerpb.JobSpec{
-				Topic:       topic,
-				Partition:   partition,
-				StartOffset: off,
-			})
-		}
-
-		if off == resume {
-			// We've reached the resumption offset, so we're done.
-			break
-		}
-	}
-
-	// We have a slice of jobs with start offsets. Put them in increasing order,
-	// then fill in the exclusive end offsets.
-
-	slices.Reverse(jobs)
-
-	for i := range jobs {
-		if i < len(jobs)-1 {
-			jobs[i].EndOffset = jobs[i+1].StartOffset
-		} else {
-			jobs[i].EndOffset = windowEndOffset
-		}
-	}
-
-	return jobs, nil
-}
-
-func validateJobs(jobs []*schedulerpb.JobSpec, start, resume, end int64) []error {
-	errors := []error{}
-	realResume := max(resume, start)
-
-	for i := range jobs {
-		if jobs[i].StartOffset < realResume || jobs[i].StartOffset >= end {
-			errors = append(errors, fmt.Errorf("job start offset is out of range: %d < %d || %d >= %d", jobs[i].StartOffset, realResume, jobs[i].StartOffset, end))
-		}
-		if jobs[i].EndOffset > end {
-			errors = append(errors, fmt.Errorf("job end offset is out of range: %d > %d", jobs[i].EndOffset, end))
-		}
-		if jobs[i].StartOffset >= jobs[i].EndOffset {
-			errors = append(errors, fmt.Errorf("job start >= end: %d == %d", jobs[i].StartOffset, jobs[i].EndOffset))
-		}
-		if i > 0 && jobs[i].StartOffset != jobs[i-1].EndOffset {
-			errors = append(errors, fmt.Errorf("job start offset is not contiguous: %d != %d", jobs[i].StartOffset, jobs[i-1].EndOffset))
-		}
-	}
-
-	return errors
-}
 
 // fetchCommittedOffsets fetches the committed offsets for the given consumer group.
 // It returns empty offsets if the consumer group is not found.
