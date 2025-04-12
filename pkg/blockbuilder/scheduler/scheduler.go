@@ -205,7 +205,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 
 		s.mu.Lock()
 		ps := s.getPartitionState(o.Partition)
-		job := ps.observeOffset(o.Offset, now)
+		job := ps.observeEndOffset(o.Offset, now)
 		s.mu.Unlock()
 
 		if job != nil {
@@ -223,7 +223,7 @@ type partitionState struct {
 	logger    log.Logger
 }
 
-func (s *partitionState) observeOffset(end int64, ts time.Time) *schedulerpb.JobSpec {
+func (s *partitionState) observeEndOffset(end int64, ts time.Time) *schedulerpb.JobSpec {
 	newJobBucket := ts.Truncate(s.jobSize)
 
 	if s.jobBucket.IsZero() {
@@ -234,8 +234,11 @@ func (s *partitionState) observeOffset(end int64, ts time.Time) *schedulerpb.Job
 
 	var job *schedulerpb.JobSpec
 
-	if c := newJobBucket.Compare(s.jobBucket); c < 0 {
-		// New bucket is before our current one. This shouldn't regularly happen.
+	if c := newJobBucket.Compare(s.jobBucket); c == 0 {
+		// Observation is in the currently tracked bucket. No action needed.
+	} else if c < 0 {
+		// New bucket is before our current one. This should only happen if our
+		// Kafka's end offsets aren't monotonically increasing.
 		level.Warn(s.logger).Log(
 			"msg", "new bucket is before the existing one",
 			"last_bucket", s.jobBucket,
@@ -243,7 +246,7 @@ func (s *partitionState) observeOffset(end int64, ts time.Time) *schedulerpb.Job
 			"job_size", s.jobSize,
 		)
 	} else if c > 0 {
-		// The new one is in a later job bucket. Emit a job for the current
+		// We've entered a new job bucket. Emit a job for the current
 		// bucket if it has data and start a new one.
 
 		if s.offset < end {
@@ -300,7 +303,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 		ps := s.getPartitionState(off.partition)
 
 		for _, initialOffset := range o {
-			if job := ps.observeOffset(initialOffset.offset, initialOffset.time); job != nil {
+			if job := ps.observeEndOffset(initialOffset.offset, initialOffset.time); job != nil {
 				s.addOrUpdateJobs(&schedulerpb.JobSpec{
 					Topic:       off.topic,
 					Partition:   off.partition,
