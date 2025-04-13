@@ -31,6 +31,7 @@ const (
 	// - Average name length (8 bytes)
 	// - Average value length (8 bytes)
 	// - Average total of labels per series (10)
+	// The last 3 averages value are taken based on guesstimate.
 	LabelPairEstimatedSize = (uint64(unsafe.Sizeof(labels.Label{})) + 8 + 8) * 10
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
