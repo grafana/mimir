@@ -721,7 +721,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMaxCacheFreshness(t *testing.T) {
-	t.Skip()
 	const (
 		maxCacheFreshness = 10 * time.Minute
 		userID            = "user-1"

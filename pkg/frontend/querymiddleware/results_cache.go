@@ -416,7 +416,12 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	marshalled, err := types.MarshalAny(acc.Response)
+	promRes, ok := acc.Response.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse or PrometheusResponseWithFinalizer")
+	}
+	marshalled, err := types.MarshalAny(promRes)
+
 	if err != nil {
 		return nil, err
 	}
