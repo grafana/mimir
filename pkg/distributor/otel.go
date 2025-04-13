@@ -152,7 +152,7 @@ func OTLPHandler(
 			}
 			level.Error(logger).Log(msgs...)
 		}
-		addHeaders(w, pushErr, r, httpCode, retryCfg)
+		addHeaders(w, pushErr, r, httpCode, retryCfg, req.artificialDelay)
 		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 	})
 }

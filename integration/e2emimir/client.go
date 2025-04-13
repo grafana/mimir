@@ -159,7 +159,14 @@ func (c *Client) SetTimeout(t time.Duration) {
 // Push the input timeseries to the remote endpoint
 func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	// Create write request
-	data, err := proto.Marshal(&prompb.WriteRequest{Timeseries: timeseries})
+	wreq := &prompb.WriteRequest{
+		Timeseries: timeseries,
+	}
+	return c.PushRW1(wreq)
+}
+
+func (c *Client) PushRW1(wreq *prompb.WriteRequest) (*http.Response, error) {
+	data, err := proto.Marshal(wreq)
 	if err != nil {
 		return nil, err
 	}
@@ -707,8 +714,12 @@ func (c *Client) ActiveNativeHistogramMetrics(selector string, options ...Active
 }
 
 // GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
-func (c *Client) GetPrometheusMetadata() (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), nil)
+func (c *Client) GetPrometheusMetadata(metric string) (*http.Response, error) {
+	metricParam := ""
+	if metric != "" {
+		metricParam = fmt.Sprintf("?metric=%s", metric)
+	}
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata%s", c.querierAddress, metricParam), nil)
 
 	if err != nil {
 		return nil, err

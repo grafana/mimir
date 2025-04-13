@@ -9,6 +9,8 @@
 * [CHANGE] Distributor: removed the `cortex_distributor_label_values_with_newlines_total` metric. #10977
 * [CHANGE] Ingester/Distributor: renamed the experimental `max_cost_attribution_cardinality_per_user` config to `max_cost_attribution_cardinality`. #11092
 * [CHANGE] Frontend: The subquery spin-off feature is now enabled with `-query-frontend.subquery-spin-off-enabled=true` instead of `-query-frontend.instant-queries-with-subquery-spin-off=.*` #11153
+* [CHANGE] Overrides-exporter: Don't export per-tenant overrides that are set to their default values. #11173
+* [FEATURE] Distributor: experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: created timestamp is ignored, native histograms with custom buckets are rejected, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192
 * [ENHANCEMENT] Ingester: Add support for exporting native histogram cost attribution metrics (`cortex_ingester_attributed_active_native_histogram_series` and `cortex_ingester_attributed_active_native_histogram_buckets`) with labels specified by customers to a custom Prometheus registry. #10892
 * [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879 #11072.
 * [ENHANCEMENT] Compactor: Upload block index file and multiple segment files concurrently. Concurrency scales linearly with block size up to `-compactor.max-per-block-upload-concurrency`. #10947
@@ -38,6 +40,7 @@
 * [BUGFIX] Query-frontend: Fix blocks retention period enforcement when a request has multiple tenants (tenant federation). #11069
 * [BUGFIX] Query-frontend: Fix `-query-frontend.query-sharding-max-sharded-queries` enforcement for instant queries with binary operators. #11086
 * [BUGFIX] Memberlist: Fix hash ring updates before the full-join has been completed, when `-memberlist.notify-interval` is configured. #11098
+  [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
 
 ### Mixin
@@ -50,6 +53,9 @@
 
 ### Jsonnet
 
+* [CHANGE] Increase the allowed number of rule groups for small, medium_small, and extra_small user tiers by 20%. #11152
+* [FEATURE] Make ingest storage ingester HPA behavior configurable through `_config.ingest_storage_ingester_hpa_behavior`. #11168
+
 ### Mimirtool
 
 * [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
@@ -61,6 +67,9 @@
 ### Documentation
 
 ### Tools
+
+* [ENHANCEMENT] `kafkatool`: Add `offsets` command for querying various partition offsets. #11115
+* [ENHANCEMENT] `listblocks`: Output can now also be JSON or YAML for easier parsing. #11184
 
 ## 2.16.0
 
@@ -163,6 +172,7 @@
 * [BUGFIX] Querier: fix duplicated double quotes in invalid label name error from `count_values`. https://github.com/prometheus/prometheus/pull/16054 #10884
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
 * [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
+* [BUGFIX] Alertmanager: Fix decoding of queryFromGeneratorURL in templates. #8914
 * [BUGFIX] Alertmanager: DedupStage to stop notification pipeline when the timestamp of notification log entry is after the pipeline was flushed #10989
 
 ### Mixin
@@ -229,6 +239,14 @@
 
 * [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
 * [CHANGE] `mark-blocks`: Replace `markblocks` with added features including removing markers and reading block identifiers from a file. #10597
+
+## 2.15.2
+
+### Grafana Mimir
+
+* [BUGFIX] Update module golang.org/x/net to v0.36.0 to address [CVE-2025-22870](https://nvd.nist.gov/vuln/detail/CVE-2025-22870). #10875
+* [BUGFIX] Update module github.com/golang-jwt/jwt/v5 to v5.2.2 to address [CVE-2025-30204](https://nvd.nist.gov/vuln/detail/CVE-2025-30204). #11045
+
 
 ## 2.15.1
 

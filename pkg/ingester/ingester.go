@@ -173,8 +173,8 @@ const (
 )
 
 type requestWithUsersAndCallback struct {
-	users    *util.AllowedTenants // if nil, all tenants are allowed.
-	callback chan<- struct{}      // when compaction/shipping is finished, this channel is closed
+	users    *util.AllowList // if nil, all tenants are allowed.
+	callback chan<- struct{} // when compaction/shipping is finished, this channel is closed
 }
 
 // Config for an Ingester.
@@ -3117,7 +3117,7 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 }
 
 // shipBlocks runs shipping for all users.
-func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants) {
+func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowList) {
 	// Number of concurrent workers is limited in order to avoid to concurrently sync a lot
 	// of tenants in a large cluster.
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.ShipConcurrency, func(ctx context.Context, userID string) error {
@@ -3250,7 +3250,7 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
-func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
+func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
 	// Expose a metric tracking whether there's a forced head compaction in progress.
 	// This metric can be used in alerts and when troubleshooting.
 	if force {
@@ -3377,7 +3377,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
 	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
-	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
+	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList(usersToCompact, nil))
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", totalMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
@@ -3577,7 +3577,7 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 
 	tenants := r.Form[tenantParam]
 
-	allowedUsers := util.NewAllowedTenants(tenants, nil)
+	allowedUsers := util.NewAllowList(tenants, nil)
 	run := func() {
 		ingCtx := i.ServiceContext()
 		if ingCtx == nil || ingCtx.Err() != nil {

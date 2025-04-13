@@ -416,8 +416,10 @@ func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
-	t.k = nil
+	if t.k != nil {
+		types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
+		t.k = nil
+	}
 
 	if t.currentGroup != nil {
 		t.returnGroupAndSeriesToPool(t.currentGroup, t.seriesIndexInCurrentGroup)

@@ -5,10 +5,12 @@ package binops
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -313,6 +315,206 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedOutputSeries                        []labels.Labels
+		expectLeftSideClosedAfterOutputSeriesIndex  int
+		expectRightSideClosedAfterOutputSeriesIndex int
+	}{
+		"no series on left": {
+			leftSeries: []labels.Labels{},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+				labels.FromStrings("group", "3"),
+			},
+
+			expectedOutputSeries:                        []labels.Labels{},
+			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
+			expectRightSideClosedAfterOutputSeriesIndex: -1,
+		},
+		"no series on right": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+				labels.FromStrings("group", "3"),
+			},
+			rightSeries: []labels.Labels{},
+
+			expectedOutputSeries:                        []labels.Labels{},
+			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
+			expectRightSideClosedAfterOutputSeriesIndex: -1,
+		},
+		"reach end of both sides at the same time": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  1,
+			expectRightSideClosedAfterOutputSeriesIndex: 1,
+		},
+		"no more matches with unmatched series still to read on both sides": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "3"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  0,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"no more matches with unmatched series still to read on left side": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  0,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"no more matches with unmatched series still to read on right side": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "3"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  0,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"no matches": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "3"),
+				labels.FromStrings("group", "4"),
+				labels.FromStrings("group", "5"),
+			},
+
+			expectedOutputSeries:                        []labels.Labels{},
+			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
+			expectRightSideClosedAfterOutputSeriesIndex: -1,
+		},
+		"left side exhausted before right": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "3"),
+				labels.FromStrings("group", "2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+				labels.FromStrings("group", "3"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+				labels.FromStrings("group", "3"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  1,
+			expectRightSideClosedAfterOutputSeriesIndex: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			if testCase.expectLeftSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectLeftSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			}
+
+			if testCase.expectRightSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			}
+
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			outputSeries, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+
+			if len(testCase.expectedOutputSeries) == 0 {
+				require.Empty(t, outputSeries)
+			} else {
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			}
+
+			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
+			} else {
+				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
+			}
+
+			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
+			} else {
+				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
+			}
+
+			for outputSeriesIdx := range outputSeries {
+				_, err := o.NextSeries(ctx)
+				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
+
+				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
+				} else {
+					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
+				}
+
+				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
+				} else {
+					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
+				}
+			}
+
+			_, err = o.NextSeries(ctx)
+			require.Equal(t, types.EOS, err)
+
+			o.Close()
+			// Make sure we've returned everything to their pools.
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}
 }

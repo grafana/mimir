@@ -107,7 +107,10 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
+
 	for _, sd := range m.scalarArgsData {
 		types.FPointSlicePool.Put(sd.Samples, m.MemoryConsumptionTracker)
 	}
+
+	m.scalarArgsData = nil
 }

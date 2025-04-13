@@ -554,6 +554,11 @@ func (q *Query) convertNodeToOperator(node planning.Node, timeRange types.QueryT
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
+	if q.engine.pedantic {
+		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
+		defer q.root.Close()
+	}
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	q.cancel = cancel
 

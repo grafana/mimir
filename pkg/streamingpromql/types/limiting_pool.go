@@ -17,12 +17,15 @@ const (
 	// Then we use the next power of two, given the pools always return slices with capacity equal to a power of two.
 	MaxExpectedPointsPerSeries = 131_072
 
-	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory bytes limit.
-	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.
-	nativeHistogramSampleSizeFactor = 5
+	// When allocating a slice of HPoints include an estimate of the size of the FloatHistogram pointed to by each HPoint
+	// for bookkeeping purposes. The FloatHistogram is allocated separately from the slice of HPoints but it's easier to
+	// track their memory usage as part of the allocation of the slice. The size, 288 bytes, is an estimate without too
+	// much science behind it. The minimum size of a FloatHistogram is 168 bytes + 10 buckets (10 * 8 bytes) + 5 spans
+	// (5 * 8 bytes). Some FloatHistograms will be bigger than this and some will be smaller.
+	nativeHistogramEstimatedSize = 288
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
-	HPointSize           = uint64(FPointSize * nativeHistogramSampleSizeFactor)
+	HPointSize           = uint64(unsafe.Sizeof(promql.HPoint{}) + nativeHistogramEstimatedSize)
 	VectorSampleSize     = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
 	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
 	IntSize              = uint64(unsafe.Sizeof(int(0)))

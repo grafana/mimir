@@ -184,19 +184,28 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	if canProduceAnySeries, err := g.loadSeriesMetadata(ctx); err != nil {
 		return nil, err
 	} else if !canProduceAnySeries {
+		g.Close()
 		return nil, nil
 	}
 
-	allMetadata, allSeries, oneSideSeriesUsed, manySideSeriesUsed, err := g.computeOutputSeries()
+	allMetadata, allSeries, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, manySideSeriesUsed, lastManySideSeriesUsedIndex, err := g.computeOutputSeries()
 	if err != nil {
 		return nil, err
+	}
+
+	if len(allMetadata) == 0 {
+		types.PutSeriesMetadataSlice(allMetadata)
+		types.BoolSlicePool.Put(oneSideSeriesUsed, g.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(manySideSeriesUsed, g.MemoryConsumptionTracker)
+		g.Close()
+		return nil, nil
 	}
 
 	g.sortSeries(allMetadata, allSeries)
 	g.remainingSeries = allSeries
 
-	g.oneSideBuffer = operators.NewInstantVectorOperatorBuffer(g.oneSide, oneSideSeriesUsed, g.MemoryConsumptionTracker)
-	g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, g.MemoryConsumptionTracker)
+	g.oneSideBuffer = operators.NewInstantVectorOperatorBuffer(g.oneSide, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, g.MemoryConsumptionTracker)
+	g.manySideBuffer = operators.NewInstantVectorOperatorBuffer(g.manySide, manySideSeriesUsed, lastManySideSeriesUsedIndex, g.MemoryConsumptionTracker)
 
 	return allMetadata, nil
 }
@@ -239,8 +248,10 @@ func (g *GroupedVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Cont
 // - a list of all possible series this operator could return
 // - a corresponding list of the source series for each output series
 // - a list indicating which series from the "one" side are needed to compute the output
+// - the index of the last series from the "one" side that is needed to compute the output
 // - a list indicating which series from the "many" side are needed to compute the output
-func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*groupedBinaryOperationOutputSeries, []bool, []bool, error) {
+// - the index of the last series from the "many" side that is needed to compute the output
+func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*groupedBinaryOperationOutputSeries, []bool, int, []bool, int, error) {
 	groupKeyFunc := vectorMatchingGroupKeyFunc(g.VectorMatching)
 
 	// First, iterate through all the series on the "one" side and determine all the possible groups.
@@ -285,9 +296,11 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 
 	manySideSeriesUsed, err := types.BoolSlicePool.Get(len(g.manySideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, -1, nil, -1, err
 	}
+
 	manySideSeriesUsed = manySideSeriesUsed[:len(g.manySideMetadata)]
+	lastManySideSeriesUsedIndex := -1
 
 	for idx, s := range g.manySideMetadata {
 		groupKey := groupKeyFunc(s.Labels)
@@ -299,6 +312,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		}
 
 		manySideSeriesUsed[idx] = true
+		lastManySideSeriesUsedIndex = idx
 		manySideGroupKey := manySideGroupKeyFunc(s.Labels)
 		thisManySide, exists := manySideMap[string(manySideGroupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
@@ -339,10 +353,11 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	// Next, go through all the "one" side groups again, and determine which of the "one" side series we'll actually need.
 	oneSideSeriesUsed, err := types.BoolSlicePool.Get(len(g.oneSideMetadata), g.MemoryConsumptionTracker)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, -1, nil, -1, err
 	}
 
 	oneSideSeriesUsed = oneSideSeriesUsed[:len(g.oneSideMetadata)]
+	lastOneSideSeriesUsedIndex := -1
 
 	for _, oneSideGroup := range oneSideMap {
 		var thisMatchGroup *matchGroup
@@ -362,6 +377,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 			for _, idx := range oneSide.seriesIndices {
 				oneSideSeriesUsed[idx] = true
 			}
+
+			lastOneSideSeriesUsedIndex = max(lastOneSideSeriesUsedIndex, oneSide.latestSeriesIndex())
 		}
 	}
 
@@ -374,7 +391,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
 
-	return outputMetadata, outputSeries, oneSideSeriesUsed, manySideSeriesUsed, nil
+	return outputMetadata, outputSeries, oneSideSeriesUsed, lastOneSideSeriesUsedIndex, manySideSeriesUsed, lastManySideSeriesUsedIndex, nil
 }
 
 // additionalLabelsKeyFunc returns a function that extracts a key representing the additional labels from a "one" side series that will
@@ -712,17 +729,21 @@ func (g *GroupedVectorVectorBinaryOperation) Close() {
 
 	if g.oneSideMetadata != nil {
 		types.PutSeriesMetadataSlice(g.oneSideMetadata)
+		g.oneSideMetadata = nil
 	}
 
 	if g.manySideMetadata != nil {
 		types.PutSeriesMetadataSlice(g.manySideMetadata)
+		g.manySideMetadata = nil
 	}
 
 	if g.oneSideBuffer != nil {
 		g.oneSideBuffer.Close()
+		g.oneSideBuffer = nil
 	}
 
 	if g.manySideBuffer != nil {
 		g.manySideBuffer.Close()
+		g.manySideBuffer = nil
 	}
 }

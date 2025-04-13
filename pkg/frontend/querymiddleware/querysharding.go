@@ -254,11 +254,14 @@ func mapEngineError(err error) error {
 		cause = err
 	}
 
-	// The engine sometimes returns context.Canceled without mapping it to one of the expected
-	// error types. Handle that specially here since we rely on the error type for errors being
-	// accurate.
+	// The engine sometimes returns context.Canceled or context.DeadlineExceeded without mapping it
+	// to one of the expected error types. Handle those cases specially here since we rely on the error
+	// type for errors being accurate.
 	if errors.Is(cause, context.Canceled) {
 		return apierror.New(apierror.TypeCanceled, cause.Error())
+	}
+	if errors.Is(cause, context.DeadlineExceeded) {
+		return apierror.New(apierror.TypeTimeout, cause.Error())
 	}
 
 	// By default, all errors returned by engine.Eval() are execution errors,

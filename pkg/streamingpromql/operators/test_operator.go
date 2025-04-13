@@ -42,6 +42,5 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 
 func (t *TestOperator) Close() {
 	// Note that we do not return any unused series data here: this is the responsibility of the test, if needed.
-
 	t.Closed = true
 }

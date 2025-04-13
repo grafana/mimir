@@ -110,7 +110,11 @@ func (a *Absent) ExpressionPosition() posrange.PositionRange {
 
 func (a *Absent) Close() {
 	a.Inner.Close()
-	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
+
+	if a.presence != nil {
+		types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
+		a.presence = nil
+	}
 }
 
 // CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched

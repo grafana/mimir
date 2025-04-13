@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	tmpltext "text/template"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/grafana/alerting/templates/gomplate"
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
@@ -27,8 +29,6 @@ import (
 type Template = template.Template
 type KV = template.KV
 type Data = template.Data
-
-var newTemplate = template.New
 
 var (
 	// Provides current time. Can be overwritten in tests.
@@ -57,6 +57,7 @@ type ExtendedAlert struct {
 	ValueString   string             `json:"valueString"` // TODO: Remove in Grafana 10
 	ImageURL      string             `json:"imageURL,omitempty"`
 	EmbeddedImage string             `json:"embeddedImage,omitempty"`
+	OrgID         *int64             `json:"orgId,omitempty"`
 }
 
 type ExtendedAlerts []ExtendedAlert
@@ -71,6 +72,15 @@ type ExtendedData struct {
 	CommonAnnotations KV `json:"commonAnnotations"`
 
 	ExternalURL string `json:"externalURL"`
+
+	// Webhook-specific fields
+	GroupKey string `json:"groupKey"`
+
+	// Most notifiers don't truncate alerts, but a nil or zero default is safe in those cases.
+	TruncatedAlerts *int `json:"truncatedAlerts,omitempty"`
+
+	// Optional variables for templating, currently only used for webhook custom payloads.
+	Vars map[string]string `json:"-"`
 }
 
 var DefaultTemplateName = "__default__"
@@ -119,9 +129,36 @@ func DefaultTemplate(options ...template.Option) (TemplateDefinition, error) {
 	}, nil
 }
 
+// addFuncs is a template.Option that adds functions to the function map fo the given templates.
+// This differs from FuncMap in that it includes dynamic functions that require a reference to the underlying
+// template, such as "tmpl".
+func addFuncs(text *tmpltext.Template, html *tmplhtml.Template) {
+	funcs := gomplate.FuncMap(text)
+
+	text.Funcs(funcs)
+	html.Funcs(funcs)
+}
+
+func NewTemplate(options ...template.Option) (*Template, error) {
+	return template.New(append([]template.Option{addFuncs}, options...)...)
+}
+
+func NewRawTemplate(options ...template.Option) (*tmpltext.Template, error) {
+	var tmpl *tmpltext.Template
+	var capture template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
+		tmpl = text
+	}
+
+	_, err := NewTemplate(append(options, capture)...)
+	if err != nil {
+		return nil, err
+	}
+	return tmpl, nil
+}
+
 // FromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.
 func FromContent(tmpls []string, options ...template.Option) (*Template, error) {
-	t, err := newTemplate(options...)
+	t, err := NewTemplate(options...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +212,15 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 		EndsAt:       alert.EndsAt,
 		GeneratorURL: alert.GeneratorURL,
 		Fingerprint:  alert.Fingerprint,
+	}
+
+	if alert.Annotations[models.OrgIDAnnotation] != "" {
+		orgID, err := strconv.ParseInt(alert.Annotations[models.OrgIDAnnotation], 10, 0)
+		if err != nil {
+			level.Debug(logger).Log("msg", "failed to parse org ID annotation", "error", err.Error())
+		} else {
+			extended.OrgID = &orgID
+		}
 	}
 
 	if generatorURL, err := url.Parse(extended.GeneratorURL); err != nil {
@@ -316,6 +362,8 @@ func ExtendData(data *Data, logger log.Logger) *ExtendedData {
 		CommonAnnotations: removePrivateItems(data.CommonAnnotations),
 
 		ExternalURL: data.ExternalURL,
+
+		Vars: make(map[string]string),
 	}
 	return extended
 }
@@ -323,6 +371,12 @@ func ExtendData(data *Data, logger log.Logger) *ExtendedData {
 func TmplText(ctx context.Context, tmpl *Template, alerts []*types.Alert, l log.Logger, tmplErr *error) (func(string) string, *ExtendedData) {
 	promTmplData := notify.GetTemplateData(ctx, tmpl, alerts, l)
 	data := ExtendData(promTmplData, l)
+
+	if groupKey, err := notify.ExtractGroupKey(ctx); err == nil {
+		data.GroupKey = groupKey.String()
+	} else {
+		level.Debug(l).Log("msg", "failed to extract group key from context", "error", err.Error())
+	}
 
 	return func(name string) (s string) {
 		if *tmplErr != nil {

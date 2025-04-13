@@ -72,11 +72,7 @@ func queryFromGeneratorURL(generatorURL string) (string, error) {
 	if !ok || len(queryParam) < 1 {
 		return "", fmt.Errorf("query not found in the generator URL")
 	}
-	query, err := url.QueryUnescape(queryParam[0])
-	if err != nil {
-		return "", fmt.Errorf("failed to URL decode the query: %w", err)
-	}
-	return query, nil
+	return queryParam[0], nil
 }
 
 // WithCustomFunctions returns template.Option which adds additional template functions

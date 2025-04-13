@@ -421,7 +421,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
 			Help: "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
-		}, []string{"user"}),
+		}, []string{"user", "version"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_samples_in_total",
 			Help: "The total number of samples that have come in to the distributor, including rejected or deduped samples.",
@@ -722,7 +722,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
-	d.incomingRequests.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -736,6 +735,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.droppedNativeHistograms.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
+	d.incomingRequests.DeletePartialMatch(filter)
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
@@ -1349,7 +1349,7 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			span.SetTag("write.metadata", len(req.Metadata))
 		}
 
-		d.incomingRequests.WithLabelValues(userID).Inc()
+		d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
@@ -1370,7 +1370,9 @@ func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
 			// Target delay - time spent processing the middleware chain including the push.
 			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
 			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
-				d.sleep(util.DurationWithJitter(delay, 0.10))
+				delay = util.DurationWithJitter(delay, 0.10)
+				pushReq.artificialDelay = delay
+				d.sleep(delay)
 			}
 			return err
 		}
@@ -1645,7 +1647,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(req, userID)
+	d.updateReceivedMetrics(ctx, req, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -1876,18 +1878,21 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedExemplars, receivedMetadata int
+func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
+	var receivedSamples, receivedHistograms, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.Samples) + len(ts.Histograms)
+		receivedSamples += len(ts.Samples)
+		receivedHistograms += len(ts.Histograms)
 		receivedExemplars += len(ts.Exemplars)
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
-	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+
+	updateWriteResponseStatsCtx(ctx, receivedSamples, receivedHistograms, receivedExemplars)
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.

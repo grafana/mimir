@@ -531,7 +531,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	allowedTenants := util.NewAllowedTenants(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
+	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
 	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
 
 	// Create the blocks cleaner (service).
@@ -908,13 +908,13 @@ type shardingStrategy interface {
 // Each job is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
 type splitAndMergeShardingStrategy struct {
-	allowedTenants *util.AllowedTenants
+	allowedTenants *util.AllowList
 	ring           *ring.Ring
 	ringLifecycler *ring.BasicLifecycler
 	configProvider ConfigProvider
 }
 
-func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
+func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
 	return &splitAndMergeShardingStrategy{
 		allowedTenants: allowedTenants,
 		ring:           ring,
