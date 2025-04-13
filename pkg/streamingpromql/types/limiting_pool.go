@@ -30,7 +30,7 @@ const (
 	// - The size of Label struct
 	// - Average name length (8 bytes)
 	// - Average value length (8 bytes)
-	// - Average number of label pairs per series (10)
+	// - Average total of labels per series (10)
 	LabelPairEstimatedSize = (uint64(unsafe.Sizeof(labels.Label{})) + 8 + 8) * 10
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
