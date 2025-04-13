@@ -24,6 +24,13 @@ const (
 	// (5 * 8 bytes). Some FloatHistograms will be bigger than this and some will be smaller.
 	nativeHistogramEstimatedSize = 288
 
+	// Estimated size of a label pair (name + value) in bytes. This is a conservative estimate that includes:
+	// - String headers (2 * unsafe.Sizeof(string) = 32 bytes on 64-bit systems)
+	// - Average name length (8 bytes)
+	// - Average value length (8 bytes)
+	// - Small overhead for the label struct itself (8 bytes)
+	LabelPairEstimatedSize = 56
+
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
 	HPointSize           = uint64(unsafe.Sizeof(promql.HPoint{}) + nativeHistogramEstimatedSize)
 	VectorSampleSize     = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
@@ -176,6 +183,11 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
+	// Series labels must be estimated only for Vector pools.
+	if _, isVector := any(s).(promql.Vector); isVector {
+		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize * 10 // Assume 10 label pairs per series on average
+	}
+
 	if err := tracker.IncreaseMemoryConsumption(estimatedBytes); err != nil {
 		p.inner.Put(s)
 		return nil, err
@@ -200,7 +212,14 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)
+	estimatedBytes := uint64(cap(s)) * p.elementSize
+
+	// Series labels must be estimated only for Vector pools.
+	if _, isVector := any(s).(promql.Vector); isVector {
+		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize * 10 // Assume 10 label pairs per series on average
+	}
+
+	tracker.DecreaseMemoryConsumption(estimatedBytes)
 	p.inner.Put(s)
 }
 
