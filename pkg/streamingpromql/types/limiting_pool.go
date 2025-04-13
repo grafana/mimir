@@ -29,7 +29,8 @@ const (
 	// - Average name length (8 bytes)
 	// - Average value length (8 bytes)
 	// - Small overhead for the label struct itself (8 bytes)
-	LabelPairEstimatedSize = 56
+	// - 10 label pairs per series on average
+	LabelPairEstimatedSize = 56 * 10
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
 	HPointSize           = uint64(unsafe.Sizeof(promql.HPoint{}) + nativeHistogramEstimatedSize)
@@ -185,7 +186,7 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 
 	// Series labels must be estimated only for VectorPool.
 	if _, isVector := any(s).(promql.Vector); isVector {
-		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize * 10 // Assume 10 label pairs per series on average
+		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize
 	}
 
 	if err := tracker.IncreaseMemoryConsumption(estimatedBytes); err != nil {
@@ -216,7 +217,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 
 	// Series labels must be estimated only for VectorPool.
 	if _, isVector := any(s).(promql.Vector); isVector {
-		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize * 10 // Assume 10 label pairs per series on average
+		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize
 	}
 
 	tracker.DecreaseMemoryConsumption(estimatedBytes)
