@@ -28,9 +28,8 @@ const (
 	// - String headers (2 * unsafe.Sizeof(string) = 32 bytes on 64-bit systems)
 	// - Average name length (8 bytes)
 	// - Average value length (8 bytes)
-	// - Small overhead for the label struct itself (8 bytes)
 	// - 10 label pairs per series on average
-	LabelPairEstimatedSize = 56 * 10
+	LabelPairEstimatedSize = 48 * 10
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
 	HPointSize           = uint64(unsafe.Sizeof(promql.HPoint{}) + nativeHistogramEstimatedSize)
