@@ -416,7 +416,7 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	promRes, ok := acc.Response.GetPrometheusResponse()
+	promRes, ok := acc.GetPrometheusResponse()
 	if !ok {
 		panic("expected PrometheusResponse or PrometheusResponseWithFinalizer")
 	}
