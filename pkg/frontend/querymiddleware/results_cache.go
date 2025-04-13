@@ -371,8 +371,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 
 	for i := 1; i < len(extents); i++ {
 		if accumulator.End+r.GetStep() < extents[i].Start {
-			// The response is marsheld in mergeCacheExtentsWithAccumulator, so we can safely close it afterwards
-			defer accumulator.Close()
 			mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 			if err != nil {
 				return nil, err
@@ -409,8 +407,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		}
 	}
 
-	// The response is marsheld in mergeCacheExtentsWithAccumulator, so we can safely close it afterwards
-	defer accumulator.Close()
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 }
 
