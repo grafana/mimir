@@ -183,7 +183,7 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
-	// Series labels must be estimated only for Vector pools.
+	// Series labels must be estimated only for VectorPool.
 	if _, isVector := any(s).(promql.Vector); isVector {
 		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize * 10 // Assume 10 label pairs per series on average
 	}
@@ -214,7 +214,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
-	// Series labels must be estimated only for Vector pools.
+	// Series labels must be estimated only for VectorPool.
 	if _, isVector := any(s).(promql.Vector); isVector {
 		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize * 10 // Assume 10 label pairs per series on average
 	}
