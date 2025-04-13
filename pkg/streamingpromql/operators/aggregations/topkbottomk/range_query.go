@@ -399,6 +399,15 @@ func (t *RangeQuery) returnSeriesToPool(series rangeQuerySeries) {
 	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
 }
 
+func (t *RangeQuery) returnGroupAndSeriesToPool(g *rangeQueryGroup, firstSeriesIdxToReturn int) {
+	for _, s := range g.series[firstSeriesIdxToReturn:] {
+		t.returnSeriesToPool(s)
+	}
+
+	t.returnGroupToPool(g)
+
+}
+
 func (t *RangeQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
@@ -411,6 +420,17 @@ func (t *RangeQuery) Close() {
 		types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
 		t.k = nil
 	}
+
+	if t.currentGroup != nil {
+		t.returnGroupAndSeriesToPool(t.currentGroup, t.seriesIndexInCurrentGroup)
+		t.currentGroup = nil
+	}
+
+	for _, g := range t.remainingGroups {
+		t.returnGroupAndSeriesToPool(g, 0)
+	}
+
+	t.remainingGroups = nil
 }
 
 type rangeQueryGroup struct {
