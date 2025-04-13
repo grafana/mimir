@@ -878,7 +878,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 }
 
 func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
-	t.Skip()
 	const (
 		numSeries  = 1000
 		numQueries = 10
@@ -1025,7 +1024,17 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 				require.NoError(t, concurrency.ForEachJob(ctx, len(reqs), maxConcurrency, func(ctx context.Context, idx int) error {
 					actual, err := mw.Do(ctx, reqs[idx])
 					require.NoError(t, err)
-					require.Equal(t, expectedRes[reqs[idx].GetID()], actual)
+
+					// Get the Prometheus response from the actual result
+					actualProm, actualOk := actual.GetPrometheusResponse()
+					require.True(t, actualOk)
+
+					// Get the Prometheus response from the expected result
+					expectedProm, expectedOk := expectedRes[reqs[idx].GetID()].GetPrometheusResponse()
+					require.True(t, expectedOk)
+
+					// Compare the Prometheus responses instead of the wrapper types
+					require.Equal(t, expectedProm, actualProm)
 
 					return nil
 				}))
