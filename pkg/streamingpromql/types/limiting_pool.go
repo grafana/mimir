@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -24,12 +25,13 @@ const (
 	// (5 * 8 bytes). Some FloatHistograms will be bigger than this and some will be smaller.
 	nativeHistogramEstimatedSize = 288
 
-	// Estimated size of a label pair (name + value) in bytes. This is a conservative estimate that includes:
-	// - String headers (2 * unsafe.Sizeof(string) = 32 bytes on 64-bit systems)
+	// Estimated size of a label pair (name + value) in bytes.
+	// This is a conservative estimate that includes:
+	// - The size of Label struct
 	// - Average name length (8 bytes)
 	// - Average value length (8 bytes)
-	// - 10 label pairs per series on average
-	LabelPairEstimatedSize = 48 * 10
+	// - Average number of label pairs per series (10)
+	LabelPairEstimatedSize = (uint64(unsafe.Sizeof(labels.Label{})) + 8 + 8) * 10
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
 	HPointSize           = uint64(unsafe.Sizeof(promql.HPoint{}) + nativeHistogramEstimatedSize)
