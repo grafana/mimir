@@ -1063,6 +1063,11 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	return t.Compactor, nil
 }
 
+func (t *Mimir) initParquetCompactor() (serv services.Service, err error) {
+	// TODO(jesus.vazquez) Implement this
+	return t.ParquetCompactor, nil
+}
+
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
