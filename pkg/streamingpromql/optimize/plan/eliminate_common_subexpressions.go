@@ -130,7 +130,7 @@ func (e *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
 // paths that have a unique grouping node are not returned.
 func (e *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) [][]*path {
-	alreadyGrouped := make([]bool, len(paths))
+	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
 	groups := make([][]*path, 0)
 
 	// FIXME: find a better way to do this, this is currently O(n!) in the worst case (where n is the number of paths)
