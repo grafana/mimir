@@ -25,15 +25,15 @@ type DuplicationBuffer struct {
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	nextSeriesIndex []int                                 // One entry per consumer.
-	buffer          map[int]types.InstantVectorSeriesData // TODO: a ring buffer would be better here
+	nextSeriesIndex []int // One entry per consumer.
+	buffer          *SeriesDataRingBuffer
 }
 
 func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *DuplicationBuffer {
 	return &DuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		buffer:                   make(map[int]types.InstantVectorSeriesData, 1),
+		buffer:                   &SeriesDataRingBuffer{},
 	}
 }
 
@@ -77,26 +77,29 @@ func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (
 	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
 	b.nextSeriesIndex[consumerIndex]++
 
-	d, buffered := b.buffer[nextSeriesIndex]
-	if !buffered {
-		var err error
-		d, err = b.Inner.NextSeries(ctx)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
+	buffered := b.buffer.IsPresent(nextSeriesIndex)
+	if buffered {
+		if isLastConsumerOfThisSeries {
+			// We can safely return the series as-is, as we're not going to return this to another consumer.
+			d := b.buffer.Remove(nextSeriesIndex)
+			return d, nil
 		}
 
-		// Only bother storing the data if another consumer needs it.
-		if !isLastConsumerOfThisSeries {
-			b.buffer[nextSeriesIndex] = d
-		}
+		d := b.buffer.Get(nextSeriesIndex)
+		return b.cloneSeries(d)
 	}
 
+	d, err := b.Inner.NextSeries(ctx)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	// Only bother storing the data if another consumer needs it.
 	if isLastConsumerOfThisSeries {
-		// We can safely return the series as-is, as we're not going to return this to another consumer.
-		delete(b.buffer, nextSeriesIndex)
 		return d, nil
 	}
 
+	b.buffer.Append(d, nextSeriesIndex)
 	return b.cloneSeries(d)
 }
 
@@ -179,8 +182,8 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 		types.PutSeriesMetadataSlice(b.seriesMetadata)
 		b.seriesMetadata = nil
 
-		for _, d := range b.buffer {
-			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+		for b.buffer.Size() > 0 {
+			types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
 		}
 
 		b.buffer = nil
@@ -191,9 +194,9 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 
 	// If this consumer was the lagging consumer, free any data that was being buffered for it.
 	for b.nextSeriesIndex[consumerIndex] < lowestNextSeriesIndexOfOtherConsumers {
-		d := b.buffer[b.nextSeriesIndex[consumerIndex]]
+		seriesIdx := b.nextSeriesIndex[consumerIndex]
+		d := b.buffer.Remove(seriesIdx)
 		types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
-		delete(b.buffer, b.nextSeriesIndex[consumerIndex])
 		b.nextSeriesIndex[consumerIndex]++
 	}
 
