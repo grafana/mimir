@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
 
@@ -109,7 +108,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				return
 			}
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
-			ext.Error.Set(log.Span, true)
+			log.SetError()
 		}
 	}()
 }

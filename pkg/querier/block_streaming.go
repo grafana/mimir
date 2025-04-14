@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -210,7 +209,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 				return
 			}
 			level.Error(log).Log("msg", "received error while streaming chunks from store-gateway", "err", err)
-			ext.Error.Set(log.Span, true)
+			log.SetError()
 		}
 	}()
 }
