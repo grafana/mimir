@@ -139,5 +139,6 @@ func (d *DeduplicateAndMerge) Close() {
 
 	if d.buffer != nil {
 		d.buffer.Close()
+		d.buffer = nil
 	}
 }

@@ -568,15 +568,11 @@ func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
 
-	if b.leftMetadata != nil {
-		types.PutSeriesMetadataSlice(b.leftMetadata)
-		b.leftMetadata = nil
-	}
+	types.PutSeriesMetadataSlice(b.leftMetadata)
+	b.leftMetadata = nil
 
-	if b.rightMetadata != nil {
-		types.PutSeriesMetadataSlice(b.rightMetadata)
-		b.rightMetadata = nil
-	}
+	types.PutSeriesMetadataSlice(b.rightMetadata)
+	b.rightMetadata = nil
 
 	if b.leftBuffer != nil {
 		b.leftBuffer.Close()

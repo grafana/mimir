@@ -117,8 +117,6 @@ func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
 
-	if a.presence != nil {
-		types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
-		a.presence = nil
-	}
+	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
+	a.presence = nil
 }
