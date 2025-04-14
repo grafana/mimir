@@ -189,6 +189,8 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 		b.buffer = nil
 
 		b.Inner.Close()
+		b.nextSeriesIndex[consumerIndex] = -1
+
 		return
 	}
 
