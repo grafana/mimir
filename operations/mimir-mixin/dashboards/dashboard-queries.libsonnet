@@ -244,17 +244,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         // Notifications / sec successfully sent to the Alertmanager.
         successPerSecond: |||
-          (
           sum(rate(cortex_prometheus_notifications_sent_total{%(rulerMatcher)s}[$__rate_interval]))
             -
           sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval]))
-          ) > 0
-          or on () vector(0)
         ||| % variables,
 
         // Notifications / sec failed to be sent to the Alertmanager.
         failurePerSecond: |||
-          sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval])) or on () vector(0)
+          sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval]))
         ||| % variables,
       },
     },
@@ -264,19 +261,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       notifications: {
         // Notifications / sec attempted to deliver by the Alertmanager to the receivers.
         totalPerSecond: |||
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s}) or vector(0)
         ||| % variables,
 
         // Notifications / sec successfully delivered by the Alertmanager to the receivers.
         successPerSecond: |||
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+          (sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s}) or vector(0))
           -
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
+          (sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s}) or vector(0))
         ||| % variables,
 
         // Notifications / sec failed to be delivered by the Alertmanager to the receivers.
         failurePerSecond: |||
-          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s}) or vector(0)
         ||| % variables,
       },
     },
