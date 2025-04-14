@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package plan;
+package commonsubexpressionelimination;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
