@@ -108,8 +108,6 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 func (b *InstantVectorOperatorBuffer) Close() {
 	b.source.Close()
 
-	if b.seriesUsed != nil {
-		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
-		b.seriesUsed = nil
-	}
+	types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
+	b.seriesUsed = nil
 }
