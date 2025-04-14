@@ -20,7 +20,7 @@
   * `-server.cluster-validation.http.enabled`
   * `-server.cluster-validation.http.soft-validation`
   * `-server.cluster-validation.http.exclude-paths`
-* [ENHANCEMENT] Query-frontend: Add experimental support to include the cluster validation label in HTTP request headers. When cluster validation is enabled on HTTP server side, cluster validation labels from HTTP request headers are compared with the HTTP server's cluster validation label. #11010 #11145
+* [ENHANCEMENT] Query-frontend: Add experimental support to include the cluster validation label in HTTP request headers. When cluster validation is enabled on the HTTP server side, cluster validation labels from HTTP request headers are compared with the HTTP server's cluster validation label. #11010 #11145
   * By setting `-query-frontend.client-cluster-validation.label`, you configure the query-frontend's client cluster validation label.
   * The flag `-common.client-cluster-validation.label`, if set, provides the default for `-query-frontend.client-cluster-validation.label`.
 * [ENHANCEMENT] Memberlist: Add `-memberlist.abort-if-fast-join-fails` support and retries on DNS resolution. #11067
