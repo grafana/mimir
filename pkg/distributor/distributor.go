@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -2460,7 +2459,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 				return ignored{}, nil
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
-			ext.Error.Set(log.Span, true)
+			log.SetError()
 			return nil, err
 		}
 
@@ -2481,7 +2480,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 					return ignored{}, nil
 				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
-				ext.Error.Set(log.Span, true)
+				log.SetError()
 				return nil, err
 			}
 
