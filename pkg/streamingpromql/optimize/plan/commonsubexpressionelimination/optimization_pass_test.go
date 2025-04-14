@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package plan_test
+package commonsubexpressionelimination_test
 
 import (
 	"context"
@@ -15,11 +15,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func TestEliminateCommonSubexpressions(t *testing.T) {
+func TestOptimizationPass(t *testing.T) {
 	testCases := map[string]struct {
 		expr                   string
 		expectedPlan           string
@@ -274,7 +274,7 @@ func TestEliminateCommonSubexpressions(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			plannerWithOptimizationPass := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(plan.NewEliminateCommonSubexpressions(reg))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(reg))
 
 			if testCase.expectUnchanged {
 				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
