@@ -93,8 +93,11 @@ type Engine struct {
 	estimatedPeakMemoryConsumption            prometheus.Histogram
 	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
 
-	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
-	// (indicating something was not returned to a pool).
+	// When operating in pedantic mode:
+	// - Query.Exec() will call Close() on the root operator a second time to ensure it behaves correctly if Close() is called multiple times.
+	// - Query.Close() will panic if memory consumption is > 0, which indicates something was not returned to a pool.
+	//
+	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
 
 	useQueryPlanning bool

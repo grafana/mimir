@@ -88,10 +88,13 @@ func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVect
 func (q *QuantileAggregation) Close() {
 	if q.Aggregation.ParamData.Samples != nil {
 		types.FPointSlicePool.Put(q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
+		q.Aggregation.ParamData.Samples = nil
 	}
+
 	if q.Param != nil {
 		q.Param.Close()
 	}
+
 	q.Aggregation.Close()
 }
 
@@ -171,10 +174,17 @@ func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, t
 		t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 		f := floats.Quantile(p, qGroup.points)
 		quantilePoints = append(quantilePoints, promql.FPoint{T: t, F: f})
+	}
+
+	return types.InstantVectorSeriesData{Floats: quantilePoints}, false, nil
+}
+
+func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	for i, qGroup := range q.qGroups {
 		types.Float64SlicePool.Put(qGroup.points, memoryConsumptionTracker)
 		q.qGroups[i].points = nil
 	}
 
 	qGroupPool.Put(q.qGroups, memoryConsumptionTracker)
-	return types.InstantVectorSeriesData{Floats: quantilePoints}, false, nil
+	q.qGroups = nil
 }

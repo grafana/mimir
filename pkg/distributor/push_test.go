@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -934,7 +935,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 				req.Header.Add("Retry-Attempt", tc.retryAttempt)
 			}
 
-			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg)
+			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg, 0)
 
 			retryAfter := recorder.Header().Get("Retry-After")
 			if !tc.expectRetry {
@@ -1113,6 +1114,72 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 			)
 			status := toHTTPStatus(ctx, tc.err, limits)
 			assert.Equal(t, tc.expectedHTTPStatus, status)
+		})
+	}
+}
+
+func TestHandler_ServerTiming(t *testing.T) {
+	tests := []struct {
+		name   string
+		userID string
+		delay  time.Duration
+	}{
+		{
+			name:   "No delay configured",
+			userID: "user1",
+			delay:  0,
+		},
+		{
+			name:   "With delay configured",
+			userID: "user2",
+			delay:  500 * time.Millisecond,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := validation.NewMockTenantLimits(map[string]*validation.Limits{
+				tc.userID: {
+					IngestionArtificialDelay: model.Duration(tc.delay),
+				},
+			})
+			overrides := validation.NewOverrides(*prepareDefaultLimits(), limits)
+
+			timeSource := &MockTimeSource{CurrentTime: time.Now()}
+			d := &Distributor{
+				log:    log.NewNopLogger(),
+				limits: overrides,
+				sleep:  timeSource.Sleep,
+				now:    timeSource.Now,
+			}
+
+			req := httptest.NewRequest("POST", "/api/v1/push", strings.NewReader("{}"))
+			req = req.WithContext(user.InjectOrgID(req.Context(), tc.userID))
+			w := httptest.NewRecorder()
+
+			handler := Handler(
+				1024*1024,
+				nil,
+				nil,
+				false,
+				false,
+				overrides,
+				RetryConfig{},
+				// Just outerMaybeDelayMiddleware and not wrapPushWithMiddlewares
+				d.outerMaybeDelayMiddleware(d.push),
+				nil,
+				log.NewNopLogger(),
+			)
+
+			handler.ServeHTTP(w, req)
+
+			serverTiming := w.Header().Get("Server-Timing")
+
+			if tc.delay > 0 {
+				require.True(t, strings.HasPrefix(serverTiming, "artificial_delay;dur="))
+			} else {
+				require.Empty(t, serverTiming)
+			}
 		})
 	}
 }

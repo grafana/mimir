@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -20,8 +21,9 @@ type Request struct {
 
 	getRequest supplierFunc
 
-	request *mimirpb.WriteRequest
-	err     error
+	request         *mimirpb.WriteRequest
+	err             error
+	artificialDelay time.Duration
 }
 
 func newRequest(p supplierFunc) *Request {

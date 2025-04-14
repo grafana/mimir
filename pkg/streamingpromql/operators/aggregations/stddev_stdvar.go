@@ -115,9 +115,16 @@ func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, t
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *StddevStdvarAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
+	g.floats = nil
+
+	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
+	g.floatMeans = nil
+
+	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
+	g.groupSeriesCounts = nil
 }

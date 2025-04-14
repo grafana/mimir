@@ -54,7 +54,7 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 	d.groups = groups
 	types.PutSeriesMetadataSlice(innerMetadata)
 
-	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, d.MemoryConsumptionTracker)
+	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
 
 	return outputMetadata, nil
 }
@@ -139,5 +139,6 @@ func (d *DeduplicateAndMerge) Close() {
 
 	if d.buffer != nil {
 		d.buffer.Close()
+		d.buffer = nil
 	}
 }
