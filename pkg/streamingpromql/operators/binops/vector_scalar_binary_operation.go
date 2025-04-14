@@ -256,10 +256,8 @@ func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
 
-	if v.scalarData.Samples != nil {
-		types.FPointSlicePool.Put(v.scalarData.Samples, v.MemoryConsumptionTracker)
-		v.scalarData.Samples = nil
-	}
+	types.FPointSlicePool.Put(v.scalarData.Samples, v.MemoryConsumptionTracker)
+	v.scalarData.Samples = nil
 }
 
 func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {

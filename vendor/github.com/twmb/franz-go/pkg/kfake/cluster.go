@@ -442,7 +442,7 @@ outer:
 // Control is a function to call on any client request the cluster handles.
 //
 // If the control function returns true, then either the response is written
-// back to the client or, if there the control function returns an error, the
+// back to the client or, if the control function returns an error, the
 // client connection is closed. If both returns are nil, then the cluster will
 // loop continuing to read from the client and the client will likely have a
 // read timeout at some point.
@@ -467,7 +467,7 @@ func (c *Cluster) Control(fn func(kmsg.Request) (kmsg.Response, error, bool)) {
 // handles.
 //
 // If the control function returns true, then either the response is written
-// back to the client or, if there the control function returns an error, the
+// back to the client or, if the control function returns an error, the
 // client connection is closed. If both returns are nil, then the cluster will
 // loop continuing to read from the client and the client will likely have a
 // read timeout at some point.

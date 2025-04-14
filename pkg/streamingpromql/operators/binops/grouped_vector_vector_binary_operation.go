@@ -727,15 +727,11 @@ func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Right.Close()
 	// We don't need to close g.oneSide or g.manySide, as these are either g.Left or g.Right and so have been closed above.
 
-	if g.oneSideMetadata != nil {
-		types.PutSeriesMetadataSlice(g.oneSideMetadata)
-		g.oneSideMetadata = nil
-	}
+	types.PutSeriesMetadataSlice(g.oneSideMetadata)
+	g.oneSideMetadata = nil
 
-	if g.manySideMetadata != nil {
-		types.PutSeriesMetadataSlice(g.manySideMetadata)
-		g.manySideMetadata = nil
-	}
+	types.PutSeriesMetadataSlice(g.manySideMetadata)
+	g.manySideMetadata = nil
 
 	if g.oneSideBuffer != nil {
 		g.oneSideBuffer.Close()

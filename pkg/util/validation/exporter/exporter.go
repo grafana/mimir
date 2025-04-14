@@ -285,6 +285,12 @@ func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
 		for _, em := range oe.exportedMetrics {
+			if em.Get(limits) == em.Get(oe.defaultLimits) {
+				// Skip exporting tenant limits that are the same as the default limits.
+				// Note: this comes with an expected tradeoff where metrics, passed via Config.ExtraMetrics, and whose getter
+				// doesn't depend on the passed limit cannot be exposed in the per-tenant limit overrides.
+				continue
+			}
 			ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, em.Get(limits), em.Name, tenant)
 		}
 	}

@@ -439,10 +439,8 @@ func (h *HistogramQuantileFunction) Close() {
 	h.inner.Close()
 	h.phArg.Close()
 
-	if h.phValues.Samples != nil {
-		types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)
-		h.phValues.Samples = nil
-	}
+	types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)
+	h.phValues.Samples = nil
 }
 
 type bucketGroupSorter struct {

@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250407073127-5ff25a4351b6
+	github.com/grafana/dskit v0.0.0-20250410174732-ac7343ad7d34
 	github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -59,14 +59,14 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/alecthomas/chroma/v2 v2.16.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.2
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20250408102153-2412c378a692
+	github.com/grafana/alerting v0.0.0-20250411135245-cad0d384d430
 	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.16.0
@@ -83,7 +83,7 @@ require (
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250401233345-1af508be1179
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250413173443-1d5a55fa468d
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -305,13 +305,13 @@ require (
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250404141209-ee84b53bf3d0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250409194420-de1ac958c67a
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250407065957-ab4c61bd3b2f
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250414042702-d35df15de7be
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
