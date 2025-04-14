@@ -1519,7 +1519,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
 			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.LabelPairEstimatedSize),
-			instantQueryLimit:        4944,
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.LabelPairEstimatedSize),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
