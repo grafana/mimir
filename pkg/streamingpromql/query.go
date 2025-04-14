@@ -190,7 +190,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 
-				ExpressionPosition: e.PositionRange(),
+				ExpressionPosition:       e.PositionRange(),
+				MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			},
 			Stats: q.stats,
 		}, nil
@@ -404,7 +405,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			Range:     e.Range,
 			Matchers:  vectorSelector.LabelMatchers,
 
-			ExpressionPosition: e.PositionRange(),
+			ExpressionPosition:       e.PositionRange(),
+			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
