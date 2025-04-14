@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -15,21 +16,27 @@ import (
 type ScalarToInstantVector struct {
 	Scalar types.ScalarOperator
 
-	expressionPosition posrange.PositionRange
-	consumed           bool
+	expressionPosition       posrange.PositionRange
+	consumed                 bool
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &ScalarToInstantVector{}
 
-func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange) *ScalarToInstantVector {
+func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *ScalarToInstantVector {
 	return &ScalarToInstantVector{
-		Scalar:             scalar,
-		expressionPosition: expressionPosition,
+		Scalar:                   scalar,
+		expressionPosition:       expressionPosition,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
 func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	metadata := types.GetSeriesMetadataSlice(1)
+	metadata, err := types.SeriesMetadataSlicePool.Get(1, s.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	metadata = append(metadata, types.SeriesMetadata{
 		Labels: labels.EmptyLabels(),
 	})

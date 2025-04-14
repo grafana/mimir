@@ -185,7 +185,7 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	}
 
 	if len(allMetadata) == 0 {
-		types.PutSeriesMetadataSlice(allMetadata)
+		types.SeriesMetadataSlicePool.Put(allMetadata, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(leftSeriesUsed, b.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(rightSeriesUsed, b.MemoryConsumptionTracker)
 		b.Close()
@@ -317,7 +317,11 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		lastLeftSeriesUsedIndex = leftSeriesIndex
 	}
 
-	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
+	allMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputSeriesMap), b.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, nil, -1, nil, -1, err
+	}
+
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, outputSeries := range outputSeriesMap {
@@ -584,10 +588,10 @@ func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
 
-	types.PutSeriesMetadataSlice(b.leftMetadata)
+	types.SeriesMetadataSlicePool.Put(b.leftMetadata, b.MemoryConsumptionTracker)
 	b.leftMetadata = nil
 
-	types.PutSeriesMetadataSlice(b.rightMetadata)
+	types.SeriesMetadataSlicePool.Put(b.rightMetadata, b.MemoryConsumptionTracker)
 	b.rightMetadata = nil
 
 	if b.leftBuffer != nil {

@@ -50,16 +50,20 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 	}
 
 	// We might have duplicates (or HasDuplicateSeries hit a hash collision). Determine the merged output series.
-	groups, outputMetadata := d.computeOutputSeriesGroups(innerMetadata)
+	groups, outputMetadata, err := d.computeOutputSeriesGroups(innerMetadata)
+	if err != nil {
+		return nil, err
+	}
+
 	d.groups = groups
-	types.PutSeriesMetadataSlice(innerMetadata)
+	types.SeriesMetadataSlicePool.Put(innerMetadata, d.MemoryConsumptionTracker)
 
 	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
 
 	return outputMetadata, nil
 }
 
-func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata) {
+func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.SeriesMetadata) ([][]int, []types.SeriesMetadata, error) {
 	// Why use a string, rather than the labels hash as a key here? This avoids any issues with hash collisions.
 	outputGroupMap := map[string][]int{}
 
@@ -91,13 +95,16 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	})
 
 	// Now that we know which series we'll return, and in what order, create the list of output series.
-	outputMetadata := types.GetSeriesMetadataSlice(len(outputGroups))
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputGroups), d.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	for _, group := range outputGroups {
 		outputMetadata = append(outputMetadata, innerMetadata[group[0]])
 	}
 
-	return outputGroups, outputMetadata
+	return outputGroups, outputMetadata, nil
 }
 
 func (d *DeduplicateAndMerge) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
