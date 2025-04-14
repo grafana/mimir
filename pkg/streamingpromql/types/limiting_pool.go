@@ -31,7 +31,9 @@ const (
 	IntSize              = uint64(unsafe.Sizeof(int(0)))
 	Int64Size            = uint64(unsafe.Sizeof(int64(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
+	StringSize           = uint64(unsafe.Sizeof(string("")))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
+	SeriesMetadataSize   = uint64(unsafe.Sizeof(SeriesMetadata{}))
 )
 
 var (
@@ -113,6 +115,15 @@ var (
 		true,
 		mangleHistogram,
 	)
+
+	SeriesMetadataSlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(MaxExpectedSeriesPerResult, func(size int) []SeriesMetadata {
+			return make([]SeriesMetadata, 0, size)
+		}),
+		SeriesMetadataSize,
+		true,
+		nil,
+	)
 )
 
 func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
@@ -176,6 +187,12 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
+	if sm, isSeriesMetadata := any(s).(SeriesMetadata); isSeriesMetadata {
+		for _, l := range sm.Labels {
+			estimatedBytes += uint64(len(l.Name)+len(l.Value)) * StringSize
+		}
+	}
+
 	if err := tracker.IncreaseMemoryConsumption(estimatedBytes); err != nil {
 		p.inner.Put(s)
 		return nil, err
@@ -200,7 +217,14 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)
+	estimatedBytes := uint64(cap(s)) * p.elementSize
+	if sm, isSeriesMetadata := any(s).(SeriesMetadata); isSeriesMetadata {
+		for _, l := range sm.Labels {
+			estimatedBytes += uint64(len(l.Name)+len(l.Value)) * StringSize
+		}
+	}
+
+	tracker.DecreaseMemoryConsumption(estimatedBytes)
 	p.inner.Put(s)
 }
 

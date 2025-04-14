@@ -87,7 +87,10 @@ func requireSeriesListContents(t *testing.T, list *seriesList, series ...storage
 		expectedMetadata = append(expectedMetadata, types.SeriesMetadata{Labels: s.Labels()})
 	}
 
-	require.Equal(t, expectedMetadata, list.ToSeriesMetadata())
+	metadata, err := list.ToSeriesMetadata()
+	require.NoError(t, err)
+
+	require.Equal(t, expectedMetadata, metadata)
 }
 
 type mockSeries struct {
