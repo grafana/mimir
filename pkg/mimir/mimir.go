@@ -770,6 +770,7 @@ type Mimir struct {
 	RulerStorage                     rulestore.RuleStore
 	Alertmanager                     *alertmanager.MultitenantAlertmanager
 	Compactor                        *compactor.MultitenantCompactor
+	ParquetCompactor                 *compactor.ParquetCompactor
 	StoreGateway                     *storegateway.StoreGateway
 	MemberlistKV                     *memberlist.KVInitService
 	ActivityTracker                  *activitytracker.ActivityTracker
