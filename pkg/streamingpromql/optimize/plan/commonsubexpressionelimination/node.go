@@ -74,11 +74,7 @@ func (d *Duplicate) OperatorFactory(children []types.Operator, _ types.QueryTime
 	}
 
 	return &DuplicationConsumerOperatorFactory{
-		Buffer: &DuplicationBuffer{
-			Inner:                    inner,
-			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-			buffer:                   make(map[int]types.InstantVectorSeriesData, 1),
-		},
+		Buffer: NewDuplicationBuffer(inner, params.MemoryConsumptionTracker),
 	}, nil
 }
 
