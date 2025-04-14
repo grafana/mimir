@@ -746,7 +746,7 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			schema:        -53,
 			offset:        1,
 			deltas:        []int64{1, 2, 3},
-			expectedError: fmt.Errorf("received a native histogram sample with too many buckets and cannot reduce"),
+			expectedError: fmt.Errorf("received a native histogram sample with more custom buckets than the limit"),
 		},
 	}
 	for name, tc := range testCases {

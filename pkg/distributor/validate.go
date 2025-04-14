@@ -119,6 +119,7 @@ var (
 		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
 		validation.MaxMetadataLengthFlag,
 	)
+	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
 
 // sampleValidationConfig helps with getting required config to validate sample.
@@ -292,7 +293,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			// Custom buckets cannot be scaled down.
 			cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
 			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-			return false, fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
+			return false, fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 		}
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {

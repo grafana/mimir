@@ -90,9 +90,10 @@ const (
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
 	// NHCB.
-	NativeHistogramCustomBucketsMismatch ID = "native-histogram-custom-buckets-mismatch"
-	NativeHistogramCustomBucketsInvalid  ID = "native-histogram-custom-buckets-invalid"
-	NativeHistogramCustomBucketsInfinite ID = "native-histogram-custom-buckets-infinite"
+	NativeHistogramCustomBucketsMismatch     ID = "native-histogram-custom-buckets-mismatch"
+	NativeHistogramCustomBucketsInvalid      ID = "native-histogram-custom-buckets-invalid"
+	NativeHistogramCustomBucketsInfinite     ID = "native-histogram-custom-buckets-infinite"
+	NativeHistogramCustomBucketsNotReducible ID = "native-histogram-custom-buckets-not-reducible"
 
 	// Alertmanager errors
 	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"

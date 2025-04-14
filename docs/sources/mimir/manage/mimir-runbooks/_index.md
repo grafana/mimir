@@ -1960,6 +1960,16 @@ Series containing these samples are skipped during ingestion. Valid series in th
 When you configure `-ingester.error-sample-rate` to a value of `N` that is greater than `0`, only every `Nth` invalid native histogram error is logged.
 {{< /admonition >}}
 
+### err-mimir-native-histogram-custom-buckets-not-reducible
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
+with custom buckets that has too many observation buckets. This indicates that the
+`-validation.max-native-histogram-buckets` option is set too low.
+
+{{< admonition type="note" >}}
+Series containing these samples are skipped during ingestion. Valid series in the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-native-histogram-ooo-disabled
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
