@@ -16,11 +16,12 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
-	list := newSeriesList()
+	list := newSeriesList(&limiting.MemoryConsumptionTracker{})
 	require.Equal(t, 0, list.Len())
 
 	series1 := mockSeries{labels.FromStrings("series", "1")}
@@ -56,7 +57,7 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 
 	for _, seriesCount := range cases {
 		t.Run(fmt.Sprintf("N=%v", seriesCount), func(t *testing.T) {
-			list := newSeriesList()
+			list := newSeriesList(&limiting.MemoryConsumptionTracker{})
 
 			seriesAdded := make([]storage.Series, 0, seriesCount)
 

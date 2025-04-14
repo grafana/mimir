@@ -85,7 +85,7 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
-	s.series = newSeriesList()
+	s.series = newSeriesList(s.MemoryConsumptionTracker)
 
 	for ss.Next() {
 		s.series.Add(ss.At())
@@ -141,12 +141,13 @@ type seriesList struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
-func newSeriesList() *seriesList {
+func newSeriesList(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *seriesList {
 	firstBatch := getSeriesBatch()
 
 	return &seriesList{
-		currentSeriesBatch: firstBatch,
-		lastSeriesBatch:    firstBatch,
+		currentSeriesBatch:       firstBatch,
+		lastSeriesBatch:          firstBatch,
+		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
