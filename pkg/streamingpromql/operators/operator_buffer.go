@@ -105,6 +105,9 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 	return d, nil
 }
 
+// Close frees all resources associated with this buffer.
+// Calling GetSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
+// It is safe to call Close multiple times.
 func (b *InstantVectorOperatorBuffer) Close() {
 	b.source.Close()
 
