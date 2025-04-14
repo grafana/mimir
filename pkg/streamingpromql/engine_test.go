@@ -1484,6 +1484,10 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			some_metric{idx="5"} 0+1x5
 			some_histogram{idx="1"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
 			some_histogram{idx="2"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
+			some_metric_many_labels{idx="1", label1="value1", label2="value2", label3="value3", label4="value4", label5="value5", label6="value6", label7="value7", label8="value8", label9="value9", label10="value10"} 0+1x5
+			some_metric_many_labels{idx="2", label1="value1", label2="value2", label3="value3", label4="value4", label5="value5", label6="value6", label7="value7", label8="value8", label9="value9", label10="value10"} 0+1x5
+			some_metric_long_labels{idx="1", label1______________________________="value1______________________________", label2______________________________="value2______________________________"} 0+1x5
+			some_metric_long_labels{idx="2", label1______________________________="value1______________________________", label2______________________________="value2______________________________"} 0+1x5
 	`)
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
@@ -1574,6 +1578,46 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
 			instantQueryExpectedPeak: 2*types.Float64Size + types.FPointSize + types.VectorSampleSize + types.LabelPairEstimatedSize,
 			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize + types.LabelPairEstimatedSize - 1,
+		},
+		"limit enabled, series many labels, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
+			expr:          "sum(some_metric_many_labels)",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
+			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
+			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
+
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (two floats and a bool),
+			//  - the next series from the selector,
+			//  - the output sample,
+			//  - and the sample labels.
+			instantQueryExpectedPeak: 2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize + types.LabelPairEstimatedSize,
+			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize + types.LabelPairEstimatedSize,
+		},
+		"limit enabled, series long labels, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is under limit": {
+			expr:          "sum(some_metric_long_labels)",
+			shouldSucceed: true,
+
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
+			//  - and the next series from the selector.
+			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
+			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
+
+			// Each series has one sample, which is already a power of two.
+			// At peak we'll hold in memory:
+			//  - the running total for the sum() (two floats and a bool),
+			//  - the next series from the selector,
+			//  - the output sample,
+			//  - and the sample labels.
+			instantQueryExpectedPeak: 2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize + types.LabelPairEstimatedSize,
+			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize + types.LabelPairEstimatedSize,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
