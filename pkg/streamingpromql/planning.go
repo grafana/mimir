@@ -33,6 +33,7 @@ import (
 var timeSince = time.Since
 
 type QueryPlanner struct {
+	activeQueryTracker       promql.QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
@@ -41,6 +42,7 @@ type QueryPlanner struct {
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	return &QueryPlanner{
+		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
@@ -72,6 +74,15 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
+	if p.activeQueryTracker != nil {
+		queryID, err := p.activeQueryTracker.Insert(ctx, qs+" # (planning)")
+		if err != nil {
+			return nil, err
+		}
+
+		defer p.activeQueryTracker.Delete(queryID)
+	}
+
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -379,6 +390,15 @@ func isKnownFunction(name string) bool {
 func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	if e.activeQueryTracker != nil {
+		queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
+		if err != nil {
+			return nil, err
+		}
+
+		defer e.activeQueryTracker.Delete(queryID)
 	}
 
 	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange)

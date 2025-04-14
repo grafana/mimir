@@ -1743,62 +1743,77 @@ func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Hist
 }
 
 func TestActiveQueryTracker(t *testing.T) {
-	for _, shouldSucceed := range []bool{true, false} {
-		t.Run(fmt.Sprintf("successful query = %v", shouldSucceed), func(t *testing.T) {
-			opts := NewTestEngineOpts()
-			tracker := &testQueryTracker{}
-			opts.CommonOpts.ActiveQueryTracker = tracker
-			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
-			require.NoError(t, err)
-
-			innerStorage := promqltest.LoadedStorage(t, "")
-			t.Cleanup(func() { require.NoError(t, innerStorage.Close()) })
-
-			// Use a fake queryable as a way to check that the query is recorded as active while the query is in progress.
-			queryTrackingTestingQueryable := &activeQueryTrackerQueryable{
-				innerStorage: innerStorage,
-				tracker:      tracker,
-			}
-
-			if !shouldSucceed {
-				queryTrackingTestingQueryable.err = errors.New("something went wrong inside the query")
-			}
-
-			queryTypes := map[string]func(expr string) (promql.Query, error){
-				"range": func(expr string) (promql.Query, error) {
-					return engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
-				},
-				"instant": func(expr string) (promql.Query, error) {
-					return engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
-				},
-			}
-
-			for queryType, createQuery := range queryTypes {
-				t.Run(queryType+" query", func(t *testing.T) {
-					expr := "test_" + queryType + "_query"
-					queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
-
-					q, err := createQuery(expr)
+	for _, usePlanner := range []bool{true, false} {
+		t.Run(fmt.Sprintf("use planner = %v", usePlanner), func(t *testing.T) {
+			for _, shouldSucceed := range []bool{true, false} {
+				t.Run(fmt.Sprintf("successful query = %v", shouldSucceed), func(t *testing.T) {
+					opts := NewTestEngineOpts()
+					opts.UseQueryPlanning = usePlanner
+					tracker := &testQueryTracker{}
+					opts.CommonOpts.ActiveQueryTracker = tracker
+					planner := NewQueryPlanner(opts)
+					engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, log.NewNopLogger())
 					require.NoError(t, err)
-					defer q.Close()
 
-					res := q.Exec(context.Background())
+					innerStorage := promqltest.LoadedStorage(t, "")
+					t.Cleanup(func() { require.NoError(t, innerStorage.Close()) })
 
-					if shouldSucceed {
-						require.NoError(t, res.Err)
-					} else {
-						require.EqualError(t, res.Err, "something went wrong inside the query")
+					// Use a fake queryable as a way to check that the query is recorded as active while the query is in progress.
+					queryTrackingTestingQueryable := &activeQueryTrackerQueryable{
+						innerStorage: innerStorage,
+						tracker:      tracker,
 					}
 
-					// Check that the query was active in the query tracker while the query was executing.
-					require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
-					require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
+					if !shouldSucceed {
+						queryTrackingTestingQueryable.err = errors.New("something went wrong inside the query")
+					}
 
-					// Check that the query has now been marked as deleted in the query tracker.
-					require.NotEmpty(t, tracker.queries)
-					trackedQuery := tracker.queries[len(tracker.queries)-1]
-					require.Equal(t, expr, trackedQuery.expr)
-					require.Equal(t, true, trackedQuery.deleted)
+					queryTypes := map[string]func(expr string) (promql.Query, error){
+						"range": func(expr string) (promql.Query, error) {
+							return engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
+						},
+						"instant": func(expr string) (promql.Query, error) {
+							return engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
+						},
+					}
+
+					for queryType, createQuery := range queryTypes {
+						t.Run(queryType+" query", func(t *testing.T) {
+							expr := "test_" + queryType + "_query"
+							queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
+							tracker.Clear()
+
+							q, err := createQuery(expr)
+							require.NoError(t, err)
+							defer q.Close()
+
+							if usePlanner {
+								expectedPlanningActivities := []trackedQuery{
+									{expr: expr + " # (planning)", deleted: true},
+									{expr: expr + " # (materialization)", deleted: true},
+								}
+								require.Equal(t, expectedPlanningActivities, tracker.queries)
+							}
+
+							res := q.Exec(context.Background())
+
+							if shouldSucceed {
+								require.NoError(t, res.Err)
+							} else {
+								require.EqualError(t, res.Err, "something went wrong inside the query")
+							}
+
+							// Check that the query was active in the query tracker while the query was executing.
+							require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
+							require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
+
+							// Check that the query has now been marked as deleted in the query tracker.
+							require.NotEmpty(t, tracker.queries)
+							trackedQuery := tracker.queries[len(tracker.queries)-1]
+							require.Equal(t, expr, trackedQuery.expr)
+							require.Equal(t, true, trackedQuery.deleted)
+						})
+					}
 				})
 			}
 		})
@@ -1833,6 +1848,10 @@ func (qt *testQueryTracker) Delete(insertIndex int) {
 
 func (qt *testQueryTracker) Close() error {
 	return nil
+}
+
+func (qt *testQueryTracker) Clear() {
+	qt.queries = nil
 }
 
 type activeQueryTrackerQueryable struct {

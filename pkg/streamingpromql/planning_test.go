@@ -1052,6 +1052,25 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
+func TestQueryPlanner_ActivityTracking(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.UseQueryPlanning = true
+	tracker := &testQueryTracker{}
+	opts.CommonOpts.ActiveQueryTracker = tracker
+	planner := NewQueryPlanner(opts)
+
+	expr := "test"
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+	_, err := planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	expectedPlanningActivities := []trackedQuery{
+		{expr: "test # (planning)", deleted: true},
+	}
+
+	require.Equal(t, expectedPlanningActivities, tracker.queries)
+}
+
 func TestAnalysisHandler(t *testing.T) {
 	originalTimeSince := timeSince
 	timeSince = func(_ time.Time) time.Duration { return 1234 * time.Millisecond }
