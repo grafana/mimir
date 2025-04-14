@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"math"
 	"slices"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -26,8 +27,14 @@ type DuplicationBuffer struct {
 
 	nextSeriesIndex []int                                 // One entry per consumer.
 	buffer          map[int]types.InstantVectorSeriesData // TODO: a ring buffer would be better here
+}
 
-	closeCount int
+func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *DuplicationBuffer {
+	return &DuplicationBuffer{
+		Inner:                    inner,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		buffer:                   make(map[int]types.InstantVectorSeriesData, 1),
+	}
 }
 
 func (b *DuplicationBuffer) AddConsumer() *DuplicationConsumer {
@@ -67,7 +74,7 @@ func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
 	nextSeriesIndex := b.nextSeriesIndex[consumerIndex]
-	isLastReaderOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
+	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
 	b.nextSeriesIndex[consumerIndex]++
 
 	d, buffered := b.buffer[nextSeriesIndex]
@@ -78,10 +85,13 @@ func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		b.buffer[nextSeriesIndex] = d
+		// Only bother storing the data if another consumer needs it.
+		if !isLastConsumerOfThisSeries {
+			b.buffer[nextSeriesIndex] = d
+		}
 	}
 
-	if isLastReaderOfThisSeries {
+	if isLastConsumerOfThisSeries {
 		// We can safely return the series as-is, as we're not going to return this to another consumer.
 		delete(b.buffer, nextSeriesIndex)
 		return d, nil
@@ -95,6 +105,11 @@ func (b *DuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int
 
 	for otherConsumerIndex, otherConsumerPosition := range b.nextSeriesIndex {
 		if otherConsumerIndex == consumerIndex {
+			continue
+		}
+
+		if otherConsumerPosition == -1 {
+			// This consumer is closed.
 			continue
 		}
 
@@ -139,31 +154,56 @@ func (b *DuplicationBuffer) cloneSeries(original types.InstantVectorSeriesData) 
 	return clone, nil
 }
 
-func (b *DuplicationBuffer) Close() {
-	b.closeCount++
-
-	if b.closeCount != b.consumerCount {
-		// Other consumers are still using this buffer, so we can't close anything yet.
+func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
+	if b.nextSeriesIndex[consumerIndex] == -1 {
+		// We've already closed this consumer, nothing more to do.
 		return
 	}
 
-	types.PutSeriesMetadataSlice(b.seriesMetadata)
-	b.seriesMetadata = nil
+	lowestNextSeriesIndexOfOtherConsumers := math.MaxInt
+	for otherConsumerIndex, nextSeriesIndex := range b.nextSeriesIndex {
+		if consumerIndex == otherConsumerIndex {
+			continue
+		}
 
-	for _, d := range b.buffer {
-		types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+		if nextSeriesIndex == -1 {
+			// Already closed.
+			continue
+		}
+
+		lowestNextSeriesIndexOfOtherConsumers = min(lowestNextSeriesIndexOfOtherConsumers, nextSeriesIndex)
 	}
 
-	b.buffer = nil
+	if lowestNextSeriesIndexOfOtherConsumers == math.MaxInt {
+		// All other consumers are already closed. Close everything.
+		types.PutSeriesMetadataSlice(b.seriesMetadata)
+		b.seriesMetadata = nil
 
-	b.Inner.Close()
+		for _, d := range b.buffer {
+			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+		}
+
+		b.buffer = nil
+
+		b.Inner.Close()
+		return
+	}
+
+	// If this consumer was the lagging consumer, free any data that was being buffered for it.
+	for b.nextSeriesIndex[consumerIndex] < lowestNextSeriesIndexOfOtherConsumers {
+		d := b.buffer[b.nextSeriesIndex[consumerIndex]]
+		types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+		delete(b.buffer, b.nextSeriesIndex[consumerIndex])
+		b.nextSeriesIndex[consumerIndex]++
+	}
+
+	b.nextSeriesIndex[consumerIndex] = -1
 }
 
 type DuplicationConsumer struct {
 	Buffer *DuplicationBuffer
 
 	consumerIndex int
-	closed        bool
 }
 
 var _ types.InstantVectorOperator = &DuplicationConsumer{}
@@ -181,11 +221,5 @@ func (d *DuplicationConsumer) ExpressionPosition() posrange.PositionRange {
 }
 
 func (d *DuplicationConsumer) Close() {
-	if d.closed {
-		// Already closed, don't call d.Buffer.Close() again to avoid closing early.
-		return
-	}
-
-	d.closed = true
-	d.Buffer.Close()
+	d.Buffer.CloseConsumer(d.consumerIndex)
 }
