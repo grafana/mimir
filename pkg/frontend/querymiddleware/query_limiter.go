@@ -2,16 +2,15 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"strings"
-	"time"
 )
 
 // queryLimiterMiddleware blocks a query if it is should not be executed more frequently than a configured interval,
@@ -78,68 +77,24 @@ func (ql *queryLimiterMiddleware) shouldBlock(
 
 	for i, limitedQuery := range limitedQueries {
 		if strings.TrimSpace(limitedQuery.Query) == strings.TrimSpace(query) {
-			if !ql.enoughTimeSinceLastQuery(ctx, key, hashedKey, limitedQuery, spanLog) {
+			if !ql.enoughTimeSinceLastQuery(ctx, key, hashedKey, limitedQuery) {
 				level.Info(logger).Log("msg", "query limiter matched exact query", "query", query, "index", i)
 				return true
 			}
-			// If the query matches a query that should be limited, but it shouldn't be blocked this time,
-			// we should cache it so that it's blocked if it's run again within limitedQuery.AllowedFrequency.
-			now := time.Now().UnixMilli()
-			bytes, err := proto.Marshal(&CachedLimitedQuery{
-				Key:             key,
-				LimitedQuery:    limitedQuery.Query,
-				LastAllowedTime: now,
-			})
-			if err != nil {
-				level.Warn(spanLog).Log(
-					"msg", "unable to marshal cached error",
-					"key", key,
-					"limited_query", limitedQuery.Query,
-					"last_allowed_query_time", now,
-					"err", err,
-				)
-			}
-			ql.cache.SetAsync(hashedKey, bytes, limitedQuery.AllowedFrequency)
 		}
 	}
 	return false
 }
 
-func (ql *queryLimiterMiddleware) enoughTimeSinceLastQuery(ctx context.Context, key, hashedKey string, limitedQuery *validation.LimitedQuery, spanLog *spanlogger.SpanLogger) bool {
-	query, lastAllowedQueryTime := ql.loadLimitedQueryFromCache(ctx, key, hashedKey, spanLog)
-	if query != "" && !lastAllowedQueryTime.IsZero() {
-		if time.Since(lastAllowedQueryTime) < limitedQuery.AllowedFrequency {
-			return false
-		}
+func (ql *queryLimiterMiddleware) enoughTimeSinceLastQuery(ctx context.Context, cacheValue, hashedKey string, limitedQuery *validation.LimitedQuery) bool {
+	// If the query fails to be added to the cache with ErrNotStored, that means the last time the query was called
+	// is within AllowedFrequency, so we should block it. Otherwise, the query has now been added to the cache and
+	// will be blocked next time if the entry still exists in the cache.
+	err := ql.cache.Add(ctx, hashedKey, []byte(cacheValue), limitedQuery.AllowedFrequency)
+	if errors.Is(err, cache.ErrNotStored) {
+		return false
+	} else {
+		ql.logger.Log("msg", "error while adding to query limiter cache", "err", err)
 	}
 	return true
-}
-
-func (ql *queryLimiterMiddleware) loadLimitedQueryFromCache(
-	ctx context.Context, cacheKey, hashedKey string, spanLog *spanlogger.SpanLogger,
-) (query string, lastAllowedTime time.Time) {
-	res := ql.cache.GetMulti(ctx, []string{hashedKey})
-	cached, ok := res[hashedKey]
-
-	if !ok {
-		return "", time.Time{}
-	}
-
-	var cachedQuery CachedLimitedQuery
-	if err := proto.Unmarshal(cached, &cachedQuery); err != nil {
-		level.Warn(spanLog).Log("msg", "unable to unmarshall cached query", "err", err)
-		return "", time.Time{}
-	}
-
-	if cachedQuery.GetKey() != cacheKey {
-		spanLog.DebugLog(
-			"msg", "cached limited query does not match",
-			"expected_key", cacheKey,
-			"actual_key", cached,
-			"hashed_key", hashedKey,
-		)
-		return "", time.Time{}
-	}
-
-	return cachedQuery.LimitedQuery, time.UnixMilli(cachedQuery.LastAllowedTime)
 }

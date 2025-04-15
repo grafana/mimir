@@ -89,6 +89,8 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 							require.NoError(t, err)
 							require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 						}
+						// Advance cache time by enough to allow very short frequency queries to be run again
+						c.Advance(2 * time.Nanosecond)
 					}
 
 				})
