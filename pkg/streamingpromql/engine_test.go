@@ -50,8 +50,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	parser.Functions["sort_by_label"].Experimental = false
 	parser.Functions["sort_by_label_desc"].Experimental = false
 
-	features := EnableAllFeatures
-
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
@@ -62,45 +60,23 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			requireQueryIsUnsupported(t, features, expression, expectedError)
+			requireQueryIsUnsupported(t, expression, expectedError)
 		})
 	}
 }
 
-func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
-	t.Run("function disabled by name", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
-
-		requireQueryIsSupported(t, features, "abs(metric{})")
-		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function")
-		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function")
-	})
-}
-
-func requireQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	t.Run("range query", func(t *testing.T) {
-		requireRangeQueryIsUnsupported(t, features, expression, expectedError)
+		requireRangeQueryIsUnsupported(t, expression, expectedError)
 	})
 
 	t.Run("instant query", func(t *testing.T) {
-		requireInstantQueryIsUnsupported(t, features, expression, expectedError)
+		requireInstantQueryIsUnsupported(t, expression, expectedError)
 	})
 }
 
-func requireQueryIsSupported(t *testing.T, features Features, expression string) {
-	t.Run("range query", func(t *testing.T) {
-		requireRangeQueryIsSupported(t, features, expression)
-	})
-
-	t.Run("instant query", func(t *testing.T) {
-		requireInstantQueryIsSupported(t, features, expression)
-	})
-}
-
-func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.Features = features
 
 	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
 		qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
@@ -110,9 +86,8 @@ func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression 
 	})
 }
 
-func requireInstantQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.Features = features
 
 	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
 		qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
@@ -120,26 +95,6 @@ func requireInstantQueryIsUnsupported(t *testing.T, features Features, expressio
 		require.ErrorIs(t, err, compat.NotSupportedError{})
 		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 		require.Nil(t, qry)
-	})
-}
-
-func requireRangeQueryIsSupported(t *testing.T, features Features, expression string) {
-	opts := NewTestEngineOpts()
-	opts.Features = features
-
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		_, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-		require.NoError(t, err)
-	})
-}
-
-func requireInstantQueryIsSupported(t *testing.T, features Features, expression string) {
-	opts := NewTestEngineOpts()
-	opts.Features = features
-
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		_, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-		require.NoError(t, err)
 	})
 }
 

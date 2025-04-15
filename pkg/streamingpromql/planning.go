@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"slices"
 	"strconv"
 	"time"
 
@@ -34,7 +33,6 @@ import (
 var timeSince = time.Since
 
 type QueryPlanner struct {
-	features                 Features
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
@@ -43,7 +41,6 @@ type QueryPlanner struct {
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	return &QueryPlanner{
-		features:                 opts.Features,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
@@ -262,12 +259,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.Call:
-		// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
-		// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
-		if _, found := slices.BinarySearch(p.features.DisabledFunctions, expr.Func.Name); found {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
-		}
-
 		if !isKnownFunction(expr.Func.Name) {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
