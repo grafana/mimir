@@ -11,11 +11,11 @@ import (
 
 // Config struct holds the secret data
 type Config struct {
-	AdminUser            string `json:"adminUser"`
-	AdminPassword        string `json:"adminPassword"`
-	AWSAccessKey         string `json:"AWS_ACCESS_KEY"`
-	AWSSecretAccessKey   string `json:"AWS_SECRET_ACCESS_KEY"`
-	LicenseFilePath      string `json:"licenseFile"`
+	AdminUser          string `json:"adminUser"`
+	AdminPassword      string `json:"adminPassword"`
+	AWSAccessKey       string `json:"AWS_ACCESS_KEY"`
+	AWSSecretAccessKey string `json:"AWS_SECRET_ACCESS_KEY"`
+	LicenseFilePath    string `json:"licenseFile"`
 }
 
 func printHelp() {
@@ -134,7 +134,7 @@ func main() {
 	})
 
 	bucketSecret := createSecret("metrics-bucket-secret", map[string]string{
-		"AWS_ACCESS_KEY":       cfg.AWSAccessKey,
+		"AWS_ACCESS_KEY":        cfg.AWSAccessKey,
 		"AWS_SECRET_ACCESS_KEY": cfg.AWSSecretAccessKey,
 	})
 
