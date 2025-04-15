@@ -210,6 +210,9 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 			}
 
 			for _, u := range u {
+				if !c.Cfg.allowedTenants.IsAllowed(u) {
+					continue
+				}
 				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 
 				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, util_log.Logger)
