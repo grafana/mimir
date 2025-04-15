@@ -24,24 +24,25 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ruler/notifier"
+	mimirnotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestBuildNotifierConfig(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  *Config
+		cfg  *mimirnotifier.AlertmanagerClientConfig
 		ncfg *config.Config
 		err  error
 	}{
 		{
 			name: "with no valid hosts, returns an empty config",
-			cfg:  &Config{},
+			cfg:  &mimirnotifier.AlertmanagerClientConfig{},
 			ncfg: &config.Config{},
 		},
 		{
 			name: "with a single URL and no service discovery",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
@@ -65,7 +66,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with a single URL, v2 API, and no service discovery",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
@@ -89,9 +90,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with a SRV URL but no service discovery (missing dns+ prefix)",
-			cfg: &Config{
-				AlertmanagerURL:             "http://_http._tcp.alertmanager.default.svc.cluster.local/alertmanager",
-				AlertmanagerRefreshInterval: time.Duration(60),
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://_http._tcp.alertmanager.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
 				AlertingConfig: config.AlertingConfig{
@@ -114,7 +114,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with multiple URLs and no service discovery",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://alertmanager-0.default.svc.cluster.local/alertmanager,http://alertmanager-1.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
@@ -149,7 +149,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 
 		{
 			name: "with basic authentication URL and no service discovery",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://marco:hunter2@alertmanager-0.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
@@ -176,7 +176,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with basic authentication URL and service discovery",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
 			},
 			ncfg: &config.Config{
@@ -202,9 +202,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with basic authentication URL, no service discovery, and explicit config",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://marco:hunter2@alertmanager-0.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					BasicAuth: util.BasicAuth{
 						Username: "jacob",
 						Password: flagext.SecretWithValue("test"),
@@ -235,7 +235,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with multiple URLs and service discovery",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL:             "dns+http://alertmanager.mimir.svc.cluster.local:8080/alertmanager,dnssrv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
 				AlertmanagerRefreshInterval: time.Second,
 			},
@@ -272,9 +272,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with service discovery URL, basic auth, and proxy URL",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnssrv+https://marco:hunter2@_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
 				},
 			},
@@ -304,9 +304,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with OAuth2",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "oauth2-client-id",
 						ClientSecret: flagext.SecretWithValue("test"),
@@ -341,9 +341,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with OAuth2 and optional scopes",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "oauth2-client-id",
 						ClientSecret: flagext.SecretWithValue("test"),
@@ -380,9 +380,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with OAuth2 and optional endpoint params",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "oauth2-client-id",
 						ClientSecret: flagext.SecretWithValue("test"),
@@ -425,9 +425,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with OAuth2 and proxy_url simultaneously, inheriting proxy",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnssrv+https://_http._tcp.alertmanager-0.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					ProxyURL: "http://my-proxy.proxy-namespace.svc.cluster.local.:1234",
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "oauth2-client-id",
@@ -471,30 +471,30 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "with DNS service discovery and missing scheme",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dns+alertmanager.mimir.svc.cluster.local:8080/alertmanager",
 			},
 			err: errors.New("improperly formatted alertmanager URL \"alertmanager.mimir.svc.cluster.local:8080/alertmanager\" (maybe the scheme is missing?); see DNS Service Discovery docs"),
 		},
 		{
 			name: "with only dns+ prefix",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dns+",
 			},
 			err: errors.New("improperly formatted alertmanager URL \"\" (maybe the scheme is missing?); see DNS Service Discovery docs"),
 		},
 		{
 			name: "misspelled DNS SD format prefix (dnsserv+ vs dnssrv+)",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "dnsserv+https://_http._tcp.alertmanager2.mimir.svc.cluster.local/am",
 			},
 			err: errors.New("invalid DNS service discovery prefix \"dnsserv\""),
 		},
 		{
 			name: "misspelled proxy URL",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					ProxyURL: "http://example.local" + string(rune(0x7f)),
 				},
 			},
@@ -502,9 +502,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "basic auth and oauth provided at the same time",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://alertmanager.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					BasicAuth: util.BasicAuth{
 						Username: "test-user",
 					},
@@ -520,9 +520,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 		},
 		{
 			name: "basic auth via URL and oauth provided at the same time",
-			cfg: &Config{
+			cfg: &mimirnotifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://marco:hunter2@alertmanager.default.svc.cluster.local/alertmanager",
-				Notifier: notifier.Config{
+				NotifierConfig: notifier.Config{
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "oauth2-client-id",
 						ClientSecret: flagext.SecretWithValue("test"),
@@ -537,7 +537,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ncfg, err := buildNotifierConfig(tt.cfg.AlertmanagerURL, tt.cfg.Notifier, *tt.cfg, nil, nil)
+			ncfg, err := buildNotifierConfig(tt.cfg.AlertmanagerURL, tt.cfg.NotifierConfig, *tt.cfg, nil, nil)
 			if tt.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)

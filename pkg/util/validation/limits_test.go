@@ -1156,7 +1156,8 @@ ruler_alertmanager_client_config:
 			expectedConfig: notifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://custom-url:8080",
 				NotifierConfig: notifier.Config{
-					ProxyURL: "http://some-proxy:1234",
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "myclient",
 						ClientSecret: flagext.SecretWithValue("mysecret"),
@@ -1190,7 +1191,8 @@ user1:
 			expectedConfig: notifier.AlertmanagerClientConfig{
 				AlertmanagerURL: "http://custom-url-for-this-tenant:8080",
 				NotifierConfig: notifier.Config{
-					ProxyURL: "http://some-proxy:1234",
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
 					OAuth2: notifier.OAuth2Config{
 						ClientID:     "myclient",
 						ClientSecret: flagext.SecretWithValue("mysecret"),
