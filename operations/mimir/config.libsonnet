@@ -733,6 +733,7 @@
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
         'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
         'ruler-storage.cache.memcached.max-async-concurrency': 50,
+        'ruler-storage.cache.memcached.timeout': '500ms',
       } + if $._config.memcached_metadata_mtls_enabled then {
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
         'ruler-storage.cache.memcached.connect-timeout': '1s',
