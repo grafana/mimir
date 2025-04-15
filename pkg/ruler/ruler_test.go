@@ -46,6 +46,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimirNotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
@@ -272,9 +273,16 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 
 	// We create an empty rule store so that the ruler will not load any rule from it.
 	cfg := defaultRulerConfig(t)
-	cfg.AlertmanagerURL = ts.URL
+	// cfg.AlertmanagerURL = ts.URL
 
-	manager := prepareRulerManager(t, cfg)
+	defaultLimits := validation.Limits{
+		RulerAlertmanagerClientConfig: mimirNotifier.AlertmanagerClientConfig{
+			AlertmanagerURL: ts.URL,
+		},
+	}
+	limits := validation.NewOverrides(defaultLimits, nil)
+
+	manager := prepareRulerManager(t, cfg, withLimits(limits))
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")

@@ -386,6 +386,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	if !l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams.IsInitialized() {
 		l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
 	}
+	// RegisterFlags sets ruler-wide defaults, migrated from ruler configuration.
+	// These are considered the default values when `alertmanager-client-config` is not provided.
+	l.RulerAlertmanagerClientConfig.RegisterFlags(f)
 	f.Var(&l.RulerAlertmanagerClientConfig, "ruler.alertmanager-client-config", "Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")

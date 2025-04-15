@@ -14,17 +14,28 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-var DefaultAlertmanagerClientConfig = AlertmanagerClientConfig{
-	NotifierConfig: Config{
+var (
+	DefaultNotifierConfig = Config{
 		OAuth2: OAuth2Config{
 			EndpointParams: flagext.NewLimitsMap[string](nil),
 		},
-	},
-}
+	}
 
+	DefaultAlertmanagerClientConfig = AlertmanagerClientConfig{
+		NotifierConfig: DefaultNotifierConfig,
+	}
+)
+
+// Represents the client configuration for sending to an alertmanager.
+// It is mountable as a single config option/yaml sub-block, or as individual CLI options.
 type AlertmanagerClientConfig struct {
 	AlertmanagerURL string `yaml:"alertmanager_url" doc:"nocli"`
 	NotifierConfig  Config `yaml:",inline" json:",inline"`
+}
+
+func (acc *AlertmanagerClientConfig) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&acc.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.")
+	acc.NotifierConfig.RegisterFlags(f)
 }
 
 func (acc *AlertmanagerClientConfig) String() string {
@@ -73,6 +84,29 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
 	cfg.OAuth2.RegisterFlagsWithPrefix("ruler.alertmanager-client.oauth.", f)
 	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
+}
+
+func (cfg *Config) String() string {
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Sprintf("failed to marshal: %v", err)
+	}
+	return string(out)
+}
+
+// Hash calculates a cryptographically weak, insecure hash of the configuration.
+func (cfg *Config) Hash() uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(cfg.String()))
+	return h.Sum64()
+}
+
+func (cfg *Config) Equal(other Config) bool {
+	return cfg.Hash() == other.Hash()
+}
+
+func (cfg *Config) IsDefault() bool {
+	return cfg.Equal(DefaultNotifierConfig)
 }
 
 type OAuth2Config struct {

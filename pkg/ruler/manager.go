@@ -64,7 +64,7 @@ type DefaultMultiTenantManager struct {
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	ncfg, err := buildNotifierConfig(cfg.AlertmanagerURL, cfg.Notifier, dnsResolver, cfg.NotificationTimeout, cfg.AlertmanagerRefreshInterval, refreshMetrics)
+	ncfg, err := buildNotifierConfig(cfg.DeprecatedAlertmanagerURL, cfg.DeprecatedNotifier, dnsResolver, cfg.NotificationTimeout, cfg.AlertmanagerRefreshInterval, refreshMetrics)
 	if err != nil {
 		return nil, err
 	}

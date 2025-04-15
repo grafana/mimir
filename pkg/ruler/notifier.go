@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 
-	rulernotifier "github.com/grafana/mimir/pkg/ruler/notifier"
+	mimirnotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -101,7 +101,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(amURL string, notifierCfg rulernotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
 	if amURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -139,7 +139,7 @@ func buildNotifierConfig(amURL string, notifierCfg rulernotifier.Config, resolve
 	return promConfig, nil
 }
 
-func amConfigWithSD(notifierCfg rulernotifier.Config, notificationTimeout time.Duration, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
+func amConfigWithSD(notifierCfg mimirnotifier.Config, notificationTimeout time.Duration, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              config.AlertmanagerAPIVersionV2,
 		Scheme:                  url.Scheme,
