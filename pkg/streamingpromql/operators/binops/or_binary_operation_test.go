@@ -583,3 +583,116 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 		})
 	}
 }
+
+func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedOutputSeries   []labels.Labels
+		closeAfterReadingIndex int
+	}{
+		"closed after only reading series for current output group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+				labels.FromStrings("group", "3", "series", "left-4"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "2", "series", "right-3"),
+				labels.FromStrings("group", "4", "series", "right-4"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"), // When we read this series, we'll have loaded some presence for group="1", but nothing for group="2".
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+				labels.FromStrings("group", "2", "series", "right-3"),
+				labels.FromStrings("group", "4", "series", "right-4"),
+				labels.FromStrings("group", "3", "series", "left-4"),
+			},
+			closeAfterReadingIndex: 0,
+		},
+		"closed after reading series for multiple output groups": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "2", "series", "left-2"),
+				labels.FromStrings("group", "1", "series", "left-3"),
+				labels.FromStrings("group", "2", "series", "left-4"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "1", "series", "right-3"),
+				labels.FromStrings("group", "2", "series", "right-4"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "2", "series", "left-2"), // When we read this series, we'll have loaded presence for group="1" and group="2".
+				labels.FromStrings("group", "1", "series", "left-3"),
+				labels.FromStrings("group", "2", "series", "left-4"),
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "1", "series", "right-3"),
+				labels.FromStrings("group", "2", "series", "right-4"),
+			},
+			closeAfterReadingIndex: 1,
+		},
+		"closed after reading all left series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "1", "series", "right-3"),
+				labels.FromStrings("group", "2", "series", "right-4"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"), // When we read this series, we'll have loaded presence for group="1" and group="2".
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "1", "series", "right-3"),
+				labels.FromStrings("group", "2", "series", "right-4"),
+			},
+			closeAfterReadingIndex: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
+
+			ctx := context.Background()
+			outputSeries, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+
+			// Read the output series to trigger the loading of some intermediate state for at least one of the output groups.
+			for range testCase.closeAfterReadingIndex + 1 {
+				_, err := o.NextSeries(ctx)
+				require.NoError(t, err)
+			}
+
+			// Close the operator and confirm that we've returned everything to their pools.
+			o.Close()
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+		})
+	}
+}
