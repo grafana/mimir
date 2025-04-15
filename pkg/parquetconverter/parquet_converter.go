@@ -32,13 +32,13 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	"github.com/grafana/mimir/pkg/storage/parquet/tsdbcodec"
-
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -54,12 +54,14 @@ const (
 type Config struct {
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
+	allowedTenants  *util.AllowList
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
+	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 }
 
 type ParquetConverter struct {
@@ -182,10 +184,12 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 					break
 				}
 				for _, u := range users {
-					if ok, _ := c.ownBlock(u); ok {
-						err := c.updateParquetIndex(ctx, u)
-						if err != nil {
-							level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
+					if c.Cfg.allowedTenants.IsAllowed(u) {
+						if ok, _ := c.ownBlock(u); ok {
+							err := c.updateParquetIndex(ctx, u)
+							if err != nil {
+								level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
+							}
 						}
 					}
 				}
