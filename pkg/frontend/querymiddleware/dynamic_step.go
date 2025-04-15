@@ -4,12 +4,12 @@ package querymiddleware
 
 import (
 	"context"
+	"math"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"math"
-	"strconv"
 )
 
 const (
@@ -32,7 +32,7 @@ func newDynamicStepMiddleware(complexityThreshold float64, logger log.Logger, re
 			Name: "mimir_query_frontend_dynamic_step_usage_count",
 			Help: "Number of queries whose step has been adjusted dynamically.",
 		},
-		[]string{"cardinality", "step", "new_step"},
+		[]string{"query"},
 	)
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &dynamicStep{
@@ -64,14 +64,13 @@ func (d *dynamicStep) Do(ctx context.Context, request MetricsQueryRequest) (Resp
 
 	newStep := d.getNewStep(cardinality, step)
 
+	level.Debug(d.logger).Log("msg", "query step adjustment", "step", step, "new_step", newStep, "cardinality", cardinality)
 	if newStep > step {
 		level.Warn(d.logger).Log("msg", "query step adjusted", "step", step, "new_step", newStep, "cardinality", cardinality)
 		request.SetStep(newStep)
 		d.dynamicStepUsageCount.With(
 			prometheus.Labels{
-				"cardinality": strconv.FormatUint(cardinality, 10),
-				"step":        strconv.FormatInt(step, 10),
-				"new_step":    strconv.FormatInt(newStep, 10),
+				"query": request.GetQuery(),
 			}).Inc()
 	}
 
@@ -85,7 +84,7 @@ func (d *dynamicStep) getNewStep(cardinality uint64, step int64) int64 {
 
 	if complexity > d.complexityThreshold {
 		// Calculate the new step based on the complexity
-		step = 100 * int64(10*math.Pow(complexity/d.complexityThreshold, 1.2))
+		step = 1000 * int64(10*math.Pow(complexity/d.complexityThreshold, 1.2))
 	}
 	return step
 }
