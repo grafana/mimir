@@ -1,12 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package querymiddleware
 
 import (
 	"context"
+	"testing"
+
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"testing"
+
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 func Test_dynamicStep_getNewStep(t *testing.T) {

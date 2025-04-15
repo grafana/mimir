@@ -333,7 +333,7 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 	return 0
 }
 
-func (r *PrometheusInstantQueryRequest) SetStep(newStep int64) {}
+func (r *PrometheusInstantQueryRequest) SetStep(_ int64) {}
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
