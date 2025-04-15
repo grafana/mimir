@@ -857,7 +857,7 @@ type pageEntryRead struct {
 }
 
 func mergePagesIdx(pagedIdx map[int][]int64, offset parquet.OffsetIndex) []pageEntryRead {
-	partitioner := storegateway.NewGapBasedPartitioner(10*1024, &prometheus.Registry{}) // TODO
+	partitioner := storegateway.NewGapBasedPartitioner(10*1024, prometheus.NewRegistry())
 	if len(pagedIdx) == 0 {
 		return []pageEntryRead{}
 	}
