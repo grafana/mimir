@@ -75,16 +75,6 @@ func requireQueryIsUnsupported(t *testing.T, expression string, expectedError st
 	})
 }
 
-func requireQueryIsSupported(t *testing.T, expression string) {
-	t.Run("range query", func(t *testing.T) {
-		requireRangeQueryIsSupported(t, expression)
-	})
-
-	t.Run("instant query", func(t *testing.T) {
-		requireInstantQueryIsSupported(t, expression)
-	})
-}
-
 func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
 
@@ -105,24 +95,6 @@ func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedE
 		require.ErrorIs(t, err, compat.NotSupportedError{})
 		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 		require.Nil(t, qry)
-	})
-}
-
-func requireRangeQueryIsSupported(t *testing.T, expression string) {
-	opts := NewTestEngineOpts()
-
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		_, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-		require.NoError(t, err)
-	})
-}
-
-func requireInstantQueryIsSupported(t *testing.T, expression string) {
-	opts := NewTestEngineOpts()
-
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		_, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-		require.NoError(t, err)
 	})
 }
 
