@@ -94,6 +94,7 @@ const (
 	MemberlistKV                     string = "memberlist-kv"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
+	ParquetCompactor                 string = "parquet-compactor"
 	Querier                          string = "querier"
 	QueryFrontend                    string = "query-frontend"
 	QueryFrontendCodec               string = "query-frontend-codec"
@@ -1064,7 +1065,13 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initParquetCompactor() (serv services.Service, err error) {
-	// TODO(jesus.vazquez) Implement this
+	// TODO(jesus.vazquez) Specific ParquetCompactor config
+	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.ParquetCompactor, err = compactor.NewParquetCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
+	if err != nil {
+		return
+	}
+
 	return t.ParquetCompactor, nil
 }
 
@@ -1211,6 +1218,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
+	mm.RegisterModule(ParquetCompactor, t.initParquetCompactor)
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
@@ -1256,6 +1264,7 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
+		ParquetCompactor:                 {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
@@ -1271,11 +1280,11 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
 
-		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter, ParquetCompactor},
 		Read:    {QueryFrontend, Querier},
 		Write:   {Distributor, Ingester},
 
-		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor, ParquetCompactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

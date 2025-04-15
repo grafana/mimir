@@ -66,7 +66,7 @@ type ParquetCompactor struct {
 	ringSubservicesWatcher *services.FailureWatcher
 }
 
-func NewParquetCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides, ingestionReplicationFactor int) (*ParquetCompactor, error) {
+func NewParquetCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetCompactor, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-compactor", logger, prometheus.DefaultRegisterer)
 
 	if err != nil {
