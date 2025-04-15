@@ -657,6 +657,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// If the ingester is not read-only, activate the push circuit breaker.
 		i.circuitBreaker.push.activate()
 	}
+
+	if i.ingestReader != nil && i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
+		i.reactiveLimiter.read.activate()
+	}
+
 	return nil
 }
 
@@ -1720,7 +1725,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.isReadLimiterActive() && !i.reactiveLimiter.read.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1745,7 +1750,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.isReadLimiterActive() {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
@@ -3869,6 +3874,8 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 			return
 		}
 
+		i.reactiveLimiter.read.deactivate()
+
 	case http.MethodDelete:
 		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
 		if err != nil {
@@ -3890,6 +3897,8 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+
+			i.reactiveLimiter.read.activate()
 		}
 	}
 
