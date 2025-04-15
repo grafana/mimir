@@ -33,6 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
+* [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
 
 ## 5.7.0
 
