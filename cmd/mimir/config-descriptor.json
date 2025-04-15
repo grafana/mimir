@@ -2248,27 +2248,6 @@
           "desc": "",
           "blockEntries": [
             {
-              "kind": "block",
-              "name": "features",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "disabled_functions",
-                  "required": false,
-                  "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "querier.mimir-query-engine.disabled-functions",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
-            },
-            {
               "kind": "field",
               "name": "use_query_planning",
               "required": false,
