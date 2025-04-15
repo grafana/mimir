@@ -1225,7 +1225,7 @@ user1:
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
-			ov, err := NewOverrides(limitsYAML, tl)
+			ov := NewOverrides(limitsYAML, tl)
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedConfig, ov.RulerAlertmanagerClientConfig("user1"))
