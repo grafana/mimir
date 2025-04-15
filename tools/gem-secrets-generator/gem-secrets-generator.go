@@ -1,5 +1,5 @@
 package main
-
+// format for gci - Grafana
 import (
 	"encoding/base64"
 	"encoding/json"
