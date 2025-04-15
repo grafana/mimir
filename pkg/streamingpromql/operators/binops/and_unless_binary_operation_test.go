@@ -364,3 +364,98 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 		})
 	}
 }
+
+func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedAndOutputSeries    []labels.Labels
+		expectedUnlessOutputSeries []labels.Labels
+	}{
+		"closed after only reading series for current output group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+				labels.FromStrings("group", "3", "series", "left-4"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "2", "series", "right-3"),
+			},
+
+			expectedAndOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"), // When we read this series, we'll have loaded presence for group="1", but nothing for group="2".
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			expectedUnlessOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"), // When we read this series, we'll have loaded presence for group="1", but nothing for group="2".
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+				labels.FromStrings("group", "3", "series", "left-4"),
+			},
+		},
+		"closed after reading series for multiple output groups": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+				labels.FromStrings("group", "3", "series", "left-4"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "1", "series", "right-3"),
+				labels.FromStrings("group", "2", "series", "right-4"),
+			},
+
+			expectedAndOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"), // When we read this series, we'll have loaded presence for group="1" and part of group="2".
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			expectedUnlessOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"), // When we read this series, we'll have loaded presence for group="1" and part of group="2".
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+				labels.FromStrings("group", "3", "series", "left-4"),
+			},
+		},
+	}
+
+	for name, isUnless := range map[string]bool{"and": false, "unless": true} {
+		t.Run(name, func(t *testing.T) {
+			for name, testCase := range testCases {
+				t.Run(name, func(t *testing.T) {
+					timeRange := types.NewInstantQueryTimeRange(time.Now())
+					left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
+					right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
+					vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
+					memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+					o := NewAndUnlessBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, isUnless, timeRange, posrange.PositionRange{})
+
+					ctx := context.Background()
+					outputSeries, err := o.SeriesMetadata(ctx)
+					require.NoError(t, err)
+
+					if isUnless {
+						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedUnlessOutputSeries), outputSeries)
+					} else {
+						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedAndOutputSeries), outputSeries)
+					}
+
+					// Read the first output series to trigger the loading of some intermediate state for at least one of the output groups.
+					_, err = o.NextSeries(ctx)
+					require.NoError(t, err)
+
+					// Close the operator and confirm that we've returned everything to their pools.
+					o.Close()
+					require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+				})
+			}
+		})
+	}
+}

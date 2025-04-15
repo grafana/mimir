@@ -271,6 +271,19 @@ func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 func (a *AndUnlessBinaryOperation) Close() {
 	a.Left.Close()
 	a.Right.Close()
+
+	for _, group := range a.leftSeriesGroups {
+		if group == nil {
+			continue
+		}
+
+		group.Close(a.MemoryConsumptionTracker)
+	}
+
+	a.leftSeriesGroups = nil
+
+	// We don't need to explicitly close any groups in rightSeriesGroups, as they would have been closed above.
+	a.rightSeriesGroups = nil
 }
 
 type andGroup struct {
@@ -311,4 +324,5 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 
 func (g *andGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
+	g.rightSamplePresence = nil
 }
