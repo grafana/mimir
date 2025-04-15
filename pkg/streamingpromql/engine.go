@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -54,11 +55,16 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("query planning enabled but no planner provided")
 	}
 
+	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	if activeQueryTracker == nil {
+		activeQueryTracker = &NoopQueryTracker{}
+	}
+
 	return &Engine{
 		lookbackDelta:            lookbackDelta,
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
-		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
+		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
@@ -156,4 +162,24 @@ type staticQueryLimitsProvider struct {
 
 func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
 	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+type NoopQueryTracker struct{}
+
+func (n *NoopQueryTracker) GetMaxConcurrent() int {
+	return math.MaxInt
+}
+
+func (n *NoopQueryTracker) Insert(_ context.Context, _ string) (int, error) {
+	// Nothing to do.
+	return 0, nil
+}
+
+func (n *NoopQueryTracker) Delete(_ int) {
+	// Nothing to do.
+}
+
+func (n *NoopQueryTracker) Close() error {
+	// Nothing to do.
+	return nil
 }
