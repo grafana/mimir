@@ -16,7 +16,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -615,10 +614,9 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			// partialStats are the statistics for this partial query, which we'll need to
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
-			var span opentracing.Span
-			span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
-			req.AddSpanTags(span)
-			defer span.Finish()
+			spanLogger, childCtx := spanlogger.New(childCtx, "doRequests")
+			req.AddSpanTags(spanLogger)
+			defer spanLogger.Finish()
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

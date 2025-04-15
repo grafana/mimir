@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"golang.org/x/sync/semaphore"
 
@@ -232,8 +231,8 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.AddSpanTags(span)
+	if spanLogger := spanlogger.FromContext(ctx, nil); spanLogger != nil {
+		request.AddSpanTags(spanLogger)
 	}
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {

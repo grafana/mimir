@@ -155,8 +155,8 @@ type MetricsQueryRequest interface {
 	WithTotalQueriesHint(int32) (MetricsQueryRequest, error)
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
-	// AddSpanTags writes information about this request to an OpenTracing span
-	AddSpanTags(opentracing.Span)
+	// AddSpanTags writes information about this request to a SpanLogger.
+	AddSpanTags(*spanlogger.SpanLogger)
 }
 
 // LabelsSeriesQueryRequest represents a label names, label values, or series query request that can be process by middlewares.
@@ -189,8 +189,8 @@ type LabelsSeriesQueryRequest interface {
 	WithLabelMatcherSets([]string) (LabelsSeriesQueryRequest, error)
 	// WithHeaders clones the current request with different headers.
 	WithHeaders([]*PrometheusHeader) (LabelsSeriesQueryRequest, error)
-	// AddSpanTags writes information about this request to an OpenTracing span
-	AddSpanTags(opentracing.Span)
+	// AddSpanTags writes information about this request to a SpanLogger.
+	AddSpanTags(*spanlogger.SpanLogger)
 }
 
 // Response represents a query range response.

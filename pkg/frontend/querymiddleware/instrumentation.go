@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/instrument"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type instrumentMiddleware struct {
@@ -44,9 +45,9 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 func (h *instrumentMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	var resp Response
 	err := instrument.CollectedRequest(ctx, h.name, h.durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-		sp := opentracing.SpanFromContext(ctx)
-		if sp != nil {
-			req.AddSpanTags(sp)
+		spanLogger := spanlogger.FromContext(ctx, nil)
+		if spanLogger != nil {
+			req.AddSpanTags(spanLogger)
 		}
 
 		var err error
