@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -514,6 +516,93 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedOutputSeries []labels.Labels
+	}{
+		"multiple series from 'one' side match to a single 'many' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+			},
+		},
+		"multiple series from 'many' side match to a single 'one' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			ts := int64(0)
+			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(ts))
+
+			createTestData := func(val float64) types.InstantVectorSeriesData {
+				floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				floats = append(floats, promql.FPoint{T: ts, F: val})
+				return types.InstantVectorSeriesData{Floats: floats}
+			}
+
+			leftData := make([]types.InstantVectorSeriesData, len(testCase.leftSeries))
+			for i := range testCase.leftSeries {
+				leftData[i] = createTestData(float64(i))
+			}
+
+			rightData := make([]types.InstantVectorSeriesData, len(testCase.rightSeries))
+			for i := range testCase.rightSeries {
+				rightData[i] = createTestData(float64(i))
+			}
+
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"env"}, Card: parser.CardManyToOne}
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			outputSeries, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+
+			// Read the first series.
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+			// Return any unread data to the pool and update the current memory consumption estimate to match.
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+
+			// Close the operator and verify that the intermediate state is released.
+			o.Close()
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}

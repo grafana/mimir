@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -40,7 +41,15 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 	return d, nil
 }
 
+func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	for _, d := range t.Data {
+		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	}
+
+	t.Data = nil
+}
+
 func (t *TestOperator) Close() {
-	// Note that we do not return any unused series data here: this is the responsibility of the test, if needed.
+	// Note that we do not return any unused series data here: it is the responsibility of the test to call ReleaseUnreadData, if needed.
 	t.Closed = true
 }
