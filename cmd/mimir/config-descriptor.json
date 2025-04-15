@@ -7145,28 +7145,6 @@
         },
         {
           "kind": "field",
-          "name": "dynamic_step_enabled",
-          "required": false,
-          "desc": "True to enable dynamic step calculation for range queries.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.dynamic-step-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "dynamic_step_complexity_threshold",
-          "required": false,
-          "desc": "The minimum number of series by step in a query result set to enable dynamic step calculation. If the number of series in a query result set is less than this value, the step is not changed.",
-          "fieldValue": null,
-          "fieldDefaultValue": 1,
-          "fieldFlag": "query-frontend.dynamic-step-complexity-threshold",
-          "fieldType": "float",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
           "name": "use_active_series_decoder",
           "required": false,
           "desc": "Set to true to use the zero-allocation response decoder for active series queries.",
@@ -7185,6 +7163,28 @@
           "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "dynamic_step_enabled",
+          "required": false,
+          "desc": "True to enable dynamic step calculation for range queries based on the query's complexity.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.dynamic-step-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "dynamic_step_complexity_threshold",
+          "required": false,
+          "desc": "Complexity threshold for dynamic step adjustment ( Only taken into consideration if dynamic step is enabled ).",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "query-frontend.dynamic-step-complexity-threshold",
+          "fieldType": "float",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

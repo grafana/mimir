@@ -2317,6 +2317,10 @@ Usage of ./cmd/mimir/mimir:
     	Cache requests that are not step-aligned.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
+  -query-frontend.dynamic-step-complexity-threshold float
+    	Complexity threshold for dynamic step adjustment ( Only taken into consideration if dynamic step is enabled ). (default 1)
+  -query-frontend.dynamic-step-enabled
+    	[experimental] True to enable dynamic step calculation for range queries based on the query's complexity.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	[experimental] Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.grpc-client-config.backoff-max-period duration
