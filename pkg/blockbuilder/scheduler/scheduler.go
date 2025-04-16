@@ -243,12 +243,12 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	}
 
 	switch c := newJobBucket.Compare(s.jobBucket); c {
-	case bucketSame:
-		// Observation is in the currently tracked bucket. No action needed.
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
 		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
+	case bucketSame:
+		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
 		// We've entered a new job bucket. Emit a job for the current
 		// bucket if it has data and start a new one.
@@ -297,7 +297,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 			continue
 		}
 
-		o, err := s.probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
+		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
 			off.start, off.resume, off.end, boundary, s.cfg.JobSize, time.Now().Add(-s.cfg.MaxScanAge), s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
@@ -306,8 +306,8 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 
 		ps := s.getPartitionState(off.partition)
 
-		for _, initialOffset := range o {
-			if job, err := ps.updateEndOffset(initialOffset.offset, initialOffset.time, s.cfg.JobSize); err != nil {
+		for _, io := range o {
+			if job, err := ps.updateEndOffset(io.offset, io.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
 			} else if job != nil {
 				s.addOrUpdateJobs(&schedulerpb.JobSpec{
@@ -341,7 +341,7 @@ type offsetTime struct {
 // is used to bootstrap the job queue when the scheduler starts up. After these
 // jobs are created, the scheduler is only concerned with keeping track of each
 // partition's end offsets.
-func (s *BlockBuilderScheduler) probeInitialJobOffsets(ctx context.Context, offs offsetStore,
+func probeInitialJobOffsets(ctx context.Context, offs offsetStore,
 	topic string, partition int32, start, resume, end int64,
 	boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
 
