@@ -330,8 +330,10 @@ func (f *Handler) reportQueryStats(
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 	var stats *querier_stats.Stats
+	var samplesProcessedFromCache uint64
 	if details != nil {
 		stats = details.QuerierStats
+		samplesProcessedFromCache = details.SamplesProcessedFromCache
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
@@ -340,7 +342,7 @@ func (f *Handler) reportQueryStats(
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
-
+	samplesProcessedCacheAdjusted := samplesProcessed + samplesProcessedFromCache
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -350,6 +352,7 @@ func (f *Handler) reportQueryStats(
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
+		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -375,6 +378,7 @@ func (f *Handler) reportQueryStats(
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		"samples_processed", samplesProcessed,
+		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -389,13 +393,10 @@ func (f *Handler) reportQueryStats(
 		if !details.MaxT.IsZero() {
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
-		samplesProcessedCacheAdjusted := samplesProcessed + details.SamplesProcessedFromCache
 		logMessage = append(logMessage,
 			resultsCacheHitBytes, details.ResultsCacheHitBytes,
 			resultsCacheMissBytes, details.ResultsCacheMissBytes,
-			"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 		)
-		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log the read consistency only when explicitly defined.
