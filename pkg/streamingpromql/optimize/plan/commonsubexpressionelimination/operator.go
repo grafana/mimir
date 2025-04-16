@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"slices"
+	"sync"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -25,7 +26,8 @@ type DuplicationBuffer struct {
 	seriesMetadataCount int
 	seriesMetadata      []types.SeriesMetadata
 
-	nextSeriesIndex []int // One entry per consumer.
+	mtx             *sync.Mutex // TODO: use a RWMutex for this?
+	nextSeriesIndex []int       // One entry per consumer.
 	buffer          *SeriesDataRingBuffer
 }
 
@@ -33,6 +35,7 @@ func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTr
 	return &DuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
+		mtx:                      &sync.Mutex{},
 		buffer:                   &SeriesDataRingBuffer{},
 	}
 }
@@ -73,6 +76,9 @@ func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 }
 
 func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
 	nextSeriesIndex := b.nextSeriesIndex[consumerIndex]
 	isLastConsumerOfThisSeries := b.checkIfAllOtherConsumersAreAheadOf(consumerIndex)
 	b.nextSeriesIndex[consumerIndex]++

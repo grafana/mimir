@@ -21,8 +21,8 @@ import (
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
 // One-to-many and many-to-one binary operations between instant vectors are not supported.
 type OneToOneVectorVectorBinaryOperation struct {
-	Left                     types.InstantVectorOperator
-	Right                    types.InstantVectorOperator
+	Left                     *operators.EagerLoader
+	Right                    *operators.EagerLoader
 	Op                       parser.ItemType
 	ReturnBool               bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
@@ -125,8 +125,8 @@ func NewOneToOneVectorVectorBinaryOperation(
 	}
 
 	b := &OneToOneVectorVectorBinaryOperation{
-		Left:                     left,
-		Right:                    right,
+		Left:                     operators.NewEagerLoader(left, memoryConsumptionTracker),
+		Right:                    operators.NewEagerLoader(right, memoryConsumptionTracker),
 		VectorMatching:           vectorMatching,
 		Op:                       op,
 		ReturnBool:               returnBool,
@@ -186,6 +186,10 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 
 	b.leftBuffer = operators.NewInstantVectorOperatorBuffer(b.Left, leftSeriesUsed, lastLeftSeriesUsedIndex, b.MemoryConsumptionTracker)
 	b.rightBuffer = operators.NewInstantVectorOperatorBuffer(b.Right, rightSeriesUsed, lastRightSeriesUsedIndex, b.MemoryConsumptionTracker)
+
+	// TODO: move this somewhere else? Maybe do on first call to NextSeries?
+	b.Left.Start(ctx)
+	b.Right.Start(ctx)
 
 	return allMetadata, nil
 }
