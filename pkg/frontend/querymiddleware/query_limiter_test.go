@@ -169,6 +169,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 				}
+				c.Advance(time.Nanosecond)
 			}
 
 		})
