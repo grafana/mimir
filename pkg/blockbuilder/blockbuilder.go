@@ -577,6 +577,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		},
 		nil)
 	if err != nil {
+		level.Warn(logger).Log("msg", "failed to create fetcher", "err", err)
 		return state, err
 	}
 
@@ -584,6 +585,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprintf("%d", partition))
 	metricUpdatePending := 0
+	totalRecs := 0
 
 	pusher := partitionPusher{
 		partition: partition,
@@ -600,7 +602,9 @@ func (b *BlockBuilder) consumePartitionSection(
 	var records []*kgo.Record
 
 	//consumerLoop:
-	for recOffset := int64(-1); !done && recOffset < cycleEndOffset-1; {
+	recOffset := int64(-1)
+	for !done && recOffset < cycleEndOffset-1 {
+		records = records[:0]
 		if err := context.Cause(ctx); err != nil {
 			return state, err
 		}
@@ -632,6 +636,7 @@ func (b *BlockBuilder) consumePartitionSection(
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
 			if rec.Timestamp.After(sectionEndTime) {
 				done = true
+				level.Warn(logger).Log("msg", "reached section end timestamp", "rec_ts", rec.Timestamp, "sec_end_ts", sectionEndTime)
 				break
 				//break consumerLoop
 			}
@@ -675,6 +680,7 @@ func (b *BlockBuilder) consumePartitionSection(
 				metricUpdatePending = 0
 			}
 			metricUpdatePending++
+			totalRecs++
 			userCtx := user.InjectOrgID(ctx, rec.userID)
 			err = parallelPusher.PushToStorage(userCtx, rec.req)
 			mimirpb.ReuseSlice(rec.req.Timeseries)
@@ -682,17 +688,29 @@ func (b *BlockBuilder) consumePartitionSection(
 				for range recC {
 					// Drain the channel.
 				}
+				level.Warn(logger).Log("msg", "error in parallelPusher.PushToStorage", "err", err)
 				// All "non-terminal" errors are handled by the TSDBBuilder.
 				return state, err
 			}
 		}
 
 		if goruErr != nil {
+			level.Warn(logger).Log("msg", "goroutine error", "err", goruErr)
 			return state, goruErr
 		}
 	}
 
 	fetcher.Stop()
+
+	firstRecTs := time.Time{}
+	if firstRec != nil {
+		firstRecTs = firstRec.Timestamp
+	}
+	lastRecTs := time.Time{}
+	if lastRec != nil {
+		lastRecTs = lastRec.Timestamp
+	}
+	level.Warn(logger).Log("msg", "consumption has ended", "first_rec_ts", firstRecTs, "last_rec_ts", lastRecTs, "num_records", totalRecs, "done", done, "recOffset", recOffset, "cycleEndOffset", cycleEndOffset)
 
 	consumeMetric.Add(float64(metricUpdatePending))
 	metricUpdatePending = 0
@@ -743,6 +761,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		LastSeenOffset:        lastSeenOffset,
 		LastBlockEnd:          lastBlockEnd,
 	}
+	level.Warn(logger).Log("msg", "committing", "commit_offset", commit.At, "commit_rec_ts", commitRec.Timestamp, "last_seen_offset", lastSeenOffset, "last_block_end", lastBlockEnd)
 	if err := b.committer.commitState(ctx, b, logger, b.cfg.ConsumerGroup, newState); err != nil {
 		return state, err
 	}
