@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -268,7 +269,7 @@ func TestErrorCachingHandler_Do_subsequentInstantQueries(t *testing.T) {
 	// First query.
 	req1 := newInstantQueryRequest(t, 100)
 	res, err := testHandler(ctx, inner, c, req1)
-	require.Error(t, err)
+	require.ErrorIs(t, err, innerErr) // The first query gets the error from the inner handler.
 	require.Nil(t, res)
 	require.Equal(t, 1, c.CountFetchCalls())
 	require.Equal(t, 1, c.CountStoreCalls())
@@ -277,6 +278,11 @@ func TestErrorCachingHandler_Do_subsequentInstantQueries(t *testing.T) {
 	req2 := newInstantQueryRequest(t, 200)
 	res, err = testHandler(ctx, inner, c, req2)
 	require.Error(t, err)
+	// Test that for the second query, the error we got from the cache is of the expected type.
+	if wantErr := new(apierror.APIError); assert.ErrorAs(t, err, &wantErr) {
+		require.Equal(t, apierror.TypeTooLargeEntry, wantErr.Type)
+	}
+
 	require.Nil(t, res)
 	require.Equal(t, 2, c.CountFetchCalls())
 	require.Equal(t, 1, c.CountStoreCalls())
