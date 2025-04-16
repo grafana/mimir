@@ -30,7 +30,8 @@ type ingesterReactiveLimiter struct {
 
 	prioritizer *rejectionPrioritizer
 	push        reactivelimiter.BlockingLimiter
-	read        *activatableLimiter
+	// The read limiter is activated and deactivated when ingesters become active or read only. When deactivated, the limit resets.
+	read *activatableLimiter
 }
 
 // Returns an ingesterReactiveLimiter that uses reactivelimiter.PriorityLimiters with a Prioritizer when push and read
