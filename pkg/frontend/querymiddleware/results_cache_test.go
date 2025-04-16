@@ -137,7 +137,7 @@ func mkExtentWithSamplesProcessedAndStep(start, end int64, samplesProcessed uint
 	return ext
 }
 
-func mkExtentWithStepPerStepSamplesProcessedStats(start, end int64, step int64, stats []StepStat) Extent {
+func mkExtentWithPerStepSamplesProcessed(start, end int64, step int64, stats []StepStat) Extent {
 	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
 
 	ext.SamplesProcessedPerStep = stats
@@ -593,23 +593,65 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 			name: "Extent equal query range - all samples counted",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
-				end:   200,
+				end:   140,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithPerStepSamplesProcessed(100, 140, 10, []StepStat{
+					{
+						Timestamp: 100,
+						Value:     10,
+					},
+					{
+						Timestamp: 110,
+						Value:     10,
+					},
+					{
+						Timestamp: 120,
+						Value:     10,
+					},
+					{
+						Timestamp: 130,
+						Value:     10,
+					},
+					{
+						Timestamp: 140,
+						Value:     10,
+					},
+				}),
 			},
-			expectedSamplesProcessed: 110,
+			expectedSamplesProcessed: 50,
 		},
 		{
 			name: "Extent within query range - all samples counted",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
-				end:   200,
+				end:   150,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(150, 190, 50),
+				mkExtentWithPerStepSamplesProcessed(100, 140, 10, []StepStat{
+					{
+						Timestamp: 100,
+						Value:     10,
+					},
+					{
+						Timestamp: 110,
+						Value:     10,
+					},
+					{
+						Timestamp: 120,
+						Value:     10,
+					},
+					{
+						Timestamp: 130,
+						Value:     10,
+					},
+					{
+						Timestamp: 140,
+						Value:     10,
+					},
+				}),
 			},
 			expectedSamplesProcessed: 50,
 		},
@@ -617,51 +659,147 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 			name: "Left part of extent is within query range - part of samples counted",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
-				end:   150,
+				end:   130,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithPerStepSamplesProcessed(100, 140, 10, []StepStat{
+					{
+						Timestamp: 100,
+						Value:     10,
+					},
+					{
+						Timestamp: 110,
+						Value:     10,
+					},
+					{
+						Timestamp: 120,
+						Value:     10,
+					},
+					{
+						Timestamp: 130,
+						Value:     10,
+					},
+					{
+						Timestamp: 140,
+						Value:     10,
+					},
+				}),
 			},
-			expectedSamplesProcessed: 60,
+			expectedSamplesProcessed: 40,
 		},
 		{
 			name: "Right part of extent is within query range - part of samples counted",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
-				end:   200,
+				end:   150,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(50, 150, 110),
+				mkExtentWithPerStepSamplesProcessed(130, 170, 10, []StepStat{
+					{
+						Timestamp: 130,
+						Value:     10,
+					},
+					{
+						Timestamp: 140,
+						Value:     10,
+					},
+					{
+						Timestamp: 150,
+						Value:     10,
+					},
+					{
+						Timestamp: 160,
+						Value:     10,
+					},
+					{
+						Timestamp: 170,
+						Value:     10,
+					},
+				}),
 			},
-			expectedSamplesProcessed: 60,
+			expectedSamplesProcessed: 30,
 		},
 		{
 			name: "Non overlapping extents fully within query range - all samples summed",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
-				end:   300,
+				end:   150,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 150, 60),
-				mkExtentWithSamplesProcessed(200, 300, 110),
+				mkExtentWithPerStepSamplesProcessed(100, 120, 10, []StepStat{
+					{
+						Timestamp: 100,
+						Value:     15,
+					},
+					{
+						Timestamp: 110,
+						Value:     15,
+					},
+					{
+						Timestamp: 120,
+						Value:     15,
+					},
+				}),
+				mkExtentWithPerStepSamplesProcessed(130, 150, 10, []StepStat{
+					{
+						Timestamp: 130,
+						Value:     25,
+					},
+					{
+						Timestamp: 140,
+						Value:     25,
+					},
+					{
+						Timestamp: 150,
+						Value:     25,
+					},
+				}),
 			},
-			expectedSamplesProcessed: 170,
+			expectedSamplesProcessed: 120,
 		},
 		{
-			name: "Overlapping extents -  samples are merged",
+			name: "Overlapping extents - samples are merged",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
-				end:   200,
+				end:   130,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 150, 60),
-				mkExtentWithSamplesProcessed(110, 210, 110),
+				mkExtentWithPerStepSamplesProcessed(100, 120, 10, []StepStat{
+					{
+						Timestamp: 100,
+						Value:     10,
+					},
+					{
+						Timestamp: 110,
+						Value:     10,
+					},
+					{
+						Timestamp: 120,
+						Value:     10,
+					},
+				}),
+				mkExtentWithPerStepSamplesProcessed(110, 130, 10, []StepStat{
+					{
+						Timestamp: 110,
+						Value:     15,
+					},
+					{
+						Timestamp: 120,
+						Value:     15,
+					},
+					{
+						Timestamp: 130,
+						Value:     15,
+					},
+				}),
 			},
-			expectedSamplesProcessed: 110,
+			// only values at timestamp 120 is merged, due to how partitionCacheExtents is implemented, so:
+			// [T:100; V:10] + [T:110; V:10] + [T:120; V:15] + [T:130; V:15] = 50
+			expectedSamplesProcessed: 50,
 		},
 		{
 			name: "No relevant extents - zero samples",
@@ -671,7 +809,16 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(300, 400, 1000),
+				mkExtentWithPerStepSamplesProcessed(220, 230, 10, []StepStat{
+					{
+						Timestamp: 220,
+						Value:     10,
+					},
+					{
+						Timestamp: 230,
+						Value:     10,
+					},
+				}),
 			},
 			expectedSamplesProcessed: 0,
 		},
@@ -683,7 +830,16 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 0),
+				mkExtentWithPerStepSamplesProcessed(110, 120, 10, []StepStat{
+					{
+						Timestamp: 110,
+						Value:     0,
+					},
+					{
+						Timestamp: 120,
+						Value:     0,
+					},
+				}),
 			},
 			expectedSamplesProcessed: 0,
 		},
@@ -808,7 +964,7 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 170, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithStepPerStepSamplesProcessedStats(100, 170, 10,
+				mkExtentWithPerStepSamplesProcessed(100, 170, 10,
 					[]StepStat{
 						{
 							Timestamp: 100,
