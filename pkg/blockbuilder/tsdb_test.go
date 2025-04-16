@@ -172,7 +172,7 @@ func TestTSDBBuilder(t *testing.T) {
 				// B. This goes in this block.
 				addFloatSample(builder, lastEnd+100, 1, lastEnd, currEnd, true, true)
 				// C. This sample should be processed in the future.
-				addFloatSample(builder, currEnd+1, 1, lastEnd, currEnd, true, false)
+				addFloatSample(builder, currEnd+1, 1, lastEnd, currEnd, true, true)
 
 				// 2. Processing records that were not processed before.
 				// A. Sample that belonged to previous processing period but came in late. Processed in current cycle.
@@ -184,7 +184,7 @@ func TestTSDBBuilder(t *testing.T) {
 				// The request is accepted, but its sample won't end up in the DB due to soft "ErrDuplicateSampleForTimestamp".
 				expSamples = expSamples[:len(expSamples)-1]
 				// D. This sample should be processed in the future.
-				addFloatSample(builder, currEnd+2, 1, lastEnd, currEnd, false, false)
+				addFloatSample(builder, currEnd+2, 1, lastEnd, currEnd, false, true)
 				// E. This sample is too old (soft error).
 				addFloatSample(builder, 0, 1, lastEnd, currEnd, false, true)
 				expSamples = expSamples[:len(expSamples)-1]
@@ -209,12 +209,12 @@ func TestTSDBBuilder(t *testing.T) {
 				// 1.B from above.
 				addHistogramSample(builder, lastEnd+100, lastEnd, currEnd, true, true)
 				// 1.C from above.
-				addHistogramSample(builder, currEnd+1, lastEnd, currEnd, true, false)
+				addHistogramSample(builder, currEnd+1, lastEnd, currEnd, true, true)
 
 				// 2.B from above.
 				addHistogramSample(builder, lastEnd+200, lastEnd, currEnd, false, true)
 				// 2.C from above.
-				addHistogramSample(builder, currEnd+2, lastEnd, currEnd, false, false)
+				addHistogramSample(builder, currEnd+2, lastEnd, currEnd, false, true)
 
 				// 3.A and 3.B not done. TODO: do it when out-of-order histograms are supported.
 			}

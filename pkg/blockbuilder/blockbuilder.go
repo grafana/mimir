@@ -57,8 +57,9 @@ type BlockBuilder struct {
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
 	fallbackOffsetMillis int64
 
-	blockBuilderMetrics blockBuilderMetrics
-	tsdbBuilderMetrics  tsdbBuilderMetrics
+	blockBuilderMetrics   blockBuilderMetrics
+	tsdbBuilderMetrics    tsdbBuilderMetrics
+	parallelPusherMetrics *ingest.StoragePusherMetrics
 }
 
 func New(
@@ -80,12 +81,13 @@ func newWithSchedulerClient(
 ) (*BlockBuilder, error) {
 
 	b := &BlockBuilder{
-		cfg:                 cfg,
-		logger:              logger,
-		register:            reg,
-		limits:              limits,
-		blockBuilderMetrics: newBlockBuilderMetrics(reg),
-		tsdbBuilderMetrics:  newTSDBBBuilderMetrics(reg),
+		cfg:                   cfg,
+		logger:                logger,
+		register:              reg,
+		limits:                limits,
+		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
+		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
+		parallelPusherMetrics: ingest.NewStoragePusherMetrics(reg),
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
@@ -552,9 +554,8 @@ func (b *BlockBuilder) consumePartitionSection(
 	level.Info(logger).Log("msg", "start consuming")
 
 	var (
-		firstRec  *kgo.Record
-		lastRec   *kgo.Record
-		commitRec *kgo.Record
+		firstRec *kgo.Record
+		lastRec  *kgo.Record
 	)
 
 	fetcher, err := ingest.NewConcurrentFetchers(
@@ -589,10 +590,19 @@ func (b *BlockBuilder) consumePartitionSection(
 		builder:   builder,
 	}
 
-consumerLoop:
-	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
+	type record struct {
+		userID string
+		req    *mimirpb.WriteRequest
+	}
+
+	done := false
+
+	var records []*kgo.Record
+
+	//consumerLoop:
+	for recOffset := int64(-1); !done && recOffset < cycleEndOffset-1; {
 		if err := context.Cause(ctx); err != nil {
-			return PartitionState{}, err
+			return state, err
 		}
 
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
@@ -607,13 +617,12 @@ consumerLoop:
 			}
 		})
 
+		var bytesPerTenant = make(map[string]int)
+
 		for recIter := fetches.RecordIter(); !recIter.Done(); {
-			if metricUpdatePending > 100 {
-				consumeMetric.Add(float64(metricUpdatePending))
-				metricUpdatePending = 0
-			}
 			rec := recIter.Next()
 			recOffset = rec.Offset
+			bytesPerTenant[string(rec.Key)] += len(rec.Value)
 
 			if firstRec == nil {
 				firstRec = rec
@@ -622,29 +631,64 @@ consumerLoop:
 			// Stop consuming after we reached the sectionEndTime marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
 			if rec.Timestamp.After(sectionEndTime) {
-				break consumerLoop
+				done = true
+				break
+				//break consumerLoop
 			}
 
-			metricUpdatePending++
-
-			req := mimirpb.PreallocWriteRequest{
-				SkipUnmarshalingExemplars: true,
-			}
-			err = req.Unmarshal(rec.Value)
-			if err != nil {
-				mimirpb.ReuseSlice(req.Timeseries)
-				return state, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
-			}
-
-			userCtx := user.InjectOrgID(ctx, string(rec.Key))
-			err = pusher.PushToStorage(userCtx, &req.WriteRequest)
-			mimirpb.ReuseSlice(req.Timeseries)
-			if err != nil {
-				// All "non-terminal" errors are handled by the TSDBBuilder.
-				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
-			}
-
+			records = append(records, rec)
 			lastRec = rec
+		}
+
+		var goruErr error
+		recC := make(chan record)
+		go func() {
+			defer func() {
+				close(recC)
+			}()
+
+			for _, rec := range records {
+				req := mimirpb.PreallocWriteRequest{
+					SkipUnmarshalingExemplars: true,
+				}
+				err = req.Unmarshal(rec.Value)
+				if err != nil {
+					mimirpb.ReuseSlice(req.Timeseries)
+					goruErr = fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
+					return
+				}
+
+				recC <- record{
+					userID: string(rec.Key),
+					req:    &req.WriteRequest,
+				}
+			}
+		}()
+
+		parallelPusher := ingest.NewParallelStoragePusher(
+			b.parallelPusherMetrics, &pusher, bytesPerTenant,
+			10, 8, 150, 3, 500, 40, logger)
+
+		for rec := range recC {
+			if metricUpdatePending > 100 {
+				consumeMetric.Add(float64(metricUpdatePending))
+				metricUpdatePending = 0
+			}
+			metricUpdatePending++
+			userCtx := user.InjectOrgID(ctx, rec.userID)
+			err = parallelPusher.PushToStorage(userCtx, rec.req)
+			mimirpb.ReuseSlice(rec.req.Timeseries)
+			if err != nil {
+				for range recC {
+					// Drain the channel.
+				}
+				// All "non-terminal" errors are handled by the TSDBBuilder.
+				return state, err
+			}
+		}
+
+		if goruErr != nil {
+			return state, goruErr
 		}
 	}
 
@@ -666,9 +710,7 @@ consumerLoop:
 	}
 
 	// All samples in all records were processed. We can commit the last record's offset.
-	if commitRec == nil {
-		commitRec = lastRec
-	}
+	commitRec := lastRec
 
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
