@@ -194,7 +194,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// Track samples processed from cache in metrics
 			details := QueryDetailsFromContext(ctx)
-			details.AddSamplesProcessedFromCache(samplesProcessed)
+			details.SamplesProcessedFromCache += samplesProcessed
 
 			if len(requests) == 0 {
 				// The full response has been picked up from the cache so we can merge it and store it.

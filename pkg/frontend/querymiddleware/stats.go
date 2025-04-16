@@ -5,7 +5,6 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"time"
 
 	"github.com/grafana/dskit/tenant"
@@ -156,9 +155,9 @@ type QueryDetails struct {
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
-	// samplesProcessedFromCache represents the total number of samples processed by queriers to produce the result
+	// SamplesProcessedFromCache represents the total number of samples processed by queriers to produce the result
 	// that has been stored in the query-frontend cache and then fetched to produce the current full query result.
-	samplesProcessedFromCache uint64
+	SamplesProcessedFromCache uint64
 }
 
 type contextKey int
@@ -183,21 +182,4 @@ func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
 		return nil
 	}
 	return o.(*QueryDetails)
-}
-
-func (q *QueryDetails) LoadSamplesProcessedFromCache() uint64 {
-	if q == nil {
-		return 0
-	}
-
-	return atomic.LoadUint64(&q.samplesProcessedFromCache)
-
-}
-
-func (q *QueryDetails) AddSamplesProcessedFromCache(sp uint64) {
-	if q == nil {
-		return
-	}
-
-	atomic.AddUint64(&q.samplesProcessedFromCache, sp)
 }

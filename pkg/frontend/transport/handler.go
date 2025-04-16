@@ -333,7 +333,7 @@ func (f *Handler) reportQueryStats(
 	var samplesProcessedFromCache uint64
 	if details != nil {
 		stats = details.QuerierStats
-		samplesProcessedFromCache = details.LoadSamplesProcessedFromCache()
+		samplesProcessedFromCache = details.SamplesProcessedFromCache
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
