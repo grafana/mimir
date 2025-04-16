@@ -2695,6 +2695,7 @@ This error only occurs when an administrator has explicitly defined a blocked li
 This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits.
 
 How it **works**:
+
 - The query-frontend implements a middleware responsible for assessing whether the query should be limited, and whether it has been run within the last allowed frequency.
 - To configure the limit, set the block `limited_queries` in the `limits`.
 

@@ -3676,6 +3676,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
 
+# (experimental) List of queries to limit and duration to limit them for.
+[limited_queries: <limited_queries_config...> | default = ]
+
 # (experimental) List of http requests to block.
 [blocked_requests: <blocked_requests_config...> | default = ]
 
