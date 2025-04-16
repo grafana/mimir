@@ -673,6 +673,10 @@ func cacheHashKey(key string) string {
 // We had to use appoximation, becase MQE doesn't support per step stats yet.
 func approximateSamplesProcessedPerStep(start int64, end int64, step int64, samplesProcessed uint64) []StepStat {
 	numSteps := (end-start)/step + 1
+	// approxPerStep is not float becase:
+	// 1. Real per step stats always have integer values. Having int in approximation will simplify migration to per step stats from engine
+	// 2. approxPerStep < 0 doesn't make sense
+	// 3. approxPerStep is rounded with math.Ceil, because in most of the real-life scenarios, samplesProcessed / numSteps is > 1.
 	approxPerStep := int64(math.Ceil(float64(samplesProcessed) / float64(numSteps)))
 	perStepStats := make([]StepStat, 0, numSteps)
 	for i := int64(0); i < numSteps; i++ {
