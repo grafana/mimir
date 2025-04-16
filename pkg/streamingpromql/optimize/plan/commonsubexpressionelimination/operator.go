@@ -164,6 +164,9 @@ func (b *DuplicationBuffer) cloneSeries(original types.InstantVectorSeriesData) 
 }
 
 func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
 	if b.nextSeriesIndex[consumerIndex] == -1 {
 		// We've already closed this consumer, nothing more to do.
 		return
