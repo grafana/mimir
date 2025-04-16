@@ -10,7 +10,7 @@ import (
 
 const RecordVersionHeaderKey = "X-Record-Version"
 
-func validateRecordVersion(version int) error {
+func ValidateRecordVersion(version int) error {
 	switch version {
 	case 0:
 		return nil
@@ -21,21 +21,22 @@ func validateRecordVersion(version int) error {
 	}
 }
 
-func recordVersionHeader(version int) kgo.RecordHeader {
+func RecordVersionHeader(version int) kgo.RecordHeader {
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], uint32(version))
 	return kgo.RecordHeader{
 		Key:   RecordVersionHeaderKey,
-		Value: recordVersionToHeaderValue(version),
+		Value: b[:],
 	}
 }
 
-func recordVersionToHeaderValue(version int) []byte {
-	var b [4]byte
-	binary.BigEndian.PutUint32(b[:], uint32(version))
-	return b[:]
-}
-
-func headerValueToRecordVersion(value []byte) int {
-	return int(binary.BigEndian.Uint32(value))
+func ParseRecordVersion(rec *kgo.Record) int {
+	for i := range rec.Headers {
+		if rec.Headers[i].Key == RecordVersionHeaderKey {
+			return int(binary.BigEndian.Uint32(rec.Headers[i].Value))
+		}
+	}
+	return 0
 }
 
 func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
@@ -73,7 +74,7 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 		return nil, err
 	}
 	for _, r := range records {
-		r.Headers = append(r.Headers, recordVersionHeader(1))
+		r.Headers = append(r.Headers, RecordVersionHeader(1))
 	}
 	return records, nil
 }

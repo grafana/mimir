@@ -230,10 +230,10 @@ func (cfg *KafkaConfig) Validate() error {
 		return ErrInvalidMaxConsumerLagAtStartup
 	}
 
-	if err := validateRecordVersion(cfg.ProducerSupportedRecordVersion); err != nil {
+	if err := ValidateRecordVersion(cfg.ProducerSupportedRecordVersion); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
 	}
-	if err := validateRecordVersion(cfg.ConsumerSupportedRecordVersion); err != nil {
+	if err := ValidateRecordVersion(cfg.ConsumerSupportedRecordVersion); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
 	}
 
