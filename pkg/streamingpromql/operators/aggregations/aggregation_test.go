@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -283,7 +282,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 	createSimpleAggregation := func(op parser.ItemType) func(types.InstantVectorOperator, types.QueryTimeRange, *limiting.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 		return func(inner types.InstantVectorOperator, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
-			return NewAggregation(inner, timeRange, []string{"group"}, false, op, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+			return NewAggregation(inner, timeRange, []string{"group"}, false, op, memoryConsumptionTracker, types.NewAnnotations(), posrange.PositionRange{})
 		}
 	}
 
@@ -316,7 +315,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 		"quantile": {
 			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
 				param := scalars.NewScalarConstant(0.5, queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
-				return NewQuantileAggregation(inner, param, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+				return NewQuantileAggregation(inner, param, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, types.NewAnnotations(), posrange.PositionRange{})
 			},
 			expectedSeries: expectedSimpleAggregationOutputSeries,
 		},

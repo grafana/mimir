@@ -11,7 +11,6 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -25,7 +24,7 @@ type FunctionOverRangeVector struct {
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
 
-	Annotations *annotations.Annotations
+	Annotations *types.Annotations
 
 	scalarArgsData []types.ScalarData
 
@@ -47,7 +46,7 @@ func NewFunctionOverRangeVector(
 	scalarArgs []types.ScalarOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	f FunctionOverRangeVectorDefinition,
-	annotations *annotations.Annotations,
+	annotations *types.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 ) *FunctionOverRangeVector {

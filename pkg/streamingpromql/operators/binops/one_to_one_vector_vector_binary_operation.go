@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -43,7 +42,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	evaluator       vectorVectorBinaryOperationEvaluator
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
+	annotations        *types.Annotations
 	timeRange          types.QueryTimeRange
 }
 
@@ -116,7 +115,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	op parser.ItemType,
 	returnBool bool,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
+	annotations *types.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 ) (*OneToOneVectorVectorBinaryOperation, error) {

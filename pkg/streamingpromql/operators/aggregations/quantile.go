@@ -27,7 +27,7 @@ type QuantileAggregation struct {
 	Param                    types.ScalarOperator
 	Aggregation              *Aggregation
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
+	Annotations              *types.Annotations
 }
 
 func NewQuantileAggregation(
@@ -37,7 +37,7 @@ func NewQuantileAggregation(
 	grouping []string,
 	without bool,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
+	annotations *types.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*QuantileAggregation, error) {
 

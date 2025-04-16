@@ -38,7 +38,7 @@ type InstantQuery struct {
 	values          []float64
 	nextSeriesIndex int
 
-	annotations                            *annotations.Annotations
+	annotations                            *types.Annotations
 	haveEmittedIgnoredHistogramsAnnotation bool
 
 	// Reuse the same heap instance to allow us to avoid allocating a new one every time.

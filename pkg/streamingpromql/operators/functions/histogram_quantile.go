@@ -38,7 +38,7 @@ type HistogramQuantileFunction struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
 
-	annotations            *annotations.Annotations
+	annotations            *types.Annotations
 	phValues               types.ScalarData
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
@@ -110,7 +110,7 @@ func NewHistogramQuantileFunction(
 	phArg types.ScalarOperator,
 	inner types.InstantVectorOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
+	annotations *types.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 ) *HistogramQuantileFunction {

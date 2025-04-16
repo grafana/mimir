@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -52,7 +51,7 @@ type Query struct {
 
 	cancel                   context.CancelCauseFunc
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	annotations              *annotations.Annotations
+	annotations              *types.Annotations
 	stats                    *types.QueryStats
 	lookbackDelta            time.Duration
 
@@ -85,7 +84,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		queryable:                queryable,
 		engine:                   e,
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
-		annotations:              annotations.New(),
+		annotations:              types.NewAnnotations(),
 		stats:                    &types.QueryStats{},
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
@@ -658,8 +657,8 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	}
 
 	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.
-	if len(*q.annotations) > 0 {
-		q.result.Warnings = *q.annotations
+	if q.annotations.Count() > 0 {
+		q.result.Warnings = q.annotations.Get()
 	}
 
 	return q.result

@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -31,7 +30,7 @@ type VectorScalarBinaryOperation struct {
 	opFunc    vectorScalarBinaryOperationFunc
 
 	expressionPosition posrange.PositionRange
-	annotations        *annotations.Annotations
+	annotations        *types.Annotations
 	scalarData         types.ScalarData
 	vectorIterator     types.InstantVectorSeriesDataIterator
 }
@@ -46,7 +45,7 @@ func NewVectorScalarBinaryOperation(
 	returnBool bool,
 	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
+	annotations *types.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*VectorScalarBinaryOperation, error) {
 	var f binaryOperationFunc

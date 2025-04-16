@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -87,7 +86,7 @@ type Node interface {
 type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
+	Annotations              *types.Annotations
 	Stats                    *types.QueryStats
 	LookbackDelta            time.Duration
 }

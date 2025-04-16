@@ -33,7 +33,7 @@ type Aggregation struct {
 
 	aggregationGroupFactory AggregationGroupFactory
 
-	Annotations *annotations.Annotations
+	Annotations *types.Annotations
 
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
@@ -59,7 +59,7 @@ func NewAggregation(
 	without bool,
 	op parser.ItemType,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
+	annotations *types.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
 	opGroupFactory := AggregationGroupFactories[op]
