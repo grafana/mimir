@@ -3,10 +3,11 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package compactor
+package parquetconverter
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -29,13 +31,14 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	"github.com/grafana/mimir/pkg/storage/parquet/tsdbcodec"
-
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -44,21 +47,34 @@ const (
 	batchSize                = 50000
 	batchStreamBufferSize    = 10
 	parquetFileName          = "block.parquet"
-	compactorRingKey         = "compactor-parquet"
+	compactorRingKey         = "parquet-converter"
 	maxParquetIndexSizeLimit = 100
 )
 
-type ParquetCompactor struct {
+type Config struct {
+	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
+	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
+	allowedTenants  *util.AllowList
+}
+
+// RegisterFlags registers the MultitenantCompactor flags.
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.")
+	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
+}
+
+type ParquetConverter struct {
 	services.Service
 
 	bucket objstore.InstrumentedBucket // TODO (jesus.vazquez) Compactor is using objstore.Bucket instead
 
-	loader      *bucketindex.Loader
-	Cfg         Config
-	registerer  prometheus.Registerer
-	logger      log.Logger
-	limits      *validation.Overrides
-	blockRanges []int64
+	loader       *bucketindex.Loader
+	Cfg          Config
+	CompactorCfg compactor.Config
+	registerer   prometheus.Registerer
+	logger       log.Logger
+	limits       *validation.Overrides
+	blockRanges  []int64
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -66,8 +82,9 @@ type ParquetCompactor struct {
 	ringSubservicesWatcher *services.FailureWatcher
 }
 
-func NewParquetCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides, ingestionReplicationFactor int) (*ParquetCompactor, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-compactor", logger, prometheus.DefaultRegisterer)
+func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, prometheus.DefaultRegisterer)
+	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 
 	if err != nil {
 		return nil, err
@@ -81,48 +98,49 @@ func NewParquetCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorag
 
 	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, util_log.Logger, prometheus.DefaultRegisterer)
 
-	c := &ParquetCompactor{
-		Cfg:         compactorCfg,
-		bucket:      bucketClient,
-		loader:      loader,
-		logger:      log.With(logger, "component", "parquet-compactor"),
-		registerer:  registerer,
-		blockRanges: compactorCfg.BlockRanges.ToMilliseconds(),
-		limits:      limits,
+	c := &ParquetConverter{
+		Cfg:          cfg,
+		CompactorCfg: compactorCfg,
+		bucket:       bucketClient,
+		loader:       loader,
+		logger:       log.With(logger, "component", "parquet-converter"),
+		registerer:   registerer,
+		blockRanges:  compactorCfg.BlockRanges.ToMilliseconds(),
+		limits:       limits,
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.run, c.stopping)
 	return c, nil
 }
 
-func (c *ParquetCompactor) stopping(err error) error {
+func (c *ParquetConverter) stopping(err error) error {
 	return nil
 }
 
-func (c *ParquetCompactor) starting(ctx context.Context) error {
+func (c *ParquetConverter) starting(ctx context.Context) error {
 	if true /*c.Cfg.ShardingEnabled*/ { // TODO
-		kvStore, err := kv.NewClient(c.Cfg.ShardingRing.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(c.registerer, "compactor-lifecycler"), c.logger)
+		kvStore, err := kv.NewClient(c.CompactorCfg.ShardingRing.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(c.registerer, "parquet-converter-lifecycler"), c.logger)
 		if err != nil {
-			return errors.Wrap(err, "failed to initialize compactors' KV store")
+			return errors.Wrap(err, "failed to initialize parquet-converter' KV store")
 		}
-		lifecyclerCfg, err := c.Cfg.ShardingRing.ToBasicLifecyclerConfig(c.logger)
+		lifecyclerCfg, err := c.CompactorCfg.ShardingRing.ToBasicLifecyclerConfig(c.logger)
 		if err != nil {
-			return errors.Wrap(err, "unable to create compactor ring lifecycler config")
+			return errors.Wrap(err, "unable to create parquet-converter ring lifecycler config")
 		}
 		var delegate ring.BasicLifecyclerDelegate
 		delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
 		delegate = ring.NewLeaveOnStoppingDelegate(delegate, c.logger)
-		delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, c.logger)
+		delegate = ring.NewAutoForgetDelegate(compactor.RingAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, c.logger)
 
 		c.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg,
-			"compactor-parquet", compactorRingKey, kvStore, delegate, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+			"parquet-converter", compactorRingKey, kvStore, delegate, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
 		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
+			return errors.Wrap(err, "unable to initialize parquet-converter ring lifecycler")
 		}
 
-		c.ring, err = ring.New(c.Cfg.ShardingRing.toRingConfig(), "compactor", compactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+		c.ring, err = ring.New(c.CompactorCfg.ShardingRing.ToRingConfig(), "parquet-converter", compactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
 		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring")
+			return errors.Wrap(err, "unable to initialize parquet-converter ring")
 		}
 
 		c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -134,13 +152,13 @@ func (c *ParquetCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.Cfg.ShardingRing.WaitActiveInstanceTimeout)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.CompactorCfg.ShardingRing.WaitActiveInstanceTimeout)
 	defer cancel()
 	if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-		level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
+		level.Error(c.logger).Log("msg", "parquet-converter failed to become ACTIVE in the ring", "err", err)
 		return err
 	}
-	level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
+	level.Info(c.logger).Log("msg", "parquet-converter is ACTIVE in the ring")
 	if err := c.loader.StartAsync(context.Background()); err != nil {
 		return errors.Wrap(err, "failed to start loader")
 	}
@@ -151,7 +169,7 @@ func (c *ParquetCompactor) starting(ctx context.Context) error {
 	return nil
 }
 
-func (c *ParquetCompactor) run(ctx context.Context) error {
+func (c *ParquetConverter) run(ctx context.Context) error {
 
 	go func() {
 		updateIndexTicker := time.NewTicker(time.Second * 60)
@@ -166,10 +184,12 @@ func (c *ParquetCompactor) run(ctx context.Context) error {
 					break
 				}
 				for _, u := range users {
-					if ok, _ := c.ownBlock(u); ok {
-						err := c.updateParquetIndex(ctx, u)
-						if err != nil {
-							level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
+					if c.Cfg.allowedTenants.IsAllowed(u) {
+						if ok, _ := c.ownBlock(u); ok {
+							err := c.updateParquetIndex(ctx, u)
+							if err != nil {
+								level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
+							}
 						}
 					}
 				}
@@ -190,6 +210,9 @@ func (c *ParquetCompactor) run(ctx context.Context) error {
 			}
 
 			for _, u := range u {
+				if !c.Cfg.allowedTenants.IsAllowed(u) {
+					continue
+				}
 				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 
 				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, util_log.Logger)
@@ -244,7 +267,7 @@ func (c *ParquetCompactor) run(ctx context.Context) error {
 	}
 }
 
-func (c *ParquetCompactor) updateParquetIndex(ctx context.Context, u string) error {
+func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) error {
 	level.Info(util_log.Logger).Log("msg", "Updating index", "user", u)
 	uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 	deleted := map[ulid.ULID]struct{}{}
@@ -298,7 +321,7 @@ func (c *ParquetCompactor) updateParquetIndex(ctx context.Context, u string) err
 	return bucketindex.WriteParquetIndex(ctx, uBucket, pIdx)
 }
 
-func (c *ParquetCompactor) removeDeletedBlocks(idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) {
+func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) {
 	blocks := map[ulid.ULID]struct{}{}
 	deleted := map[ulid.ULID]struct{}{}
 
@@ -319,7 +342,7 @@ func (c *ParquetCompactor) removeDeletedBlocks(idx *bucketindex.Index, pIdx *buc
 	}
 }
 
-func (c *ParquetCompactor) removeOutdatedBlocks(ctx context.Context, uBucket objstore.InstrumentedBucket, pIdx *bucketindex.ParquetIndex) {
+func (c *ParquetConverter) removeOutdatedBlocks(ctx context.Context, uBucket objstore.InstrumentedBucket, pIdx *bucketindex.ParquetIndex) {
 	for _, b := range pIdx.Blocks {
 		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
 		if err != nil {
@@ -333,7 +356,7 @@ func (c *ParquetCompactor) removeOutdatedBlocks(ctx context.Context, uBucket obj
 	}
 }
 
-func (c *ParquetCompactor) findNextBlockToCompact(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
+func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
 	deleted := map[ulid.ULID]struct{}{}
 	result := make([]*bucketindex.Block, 0, len(idx.Blocks))
 	totalBlocks := 0
@@ -381,7 +404,7 @@ func (c *ParquetCompactor) findNextBlockToCompact(ctx context.Context, uBucket o
 	return result, totalBlocks
 }
 
-func (c *ParquetCompactor) discoverUsers(ctx context.Context) ([]string, error) {
+func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
 	var users []string
 
 	err := c.bucket.Iter(ctx, "", func(entry string) error {
@@ -394,28 +417,27 @@ func (c *ParquetCompactor) discoverUsers(ctx context.Context) ([]string, error) 
 }
 
 // compactDirForUser returns the directory to be used to download and compact the blocks for a user
-func (c *ParquetCompactor) compactDirForUser(userID string) string {
+func (c *ParquetConverter) compactDirForUser(userID string) string {
 	return filepath.Join(c.compactRootDir(), userID)
 }
 
-func (c *ParquetCompactor) compactRootDir() string {
-	return filepath.Join(c.Cfg.DataDir, "compact")
+func (c *ParquetConverter) compactRootDir() string {
+	return filepath.Join(c.CompactorCfg.DataDir, "compact")
 }
 
-func (c *ParquetCompactor) ownBlock(blockId string) (bool, error) {
+func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
 	// Hash the user ID.
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(blockId))
+	_, _ = hasher.Write([]byte(userID))
 	userHash := hasher.Sum32()
 
-	// Check whether this compactor instance owns the user.
-	rs, err := c.ring.Get(userHash, RingOp, nil, nil, nil)
+	rs, err := c.ring.Get(userHash, compactor.RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}
 
 	if len(rs.Instances) != 1 {
-		return false, fmt.Errorf("unexpected number of compactors in the shard (expected 1, got %d)", len(rs.Instances))
+		return false, fmt.Errorf("unexpected number of parquet-converter in the shard (expected 1, got %d)", len(rs.Instances))
 	}
 
 	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil

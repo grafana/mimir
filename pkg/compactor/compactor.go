@@ -44,9 +44,9 @@ const (
 	// ringKey is the key under which we store the compactors ring in the KVStore.
 	ringKey = "compactor"
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
+	// RingAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 10
+	RingAutoForgetUnhealthyPeriods = 10
 )
 
 const (
@@ -570,14 +570,14 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 	var delegate ring.BasicLifecyclerDelegate
 	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(RingAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
 
 	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "compactor", ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' lifecycler")
 	}
 
-	compactorsRing, err := ring.New(cfg.toRingConfig(), "compactor", ringKey, logger, reg)
+	compactorsRing, err := ring.New(cfg.ToRingConfig(), "compactor", ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' ring client")
 	}
