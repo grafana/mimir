@@ -120,14 +120,14 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
-			mimirResultWithQueryPlanner, mimirCloseWithQueryPlanner := c.Run(ctx, t, start, end, interval, mimirEngineWithQueryPlanner, q)
+			mimirWithQueryPlannerResult, mimirWithQueryPlannerClose := c.Run(ctx, t, start, end, interval, mimirEngineWithQueryPlanner, q)
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
-			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResultWithQueryPlanner, false)
+			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirWithQueryPlannerResult, false)
 
 			prometheusClose()
 			mimirClose()
-			mimirCloseWithQueryPlanner()
+			mimirWithQueryPlannerClose()
 		})
 	}
 }
