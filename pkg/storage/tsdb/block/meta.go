@@ -84,6 +84,9 @@ type ThanosMeta struct {
 	// Useful to avoid API call to get size of each file, as well as for debugging purposes.
 	// Optional, added in v0.17.0.
 	Files []File `json:"files,omitempty"`
+
+	// Extensions are used for plugin any arbitrary additional information for block. Optional.
+	Extensions any `json:"extensions,omitempty"`
 }
 
 type Matchers []*labels.Matcher

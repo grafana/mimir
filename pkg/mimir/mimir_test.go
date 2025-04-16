@@ -181,7 +181,7 @@ func TestMimir(t *testing.T) {
 			target: []string{All, AlertManager},
 			expectedEnabledModules: []string{
 				// Check random modules that we expect to be configured when using Target=All.
-				Server, IngesterService, IngesterRing, DistributorService, Compactor,
+				Server, IngesterService, IngesterRing, DistributorService, Compactor, ParquetConverter,
 
 				// Check that Alertmanager is configured which is not part of Target=All.
 				AlertManager,
@@ -190,16 +190,16 @@ func TestMimir(t *testing.T) {
 		"-target=write": {
 			target:                  []string{Write},
 			expectedEnabledModules:  []string{DistributorService, IngesterService},
-			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 		},
 		"-target=read": {
 			target:                  []string{Read},
 			expectedEnabledModules:  []string{QueryFrontend, Querier},
-			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 		},
 		"-target=backend": {
 			target:                  []string{Backend},
-			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
 		},
 	}

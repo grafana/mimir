@@ -74,7 +74,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 	}, nil
 }
 
-func (cfg *RingConfig) toRingConfig() ring.Config {
+func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc := cfg.Common.ToRingConfig()
 	rc.ReplicationFactor = 1
 
