@@ -448,6 +448,21 @@ overrides_exporter:
   # CLI flag: -overrides-exporter.enabled-metrics
   [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
 
+parquet_converter:
+  # (advanced) Comma separated list of tenants that can have their TSDB blocks
+  # converted into parquet. If specified, only these tenants will be converted
+  # by the parquet-converter, otherwise all tenants can be compacted. Subject to
+  # sharding.
+  # CLI flag: -parquet-converter.enabled-tenants
+  [enabled_tenants: <string> | default = ""]
+
+  # (advanced) Comma separated list of tenants that cannot have their TSDB
+  # blocks converted into parquet. If specified, and the parquet-converter would
+  # normally pick a given tenant to convert the blocks to parquet (via
+  # -parquet-converter.enabled-tenants or sharding), it will be ignored instead.
+  # CLI flag: -parquet-converter.disabled-tenants
+  [disabled_tenants: <string> | default = ""]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
