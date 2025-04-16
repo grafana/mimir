@@ -125,21 +125,23 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	}
 }
 
-func mkExtentWithSamplesProcessed(start, end int64, samplesProcessed uint64) Extent {
-	ext := mkExtentWithStepAndQueryTime(start, end, 10, 0)
-	ext.SamplesProcessedPerStep = approximateSamplesProcessedPerStep(start, end, 10, samplesProcessed)
-	return ext
-}
+// func mkExtentWithSamplesProcessedAndStep(start, end int64, samplesProcessed uint64, step int64) Extent {
+// 	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
+// 	ext.SamplesProcessedPerStep = approximateSamplesProcessedPerStep(start, end, step, samplesProcessed)
+// 	return ext
+// }
 
-func mkExtentWithSamplesProcessedAndStep(start, end int64, samplesProcessed uint64, step int64) Extent {
+// mkExtentWithEvenPerStepSamplesProcessed creates an extent with an even distribution of samplesPerStep.
+func mkExtentWithEvenPerStepSamplesProcessed(start, end int64, step int64, samplesPerStep int64) Extent {
+	numSteps := int((end-start)/step) + 1
+	stats := make([]StepStat, numSteps)
+	for i := 0; i < numSteps; i++ {
+		stats[i] = StepStat{
+			Timestamp: start + int64(i)*step,
+			Value:     samplesPerStep,
+		}
+	}
 	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
-	ext.SamplesProcessedPerStep = approximateSamplesProcessedPerStep(start, end, step, samplesProcessed)
-	return ext
-}
-
-func mkExtentWithPerStepSamplesProcessed(start, end int64, step int64, stats []StepStat) Extent {
-	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
-
 	ext.SamplesProcessedPerStep = stats
 	return ext
 }
@@ -597,28 +599,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(100, 140, 10, []StepStat{
-					{
-						Timestamp: 100,
-						Value:     10,
-					},
-					{
-						Timestamp: 110,
-						Value:     10,
-					},
-					{
-						Timestamp: 120,
-						Value:     10,
-					},
-					{
-						Timestamp: 130,
-						Value:     10,
-					},
-					{
-						Timestamp: 140,
-						Value:     10,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 50,
 		},
@@ -630,30 +611,9 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(100, 140, 10, []StepStat{
-					{
-						Timestamp: 100,
-						Value:     10,
-					},
-					{
-						Timestamp: 110,
-						Value:     10,
-					},
-					{
-						Timestamp: 120,
-						Value:     10,
-					},
-					{
-						Timestamp: 130,
-						Value:     10,
-					},
-					{
-						Timestamp: 140,
-						Value:     10,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(110, 140, 10, 10),
 			},
-			expectedSamplesProcessed: 50,
+			expectedSamplesProcessed: 40,
 		},
 		{
 			name: "Left part of extent is within query range - part of samples counted",
@@ -663,28 +623,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(100, 140, 10, []StepStat{
-					{
-						Timestamp: 100,
-						Value:     10,
-					},
-					{
-						Timestamp: 110,
-						Value:     10,
-					},
-					{
-						Timestamp: 120,
-						Value:     10,
-					},
-					{
-						Timestamp: 130,
-						Value:     10,
-					},
-					{
-						Timestamp: 140,
-						Value:     10,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 40,
 		},
@@ -696,28 +635,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(130, 170, 10, []StepStat{
-					{
-						Timestamp: 130,
-						Value:     10,
-					},
-					{
-						Timestamp: 140,
-						Value:     10,
-					},
-					{
-						Timestamp: 150,
-						Value:     10,
-					},
-					{
-						Timestamp: 160,
-						Value:     10,
-					},
-					{
-						Timestamp: 170,
-						Value:     10,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(130, 170, 10, 10),
 			},
 			expectedSamplesProcessed: 30,
 		},
@@ -729,34 +647,8 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(100, 120, 10, []StepStat{
-					{
-						Timestamp: 100,
-						Value:     15,
-					},
-					{
-						Timestamp: 110,
-						Value:     15,
-					},
-					{
-						Timestamp: 120,
-						Value:     15,
-					},
-				}),
-				mkExtentWithPerStepSamplesProcessed(130, 150, 10, []StepStat{
-					{
-						Timestamp: 130,
-						Value:     25,
-					},
-					{
-						Timestamp: 140,
-						Value:     25,
-					},
-					{
-						Timestamp: 150,
-						Value:     25,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 120, 10, 15),
+				mkExtentWithEvenPerStepSamplesProcessed(130, 150, 10, 25),
 			},
 			expectedSamplesProcessed: 120,
 		},
@@ -768,34 +660,8 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(100, 120, 10, []StepStat{
-					{
-						Timestamp: 100,
-						Value:     10,
-					},
-					{
-						Timestamp: 110,
-						Value:     10,
-					},
-					{
-						Timestamp: 120,
-						Value:     10,
-					},
-				}),
-				mkExtentWithPerStepSamplesProcessed(110, 130, 10, []StepStat{
-					{
-						Timestamp: 110,
-						Value:     15,
-					},
-					{
-						Timestamp: 120,
-						Value:     15,
-					},
-					{
-						Timestamp: 130,
-						Value:     15,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 120, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(110, 130, 10, 15),
 			},
 			// only values at timestamp 120 is merged, due to how partitionCacheExtents is implemented, so:
 			// [T:100; V:10] + [T:110; V:10] + [T:120; V:15] + [T:130; V:15] = 50
@@ -809,16 +675,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(220, 230, 10, []StepStat{
-					{
-						Timestamp: 220,
-						Value:     10,
-					},
-					{
-						Timestamp: 230,
-						Value:     10,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(220, 230, 10, 10),
 			},
 			expectedSamplesProcessed: 0,
 		},
@@ -830,16 +687,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(110, 120, 10, []StepStat{
-					{
-						Timestamp: 110,
-						Value:     0,
-					},
-					{
-						Timestamp: 120,
-						Value:     0,
-					},
-				}),
+				mkExtentWithEvenPerStepSamplesProcessed(110, 120, 10, 0),
 			},
 			expectedSamplesProcessed: 0,
 		},
@@ -905,101 +753,79 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 	}{
 		{
 			name:    "Single extent - one extent returned",
-			extents: []Extent{mkExtentWithSamplesProcessed(100, 200, 110)},
+			extents: []Extent{mkExtentWithEvenPerStepSamplesProcessed(100, 200, 10, 10)},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 200, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 200, 10, 10),
 			},
 		},
 		{
 			name: "Two extents separated by gap - two extents returned",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
-				mkExtentWithSamplesProcessed(220, 300, 90),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 200, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(220, 300, 10, 10),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
-				mkExtentWithSamplesProcessed(220, 300, 90),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 200, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(220, 300, 10, 10),
 			},
 		},
 		{
 			name: "Two extents with overlap - extents are merged",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 250, 160),
-				mkExtentWithSamplesProcessed(200, 300, 110),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 250, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(200, 300, 10, 10),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 300, 210),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 300, 10, 10),
 			},
 		},
 		{
 			name: "Two extents with overlap within a step - extents are merged",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
-				mkExtentWithSamplesProcessed(210, 300, 100),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 200, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(210, 300, 10, 10),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 300, 195),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 300, 10, 10),
 			},
 		},
 		{
 			name: "Zero length within a step range from base extent - merged with base extent",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 110),
-				mkExtentWithSamplesProcessed(210, 210, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 200, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(210, 210, 10, 10),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 210, 120),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 210, 10, 10),
 			},
 		},
 		{
 			name: "Extent with uneven samples distribution",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 140, 50),
-				mkExtentWithSamplesProcessed(150, 170, 60),
+				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(150, 170, 10, 20),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 170, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithPerStepSamplesProcessed(100, 170, 10,
-					[]StepStat{
-						{
-							Timestamp: 100,
-							Value:     10,
-						},
-						{
-							Timestamp: 110,
-							Value:     10,
-						},
-						{
-							Timestamp: 120,
-							Value:     10,
-						},
-						{
-							Timestamp: 130,
-							Value:     10,
-						},
-						{
-							Timestamp: 140,
-							Value:     10,
-						},
-						{
-							Timestamp: 150,
-							Value:     20,
-						},
-						{
-							Timestamp: 160,
-							Value:     20,
-						},
-						{
-							Timestamp: 170,
-							Value:     20,
-						},
+				{
+					Start: 100,
+					End:   170,
+					SamplesProcessedPerStep: []StepStat{
+						{Timestamp: 100, Value: 10},
+						{Timestamp: 110, Value: 10},
+						{Timestamp: 120, Value: 10},
+						{Timestamp: 130, Value: 10},
+						{Timestamp: 140, Value: 10},
+						{Timestamp: 150, Value: 20},
+						{Timestamp: 160, Value: 20},
+						{Timestamp: 170, Value: 20},
 					},
-				),
+				},
 			},
 		},
 	}
@@ -1026,8 +852,11 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 }
 
 func TestFilterRecentCacheExtents(t *testing.T) {
+	// step align now to avoid flaky tests, non-step aligned time ranges are not cached anyway
 	now := time.Now()
 	step := int64(10)
+	now = time.UnixMilli((now.UnixMilli() / step) * step)
+
 	maxFreshness := time.Minute * 30
 
 	tests := []struct {
@@ -1040,28 +869,31 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 		{
 			name: "Half of the extent overlaps with max freshness period - truncated",
 			extents: []Extent{
-				// 1 hour = 3,600,000 milliseconds
-				mkExtentWithSamplesProcessedAndStep(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 36000, 1000),
-			},
-			shouldTruncate:  []bool{true},
-			expectedSamples: []uint64{18000},
+				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 1000, 10)},
+			shouldTruncate: []bool{true},
+			// 1 hour with 1000ms step is a 3601 data points. 10 samples per step, so 36010 samples.
+			// Truncation keeps half the range - 18001 datapoints, 10 samples per step, so 18010 samples.
+			expectedSamples: []uint64{18010},
 		},
 		{
 			name: "Extent doesn't overlap with max freshness period - unchanged",
 			extents: []Extent{
-				mkExtentWithSamplesProcessedAndStep(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 36000, 1000),
+				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 1000, 10),
 			},
-			shouldTruncate:  []bool{false},
-			expectedSamples: []uint64{36000},
+			shouldTruncate: []bool{false},
+			// 1 hour with 1000ms step is a 3601 data points - 36010 samples.
+			expectedSamples: []uint64{36010},
 		},
 		{
 			name: "Two extents, one overlapping with max freshness period - one extent truncated",
 			extents: []Extent{
-				mkExtentWithSamplesProcessedAndStep(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 36000, 1000),
-				mkExtentWithSamplesProcessedAndStep(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 72000, 1000),
+				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 1000, 10),
+				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 1000, 10),
 			},
-			shouldTruncate:  []bool{false, true},
-			expectedSamples: []uint64{36000, 54000},
+			shouldTruncate: []bool{false, true},
+			// First extent - 1 hour with 1000ms step is a 3601 data points - 36010 samples - not truncated
+			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples - truncated to 54010 samples
+			expectedSamples: []uint64{36010, 54010},
 		},
 	}
 
