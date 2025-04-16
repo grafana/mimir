@@ -150,9 +150,9 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 			expectedStatusCode: 500,
 			expectedError:      `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`,
 			expectedMetrics: `
-				# HELP cortex_client_request_invalid_cluster_validation_labels_total Number of requests with invalid cluster validation label.
-        	    # TYPE cortex_client_request_invalid_cluster_validation_labels_total counter
-        	    cortex_client_request_invalid_cluster_validation_labels_total{client="querier",method="/api/v1/query_range",protocol="http"} 1
+				# HELP cortex_client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
+        	    # TYPE cortex_client_invalid_cluster_validation_label_requests_total counter
+        	    cortex_client_invalid_cluster_validation_label_requests_total{client="querier",method="/api/v1/query_range",protocol="http"} 1
 			`,
 		},
 		"if client has no cluster validation label and soft cluster validation is enabled no error is returned": {
@@ -232,7 +232,7 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 					require.Contains(t, string(body), testCase.expectedError)
 
 					if testCase.expectedMetrics != "" {
-						err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "cortex_client_request_invalid_cluster_validation_labels_total")
+						err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "cortex_client_invalid_cluster_validation_label_requests_total")
 						require.NoError(t, err)
 					}
 				}
