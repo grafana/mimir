@@ -42,6 +42,7 @@ func NewTestEngineOpts() EngineOpts {
 		Pedantic: true,
 
 		// Don't enable query planning by default, but do enable common subexpression elimination if query planning is enabled.
+		UseQueryPlanning:                     false,
 		EnableCommonSubexpressionElimination: true,
 	}
 }

@@ -38,12 +38,13 @@ func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTr
 }
 
 func (b *DuplicationBuffer) AddConsumer() *DuplicationConsumer {
+	consumerIndex := b.consumerCount
 	b.consumerCount++
 	b.nextSeriesIndex = append(b.nextSeriesIndex, 0)
 
 	return &DuplicationConsumer{
 		Buffer:        b,
-		consumerIndex: b.consumerCount - 1,
+		consumerIndex: consumerIndex,
 	}
 }
 
