@@ -236,7 +236,7 @@ func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, tenantID strin
 func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID string, r MetricsQueryRequest) string {
 	start := r.GetStart()
 	end := r.GetEnd()
-	if start == end && r.GetStep() == 0 {
+	if start == end {
 		// For the case of an instant query, don't rely on the query's time in the errors caching key.
 		// I.e. if a recording rule's query fails, it will likely fail on subsequent evaluations with the updated time.
 		start = 0
