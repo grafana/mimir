@@ -181,7 +181,6 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(21), stats1.LoadSplitQueries())
 		assert.Equal(t, 15*time.Second, stats1.LoadQueueTime())
 		assert.Equal(t, uint64(30), stats1.LoadSamplesProcessed())
-
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -198,7 +197,6 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(0), stats1.LoadSplitQueries())
 		assert.Equal(t, time.Duration(0), stats1.LoadQueueTime())
 		assert.Equal(t, uint64(0), stats1.LoadSamplesProcessed())
-
 	})
 }
 
