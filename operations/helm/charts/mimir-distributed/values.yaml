@@ -394,6 +394,7 @@ mimir:
         memcached:
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
+          timeout: 500ms
       {{- end }}
     {{- end }}
 

@@ -114,6 +114,7 @@ data:
         memcached:
           addresses: dnssrvnoa+large-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
           max_item_size: 1048576
+          timeout: 500ms
     runtime_config:
       file: /var/mimir/runtime.yaml
     store_gateway:

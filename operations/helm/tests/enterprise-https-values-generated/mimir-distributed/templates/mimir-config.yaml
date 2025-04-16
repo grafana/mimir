@@ -285,6 +285,7 @@ data:
         memcached:
           addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
           max_item_size: 1048576
+          timeout: 500ms
       s3:
         bucket_name: ruler
     runtime_config:
