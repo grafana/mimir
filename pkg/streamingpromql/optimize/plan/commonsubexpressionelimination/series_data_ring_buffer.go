@@ -17,7 +17,10 @@ type SeriesDataRingBuffer struct {
 }
 
 func (b *SeriesDataRingBuffer) Append(d types.InstantVectorSeriesData, seriesIndex int) {
-	if b.seriesCount > 0 && seriesIndex != b.firstSeriesIndex+b.seriesCount {
+	if b.seriesCount == 0 {
+		// We're about to add the first series.
+		b.firstSeriesIndex = seriesIndex
+	} else if seriesIndex != b.firstSeriesIndex+b.seriesCount {
 		panic(fmt.Sprintf("attempted to append series with index %v, but first series index in buffer is %v and have %v series", seriesIndex, b.firstSeriesIndex, b.seriesCount))
 	}
 
@@ -33,11 +36,6 @@ func (b *SeriesDataRingBuffer) Append(d types.InstantVectorSeriesData, seriesInd
 
 	b.data[(b.startIndex+b.seriesCount)%len(b.data)] = d
 	b.seriesCount++
-
-	if b.seriesCount == 1 {
-		// Just added the first series.
-		b.firstSeriesIndex = seriesIndex
-	}
 }
 
 func (b *SeriesDataRingBuffer) Remove(seriesIndex int) types.InstantVectorSeriesData {
