@@ -670,7 +670,7 @@ func cacheHashKey(key string) string {
 }
 
 // approximateSamplesProcessedPerStep approximates the samples processed per step from the total samples processed.
-// We had to use appoximation, becase MQE doesn't support per step stats yet.
+// We had to use approximation, because MQE doesn't support per step stats yet.
 func approximateSamplesProcessedPerStep(start int64, end int64, step int64, samplesProcessed uint64) []StepStat {
 	numSteps := (end-start)/step + 1
 	// approxPerStep is not float because:
