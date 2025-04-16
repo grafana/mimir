@@ -657,7 +657,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
-	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
+	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier)) // TODO(jesus.vazquez) Remove NewStoreGatewayTimeRangeQueryable and use the new ParquetQueryable
 	return q, nil
 }
 
