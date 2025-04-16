@@ -18,7 +18,7 @@ const grafanaConfigWithDuplicateReceiverName = `{
   "template_files": {},
   "alertmanager_config": {
     "route": {
-      "receiver": "test-receiver",
+      "receiver": "test-receiver8",
       "group_by": [
         "grafana_folder",
         "alertname"
@@ -26,8 +26,9 @@ const grafanaConfigWithDuplicateReceiverName = `{
     },
     "templates": null,
     "receivers": [
+      {"name": "test-receiver1","grafana_managed_receiver_configs": []},
       {
-        "name": "test-receiver",
+        "name": "test-receiver8",
         "grafana_managed_receiver_configs": [
           {
             "uid": "dde6ntuob69dtf",
@@ -44,8 +45,14 @@ const grafanaConfigWithDuplicateReceiverName = `{
           }
         ]
       },
+      {"name": "test-receiver2","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver3","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver4","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver5","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver6","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver7","grafana_managed_receiver_configs": []},
       {
-        "name": "test-receiver",
+        "name": "test-receiver8",
         "grafana_managed_receiver_configs": [
           {
             "uid": "dde7ntuob69dtf",
@@ -61,7 +68,8 @@ const grafanaConfigWithDuplicateReceiverName = `{
             }
           }
         ]
-      }
+      },
+	  {"name": "test-receiver9","grafana_managed_receiver_configs": []}
     ]
   }
 }`
@@ -164,6 +172,13 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				require.False(t, ok, fmt.Sprintf("duplicate receiver name %q found in final configuration", rcv.Name))
 				receiverNames[rcv.Name] = struct{}{}
 			}
+
+			// Ensure that configuration is deterministic. For example, ordering of receivers.
+			// This is important for change detection.
+			cfg2, err := am.createUsableGrafanaConfig(test.grafanaConfig, test.mimirConfig)
+			require.NoError(t, err)
+
+			require.Equal(t, cfg.RawConfig, cfg2.RawConfig)
 		})
 	}
 }
