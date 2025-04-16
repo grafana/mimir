@@ -238,3 +238,47 @@ func TestErrorCachingHandler_Do(t *testing.T) {
 		})
 	}
 }
+
+func TestErrorCachingHandler_Do_subsequentInstantQueries(t *testing.T) {
+	keyGen := NewDefaultCacheKeyGenerator(newTestPrometheusCodec(), 0)
+
+	testHandler := func(ctx context.Context, inner MetricsQueryHandler, c cache.Cache, req MetricsQueryRequest) (Response, error) {
+		limits := &mockLimits{resultsCacheTTLForErrors: time.Minute}
+		middleware := newErrorCachingMiddleware(c, limits, resultsCacheEnabledByOption, keyGen, test.NewTestingLogger(t), prometheus.NewPedanticRegistry())
+		handler := middleware.Wrap(inner)
+		return handler.Do(ctx, req)
+	}
+
+	newInstantQueryRequest := func(t *testing.T, ts int64) *PrometheusInstantQueryRequest {
+		return &PrometheusInstantQueryRequest{
+			queryExpr: parseQuery(t, "up"),
+			time:      ts,
+		}
+	}
+
+	c := cache.NewInstrumentedMockCache()
+
+	innerErr := apierror.New(apierror.TypeTooLargeEntry, "response is too big")
+	inner := &mockHandler{}
+	inner.On("Do", mock.Anything, mock.Anything).
+		Once(). // The handler is queried once; the rest of the requests are served from the cache.
+		Return((*PrometheusResponse)(nil), innerErr)
+
+	ctx := user.InjectOrgID(context.Background(), "1234")
+
+	// First query.
+	req1 := newInstantQueryRequest(t, 100)
+	res, err := testHandler(ctx, inner, c, req1)
+	require.Error(t, err)
+	require.Nil(t, res)
+	require.Equal(t, 1, c.CountFetchCalls())
+	require.Equal(t, 1, c.CountStoreCalls())
+
+	// Second query with the updated timestamp.
+	req2 := newInstantQueryRequest(t, 200)
+	res, err = testHandler(ctx, inner, c, req2)
+	require.Error(t, err)
+	require.Nil(t, res)
+	require.Equal(t, 2, c.CountFetchCalls())
+	require.Equal(t, 1, c.CountStoreCalls())
+}
