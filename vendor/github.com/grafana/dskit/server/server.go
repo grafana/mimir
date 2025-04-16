@@ -409,7 +409,10 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 	if cfg.ClusterValidation.GRPC.Enabled {
-		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.ClusterValidation.Label, cfg.ClusterValidation.GRPC.SoftValidation, logger))
+		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(
+			cfg.ClusterValidation.Label, cfg.ClusterValidation.GRPC.SoftValidation,
+			metrics.InvalidClusterRequests, logger,
+		))
 	}
 
 	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
@@ -570,7 +573,11 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		httpMiddleware = append(defaultHTTPMiddleware, cfg.HTTPMiddleware...)
 	}
 	if cfg.ClusterValidation.HTTP.Enabled {
-		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterValidation.Label, cfg.ClusterValidation.HTTP.ExcludedPaths, cfg.ClusterValidation.HTTP.SoftValidation, logger))
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(
+			cfg.ClusterValidation.Label, cfg.ClusterValidation.HTTP.ExcludedPaths,
+			cfg.ClusterValidation.HTTP.SoftValidation,
+			metrics.InvalidClusterRequests, logger,
+		))
 	}
 
 	return httpMiddleware, nil

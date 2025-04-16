@@ -160,8 +160,12 @@ func TestClientPool_ClusterValidation(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			var grpcOptions []grpc.ServerOption
 			if testCase.serverClusterValidation.GRPC.Enabled {
+				reg := prometheus.NewPedanticRegistry()
 				grpcOptions = []grpc.ServerOption{
-					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation, log.NewNopLogger())),
+					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(
+						testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation,
+						middleware.NewInvalidClusterRequests(reg), log.NewNopLogger(),
+					)),
 				}
 			}
 
