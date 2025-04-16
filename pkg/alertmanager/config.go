@@ -42,11 +42,11 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 	// We want to:
 	// 1. Remove duplicate receivers and keep the last receiver occurrence if there are conflicts. This is based on the upstream implementation.
 	// 2. Maintain a consistent ordering and preferably original ordering. Otherwise, change detection will be impacted.
-	lastIndex := make(map[string]int)
+	lastIndex := make(map[string]int, len(amCfg.AlertmanagerConfig.Receivers))
 	for i, receiver := range amCfg.AlertmanagerConfig.Receivers {
 		lastIndex[receiver.Name] = i
 	}
-	rcvs := make([]*definition.PostableApiReceiver, 0, len(amCfg.AlertmanagerConfig.Receivers))
+	rcvs := make([]*definition.PostableApiReceiver, 0, len(lastIndex))
 	for i, rcv := range amCfg.AlertmanagerConfig.Receivers {
 		if i != lastIndex[rcv.Name] {
 			itypes := make([]string, 0, len(rcv.GrafanaManagedReceivers))
