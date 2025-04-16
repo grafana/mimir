@@ -916,7 +916,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 
 			if testCase.expectedClusterValidationFailures > 0 {
 				// We expect that the cluster validation error is tracked by ingester client's metrics.
-				sums, err = distributor.SumMetrics([]string{"cortex_client_request_invalid_cluster_validation_labels_total"},
+				sums, err = distributor.SumMetrics([]string{"cortex_client_invalid_cluster_validation_label_requests_total"},
 					e2e.WithLabelMatchers(
 						labels.MustNewMatcher(labels.MatchEqual, "method", "/cortex.Ingester/Push"),
 						labels.MustNewMatcher(labels.MatchEqual, "client", "ingester"),
