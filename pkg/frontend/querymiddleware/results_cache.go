@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -388,8 +389,9 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			continue
 		}
 		accumulator.TraceId = jaegerTraceID(ctx)
-		// Calculate the number of samples in the subrange of the extent that is being merged with the accumulator.
-		accumulator.SamplesProcessed += extentSamplesInSubrange(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
+		// Calculate the samples processed per step in the subrange of the extent that is being merged with the accumulator.
+		samples := extractSamplesProcessedPerStep(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
+		accumulator.SamplesProcessedPerStep = mergeSamplesProcessedPerStep(accumulator.SamplesProcessedPerStep, samples)
 
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
@@ -426,12 +428,12 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:            acc.Start,
-		End:              acc.End,
-		Response:         marshalled,
-		TraceId:          acc.TraceId,
-		QueryTimestampMs: acc.QueryTimestampMs,
-		SamplesProcessed: acc.SamplesProcessed,
+		Start:                   acc.Start,
+		End:                     acc.End,
+		Response:                marshalled,
+		TraceId:                 acc.TraceId,
+		QueryTimestampMs:        acc.QueryTimestampMs,
+		SamplesProcessedPerStep: acc.SamplesProcessedPerStep,
 	}), nil
 }
 
@@ -452,22 +454,22 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 		return Extent{}, err
 	}
 	return Extent{
-		Start:            req.GetStart(),
-		End:              req.GetEnd(),
-		Response:         marshalled,
-		TraceId:          jaegerTraceID(ctx),
-		QueryTimestampMs: queryTime.UnixMilli(),
-		SamplesProcessed: samplesProcessed,
+		Start:                   req.GetStart(),
+		End:                     req.GetEnd(),
+		Response:                marshalled,
+		TraceId:                 jaegerTraceID(ctx),
+		QueryTimestampMs:        queryTime.UnixMilli(),
+		SamplesProcessedPerStep: approximateSamplesProcessedPerStep(req.GetStart(), req.GetEnd(), req.GetStep(), samplesProcessed),
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, uint64, error) {
+func partitionCacheExtents(ctx context.Context, req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
-	var cachedSamplesProcessed uint64 = 0
+	var cachedPerStepStat []StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -489,19 +491,19 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, nil, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-		// Calculate the proportion of samples used from extent, based on the overlap between request and extent.
-		cachedSamplesProcessed += extentSamplesInSubrange(extent, max(start, extent.Start), min(req.GetEnd(), extent.End))
+		// Extract the per step stats for the overlap.
+		cachedPerStepStat = mergeSamplesProcessedPerStep(cachedPerStepStat, extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End)))
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -523,7 +525,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 
 		requests = append(requests, r)
@@ -535,7 +537,16 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	return requests, cachedResponses, cachedSamplesProcessed, nil
+	// Track samples processed from cache
+	var cachedSamplesProcessed uint64 = 0
+	for _, stepStat := range cachedPerStepStat {
+		cachedSamplesProcessed += uint64(stepStat.Value)
+	}
+	if details := QueryDetailsFromContext(ctx); details != nil {
+		details.SamplesProcessedFromCache = cachedSamplesProcessed
+	}
+
+	return requests, cachedResponses, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -543,8 +554,8 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
-			// Calculate the number of samples in the subrange of the extent that is within the maxCacheTime.
-			extents[i].SamplesProcessed = extentSamplesInSubrange(extents[i], extents[i].Start, maxCacheTime)
+			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime)
+			extents[i].SamplesProcessedPerStep = perStepStats
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
 			if err != nil {
@@ -658,22 +669,63 @@ func cacheHashKey(key string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// extentSamplesInSubrange counts the approximate number of samples for the subrange within the extent.
-// subrangeStart and subrangeEnd must be within the extent.
-// TODO: calculate samples based on PerStepStats, if it will be supported by the MQE.
-func extentSamplesInSubrange(extent Extent, subrangeStart int64, subrangeEnd int64) uint64 {
+// approximateSamplesProcessedPerStep approximates the samples processed per step from the total samples processed.
+// We had to use appoximation, becase MQE doesn't support per step stats yet.
+func approximateSamplesProcessedPerStep(start int64, end int64, step int64, samplesProcessed uint64) []StepStat {
+	numSteps := (end-start)/step + 1
+	approxPerStep := int64(math.Ceil(float64(samplesProcessed) / float64(numSteps)))
+	perStepStats := make([]StepStat, 0, numSteps)
+	for i := int64(0); i < numSteps; i++ {
+		perStepStats = append(perStepStats, StepStat{
+			Timestamp: start + i*step,
+			Value:     approxPerStep,
+		})
+	}
+	return perStepStats
+}
+
+// extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.
+func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []StepStat {
 	// Validate the subrange is valid and within the extent.
-	if subrangeEnd < subrangeStart || subrangeStart < extent.Start || subrangeEnd > extent.End {
-		return 0
+	if end < start || start < extent.Start || end > extent.End {
+		return nil
 	}
 
-	extentTimeRange := extent.End - extent.Start
-	// Zero length extent might contain samples.
-	if extentTimeRange == 0 {
-		return extent.SamplesProcessed
+	var result []StepStat
+	for _, step := range extent.SamplesProcessedPerStep {
+		if start <= step.Timestamp && step.Timestamp <= end {
+			result = append(result, step)
+		}
 	}
 
-	// Calculate proportional samples in the subrange
-	subrange := subrangeEnd - subrangeStart
-	return uint64(float64(extent.SamplesProcessed) * float64(subrange) / float64(extentTimeRange))
+	return result
+}
+
+func mergeSamplesProcessedPerStep(steps ...[]StepStat) []StepStat {
+	if len(steps) == 0 {
+		return nil
+	}
+
+	stepsMap := make(map[int64]StepStat)
+
+	for _, stepSlice := range steps {
+		for _, s := range stepSlice {
+			stepsMap[s.Timestamp] = s
+		}
+	}
+
+	if len(stepsMap) == 0 {
+		return nil
+	}
+
+	merged := make([]StepStat, 0, len(stepsMap))
+	for _, s := range stepsMap {
+		merged = append(merged, s)
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Timestamp < merged[j].Timestamp
+	})
+
+	return merged
 }

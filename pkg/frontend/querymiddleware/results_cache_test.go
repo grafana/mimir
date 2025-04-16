@@ -127,7 +127,20 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 
 func mkExtentWithSamplesProcessed(start, end int64, samplesProcessed uint64) Extent {
 	ext := mkExtentWithStepAndQueryTime(start, end, 10, 0)
-	ext.SamplesProcessed = samplesProcessed
+	ext.SamplesProcessedPerStep = approximateSamplesProcessedPerStep(start, end, 10, samplesProcessed)
+	return ext
+}
+
+func mkExtentWithSamplesProcessedAndStep(start, end int64, samplesProcessed uint64, step int64) Extent {
+	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
+	ext.SamplesProcessedPerStep = approximateSamplesProcessedPerStep(start, end, step, samplesProcessed)
+	return ext
+}
+
+func mkExtentWithStepPerStepSamplesProcessedStats(start, end int64, step int64, stats []StepStat) Extent {
+	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
+
+	ext.SamplesProcessedPerStep = stats
 	return ext
 }
 
@@ -556,7 +569,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			extractor := PrometheusResponseExtractor{}
 			minCacheExtent := int64(10)
 
-			reqs, resps, _, err := partitionCacheExtents(tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
+			reqs, resps, err := partitionCacheExtents(context.Background(), tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
@@ -584,9 +597,9 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 50),
+				mkExtentWithSamplesProcessed(100, 200, 110),
 			},
-			expectedSamplesProcessed: 50,
+			expectedSamplesProcessed: 110,
 		},
 		{
 			name: "Extent within query range - all samples counted",
@@ -596,59 +609,59 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(150, 190, 40),
+				mkExtentWithSamplesProcessed(150, 190, 50),
 			},
-			expectedSamplesProcessed: 40,
+			expectedSamplesProcessed: 50,
 		},
 		{
-			name: "Left half of extent is within query range - half of samples counted",
+			name: "Left part of extent is within query range - part of samples counted",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
 				end:   150,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
+				mkExtentWithSamplesProcessed(100, 200, 110),
 			},
-			expectedSamplesProcessed: 50,
+			expectedSamplesProcessed: 60,
 		},
 		{
-			name: "Right half of extent is within query range - half of samples counted",
+			name: "Right part of extent is within query range - part of samples counted",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
 				end:   200,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(50, 150, 100),
+				mkExtentWithSamplesProcessed(50, 150, 110),
 			},
-			expectedSamplesProcessed: 50,
+			expectedSamplesProcessed: 60,
 		},
 		{
-			name: "Multiple extents fully within query range - all samples summed",
+			name: "Non overlapping extents fully within query range - all samples summed",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
 				end:   300,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 150, 50),
-				mkExtentWithSamplesProcessed(200, 300, 100),
+				mkExtentWithSamplesProcessed(100, 150, 60),
+				mkExtentWithSamplesProcessed(200, 300, 110),
 			},
-			expectedSamplesProcessed: 150,
+			expectedSamplesProcessed: 170,
 		},
 		{
-			name: "Overlapping extents - samples are counted proportionally",
+			name: "Overlapping extents -  samples are merged",
 			request: &PrometheusRangeQueryRequest{
 				start: 100,
 				end:   200,
 				step:  10,
 			},
 			cachedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 150, 50),
-				mkExtentWithSamplesProcessed(125, 200, 75),
+				mkExtentWithSamplesProcessed(100, 150, 60),
+				mkExtentWithSamplesProcessed(110, 210, 110),
 			},
-			expectedSamplesProcessed: 100,
+			expectedSamplesProcessed: 110,
 		},
 		{
 			name: "No relevant extents - zero samples",
@@ -680,10 +693,10 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			extractor := PrometheusResponseExtractor{}
 			minCacheExtent := int64(10)
-
-			_, _, samplesProcessed, err := partitionCacheExtents(tc.request, tc.cachedExtents, minCacheExtent, extractor)
+			details, ctx := ContextWithEmptyDetails(context.Background())
+			_, _, err := partitionCacheExtents(ctx, tc.request, tc.cachedExtents, minCacheExtent, extractor)
 			require.NoError(t, err)
-
+			samplesProcessed := details.SamplesProcessedFromCache
 			assert.Equal(t, tc.expectedSamplesProcessed, samplesProcessed,
 				"Expected %d samples processed but got %d",
 				tc.expectedSamplesProcessed, samplesProcessed)
@@ -736,40 +749,40 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 	}{
 		{
 			name:    "Single extent - one extent returned",
-			extents: []Extent{mkExtentWithSamplesProcessed(100, 200, 100)},
+			extents: []Extent{mkExtentWithSamplesProcessed(100, 200, 110)},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 200, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
+				mkExtentWithSamplesProcessed(100, 200, 110),
 			},
 		},
 		{
 			name: "Two extents separated by gap - two extents returned",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
-				mkExtentWithSamplesProcessed(220, 300, 80),
+				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithSamplesProcessed(220, 300, 90),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
-				mkExtentWithSamplesProcessed(220, 300, 80),
+				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithSamplesProcessed(220, 300, 90),
 			},
 		},
 		{
 			name: "Two extents with overlap - extents are merged",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 250, 150),
-				mkExtentWithSamplesProcessed(200, 300, 100),
+				mkExtentWithSamplesProcessed(100, 250, 160),
+				mkExtentWithSamplesProcessed(200, 300, 110),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 300, 200),
+				mkExtentWithSamplesProcessed(100, 300, 210),
 			},
 		},
 		{
 			name: "Two extents with overlap within a step - extents are merged",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
-				mkExtentWithSamplesProcessed(205, 300, 95),
+				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithSamplesProcessed(210, 300, 100),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
@@ -779,23 +792,58 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 		{
 			name: "Zero length within a step range from base extent - merged with base extent",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
-				mkExtentWithSamplesProcessed(201, 201, 1),
+				mkExtentWithSamplesProcessed(100, 200, 110),
+				mkExtentWithSamplesProcessed(210, 210, 10),
 			},
 			request: &PrometheusRangeQueryRequest{start: 100, end: 300, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 201, 101),
+				mkExtentWithSamplesProcessed(100, 210, 120),
 			},
 		},
 		{
-			name: "Extent with zero samples",
+			name: "Extent with uneven samples distribution",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(100, 200, 100),
-				mkExtentWithSamplesProcessed(150, 250, 0),
+				mkExtentWithSamplesProcessed(100, 140, 50),
+				mkExtentWithSamplesProcessed(150, 170, 60),
 			},
-			request: &PrometheusRangeQueryRequest{start: 100, end: 250, step: 10},
+			request: &PrometheusRangeQueryRequest{start: 100, end: 170, step: 10},
 			expectedExtents: []Extent{
-				mkExtentWithSamplesProcessed(100, 250, 100),
+				mkExtentWithStepPerStepSamplesProcessedStats(100, 170, 10,
+					[]StepStat{
+						{
+							Timestamp: 100,
+							Value:     10,
+						},
+						{
+							Timestamp: 110,
+							Value:     10,
+						},
+						{
+							Timestamp: 120,
+							Value:     10,
+						},
+						{
+							Timestamp: 130,
+							Value:     10,
+						},
+						{
+							Timestamp: 140,
+							Value:     10,
+						},
+						{
+							Timestamp: 150,
+							Value:     20,
+						},
+						{
+							Timestamp: 160,
+							Value:     20,
+						},
+						{
+							Timestamp: 170,
+							Value:     20,
+						},
+					},
+				),
 			},
 		},
 	}
@@ -809,53 +857,55 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 			for i, expected := range tc.expectedExtents {
 				assert.Equal(t, expected.Start, result[i].Start, "extent %d start: got %d, want %d", i, result[i].Start, expected.Start)
 				assert.Equal(t, expected.End, result[i].End, "extent %d end: got %d, want %d", i, result[i].End, expected.End)
-				assert.Equal(t, expected.SamplesProcessed, result[i].SamplesProcessed,
-					"extent %d samples processed: got %d, want %d", i, result[i].SamplesProcessed, expected.SamplesProcessed)
+
+				// Calculate total samples from per-step stats
+				expectedTotal := sumSamplesProcessed(expected)
+				resultTotal := sumSamplesProcessed(result[i])
+
+				assert.Equal(t, expectedTotal, resultTotal,
+					"extent %d total samples processed: got %d, want %d", i, resultTotal, expectedTotal)
 			}
 		})
 	}
 }
 
-func toMs(t time.Duration) int64 {
-	return int64(t / time.Millisecond)
-}
-
 func TestFilterRecentCacheExtents(t *testing.T) {
 	now := time.Now()
 	step := int64(10)
-	maxFreshness := time.Hour
+	maxFreshness := time.Minute * 30
 
 	tests := []struct {
 		name    string
 		extents []Extent
-		// Test behavior of truncation, not the exact time range to not to mess with the mocking time
+		// Test behavior of truncation, not the exact time range to not to mess with the time mocking
 		shouldTruncate  []bool
 		expectedSamples []uint64
 	}{
 		{
 			name: "Half of the extent overlaps with max freshness period - truncated",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 100),
+				// 1 hour = 3,600,000 milliseconds
+				mkExtentWithSamplesProcessedAndStep(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 36000, 1000),
 			},
 			shouldTruncate:  []bool{true},
-			expectedSamples: []uint64{50},
+			expectedSamples: []uint64{18000},
 		},
 		{
 			name: "Extent doesn't overlap with max freshness period - unchanged",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 100),
+				mkExtentWithSamplesProcessedAndStep(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 36000, 1000),
 			},
 			shouldTruncate:  []bool{false},
-			expectedSamples: []uint64{100},
+			expectedSamples: []uint64{36000},
 		},
 		{
 			name: "Two extents, one overlapping with max freshness period - one extent truncated",
 			extents: []Extent{
-				mkExtentWithSamplesProcessed(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 100),
-				mkExtentWithSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 100),
+				mkExtentWithSamplesProcessedAndStep(now.Add(-3*time.Hour).UnixMilli(), now.Add(-2*time.Hour).UnixMilli(), 36000, 1000),
+				mkExtentWithSamplesProcessedAndStep(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 72000, 1000),
 			},
 			shouldTruncate:  []bool{false, true},
-			expectedSamples: []uint64{100, 50},
+			expectedSamples: []uint64{36000, 54000},
 		},
 	}
 
@@ -884,10 +934,98 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				} else {
 					assert.Equal(t, originalEnds[i], result[i].End, "Extent %d should not be truncated", i)
 				}
-				assert.Equal(t, tc.expectedSamples[i], result[i].SamplesProcessed,
+
+				// Calculate total samples from per-step stats
+				totalSamples := sumSamplesProcessed(result[i])
+
+				assert.Equal(t, tc.expectedSamples[i], totalSamples,
 					"Expected %d samples processed but got %d",
-					tc.expectedSamples[i], result[i].SamplesProcessed)
+					tc.expectedSamples[i], totalSamples)
 			}
 		})
 	}
+}
+
+func TestApproximateSamplesProcessedPerStep(t *testing.T) {
+	testCases := []struct {
+		name             string
+		start            int64
+		end              int64
+		step             int64
+		samplesProcessed uint64
+		expectedSteps    int
+		expectedPerStep  int64
+	}{
+		{
+			name:             "Simple even distribution",
+			start:            100,
+			end:              200,
+			step:             10,
+			samplesProcessed: 110,
+			expectedSteps:    11,
+			expectedPerStep:  10,
+		},
+		{
+			name:             "Single step",
+			start:            100,
+			end:              100,
+			step:             10,
+			samplesProcessed: 50,
+			expectedSteps:    1,
+			expectedPerStep:  50,
+		},
+		{
+			name:             "Zero samples processed",
+			start:            100,
+			end:              150,
+			step:             10,
+			samplesProcessed: 0,
+			expectedSteps:    6,
+			expectedPerStep:  0,
+		},
+		{
+			name:             "Uneven division of samples",
+			start:            100,
+			end:              200,
+			step:             10,
+			samplesProcessed: 103,
+			expectedSteps:    11,
+			expectedPerStep:  10, // Ceiling of 103/11 = 9.36... → 10
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := approximateSamplesProcessedPerStep(tc.start, tc.end, tc.step, tc.samplesProcessed)
+
+			// Check number of steps
+			assert.Equal(t, tc.expectedSteps, len(result),
+				"Expected %d steps but got %d", tc.expectedSteps, len(result))
+
+			// Check per-step value
+			for i, step := range result {
+				assert.Equal(t, tc.expectedPerStep, step.Value,
+					"Step %d has incorrect value: expected %d but got %d",
+					i, tc.expectedPerStep, step.Value)
+
+				// Check timestamp calculation
+				expectedTimestamp := tc.start + int64(i)*tc.step
+				assert.Equal(t, expectedTimestamp, step.Timestamp,
+					"Step %d has incorrect timestamp: expected %d but got %d",
+					i, expectedTimestamp, step.Timestamp)
+			}
+		})
+	}
+}
+
+func sumSamplesProcessed(extent Extent) uint64 {
+	var total uint64
+	for _, step := range extent.SamplesProcessedPerStep {
+		total += uint64(step.Value)
+	}
+	return total
+}
+
+func toMs(t time.Duration) int64 {
+	return int64(t / time.Millisecond)
 }

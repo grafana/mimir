@@ -149,23 +149,6 @@ func TestStats_SamplesProcessed(t *testing.T) {
 	})
 }
 
-func TestStats_SamplesProcessedFromCache(t *testing.T) {
-	t.Run("add and load samples processed from cache", func(t *testing.T) {
-		stats, _ := ContextWithEmptyStats(context.Background())
-		stats.AddSamplesProcessedFromCache(5)
-		stats.AddSamplesProcessedFromCache(15)
-
-		assert.Equal(t, uint64(20), stats.LoadSamplesProcessedFromCache())
-	})
-
-	t.Run("add and load samples processed from cache nil receiver", func(t *testing.T) {
-		var stats *Stats
-		stats.AddSamplesProcessedFromCache(5)
-
-		assert.Equal(t, uint64(0), stats.LoadSamplesProcessedFromCache())
-	})
-}
-
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
 		stats1 := &Stats{}
@@ -177,7 +160,6 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddSplitQueries(10)
 		stats1.AddQueueTime(5 * time.Second)
 		stats1.AddSamplesProcessed(10)
-		stats1.AddSamplesProcessedFromCache(5)
 
 		stats2 := &Stats{}
 		stats2.AddWallTime(time.Second)
@@ -188,7 +170,6 @@ func TestStats_Merge(t *testing.T) {
 		stats2.AddSplitQueries(11)
 		stats2.AddQueueTime(10 * time.Second)
 		stats2.AddSamplesProcessed(20)
-		stats2.AddSamplesProcessedFromCache(10)
 
 		stats1.Merge(stats2)
 
@@ -200,7 +181,7 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(21), stats1.LoadSplitQueries())
 		assert.Equal(t, 15*time.Second, stats1.LoadQueueTime())
 		assert.Equal(t, uint64(30), stats1.LoadSamplesProcessed())
-		assert.Equal(t, uint64(15), stats1.LoadSamplesProcessedFromCache())
+
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -217,23 +198,22 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(0), stats1.LoadSplitQueries())
 		assert.Equal(t, time.Duration(0), stats1.LoadQueueTime())
 		assert.Equal(t, uint64(0), stats1.LoadSamplesProcessed())
-		assert.Equal(t, uint64(0), stats1.LoadSamplesProcessedFromCache())
+
 	})
 }
 
 func TestStats_Copy(t *testing.T) {
 	s1 := &Stats{
-		WallTime:                  1,
-		FetchedSeriesCount:        2,
-		FetchedChunkBytes:         3,
-		FetchedChunksCount:        4,
-		ShardedQueries:            5,
-		SplitQueries:              6,
-		FetchedIndexBytes:         7,
-		EstimatedSeriesCount:      8,
-		QueueTime:                 9,
-		SamplesProcessed:          10,
-		SamplesProcessedFromCache: 11,
+		WallTime:             1,
+		FetchedSeriesCount:   2,
+		FetchedChunkBytes:    3,
+		FetchedChunksCount:   4,
+		ShardedQueries:       5,
+		SplitQueries:         6,
+		FetchedIndexBytes:    7,
+		EstimatedSeriesCount: 8,
+		QueueTime:            9,
+		SamplesProcessed:     10,
 	}
 	s2 := s1.Copy()
 	assert.NotSame(t, s1, s2)

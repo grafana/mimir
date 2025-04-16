@@ -340,7 +340,6 @@ func (f *Handler) reportQueryStats(
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
-	samplesProcessedCacheAdjusted := samplesProcessed + stats.LoadSamplesProcessedFromCache()
 
 	if stats != nil {
 		// Track stats.
@@ -350,7 +349,6 @@ func (f *Handler) reportQueryStats(
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
-		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
@@ -391,10 +389,13 @@ func (f *Handler) reportQueryStats(
 		if !details.MaxT.IsZero() {
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
+		samplesProcessedCacheAdjusted := samplesProcessed + details.SamplesProcessedFromCache
 		logMessage = append(logMessage,
 			resultsCacheHitBytes, details.ResultsCacheHitBytes,
 			resultsCacheMissBytes, details.ResultsCacheMissBytes,
+			"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 		)
+		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log the read consistency only when explicitly defined.
