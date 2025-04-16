@@ -47,7 +47,7 @@ type pusherConsumer struct {
 
 // newPusherConsumer creates a new pusherConsumer instance.
 func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsumerMetrics, logger log.Logger) *pusherConsumer {
-	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
+	// The layer below (ParallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
 	return &pusherConsumer{
@@ -158,7 +158,7 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 		return newSequentialStoragePusher(c.metrics.storagePusherMetrics, c.pusher, c.kafkaConfig.FallbackClientErrorSampleRate, c.logger)
 	}
 
-	return newParallelStoragePusher(
+	return NewParallelStoragePusher(
 		c.metrics.storagePusherMetrics,
 		c.pusher,
 		bytesPerTenant,
@@ -186,14 +186,14 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 
 // sequentialStoragePusher receives mimirpb.WriteRequest which are then pushed to the storage one by one.
 type sequentialStoragePusher struct {
-	metrics      *storagePusherMetrics
+	metrics      *StoragePusherMetrics
 	errorHandler *pushErrorHandler
 
 	pusher Pusher
 }
 
 // newSequentialStoragePusher creates a new sequentialStoragePusher instance.
-func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sampleRate int64, logger log.Logger) sequentialStoragePusher {
+func newSequentialStoragePusher(metrics *StoragePusherMetrics, pusher Pusher, sampleRate int64, logger log.Logger) sequentialStoragePusher {
 	return sequentialStoragePusher{
 		metrics:      metrics,
 		pusher:       pusher,
@@ -201,7 +201,7 @@ func newSequentialStoragePusher(metrics *storagePusherMetrics, pusher Pusher, sa
 	}
 }
 
-func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, pusher Pusher, errorHandler *pushErrorHandler) sequentialStoragePusher {
+func newSequentialStoragePusherWithErrorHandler(metrics *StoragePusherMetrics, pusher Pusher, errorHandler *pushErrorHandler) sequentialStoragePusher {
 	return sequentialStoragePusher{
 		metrics:      metrics,
 		pusher:       pusher,
@@ -228,10 +228,10 @@ func (ssp sequentialStoragePusher) Close() []error {
 	return nil
 }
 
-// parallelStoragePusher receives WriteRequest which are then pushed to the storage in parallel.
+// ParallelStoragePusher receives WriteRequest which are then pushed to the storage in parallel.
 // The parallelism is two-tiered which means that we first parallelize by tenantID and then by series.
-type parallelStoragePusher struct {
-	metrics *storagePusherMetrics
+type ParallelStoragePusher struct {
+	metrics *StoragePusherMetrics
 	logger  log.Logger
 
 	// pushers is map["$tenant|$source"]*parallelStorageShards
@@ -249,9 +249,9 @@ type parallelStoragePusher struct {
 	numActiveShards int
 }
 
-// newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
-	return &parallelStoragePusher{
+// NewParallelStoragePusher creates a new ParallelStoragePusher instance.
+func NewParallelStoragePusher(metrics *StoragePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *ParallelStoragePusher {
+	return &ParallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
 		pushers:        make(map[string]PusherCloser),
 		upstreamPusher: pusher,
@@ -267,7 +267,7 @@ func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, byte
 }
 
 // PushToStorage implements the PusherCloser interface.
-func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+func (c *ParallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
@@ -278,7 +278,7 @@ func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.W
 }
 
 // Close implements the PusherCloser interface.
-func (c *parallelStoragePusher) Close() []error {
+func (c *ParallelStoragePusher) Close() []error {
 	var errs multierror.MultiError
 	for _, p := range c.pushers {
 		errs = append(errs, p.Close()...)
@@ -291,7 +291,7 @@ func (c *parallelStoragePusher) Close() []error {
 
 // shardsFor returns the parallelStorageShards for the given userID. Once created the same shards are re-used for the same userID.
 // We create a shard for each tenantID to parallelize the writes.
-func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
+func (c *ParallelStoragePusher) shardsFor(userID string, requestSource mimirpb.WriteRequest_SourceEnum) PusherCloser {
 	// Construct the string inline so that it doesn't escape to the heap. Go doesn't escape strings that are used to only look up map keys.
 	// We can use "|" because that cannot be part of a tenantID in Mimir.
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
@@ -317,7 +317,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 }
 
 // idealShardsFor returns the number of shards that should be used for the given userID.
-func (c *parallelStoragePusher) idealShardsFor(userID string) int {
+func (c *ParallelStoragePusher) idealShardsFor(userID string) int {
 	// First, determine the number of timeseries we expect to receive based on the bytes of WriteRequest's we received.
 	expectedTimeseries := c.bytesPerTenant[userID] / c.bytesPerSample
 
@@ -339,7 +339,7 @@ type labelsHashFunc func(labels.Labels) uint64
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
 type parallelStorageShards struct {
-	metrics      *storagePusherMetrics
+	metrics      *StoragePusherMetrics
 	errorHandler *pushErrorHandler
 
 	pusher     Pusher
@@ -361,7 +361,7 @@ type flushableWriteRequest struct {
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
+func newParallelStorageShards(metrics *StoragePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
 	p := &parallelStorageShards{
 		numShards:    numShards,
 		pusher:       pusher,
@@ -478,13 +478,13 @@ func requestContents(request *mimirpb.WriteRequest) string {
 // pushErrorHandler filters out client errors and logs them.
 // It only returns errors that are not client errors.
 type pushErrorHandler struct {
-	metrics          *storagePusherMetrics
+	metrics          *StoragePusherMetrics
 	clientErrSampler *util_log.Sampler
 	fallbackLogger   log.Logger
 }
 
 // newPushErrorHandler creates a new pushErrorHandler instance.
-func newPushErrorHandler(metrics *storagePusherMetrics, clientErrSampler *util_log.Sampler, fallbackLogger log.Logger) *pushErrorHandler {
+func newPushErrorHandler(metrics *StoragePusherMetrics, clientErrSampler *util_log.Sampler, fallbackLogger log.Logger) *pushErrorHandler {
 	return &pushErrorHandler{
 		metrics:          metrics,
 		clientErrSampler: clientErrSampler,

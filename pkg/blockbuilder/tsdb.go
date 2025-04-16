@@ -5,6 +5,9 @@ package blockbuilder
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -39,6 +41,8 @@ type TSDBBuilder struct {
 	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
 	metrics                          tsdbBuilderMetrics
 	applyMaxGlobalSeriesPerUserBelow int // inclusive
+
+	pusher ingest.Pusher
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -78,8 +82,6 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 // blockMax: max time of the block in the current block building cycle. This blockMax is exclusive of the last sample by design in TSDB.
 // recordAlreadyProcessed: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
 func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed, processEverything bool) (_ bool, err error) {
-	userID := string(rec.Key)
-
 	req := mimirpb.PreallocWriteRequest{
 		SkipUnmarshalingExemplars: true,
 	}
@@ -95,13 +97,34 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		return true, nil
 	}
 
+	userCtx := user.InjectOrgID(ctx, string(rec.Key))
+
+	return true, b.PushToStorage(userCtx, rec.Partition, &req.WriteRequest)
+}
+
+// Process puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
+// It returns false if at least one sample was skipped to process later, true otherwise. true also includes the cases
+// where the sample was not put in the TSDB because it was discarded or was already processed before.
+// lastBlockMax: max time of the block in the previous block building cycle.
+// blockMax: max time of the block in the current block building cycle. This blockMax is exclusive of the last sample by design in TSDB.
+// recordAlreadyProcessed: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
+func (b *TSDBBuilder) PushToStorage(ctx context.Context, partition int32, req *mimirpb.WriteRequest) error {
+	userID, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return fmt.Errorf("extract user id from context: %w", err)
+	}
+
+	if len(req.Timeseries) == 0 {
+		return nil
+	}
+
 	tenant := tsdbTenant{
-		partitionID: rec.Partition,
+		partitionID: partition,
 		tenantID:    userID,
 	}
 	db, err := b.getOrCreateTSDB(tenant)
 	if err != nil {
-		return false, fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
+		return fmt.Errorf("get tsdb for tenant %s: %w", userID, err)
 	}
 
 	app := db.Appender(ctx).(extendedAppender)
@@ -116,11 +139,9 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 	}()
 
 	var (
-		labelsBuilder   labels.ScratchBuilder
-		nonCopiedLabels labels.Labels
-
-		allSamplesProcessed = true
-		discardedSamples    = 0
+		labelsBuilder    labels.ScratchBuilder
+		nonCopiedLabels  labels.Labels
+		discardedSamples = 0
 
 		nativeHistogramsIngestionEnabled = b.limits.NativeHistogramsIngestionEnabled(userID)
 	)
@@ -132,15 +153,6 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		for _, s := range ts.Samples {
-			if !processEverything && s.TimestampMs >= blockMax {
-				// We will process this sample in the next cycle.
-				allSamplesProcessed = false
-				continue
-			}
-			if !processEverything && recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
-				// This sample was already processed in the previous cycle.
-				continue
-			}
 			if ref != 0 {
 				// If the cached reference exists, we try to use it.
 				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -158,7 +170,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			if err != nil {
 				// Only abort the processing on a terminal error.
 				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
-					return false, err
+					return err
 				}
 				discardedSamples++
 			}
@@ -169,15 +181,6 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 
 		for _, h := range ts.Histograms {
-			if !processEverything && h.Timestamp >= blockMax {
-				// We will process this sample in the next cycle.
-				allSamplesProcessed = false
-				continue
-			}
-			if !processEverything && recordAlreadyProcessed && h.Timestamp < lastBlockMax {
-				// This sample was already processed in the previous cycle.
-				continue
-			}
 			var (
 				ih *histogram.Histogram
 				fh *histogram.FloatHistogram
@@ -206,7 +209,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 			if err != nil {
 				// Only abort the processing on a terminal error.
 				if !softErrProcessor.ProcessErr(err, 0, nil) && !errors.Is(err, errMaxInMemorySeriesReached) {
-					return false, err
+					return err
 				}
 				discardedSamples++
 			}
@@ -220,7 +223,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		b.metrics.processSamplesDiscarded.WithLabelValues(partitionStr).Add(float64(discardedSamples))
 	}
 
-	return allSamplesProcessed, app.Commit()
+	return app.Commit()
 }
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {

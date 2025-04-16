@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"os"
 	"path"
 	"time"
@@ -55,8 +57,9 @@ type BlockBuilder struct {
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
 	fallbackOffsetMillis int64
 
-	blockBuilderMetrics blockBuilderMetrics
-	tsdbBuilderMetrics  tsdbBuilderMetrics
+	blockBuilderMetrics   blockBuilderMetrics
+	tsdbBuilderMetrics    tsdbBuilderMetrics
+	parallelPusherMetrics *ingest.StoragePusherMetrics
 }
 
 func New(
@@ -78,12 +81,13 @@ func newWithSchedulerClient(
 ) (*BlockBuilder, error) {
 
 	b := &BlockBuilder{
-		cfg:                 cfg,
-		logger:              logger,
-		register:            reg,
-		limits:              limits,
-		blockBuilderMetrics: newBlockBuilderMetrics(reg),
-		tsdbBuilderMetrics:  newTSDBBBuilderMetrics(reg),
+		cfg:                   cfg,
+		logger:                logger,
+		register:              reg,
+		limits:                limits,
+		blockBuilderMetrics:   newBlockBuilderMetrics(reg),
+		tsdbBuilderMetrics:    newTSDBBBuilderMetrics(reg),
+		parallelPusherMetrics: ingest.NewStoragePusherMetrics(reg),
 	}
 
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
@@ -545,25 +549,67 @@ func (b *BlockBuilder) consumePartitionSection(
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
+	b.kafkaClient.ForceMetadataRefresh()
+
 	level.Info(logger).Log("msg", "start consuming")
 
 	var (
-		firstRec  *kgo.Record
-		lastRec   *kgo.Record
-		commitRec *kgo.Record
+		firstRec *kgo.Record
+		lastRec  *kgo.Record
 	)
 
-consumerLoop:
-	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
+	fetcher, err := ingest.NewConcurrentFetchers(
+		ctx,
+		b.kafkaClient,
+		logger,
+		state.Commit.Topic,
+		state.Commit.Partition,
+		state.Commit.At,
+		b.cfg.ConcurrentFetcherConcurrency,
+		100_000_000,
+		false,
+		5*time.Second,
+		nil,
+		ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+		backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: 1 * time.Second,
+		},
+		nil)
+	if err != nil {
+		return state, err
+	}
+
+	fetcher.Start(ctx)
+
+	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprintf("%d", partition))
+	metricUpdatePending := 0
+
+	pusher := partitionPusher{
+		partition: partition,
+		builder:   builder,
+	}
+
+	type record struct {
+		userID string
+		req    *mimirpb.WriteRequest
+	}
+
+	done := false
+
+	var records []*kgo.Record
+
+	//consumerLoop:
+	for recOffset := int64(-1); !done && recOffset < cycleEndOffset-1; {
 		if err := context.Cause(ctx); err != nil {
-			return PartitionState{}, err
+			return state, err
 		}
 
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
+		fetches, _ := fetcher.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
@@ -571,9 +617,12 @@ consumerLoop:
 			}
 		})
 
+		var bytesPerTenant = make(map[string]int)
+
 		for recIter := fetches.RecordIter(); !recIter.Done(); {
 			rec := recIter.Next()
 			recOffset = rec.Offset
+			bytesPerTenant[string(rec.Key)] += len(rec.Value)
 
 			if firstRec == nil {
 				firstRec = rec
@@ -582,39 +631,71 @@ consumerLoop:
 			// Stop consuming after we reached the sectionEndTime marker.
 			// NOTE: the timestamp of the record is when the record was produced relative to distributor's time.
 			if rec.Timestamp.After(sectionEndTime) {
-				break consumerLoop
+				done = true
+				break
+				//break consumerLoop
 			}
 
-			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
-			allSamplesProcessed, err := builder.Process(
-				ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(),
-				recordAlreadyProcessed, b.cfg.NoPartiallyConsumedRegion)
-			if err != nil {
-				// All "non-terminal" errors are handled by the TSDBBuilder.
-				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
-			}
-			if !allSamplesProcessed {
-				if lastRec == nil {
-					// The first record was not fully processed, meaning the record before this is the commit point.
-					// We hand-craft the commitRec from the data in the state to re-commit it. On commit the commit's meta is updated
-					// with the new value of LastSeenOffset. This is so the next cycle handled partially processed record properly.
-					commitRec = &kgo.Record{
-						Topic:     state.Commit.Topic,
-						Partition: state.Commit.Partition,
-						// This offset points at the previous commit's offset-1, meaning on commit, we will store the offset-1+1 (minus-one-plus-one),
-						// which is the offset of the previous commit itself (details https://github.com/grafana/mimir/pull/9199#discussion_r1772979364).
-						Offset:      state.Commit.At - 1,
-						Timestamp:   state.CommitRecordTimestamp,
-						LeaderEpoch: state.Commit.LeaderEpoch,
-					}
-				} else if commitRec == nil {
-					// The commit offset should be the last record that was fully processed and not the first record that was not fully processed.
-					commitRec = lastRec
-				}
-			}
+			records = append(records, rec)
 			lastRec = rec
 		}
+
+		var goruErr error
+		recC := make(chan record)
+		go func() {
+			defer func() {
+				close(recC)
+			}()
+
+			for _, rec := range records {
+				req := mimirpb.PreallocWriteRequest{
+					SkipUnmarshalingExemplars: true,
+				}
+				err = req.Unmarshal(rec.Value)
+				if err != nil {
+					mimirpb.ReuseSlice(req.Timeseries)
+					goruErr = fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
+					return
+				}
+
+				recC <- record{
+					userID: string(rec.Key),
+					req:    &req.WriteRequest,
+				}
+			}
+		}()
+
+		parallelPusher := ingest.NewParallelStoragePusher(
+			b.parallelPusherMetrics, &pusher, bytesPerTenant,
+			10, 8, 150, 3, 500, 40, logger)
+
+		for rec := range recC {
+			if metricUpdatePending > 100 {
+				consumeMetric.Add(float64(metricUpdatePending))
+				metricUpdatePending = 0
+			}
+			metricUpdatePending++
+			userCtx := user.InjectOrgID(ctx, rec.userID)
+			err = parallelPusher.PushToStorage(userCtx, rec.req)
+			mimirpb.ReuseSlice(rec.req.Timeseries)
+			if err != nil {
+				for range recC {
+					// Drain the channel.
+				}
+				// All "non-terminal" errors are handled by the TSDBBuilder.
+				return state, err
+			}
+		}
+
+		if goruErr != nil {
+			return state, goruErr
+		}
 	}
+
+	fetcher.Stop()
+
+	consumeMetric.Add(float64(metricUpdatePending))
+	metricUpdatePending = 0
 
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
@@ -629,11 +710,8 @@ consumerLoop:
 	}
 
 	// All samples in all records were processed. We can commit the last record's offset.
-	if commitRec == nil {
-		commitRec = lastRec
-	}
+	commitRec := lastRec
 
-	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return state, err
@@ -670,6 +748,15 @@ consumerLoop:
 	}
 
 	return newState, nil
+}
+
+type partitionPusher struct {
+	partition int32
+	builder   *TSDBBuilder
+}
+
+func (p *partitionPusher) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+	return p.builder.PushToStorage(ctx, p.partition, req)
 }
 
 // consumePartitionSectionPullMode is for the use of scheduler based architecture.
