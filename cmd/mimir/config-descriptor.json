@@ -7528,6 +7528,28 @@
             },
             {
               "kind": "field",
+              "name": "producer_supported_record_version",
+              "required": false,
+              "desc": "The record version preferred by this producer.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-supported-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_supported_record_version",
+              "required": false,
+              "desc": "The highest supported record version understood by this consumer. Versions lower than this value are also assumed to be supported. For example, a consumer supporting v2 is assumed to support record format v1, but not v3.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingest-storage.kafka.consumer-supported-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "fetch_max_wait",
               "required": false,
               "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",

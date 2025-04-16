@@ -4156,6 +4156,17 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
+  # (experimental) The record version preferred by this producer.
+  # CLI flag: -ingest-storage.kafka.producer-supported-record-version
+  [producer_supported_record_version: <int> | default = 0]
+
+  # (experimental) The highest supported record version understood by this
+  # consumer. Versions lower than this value are also assumed to be supported.
+  # For example, a consumer supporting v2 is assumed to support record format
+  # v1, but not v3.
+  # CLI flag: -ingest-storage.kafka.consumer-supported-record-version
+  [consumer_supported_record_version: <int> | default = 1]
+
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.
   # CLI flag: -ingest-storage.kafka.fetch-max-wait
