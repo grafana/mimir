@@ -40,6 +40,7 @@ var (
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
 	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
+	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 
@@ -227,6 +228,13 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.MaxConsumerLagAtStartup < cfg.TargetConsumerLagAtStartup {
 		return ErrInvalidMaxConsumerLagAtStartup
+	}
+
+	if err := validateRecordVersion(cfg.ProducerSupportedRecordVersion); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
+	}
+	if err := validateRecordVersion(cfg.ConsumerSupportedRecordVersion); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
 	}
 
 	if cfg.FetchMaxWait < 5*time.Second || cfg.FetchMaxWait > 30*time.Second {
