@@ -87,7 +87,7 @@ func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (
 		}
 
 		d := b.buffer.Get(nextSeriesIndex)
-		return b.cloneSeries(d)
+		return d.Clone(b.MemoryConsumptionTracker)
 	}
 
 	d, err := b.Inner.NextSeries(ctx)
@@ -101,7 +101,7 @@ func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (
 	}
 
 	b.buffer.Append(d, nextSeriesIndex)
-	return b.cloneSeries(d)
+	return d.Clone(b.MemoryConsumptionTracker)
 }
 
 func (b *DuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int) bool {
@@ -123,39 +123,6 @@ func (b *DuplicationBuffer) checkIfAllOtherConsumersAreAheadOf(consumerIndex int
 	}
 
 	return true
-}
-
-func (b *DuplicationBuffer) cloneSeries(original types.InstantVectorSeriesData) (types.InstantVectorSeriesData, error) {
-	clone := types.InstantVectorSeriesData{}
-
-	var err error
-	clone.Floats, err = types.FPointSlicePool.Get(len(original.Floats), b.MemoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	clone.Floats = clone.Floats[:len(original.Floats)]
-	copy(clone.Floats, original.Floats) // We can do a simple copy here, as FPoints don't contain pointers.
-
-	clone.Histograms, err = types.HPointSlicePool.Get(len(original.Histograms), b.MemoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	clone.Histograms = clone.Histograms[:len(original.Histograms)]
-
-	for i, p := range original.Histograms {
-		clone.Histograms[i].T = p.T
-
-		// Reuse existing FloatHistogram instance if we can.
-		if clone.Histograms[i].H == nil {
-			clone.Histograms[i].H = p.H.Copy()
-		} else {
-			p.H.CopyTo(clone.Histograms[i].H)
-		}
-	}
-
-	return clone, nil
 }
 
 func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
