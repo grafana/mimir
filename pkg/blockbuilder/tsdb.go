@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -39,6 +40,7 @@ type TSDBBuilder struct {
 	blocksStorageCfg                 mimir_tsdb.BlocksStorageConfig
 	metrics                          tsdbBuilderMetrics
 	applyMaxGlobalSeriesPerUserBelow int // inclusive
+	supportedRecordVersion           int
 
 	// Map of a tenant in a partition to its TSDB.
 	tsdbsMu sync.RWMutex
@@ -61,7 +63,7 @@ type tsdbTenant struct {
 	tenantID    string
 }
 
-func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int) *TSDBBuilder {
+func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, metrics tsdbBuilderMetrics, applyMaxGlobalSeriesPerUserBelow int, supportedRecordVersion int) *TSDBBuilder {
 	return &TSDBBuilder{
 		dataDir:                          dataDir,
 		logger:                           logger,
@@ -69,6 +71,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 		blocksStorageCfg:                 blocksStorageCfg,
 		metrics:                          metrics,
 		applyMaxGlobalSeriesPerUserBelow: applyMaxGlobalSeriesPerUserBelow,
+		supportedRecordVersion:           supportedRecordVersion,
 		tsdbs:                            make(map[tsdbTenant]*userTSDB),
 	}
 }
@@ -86,6 +89,11 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		SkipUnmarshalingExemplars: true,
 	}
 	defer mimirpb.ReuseSlice(req.Timeseries)
+
+	version := ingest.ParseRecordVersion(rec)
+	if version > b.supportedRecordVersion {
+		return false, fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, b.supportedRecordVersion)
+	}
 
 	// TODO(codesome): see if we can skip parsing exemplars. They are not persisted in the block so we can save some parsing here.
 	err = req.Unmarshal(rec.Value)
