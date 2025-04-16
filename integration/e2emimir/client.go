@@ -275,12 +275,16 @@ func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.Met
 		return nil, err
 	}
 
+	return c.PushOTLPPayload(data, "application/x-protobuf")
+}
+
+func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Response, error) {
 	// Create HTTP request
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(data))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
