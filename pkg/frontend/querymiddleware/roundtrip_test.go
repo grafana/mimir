@@ -625,6 +625,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 			exceptions: []string{
 				"splitInstantQueryByIntervalMiddleware",
 				"spinOffSubqueriesMiddleware", // This middleware is only for instant queries.
+				"queryLimiterMiddleware",      // This middleware is only for instant queries.
 			},
 		},
 		"remote read": {
@@ -640,6 +641,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
 				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
 				"spinOffSubqueriesMiddleware",           // This middleware is only for instant queries.
+				"queryLimiterMiddleware",                // This middleware is only for instant queries.
 			},
 		},
 	}
