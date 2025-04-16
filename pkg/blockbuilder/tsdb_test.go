@@ -27,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -159,7 +160,7 @@ func TestTSDBBuilder(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
 			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 
 			currEnd, lastEnd := tc.currEnd, tc.lastEnd
 			{ // Add float samples.
@@ -283,7 +284,7 @@ func TestTSDBBuilder(t *testing.T) {
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -381,7 +382,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 
 	// Has a timeseries with no samples.
 	var rec kgo.Record
@@ -412,6 +413,81 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].Close())
 }
 
+func TestTSDBBuilder_KafkaRecordVersion(t *testing.T) {
+	t.Run("record version header missing entirely", func(t *testing.T) {
+		userID := "1"
+		supportedRecordVersion := 2
+		processingRange := time.Hour.Milliseconds()
+		lastEnd := 2 * processingRange
+		currEnd := 3 * processingRange
+
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+		builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, supportedRecordVersion)
+		samples := floatSample(lastEnd+20, 1)
+		histograms := histogramSample(lastEnd + 40)
+
+		rec := &kgo.Record{
+			Key:   []byte(userID),
+			Value: createWriteRequest(t, "", samples, histograms),
+		}
+		success, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+
+		require.True(t, success)
+		require.NoError(t, err)
+	})
+
+	t.Run("record version supported", func(t *testing.T) {
+		userID := "1"
+		supportedRecordVersion := 2
+		attemptedRecordVersion := 2
+		processingRange := time.Hour.Milliseconds()
+		lastEnd := 2 * processingRange
+		currEnd := 3 * processingRange
+
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+		builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, supportedRecordVersion)
+		samples := floatSample(lastEnd+20, 1)
+		histograms := histogramSample(lastEnd + 40)
+
+		rec := &kgo.Record{
+			Key:     []byte(userID),
+			Value:   createWriteRequest(t, "", samples, histograms),
+			Headers: []kgo.RecordHeader{ingest.RecordVersionHeader(attemptedRecordVersion)},
+		}
+		success, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+
+		require.True(t, success)
+		require.NoError(t, err)
+	})
+
+	t.Run("record version unsupported", func(t *testing.T) {
+		userID := "1"
+		supportedRecordVersion := 2
+		attemptedRecordVersion := 101
+		processingRange := time.Hour.Milliseconds()
+		lastEnd := 2 * processingRange
+		currEnd := 3 * processingRange
+
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+		builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, supportedRecordVersion)
+		samples := floatSample(lastEnd+20, 1)
+		histograms := histogramSample(lastEnd + 40)
+
+		rec := &kgo.Record{
+			Key:     []byte(userID),
+			Value:   createWriteRequest(t, "", samples, histograms),
+			Headers: []kgo.RecordHeader{ingest.RecordVersionHeader(attemptedRecordVersion)},
+		}
+		success, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+
+		require.False(t, success)
+		require.ErrorContains(t, err, fmt.Sprintf("unsupported version: %d, max supported version: %d", attemptedRecordVersion, supportedRecordVersion))
+	})
+}
+
 // TestTSDBBuilderLimits tests the correct enforcements of series limits and also
 // that series limit error does not cause the processing to fail (i.e. do not error out).
 func TestTSDBBuilderLimits(t *testing.T) {
@@ -435,7 +511,7 @@ func TestTSDBBuilderLimits(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder, 0)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})
@@ -503,7 +579,7 @@ func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0, 0)
 	t.Cleanup(func() {
 		require.NoError(t, builder.Close())
 	})

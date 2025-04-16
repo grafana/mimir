@@ -234,7 +234,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
 
-	builder := NewTSDBBuilder(logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
+	builder := NewTSDBBuilder(logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow, b.cfg.Kafka.ConsumerSupportedRecordVersion)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
 	return b.consumePartitionSectionPullMode(ctx, logger, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
@@ -437,7 +437,7 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 
 	logger = log.With(sp, "partition", partition, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset)
 
-	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
+	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow, b.cfg.Kafka.ConsumerSupportedRecordVersion)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
 	// Section is a portion of the partition to process in a single pass. One cycle may process multiple sections if the partition is lagging.
