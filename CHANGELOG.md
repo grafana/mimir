@@ -44,7 +44,8 @@
 * [BUGFIX] Query-frontend: Fix blocks retention period enforcement when a request has multiple tenants (tenant federation). #11069
 * [BUGFIX] Query-frontend: Fix `-query-frontend.query-sharding-max-sharded-queries` enforcement for instant queries with binary operators. #11086
 * [BUGFIX] Memberlist: Fix hash ring updates before the full-join has been completed, when `-memberlist.notify-interval` is configured. #11098
-  [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
+* [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
+* [BUGFIX] Ingester: read reactive limiters should activate and deactivate when the ingester changes state. #11234
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
 
 ### Mixin

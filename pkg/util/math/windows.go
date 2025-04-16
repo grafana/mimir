@@ -70,14 +70,27 @@ func (r *RollingSum) CalculateCV() (cv, mean, variance float64) {
 	return cv, mean, variance
 }
 
+// Reset resets the sum to its initial state.
+func (r *RollingSum) Reset() {
+	for i := range r.samples {
+		r.samples[i] = 0
+	}
+	r.size = 0
+	r.index = 0
+	r.sumY = 0
+	r.sumSquares = 0
+}
+
 // CorrelationWindow can be used to compute correlation for sets of values over a rolling window.
 //
 // This type is not concurrency safe.
 type CorrelationWindow struct {
 	warmupSamples uint8
-	xSamples      *RollingSum
-	ySamples      *RollingSum
-	corrSumXY     float64
+
+	// Mutable state
+	xSamples  *RollingSum
+	ySamples  *RollingSum
+	corrSumXY float64
 }
 
 func NewCorrelationWindow(capacity uint, warmupSamples uint8) *CorrelationWindow {
@@ -129,4 +142,11 @@ func (w *CorrelationWindow) Add(x, y float64) (correlation, cvX, cvY float64) {
 	correlation = covariance / (math.Sqrt(varX) * math.Sqrt(varY))
 
 	return correlation, cvX, cvY
+}
+
+// Reset resets the window to its initial state.
+func (w *CorrelationWindow) Reset() {
+	w.xSamples.Reset()
+	w.ySamples.Reset()
+	w.corrSumXY = 0
 }
