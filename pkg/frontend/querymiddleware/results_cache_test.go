@@ -122,17 +122,20 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 		End:              end,
 		Response:         marshalled,
 		QueryTimestampMs: queryTime,
+		// mkExtentWithStepAndQueryTime used in tests which don't care about samples processed per step.
+		// If it's important, use mkExtentWithEvenPerStepSamplesProcessed instead.
+		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 0),
 	}
 }
 
-// func mkExtentWithSamplesProcessedAndStep(start, end int64, samplesProcessed uint64, step int64) Extent {
-// 	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
-// 	ext.SamplesProcessedPerStep = approximateSamplesProcessedPerStep(start, end, step, samplesProcessed)
-// 	return ext
-// }
-
 // mkExtentWithEvenPerStepSamplesProcessed creates an extent with an even distribution of samplesPerStep.
 func mkExtentWithEvenPerStepSamplesProcessed(start, end int64, step int64, samplesPerStep int64) Extent {
+	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
+	ext.SamplesProcessedPerStep = mxEvenlyDistributedExtentPerStepStats(start, end, step, samplesPerStep)
+	return ext
+}
+
+func mxEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []StepStat {
 	numSteps := int((end-start)/step) + 1
 	stats := make([]StepStat, numSteps)
 	for i := 0; i < numSteps; i++ {
@@ -141,9 +144,7 @@ func mkExtentWithEvenPerStepSamplesProcessed(start, end int64, step int64, sampl
 			Value:     samplesPerStep,
 		}
 	}
-	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
-	ext.SamplesProcessedPerStep = stats
-	return ext
+	return stats
 }
 
 func TestIsRequestCachable(t *testing.T) {
