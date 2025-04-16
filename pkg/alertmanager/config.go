@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/go-kit/log/level"
@@ -39,22 +40,26 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 		amCfg.AlertmanagerConfig.Global = cfg.Global
 	}
 
-	// Check for duplicate receiver names.
-	nameToReceiver := make(map[string]*definition.PostableApiReceiver, len(amCfg.AlertmanagerConfig.Receivers))
-	for _, receiver := range amCfg.AlertmanagerConfig.Receivers {
-		if existing, ok := nameToReceiver[receiver.Name]; ok {
-			itypes := make([]string, 0, len(existing.GrafanaManagedReceivers))
-			for _, i := range existing.GrafanaManagedReceivers {
-				itypes = append(itypes, i.Type)
+	// We want to:
+	// 1. Remove duplicate receivers and keep the last receiver occurrence if there are conflicts. This is based on the upstream implementation.
+	// 2. Maintain a consistent ordering and preferably original ordering. Otherwise, change detection will be impacted.
+	rcvs := make([]*definition.PostableApiReceiver, 0, len(amCfg.AlertmanagerConfig.Receivers))
+	nameToReceiver := make(map[string]struct{}, len(amCfg.AlertmanagerConfig.Receivers))
+	// Iterate in reverse to more easily keep the last receiver.
+	for i := len(amCfg.AlertmanagerConfig.Receivers) - 1; i >= 0; i-- {
+		receiver := amCfg.AlertmanagerConfig.Receivers[i]
+		if _, ok := nameToReceiver[receiver.Name]; ok {
+			itypes := make([]string, 0, len(receiver.GrafanaManagedReceivers))
+			for _, integration := range receiver.GrafanaManagedReceivers {
+				itypes = append(itypes, integration.Type)
 			}
-			level.Debug(am.logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", receiver.Name, "overwritten_integrations", strings.Join(itypes, ","))
+			level.Debug(am.logger).Log("msg", "receiver with same name is defined multiple times, skipping", "receiver_name", receiver.Name, "skipped_integrations", strings.Join(itypes, ","))
+			continue // Skip this receiver. Since we're iterating in reverse, this is not the last one.
 		}
-		nameToReceiver[receiver.Name] = receiver
+		rcvs = append(rcvs, receiver) // Insert in reverse order.
+		nameToReceiver[receiver.Name] = struct{}{}
 	}
-	rcvs := make([]*definition.PostableApiReceiver, 0, len(nameToReceiver))
-	for _, rcv := range nameToReceiver {
-		rcvs = append(rcvs, rcv)
-	}
+	slices.Reverse(rcvs) // Reverse the result slice to restore input order.
 	amCfg.AlertmanagerConfig.Receivers = rcvs
 
 	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
