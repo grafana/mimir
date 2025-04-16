@@ -4,13 +4,13 @@ package querymiddleware
 
 import (
 	"context"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
