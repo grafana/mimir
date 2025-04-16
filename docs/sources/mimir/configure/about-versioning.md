@@ -110,6 +110,8 @@ The following features are currently experimental:
     - `-distributor.ha-tracker.kvstore.store`
   - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
     - `-distributor.otel-keep-identifying-resource-attributes`
+  - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
+    - `-distributor.otel-convert-histograms-to-nhcb`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
