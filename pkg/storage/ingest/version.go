@@ -4,8 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const RecordVersionHeaderKey = "X-Record-Version"
