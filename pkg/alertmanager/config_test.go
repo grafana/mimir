@@ -14,7 +14,57 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-const grafanaConfigWithDuplicateReceiverName = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"test-receiver","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"test-receiver","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"test-receiver","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]},{"name":"test-receiver","grafana_managed_receiver_configs":[{"uid":"dde7ntuob69dtf","name":"test-receiver","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
+const grafanaConfigWithDuplicateReceiverName = `{
+  "template_files": {},
+  "alertmanager_config": {
+    "route": {
+      "receiver": "test-receiver",
+      "group_by": [
+        "grafana_folder",
+        "alertname"
+      ]
+    },
+    "templates": null,
+    "receivers": [
+      {
+        "name": "test-receiver",
+        "grafana_managed_receiver_configs": [
+          {
+            "uid": "dde6ntuob69dtf",
+            "name": "test-receiver",
+            "type": "webhook",
+            "disableResolveMessage": false,
+            "settings": {
+              "url": "http://localhost:8080",
+              "username": "test"
+            },
+            "secureSettings": {
+              "password": "test"
+            }
+          }
+        ]
+      },
+      {
+        "name": "test-receiver",
+        "grafana_managed_receiver_configs": [
+          {
+            "uid": "dde7ntuob69dtf",
+            "name": "test-receiver",
+            "type": "webhook",
+            "disableResolveMessage": false,
+            "settings": {
+              "url": "http://localhost:8080",
+              "username": "test"
+            },
+            "secureSettings": {
+              "password": "test"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}`
 
 func TestCreateUsableGrafanaConfig(t *testing.T) {
 	tests := []struct {
