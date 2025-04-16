@@ -234,7 +234,15 @@ func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, tenantID strin
 }
 
 func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID string, r MetricsQueryRequest) string {
-	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep())
+	start := r.GetStart()
+	end := r.GetEnd()
+	if start == end {
+		// For the case of an instant query, don't rely on the query's time in the errors caching key.
+		// I.e. if a recording rule's query fails, it will likely fail on subsequent evaluations with the updated time.
+		start = 0
+		end = 0
+	}
+	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), start, end, r.GetStep())
 }
 
 // shouldCacheFn checks whether the current request should go to cache
