@@ -147,18 +147,8 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 
 	if lowestNextSeriesIndexOfOtherConsumers == math.MaxInt {
 		// All other consumers are already closed. Close everything.
-		types.PutSeriesMetadataSlice(b.seriesMetadata)
-		b.seriesMetadata = nil
-
-		for b.buffer.Size() > 0 {
-			types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
-		}
-
-		b.buffer = nil
-
-		b.Inner.Close()
 		b.nextSeriesIndex[consumerIndex] = -1
-
+		b.close()
 		return
 	}
 
@@ -171,6 +161,19 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 	}
 
 	b.nextSeriesIndex[consumerIndex] = -1
+}
+
+func (b *DuplicationBuffer) close() {
+	types.PutSeriesMetadataSlice(b.seriesMetadata)
+	b.seriesMetadata = nil
+
+	for b.buffer.Size() > 0 {
+		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
+	}
+
+	b.buffer = nil
+
+	b.Inner.Close()
 }
 
 type DuplicationConsumer struct {
