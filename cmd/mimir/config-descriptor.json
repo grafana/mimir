@@ -5475,7 +5475,7 @@
           "kind": "field",
           "name": "otel_convert_histograms_to_nhcb",
           "required": false,
-          "desc": "Whether to convert OTel explicit bucket histograms to native histograms with custom buckets.",
+          "desc": "Whether to convert histograms to NHCB histograms.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-convert-histograms-to-nhcb",

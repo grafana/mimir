@@ -299,7 +299,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	}`, nowUnix, nowUnix))
 
 	res, err := c.PushOTLPPayload(jsonPayload, "application/json")
-
+	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
 	// Check metric to track OTLP requests
