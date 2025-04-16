@@ -571,7 +571,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			extractor := PrometheusResponseExtractor{}
 			minCacheExtent := int64(10)
 
-			reqs, resps, err := partitionCacheExtents(context.Background(), tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
+			reqs, resps, _, err := partitionCacheExtents(tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
@@ -697,10 +697,8 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			extractor := PrometheusResponseExtractor{}
 			minCacheExtent := int64(10)
-			details, ctx := ContextWithEmptyDetails(context.Background())
-			_, _, err := partitionCacheExtents(ctx, tc.request, tc.cachedExtents, minCacheExtent, extractor)
+			_, _, samplesProcessed, err := partitionCacheExtents(tc.request, tc.cachedExtents, minCacheExtent, extractor)
 			require.NoError(t, err)
-			samplesProcessed := details.SamplesProcessedFromCache
 			assert.Equal(t, tc.expectedSamplesProcessed, samplesProcessed,
 				"Expected %d samples processed but got %d",
 				tc.expectedSamplesProcessed, samplesProcessed)

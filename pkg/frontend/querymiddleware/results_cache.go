@@ -465,7 +465,7 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(ctx context.Context, req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, uint64, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
@@ -491,14 +491,14 @@ func partitionCacheExtents(ctx context.Context, req MetricsQueryRequest, extents
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, 0, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
@@ -525,7 +525,7 @@ func partitionCacheExtents(ctx context.Context, req MetricsQueryRequest, extents
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 
 		requests = append(requests, r)
@@ -542,11 +542,8 @@ func partitionCacheExtents(ctx context.Context, req MetricsQueryRequest, extents
 	for _, stepStat := range cachedPerStepStat {
 		cachedSamplesProcessed += uint64(stepStat.Value)
 	}
-	if details := QueryDetailsFromContext(ctx); details != nil {
-		details.SamplesProcessedFromCache = cachedSamplesProcessed
-	}
 
-	return requests, cachedResponses, nil
+	return requests, cachedResponses, cachedSamplesProcessed, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -675,7 +672,7 @@ func approximateSamplesProcessedPerStep(start int64, end int64, step int64, samp
 	numSteps := (end-start)/step + 1
 	// approxPerStep is not float because:
 	// 1. Real per step stats always have integer values. Having int in approximation will simplify migration to per step stats from engine
-	// 3. approxPerStep is rounded with math.Ceil, because in most of the real-life scenarios, samplesProcessed / numSteps is > 1.
+	// 2. approxPerStep is rounded with math.Ceil, because in most of the real-life scenarios, samplesProcessed / numSteps is > 1.
 	approxPerStep := int64(math.Ceil(float64(samplesProcessed) / float64(numSteps)))
 	perStepStats := make([]StepStat, 0, numSteps)
 	for i := int64(0); i < numSteps; i++ {
@@ -704,27 +701,39 @@ func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []Ste
 	return result
 }
 
-func mergeSamplesProcessedPerStep(steps ...[]StepStat) []StepStat {
-	if len(steps) == 0 {
-		return nil
+func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
 	}
 
-	stepsMap := make(map[int64]StepStat)
-	for _, stepSlice := range steps {
-		for _, s := range stepSlice {
-			stepsMap[s.Timestamp] = s
+	merged := make([]StepStat, 0, len(a)+len(b))
+	i, j := 0, 0
+
+	for i < len(a) && j < len(b) {
+		if a[i].Timestamp < b[j].Timestamp {
+			merged = append(merged, a[i])
+			i++
+		} else if b[j].Timestamp < a[i].Timestamp {
+			merged = append(merged, b[j])
+			j++
+		} else {
+			// Same timestamp, take the latter value
+			merged = append(merged, b[j])
+			i++
+			j++
 		}
 	}
-	if len(stepsMap) == 0 {
-		return nil
+
+	// Append any remaining elements
+	for ; i < len(a); i++ {
+		merged = append(merged, a[i])
+	}
+	for ; j < len(b); j++ {
+		merged = append(merged, b[j])
 	}
 
-	merged := make([]StepStat, 0, len(stepsMap))
-	for _, s := range stepsMap {
-		merged = append(merged, s)
-	}
-	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Timestamp < merged[j].Timestamp
-	})
 	return merged
 }

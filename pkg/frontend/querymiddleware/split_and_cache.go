@@ -187,10 +187,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, err := partitionCacheExtents(ctx, lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			requests, responses, samplesProcessed, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
 			if err != nil {
 				return nil, err
 			}
+
+			// Track samples processed from cache in metrics
+			details := QueryDetailsFromContext(ctx)
+			details.AddSamplesProcessedFromCache(samplesProcessed)
 
 			if len(requests) == 0 {
 				// The full response has been picked up from the cache so we can merge it and store it.

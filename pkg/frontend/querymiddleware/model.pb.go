@@ -396,7 +396,7 @@ type Extent struct {
 	// If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
 	// When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
 	QueryTimestampMs int64 `protobuf:"varint,6,opt,name=query_timestamp_ms,json=queryTimestampMs,proto3" json:"query_timestamp_ms,omitempty"`
-	// Number of samples processed per step to create this Extent.
+	// Number of samples processed per step to create this Extent. Should be sorted by timestamp in ascending order.
 	SamplesProcessedPerStep []StepStat `protobuf:"bytes,7,rep,name=samples_processed_per_step,json=samplesProcessedPerStep,proto3" json:"samples_processed_per_step"`
 }
 
