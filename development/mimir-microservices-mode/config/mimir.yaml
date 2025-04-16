@@ -140,6 +140,8 @@ frontend:
   parallelize_shardable_queries: true
   cache_results: true
   shard_active_series_queries: true
+  dynamic_step_enabled: true
+  dynamic_step_complexity_threshold: 1
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"

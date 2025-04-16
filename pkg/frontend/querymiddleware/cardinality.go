@@ -45,11 +45,15 @@ type cardinalityEstimation struct {
 }
 
 func newCardinalityEstimationMiddleware(cache cache.Cache, logger log.Logger, registerer prometheus.Registerer) MetricsQueryMiddleware {
-	estimationError := promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_query_frontend_cardinality_estimation_difference",
-		Help:    "Difference between estimated and actual query cardinality",
-		Buckets: prometheus.ExponentialBuckets(100, 2, 10),
-	})
+	var estimationError prometheus.Histogram
+	if registerer != nil {
+		level.Debug(logger).Log("msg", "initializing cardinality estimation metrics")
+		estimationError = promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_query_frontend_cardinality_estimation_difference",
+			Help:    "Difference between estimated and actual query cardinality",
+			Buckets: prometheus.ExponentialBuckets(100, 2, 10),
+		})
+	}
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &cardinalityEstimation{
 			cache:  cache,
@@ -103,7 +107,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 		spanLog.LogFields(otlog.Bool("cache updated", true))
 	}
 
-	if estimateAvailable {
+	if estimateAvailable && c.estimationError != nil {
 		estimationError := math.Abs(float64(actualCardinality) - float64(estimatedCardinality))
 		c.estimationError.Observe(estimationError)
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
