@@ -125,7 +125,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	}
 
 	b := &OneToOneVectorVectorBinaryOperation{
-		Left:                     operators.NewEagerLoader(left, memoryConsumptionTracker),
+		Left:                     operators.NewEagerLoader(left, memoryConsumptionTracker), // FIXME: if we were to implement this properly, then we should only do eager loading if we actually need to
 		Right:                    operators.NewEagerLoader(right, memoryConsumptionTracker),
 		VectorMatching:           vectorMatching,
 		Op:                       op,
