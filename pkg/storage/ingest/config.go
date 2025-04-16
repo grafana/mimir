@@ -108,7 +108,8 @@ type KafkaConfig struct {
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
-	ConsumerSupportedRecordFormatVersion int `yaml:"consumer_supported_record_format_version"`
+	ProducerSupportedRecordVersion int `yaml:"producer_supported_record_version" category:"experimental"`
+	ConsumerSupportedRecordVersion int `yaml:"consumer_supported_record_version" category:"experimental"`
 
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
@@ -180,7 +181,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
-	f.IntVar(&cfg.ConsumerSupportedRecordFormatVersion, prefix+"consumer-supported-record-format-version", 1, "The highest supported record format version understood by this consumer. Versions lower than this value are also assumed to be supported. For example, a consumer supporting v2 is assumed to support record format v1, but not v3.")
+	f.IntVar(&cfg.ProducerSupportedRecordVersion, prefix+"producer-supported-record-version", 0, "The record version preferred by this producer.")
+	f.IntVar(&cfg.ConsumerSupportedRecordVersion, prefix+"consumer-supported-record-version", 0, "The highest supported record version understood by this consumer. Versions lower than this value are also assumed to be supported. For example, a consumer supporting v2 is assumed to support record format v1, but not v3.")
 
 	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.")
