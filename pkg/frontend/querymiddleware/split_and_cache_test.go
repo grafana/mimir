@@ -2067,3 +2067,112 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 		require.Less(t, actualTTL, c.expTTL+(50*time.Millisecond))
 	}
 }
+
+func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testing.T) {
+	cacheBackend := cache.NewInstrumentedMockCache()
+
+	// Create a cache key generator with day interval for splitting
+	keyGen := DefaultCacheKeyGenerator{interval: day}
+
+	// Create the time range for the query
+	startTime := parseTimeRFC3339(t, "2021-10-14T00:00:00Z")
+	endTime := parseTimeRFC3339(t, "2021-10-15T23:59:59Z")
+	step := int64(60 * 1000) // 1 minute step
+
+	// Calculate the day boundary for splitting - it's simply the start of the next day in UTC
+	dayBoundaryTs := parseTimeRFC3339(t, "2021-10-15T00:00:00Z").Unix() * 1000
+	lastStepBeforeBoundary := dayBoundaryTs - step // Last step of first day
+
+	// First cache extent - first day
+	firstDayReq := &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     startTime.Unix() * 1000,
+		end:       lastStepBeforeBoundary,
+		step:      step,
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
+	}
+	userId := "user-1"
+	firstDayCacheKey := keyGen.QueryRequest(context.Background(), userId, firstDayReq)
+	hashedFirstDayCacheKey := cacheHashKey(firstDayCacheKey)
+	firstExtent := mkExtentWithEvenPerStepSamplesProcessed(startTime.UnixMilli(), lastStepBeforeBoundary, step, 1)
+
+	firstDayCachedResponse := CachedResponse{
+		Key:     firstDayCacheKey,
+		Extents: []Extent{firstExtent},
+	}
+	firstDayData, err := proto.Marshal(&firstDayCachedResponse)
+	require.NoError(t, err)
+	cacheBackend.Set(context.Background(), hashedFirstDayCacheKey, firstDayData, time.Hour)
+
+	// Second cache extent - second day
+	secondDayReq := &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     dayBoundaryTs,
+		end:       endTime.Unix() * 1000,
+		step:      step,
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
+	}
+	secondDayCacheKey := keyGen.QueryRequest(context.Background(), userId, secondDayReq)
+	hashedSecondDayCacheKey := cacheHashKey(secondDayCacheKey)
+	secondExtent := mkExtentWithEvenPerStepSamplesProcessed(dayBoundaryTs, endTime.UnixMilli(), step, 1)
+	secondDayCachedResponse := CachedResponse{
+		Key:     secondDayCacheKey,
+		Extents: []Extent{secondExtent},
+	}
+	secondDayData, err := proto.Marshal(&secondDayCachedResponse)
+	require.NoError(t, err)
+	cacheBackend.Set(context.Background(), hashedSecondDayCacheKey, secondDayData, time.Hour)
+
+	// Create the full query request that will be used
+	queryRequest := &PrometheusRangeQueryRequest{
+		path:      "/api/v1/query_range",
+		start:     startTime.Unix() * 1000,
+		end:       endTime.Unix() * 1000,
+		step:      step,
+		queryExpr: parseQuery(t, `{__name__=~".+"}`),
+	}
+
+	// Create the middleware instance
+	reg := prometheus.NewPedanticRegistry()
+	mw := newSplitAndCacheMiddleware(
+		true, // Split enabled
+		true, // Cache enabled
+		24*time.Hour,
+		mockLimits{},
+		newTestPrometheusCodec(),
+		cacheBackend,
+		keyGen,
+		PrometheusResponseExtractor{},
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		reg,
+	)
+
+	// Create a handler that returns a mock response and tracks calls
+	downstreamCalls := 0
+	mockResponse := mockPrometheusResponseSingleSeries(
+		[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
+		mimirpb.Sample{TimestampMs: startTime.Unix() * 1000, Value: 10},
+	)
+	handler := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+		downstreamCalls++
+		return mockResponse, nil
+	})
+
+	wrappedHandler := mw.Wrap(handler)
+	// Execute the request - this should hit the cache and update samplesProcessedFromCache
+	queryDetails, ctx := ContextWithEmptyDetails(context.Background())
+	ctx = user.InjectOrgID(ctx, userId)
+	resp, err := wrappedHandler.Do(ctx, queryRequest)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	fetchCalls := cacheBackend.CountFetchCalls()
+	assert.GreaterOrEqual(t, fetchCalls, 1, "Cache should have been queried")
+	assert.Equal(t, 0, downstreamCalls, "No downstream calls should occur with full cache hit")
+
+	// We expect 2880 samples to be processed from cache, because we have 24 hours of 1 minute steps with 1 sample per step in each extent
+	expectedSamplesFromCache := uint64(2880)
+	assert.Equal(t, expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache,
+		"SamplesProcessedFromCache not correctly accumulated: expected %d, got %d",
+		expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache)
+}
