@@ -47,7 +47,7 @@ const (
 	batchSize                = 50000
 	batchStreamBufferSize    = 10
 	parquetFileName          = "block.parquet"
-	compactorRingKey         = "compactor-parquet"
+	compactorRingKey         = "parquet-converter"
 	maxParquetIndexSizeLimit = 100
 )
 
@@ -83,7 +83,7 @@ type ParquetConverter struct {
 }
 
 func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-compactor", logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, prometheus.DefaultRegisterer)
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 
 	if err != nil {
@@ -103,7 +103,7 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 		CompactorCfg: compactorCfg,
 		bucket:       bucketClient,
 		loader:       loader,
-		logger:       log.With(logger, "component", "parquet-compactor"),
+		logger:       log.With(logger, "component", "parquet-converter"),
 		registerer:   registerer,
 		blockRanges:  compactorCfg.BlockRanges.ToMilliseconds(),
 		limits:       limits,
@@ -119,13 +119,13 @@ func (c *ParquetConverter) stopping(err error) error {
 
 func (c *ParquetConverter) starting(ctx context.Context) error {
 	if true /*c.Cfg.ShardingEnabled*/ { // TODO
-		kvStore, err := kv.NewClient(c.CompactorCfg.ShardingRing.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(c.registerer, "compactor-lifecycler"), c.logger)
+		kvStore, err := kv.NewClient(c.CompactorCfg.ShardingRing.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(c.registerer, "parquet-converter-lifecycler"), c.logger)
 		if err != nil {
-			return errors.Wrap(err, "failed to initialize compactors' KV store")
+			return errors.Wrap(err, "failed to initialize parquet-converter' KV store")
 		}
 		lifecyclerCfg, err := c.CompactorCfg.ShardingRing.ToBasicLifecyclerConfig(c.logger)
 		if err != nil {
-			return errors.Wrap(err, "unable to create compactor ring lifecycler config")
+			return errors.Wrap(err, "unable to create parquet-converter ring lifecycler config")
 		}
 		var delegate ring.BasicLifecyclerDelegate
 		delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
@@ -133,14 +133,14 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		delegate = ring.NewAutoForgetDelegate(compactor.RingAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, c.logger)
 
 		c.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg,
-			"compactor-parquet", compactorRingKey, kvStore, delegate, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+			"parquet-converter", compactorRingKey, kvStore, delegate, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
 		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
+			return errors.Wrap(err, "unable to initialize parquet-converter ring lifecycler")
 		}
 
-		c.ring, err = ring.New(c.CompactorCfg.ShardingRing.ToRingConfig(), "compactor", compactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+		c.ring, err = ring.New(c.CompactorCfg.ShardingRing.ToRingConfig(), "parquet-converter", compactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
 		if err != nil {
-			return errors.Wrap(err, "unable to initialize compactor ring")
+			return errors.Wrap(err, "unable to initialize parquet-converter ring")
 		}
 
 		c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
@@ -155,10 +155,10 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.CompactorCfg.ShardingRing.WaitActiveInstanceTimeout)
 	defer cancel()
 	if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-		level.Error(c.logger).Log("msg", "compactor failed to become ACTIVE in the ring", "err", err)
+		level.Error(c.logger).Log("msg", "parquet-converter failed to become ACTIVE in the ring", "err", err)
 		return err
 	}
-	level.Info(c.logger).Log("msg", "compactor is ACTIVE in the ring")
+	level.Info(c.logger).Log("msg", "parquet-converter is ACTIVE in the ring")
 	if err := c.loader.StartAsync(context.Background()); err != nil {
 		return errors.Wrap(err, "failed to start loader")
 	}
@@ -425,20 +425,19 @@ func (c *ParquetConverter) compactRootDir() string {
 	return filepath.Join(c.CompactorCfg.DataDir, "compact")
 }
 
-func (c *ParquetConverter) ownBlock(blockId string) (bool, error) {
+func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
 	// Hash the user ID.
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(blockId))
+	_, _ = hasher.Write([]byte(userID))
 	userHash := hasher.Sum32()
 
-	// Check whether this compactor instance owns the user.
 	rs, err := c.ring.Get(userHash, compactor.RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}
 
 	if len(rs.Instances) != 1 {
-		return false, fmt.Errorf("unexpected number of compactors in the shard (expected 1, got %d)", len(rs.Instances))
+		return false, fmt.Errorf("unexpected number of parquet-converter in the shard (expected 1, got %d)", len(rs.Instances))
 	}
 
 	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
