@@ -707,13 +707,11 @@ func mergeSamplesProcessedPerStep(steps ...[]StepStat) []StepStat {
 	}
 
 	stepsMap := make(map[int64]StepStat)
-
 	for _, stepSlice := range steps {
 		for _, s := range stepSlice {
 			stepsMap[s.Timestamp] = s
 		}
 	}
-
 	if len(stepsMap) == 0 {
 		return nil
 	}
@@ -722,10 +720,8 @@ func mergeSamplesProcessedPerStep(steps ...[]StepStat) []StepStat {
 	for _, s := range stepsMap {
 		merged = append(merged, s)
 	}
-
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].Timestamp < merged[j].Timestamp
 	})
-
 	return merged
 }
