@@ -100,12 +100,12 @@ func TestOperator_Buffering(t *testing.T) {
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
 	require.True(t, inner.Closed)
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes.Load())
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes.Load())
 }
 
 func TestOperator_ClosedWithBufferedData(t *testing.T) {
@@ -157,12 +157,12 @@ func TestOperator_ClosedWithBufferedData(t *testing.T) {
 	// Close the second consumer, and check that the inner operator was closed and all buffered data was released.
 	consumer2.Close()
 	require.True(t, inner.Closed)
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes.Load())
 
 	// Make sure it's safe to close either consumer a second time.
 	consumer1.Close()
 	consumer2.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes.Load())
 }
 
 func TestOperator_Cloning(t *testing.T) {
