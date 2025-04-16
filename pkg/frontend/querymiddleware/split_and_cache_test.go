@@ -2102,7 +2102,8 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 	}
 	firstDayData, err := proto.Marshal(&firstDayCachedResponse)
 	require.NoError(t, err)
-	cacheBackend.Set(context.Background(), hashedFirstDayCacheKey, firstDayData, time.Hour)
+	err = cacheBackend.Set(context.Background(), hashedFirstDayCacheKey, firstDayData, time.Hour)
+	require.NoError(t, err)
 
 	// Second cache extent - second day
 	secondDayReq := &PrometheusRangeQueryRequest{
@@ -2121,7 +2122,8 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 	}
 	secondDayData, err := proto.Marshal(&secondDayCachedResponse)
 	require.NoError(t, err)
-	cacheBackend.Set(context.Background(), hashedSecondDayCacheKey, secondDayData, time.Hour)
+	err = cacheBackend.Set(context.Background(), hashedSecondDayCacheKey, secondDayData, time.Hour)
+	require.NoError(t, err)
 
 	// Create the full query request that will be used
 	queryRequest := &PrometheusRangeQueryRequest{
