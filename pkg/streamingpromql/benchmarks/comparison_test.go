@@ -108,7 +108,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 
 	optsWithQueryPlanner := streamingpromql.NewTestEngineOpts()
 	optsWithQueryPlanner.UseQueryPlanning = true
-	mimirEngineWithQueryPlanner, err := streamingpromql.NewEngine(optsWithQueryPlanner, limitsProvider, queryMetrics, streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
+	mimirEngineWithQueryPlanner, err := streamingpromql.NewEngine(optsWithQueryPlanner, limitsProvider, queryMetrics, streamingpromql.NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
