@@ -567,14 +567,12 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer cancel(errQueryFinished)
 
-	if q.engine.activeQueryTracker != nil {
-		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
-		if err != nil {
-			return &promql.Result{Err: err}
-		}
-
-		defer q.engine.activeQueryTracker.Delete(queryID)
+	queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
+	if err != nil {
+		return &promql.Result{Err: err}
 	}
+
+	defer q.engine.activeQueryTracker.Delete(queryID)
 
 	defer func() {
 		logger := spanlogger.FromContext(ctx, q.engine.logger)
