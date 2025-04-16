@@ -869,7 +869,7 @@ func (q *Query) Stats() *stats.Statistics {
 	return &stats.Statistics{
 		Timers: stats.NewQueryTimers(),
 		Samples: &stats.QuerySamples{
-			TotalSamples: q.stats.TotalSamples,
+			TotalSamples: q.stats.TotalSamples.Load(),
 		},
 	}
 }

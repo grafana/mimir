@@ -9,18 +9,19 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"go.uber.org/atomic"
 )
 
 // QueryStats tracks statistics about the execution of a single query.
 //
-// It is not safe to use this type from multiple goroutines simultaneously.
+// It is safe to use this type from multiple goroutines simultaneously.
 type QueryStats struct {
 	// The total number of samples processed during the query.
 	//
 	// In the case of range vector selectors, each sample is counted once for each time step it appears in.
 	// For example, if a query is running with a step of 30s with a range vector selector with range 45s,
 	// then samples in the overlapping 15s are counted twice.
-	TotalSamples int64
+	TotalSamples atomic.Int64
 }
 
 const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
