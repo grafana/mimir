@@ -3,14 +3,16 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"strings"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/prometheus/client_golang/prometheus"
-	"strings"
 )
 
 // queryLimiterMiddleware blocks a query if it is should not be executed more frequently than a configured interval,

@@ -2,20 +2,22 @@ package querymiddleware
 
 import (
 	"context"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
-	"strings"
-	"testing"
-	"time"
+
+	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
