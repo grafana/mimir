@@ -13,7 +13,6 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -31,10 +30,10 @@ func BlockToParquetRowsStream(
 	maxParquetIndexSizeLimit int, // TODO what does this mean and how to set it?
 	rowsPerBatch int,
 	batchStreamBufferSize int,
-	logger log.Logger,
+	logger *slog.Logger,
 ) (chan []parquet.ParquetRow, []string, int, error) {
 	// TODO
-	b, err := tsdb.OpenBlock( /*logutil.GoKitLogToSlog(logger)*/ slog.New(slog.DiscardHandler), path, nil, tsdb.DefaultPostingsDecoderFactory)
+	b, err := tsdb.OpenBlock(logger, path, nil, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, nil, 0, err
 	}
