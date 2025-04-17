@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -50,7 +49,6 @@ func newQueryLimiterMiddleware(
 }
 
 func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	spanLog := spanlogger.FromContext(ctx, ql.logger)
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return ql.next.Do(ctx, req)
@@ -60,21 +58,21 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	hashedKey := cacheHashKey(key)
 
 	for _, tenantID := range tenantIDs {
-		if isBlocked := ql.shouldBlock(ctx, key, hashedKey, tenantID, req.GetQuery(), spanLog); isBlocked {
+		if isBlocked, limitedQuery := ql.shouldBlock(ctx, key, hashedKey, tenantID, req.GetQuery()); isBlocked {
 			ql.blockedQueriesCounter.WithLabelValues(tenantID, "limited").Inc()
-			return nil, newQueryLimitedError()
+			return nil, newQueryLimitedError(limitedQuery.AllowedFrequency)
 		}
 	}
 	return ql.next.Do(ctx, req)
 }
 
-func (ql *queryLimiterMiddleware) shouldBlock(
-	ctx context.Context, key, hashedKey, tenantID, query string, spanLog *spanlogger.SpanLogger,
-) bool {
+// shouldBlock determines whether the given query string should be blocked by the query limiter, and returns the matching
+// *validation.LimitedQuery if the query should be blocked.
+func (ql *queryLimiterMiddleware) shouldBlock(ctx context.Context, key, hashedKey, tenantID, query string) (bool, *validation.LimitedQuery) {
 	limitedQueries := ql.limits.LimitedQueries(tenantID)
 
 	if len(limitedQueries) <= 0 {
-		return false
+		return false, nil
 	}
 
 	logger := log.With(ql.logger, "user", tenantID)
@@ -83,11 +81,11 @@ func (ql *queryLimiterMiddleware) shouldBlock(
 		if strings.TrimSpace(limitedQuery.Query) == strings.TrimSpace(query) {
 			if !ql.enoughTimeSinceLastQuery(ctx, key, hashedKey, limitedQuery) {
 				level.Info(logger).Log("msg", "query limiter matched exact query", "query", query, "index", i)
-				return true
+				return true, limitedQuery
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
 func (ql *queryLimiterMiddleware) enoughTimeSinceLastQuery(ctx context.Context, cacheValue, hashedKey string, limitedQuery *validation.LimitedQuery) bool {
@@ -95,9 +93,10 @@ func (ql *queryLimiterMiddleware) enoughTimeSinceLastQuery(ctx context.Context, 
 	// is within AllowedFrequency, so we should block it. Otherwise, the query has now been added to the cache and
 	// will be blocked next time if the entry still exists in the cache.
 	err := ql.cache.Add(ctx, hashedKey, []byte(cacheValue), limitedQuery.AllowedFrequency)
-	if errors.Is(err, cache.ErrNotStored) {
-		return false
-	} else {
+	if err != nil {
+		if errors.Is(err, cache.ErrNotStored) {
+			return false
+		}
 		ql.logger.Log("msg", "error while adding to query limiter cache", "err", err)
 	}
 	return true
