@@ -14,7 +14,65 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
-const grafanaConfigWithDuplicateReceiverName = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"test-receiver","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"test-receiver","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"test-receiver","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]},{"name":"test-receiver","grafana_managed_receiver_configs":[{"uid":"dde7ntuob69dtf","name":"test-receiver","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
+const grafanaConfigWithDuplicateReceiverName = `{
+  "template_files": {},
+  "alertmanager_config": {
+    "route": {
+      "receiver": "test-receiver8",
+      "group_by": [
+        "grafana_folder",
+        "alertname"
+      ]
+    },
+    "templates": null,
+    "receivers": [
+      {"name": "test-receiver1","grafana_managed_receiver_configs": []},
+      {
+        "name": "test-receiver8",
+        "grafana_managed_receiver_configs": [
+          {
+            "uid": "dde6ntuob69dtf",
+            "name": "test-receiver",
+            "type": "webhook",
+            "disableResolveMessage": false,
+            "settings": {
+              "url": "http://localhost:8080",
+              "username": "test"
+            },
+            "secureSettings": {
+              "password": "test"
+            }
+          }
+        ]
+      },
+      {"name": "test-receiver2","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver3","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver4","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver5","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver6","grafana_managed_receiver_configs": []},
+      {"name": "test-receiver7","grafana_managed_receiver_configs": []},
+      {
+        "name": "test-receiver8",
+        "grafana_managed_receiver_configs": [
+          {
+            "uid": "dde7ntuob69dtf",
+            "name": "test-receiver",
+            "type": "webhook",
+            "disableResolveMessage": false,
+            "settings": {
+              "url": "http://localhost:8080",
+              "username": "test"
+            },
+            "secureSettings": {
+              "password": "test"
+            }
+          }
+        ]
+      },
+	  {"name": "test-receiver9","grafana_managed_receiver_configs": []}
+    ]
+  }
+}`
 
 func TestCreateUsableGrafanaConfig(t *testing.T) {
 	tests := []struct {
@@ -114,6 +172,13 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				require.False(t, ok, fmt.Sprintf("duplicate receiver name %q found in final configuration", rcv.Name))
 				receiverNames[rcv.Name] = struct{}{}
 			}
+
+			// Ensure that configuration is deterministic. For example, ordering of receivers.
+			// This is important for change detection.
+			cfg2, err := am.createUsableGrafanaConfig(test.grafanaConfig, test.mimirConfig)
+			require.NoError(t, err)
+
+			require.Equal(t, cfg.RawConfig, cfg2.RawConfig)
 		})
 	}
 }
