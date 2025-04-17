@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/tsdb/block_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package tsdbcodec
 
 import (
+	"math/rand/v2"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +15,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 const intervalSeconds = 10
@@ -77,7 +84,7 @@ func GenerateTestStorageSeriesFromLabelSets(metricLabelSets []labels.Labels) []s
 	// we can use batching and return some sort of iterator of slices of series instead.
 	batchSize := 1000
 
-	histogramSpans := []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
+	//histogramSpans := []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}}
 
 	storageSeries := make([]storage.Series, 0, len(metricLabelSets))
 
@@ -102,15 +109,7 @@ func GenerateTestStorageSeriesFromLabelSets(metricLabelSets []labels.Labels) []s
 				for ts := start; ts < end; ts++ {
 					// TODO(jhesketh): Fix this with some better data
 					series.Histograms[ts-start].T = int64(ts) * interval.Milliseconds()
-					series.Histograms[ts-start].H = &histogram.FloatHistogram{
-						Count:         12,
-						ZeroCount:     2,
-						ZeroThreshold: 0.001,
-						Sum:           18.4,
-						Schema:        0,
-						NegativeSpans: histogramSpans,
-						PositiveSpans: histogramSpans,
-					}
+					series.Histograms[ts-start].H = tsdbutil.GenerateTestFloatHistogram(int64(metricIdx))
 				}
 			} else {
 				if cap(series.Floats) < sampleCount {
@@ -130,4 +129,206 @@ func GenerateTestStorageSeriesFromLabelSets(metricLabelSets []labels.Labels) []s
 	}
 
 	return storageSeries
+}
+
+//// genSeries generates series of float64 samples with a given number of labels and values.
+//func genFPoints(totalSeries, labelCount int, mint, maxt int64) []promql.FPoint {
+//	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, 1, generateFPoint)
+//}
+//func generateFPoint(ts int64, i int, lenMetricLabelSets int) promql.FPoint {
+//	return promql.FPoint{T: ts, F: float64(ts) + float64(i)/float64(lenMetricLabelSets)}
+//}
+//
+//func genSeriesFromSampleGenerator(
+//	totalSeries, labelCount int,
+//	mint, maxt, step int64,
+//	generator func(ts int64, i int, lenMetricLabelSets int) promql.FPoint) []promql.FPoint {
+//	if totalSeries == 0 || labelCount == 0 {
+//		return nil
+//	}
+//
+//	series := make([]promql.FPoint, totalSeries)
+//
+//	for i := 0; i < totalSeries; i++ {
+//		//lbls := make(map[string]string, labelCount)
+//		//lbls[defaultLabelName] = strconv.Itoa(i)
+//		//for j := 1; len(lbls) < labelCount; j++ {
+//		//	lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
+//		//}
+//		samples := make([]promql.FPoint, 0, (maxt-mint)/step+1)
+//		for t := mint; t < maxt; t += step {
+//			samples = append(samples, generator(t, i, labelCount))
+//		}
+//		//series[i] = storage.NewListSeries(labels.FromMap(lbls), samples)
+//	}
+//	return series
+//}
+
+const (
+	defaultLabelName  = "__name__"
+	defaultLabelValue = "labelValue"
+)
+
+// genSeries generates series of float64 samples with a given number of labels and values.
+func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
+	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, 1, func(ts int64) chunks.Sample {
+		return sample{t: ts, f: rand.Float64()}
+	})
+}
+
+// genHistogramSeries generates series of histogram samples with a given number of labels and values.
+func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64, floatHistogram bool) []storage.Series {
+	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, step, func(ts int64) chunks.Sample {
+		h := &histogram.Histogram{
+			Count:         7 + uint64(ts*5),
+			ZeroCount:     2 + uint64(ts),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * rand.Float64(),
+			Schema:        1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []int64{ts + 1, 1, -1, 0},
+		}
+		if ts != mint {
+			// By setting the counter reset hint to "no counter
+			// reset" for all histograms but the first, we cover the
+			// most common cases. If the series is manipulated later
+			// or spans more than one block when ingested into the
+			// storage, the hint has to be adjusted. Note that the
+			// storage itself treats this particular hint the same
+			// as "unknown".
+			h.CounterResetHint = histogram.NotCounterReset
+		}
+		if floatHistogram {
+			return sample{t: ts, fh: h.ToFloat(nil)}
+		}
+		return sample{t: ts, h: h}
+	})
+}
+
+// genHistogramAndFloatSeries generates series of mixed histogram and float64 samples with a given number of labels and values.
+func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step int64, floatHistogram bool) []storage.Series {
+	floatSample := false
+	count := 0
+	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, step, func(ts int64) chunks.Sample {
+		count++
+		var s sample
+		if floatSample {
+			s = sample{t: ts, f: rand.Float64()}
+		} else {
+			h := &histogram.Histogram{
+				Count:         7 + uint64(ts*5),
+				ZeroCount:     2 + uint64(ts),
+				ZeroThreshold: 0.001,
+				Sum:           18.4 * rand.Float64(),
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{ts + 1, 1, -1, 0},
+			}
+			if count > 1 && count%5 != 1 {
+				// Same rationale for this as above in
+				// genHistogramSeries, just that we have to be
+				// smarter to find out if the previous sample
+				// was a histogram, too.
+				h.CounterResetHint = histogram.NotCounterReset
+			}
+			if floatHistogram {
+				s = sample{t: ts, fh: h.ToFloat(nil)}
+			} else {
+				s = sample{t: ts, h: h}
+			}
+		}
+
+		if count%5 == 0 {
+			// Flip the sample type for every 5 samples.
+			floatSample = !floatSample
+		}
+
+		return s
+	})
+}
+
+func genSeriesFromSampleGenerator(totalSeries, labelCount int, mint, maxt, step int64, generator func(ts int64) chunks.Sample) []storage.Series {
+	if totalSeries == 0 || labelCount == 0 {
+		return nil
+	}
+
+	series := make([]storage.Series, totalSeries)
+
+	for i := 0; i < totalSeries; i++ {
+		lbls := make(map[string]string, labelCount)
+		lbls[defaultLabelName] = strconv.Itoa(i)
+		for j := 1; len(lbls) < labelCount; j++ {
+			lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
+		}
+		samples := make([]chunks.Sample, 0, (maxt-mint)/step+1)
+		for t := mint; t < maxt; t += step {
+			samples = append(samples, generator(t))
+		}
+		series[i] = storage.NewListSeries(labels.FromMap(lbls), samples)
+	}
+	return series
+}
+
+// populateSeries generates series from given labels, mint and maxt.
+func populateSeries(lbls []map[string]string, mint, maxt int64) []storage.Series {
+	if len(lbls) == 0 {
+		return nil
+	}
+
+	series := make([]storage.Series, 0, len(lbls))
+	for _, lbl := range lbls {
+		if len(lbl) == 0 {
+			continue
+		}
+		samples := make([]chunks.Sample, 0, maxt-mint+1)
+		for t := mint; t <= maxt; t++ {
+			samples = append(samples, sample{t: t, f: rand.Float64()})
+		}
+		series = append(series, storage.NewListSeries(labels.FromMap(lbl), samples))
+	}
+	return series
+}
+
+type sample struct {
+	t  int64
+	f  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
+}
+
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+	return sample{t, v, h, fh}
+}
+
+func (s sample) T() int64                      { return s.t }
+func (s sample) F() float64                    { return s.f }
+func (s sample) H() *histogram.Histogram       { return s.h }
+func (s sample) FH() *histogram.FloatHistogram { return s.fh }
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, f: s.f}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
