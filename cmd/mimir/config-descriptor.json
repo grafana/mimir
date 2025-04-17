@@ -7530,7 +7530,7 @@
               "kind": "field",
               "name": "producer_supported_record_version",
               "required": false,
-              "desc": "The record version preferred by this producer.",
+              "desc": "The record version that this producer prefers.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
               "fieldFlag": "ingest-storage.kafka.producer-supported-record-version",

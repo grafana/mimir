@@ -4156,7 +4156,7 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # (experimental) The record version preferred by this producer.
+  # (experimental) The record version that this producer prefers.
   # CLI flag: -ingest-storage.kafka.producer-supported-record-version
   [producer_supported_record_version: <int> | default = 0]
 
