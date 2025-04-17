@@ -1891,8 +1891,8 @@ results_cache:
 # CLI flag: -query-frontend.dynamic-step-enabled
 [dynamic_step_enabled: <boolean> | default = false]
 
-# (advanced) Complexity threshold for dynamic step adjustment ( Only taken into
-# consideration if dynamic step is enabled ).
+# (advanced) Complexity threshold for dynamic step adjustment. This setting is only taken into
+# consideration if you enable dynamic step.
 # CLI flag: -query-frontend.dynamic-step-complexity-threshold
 [dynamic_step_complexity_threshold: <float> | default = 1]
 
