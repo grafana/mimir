@@ -118,7 +118,7 @@ func TestPusherConsumer(t *testing.T) {
 		"mixed record versions": {
 			records: []record{
 				{ctx: ctx, content: wrBytes[0], tenantID: tenantID, version: 0},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 2},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 1},
 				{ctx: ctx, content: wrBytes[2], tenantID: tenantID, version: 1},
 			},
 			responses: []response{
@@ -131,7 +131,7 @@ func TestPusherConsumer(t *testing.T) {
 		"unsupported record version": {
 			records: []record{
 				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
-				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 2},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 1},
 				{ctx: ctx, content: wrBytes[2], tenantID: tenantID, version: 101},
 			},
 			responses: []response{
@@ -141,7 +141,7 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:2],
 			expErr:      "",
 			expectedLogLines: []string{
-				"level=error msg=\"failed to parse write request; skipping\" err=\"received a record with an unsupported version: 101, max supported version: 2\"",
+				"level=error msg=\"failed to parse write request; skipping\" err=\"received a record with an unsupported version: 101, max supported version: 1\"",
 			},
 		},
 		"failed processing of record": {
@@ -242,9 +242,7 @@ func TestPusherConsumer(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-			c := newPusherConsumer(pusher, KafkaConfig{
-				ConsumerSupportedRecordVersion: 2,
-			}, metrics, log.NewLogfmtLogger(logs))
+			c := newPusherConsumer(pusher, KafkaConfig{}, metrics, log.NewLogfmtLogger(logs))
 			err := c.Consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
