@@ -1886,7 +1886,7 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# (experimental) True to enable dynamic step calculation for range queries based
+# (experimental) Enables dynamic step calculation for range queries based
 # on the query's complexity.
 # CLI flag: -query-frontend.dynamic-step-enabled
 [dynamic_step_enabled: <boolean> | default = false]
