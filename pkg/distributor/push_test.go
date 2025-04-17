@@ -935,7 +935,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 				req.Header.Add("Retry-Attempt", tc.retryAttempt)
 			}
 
-			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg, 0)
+			addErrorHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg)
 
 			retryAfter := recorder.Header().Get("Retry-After")
 			if !tc.expectRetry {
