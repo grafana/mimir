@@ -187,14 +187,6 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
-	if series, isSeriesMetadata := any(s).([]SeriesMetadata); isSeriesMetadata {
-		for _, sm := range series {
-			for _, l := range sm.Labels {
-				estimatedBytes += uint64(len(l.Name)+len(l.Value)) * StringSize
-			}
-		}
-	}
-
 	if err := tracker.IncreaseMemoryConsumption(estimatedBytes); err != nil {
 		p.inner.Put(s)
 		return nil, err
@@ -219,14 +211,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 		}
 	}
 
-	estimatedBytes := uint64(cap(s)) * p.elementSize
-	if sm, isSeriesMetadata := any(s).(SeriesMetadata); isSeriesMetadata {
-		for _, l := range sm.Labels {
-			estimatedBytes += uint64(len(l.Name)+len(l.Value)) * StringSize
-		}
-	}
-
-	tracker.DecreaseMemoryConsumption(estimatedBytes)
+	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)
 	p.inner.Put(s)
 }
 
