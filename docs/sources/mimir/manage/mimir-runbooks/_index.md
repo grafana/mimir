@@ -2692,7 +2692,7 @@ This error only occurs when an administrator has explicitly defined a blocked li
 
 ### err-mimir-query-limited
 
-This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits.
+This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits, and the query is being run too frequently.
 
 How it **works**:
 
@@ -2701,7 +2701,7 @@ How it **works**:
 
 How to **fix** it:
 
-This error only occurs when an administrator has explicitly defined a limited queries list for a given tenant. After assessing the reason for limiting one or multiple queries, you can update the tenant's limits and remove the pattern.
+Consider running this query less frequently. This error only occurs when an administrator has explicitly defined a limited queries list for a given tenant. After assessing the reason for limiting one or multiple queries, you can update the tenant's limits and remove the pattern.
 
 ### err-mimir-request-blocked
 
