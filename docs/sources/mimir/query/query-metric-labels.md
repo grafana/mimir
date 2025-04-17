@@ -7,6 +7,8 @@ keywords:
   - labels
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Query metric labels
 
 Grafana Mimir supports multiple [HTTP API](../../references/http-api/) endpoints to query metric label names and values.

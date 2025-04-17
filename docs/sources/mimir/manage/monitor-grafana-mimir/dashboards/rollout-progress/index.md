@@ -9,6 +9,8 @@ title: Grafana Mimir Rollout progress dashboard
 weight: 120
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Rollout progress dashboard
 
 The Rollout progress dashboard shows the progress of a rollout across a Grafana Mimir cluster and key metrics you can monitor, such as failure rates and latency.
