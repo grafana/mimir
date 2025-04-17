@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -41,6 +42,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/querier")
 
 // Config contains the configuration require to create a querier
 type Config struct {
@@ -269,7 +272,7 @@ type multiQuerier struct {
 }
 
 func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matcher) (context.Context, []storage.Querier, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "multiQuerier.getQueriers")
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.getQueriers")
 	defer spanLog.Finish()
 
 	now := time.Now()
@@ -322,7 +325,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series are always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "querier.Select")
 	defer spanLog.Finish()
 
 	ctx, queriers, err := mq.getQueriers(ctx, matchers...)

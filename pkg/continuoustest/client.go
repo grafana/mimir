@@ -16,10 +16,10 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
-	"github.com/grafana/mimir/pkg/util/instrumentation"
 )
 
 const (
@@ -93,7 +93,7 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 		basicAuthUser:     cfg.BasicAuthUser,
 		basicAuthPassword: cfg.BasicAuthPassword,
 		bearerToken:       cfg.BearerToken,
-		rt:                instrumentation.TracerTransport{},
+		rt:                otelhttp.NewTransport(http.DefaultTransport),
 		requestDebug:      cfg.RequestDebug,
 		userAgent:         cfg.UserAgent,
 	}

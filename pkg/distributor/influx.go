@@ -29,7 +29,7 @@ import (
 )
 
 func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
-	spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.InfluxHandler.decodeAndConvert")
+	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.InfluxHandler.decodeAndConvert")
 	defer spanLogger.Finish()
 
 	spanLogger.SetTag("content_type", r.Header.Get("Content-Type"))

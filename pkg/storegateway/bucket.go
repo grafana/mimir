@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -38,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -1301,8 +1301,8 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
-	defer span.Finish()
+	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
+	defer span.End()
 
 	var (
 		blocks       []*bucketBlock
@@ -2107,9 +2107,9 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 // ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
 func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.ensureIndexHeaderLoaded")
-	defer span.Finish()
-	span.SetTag("blockID", b.meta.ULID)
+	_, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
+	defer span.End()
+	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
 
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.

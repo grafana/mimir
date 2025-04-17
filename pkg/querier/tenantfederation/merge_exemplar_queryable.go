@@ -133,7 +133,7 @@ type mergeExemplarQuerier struct {
 // matchers, across multiple tenants. The query for each tenant is forwarded to an
 // instance of an upstream querier.
 func (m *mergeExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	spanlog, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeExemplarQuerier.Select")
+	spanlog, ctx := spanlogger.New(m.ctx, m.logger, tracer, "mergeExemplarQuerier.Select")
 	defer spanlog.Finish()
 
 	// If we have any matchers that are looking for __tenant_id__, use that to filter down the

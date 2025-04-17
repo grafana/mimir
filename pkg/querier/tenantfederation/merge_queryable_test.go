@@ -145,7 +145,7 @@ func (m *mockSeriesSet) Warnings() annotations.Annotations {
 
 // Select implements the storage.Querier interface.
 func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	logger, _ := spanlogger.NewWithLogger(ctx, m.logger, "mockTenantQuerier.select")
+	logger, _ := spanlogger.New(ctx, m.logger, tracer, "mockTenantQuerier.select")
 	defer logger.Finish()
 	var matrix model.Matrix
 
