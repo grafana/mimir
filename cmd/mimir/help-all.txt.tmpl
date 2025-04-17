@@ -1541,8 +1541,6 @@ Usage of ./cmd/mimir/mimir:
     	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
   -ingest-storage.kafka.consumer-group-offset-commit-interval duration
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
-  -ingest-storage.kafka.consumer-supported-record-version int
-    	[experimental] The highest supported record version understood by this consumer. Versions lower than this value are also assumed to be supported. For example, a consumer supporting v2 is assumed to support record format v1, but not v3. (default 1)
   -ingest-storage.kafka.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
