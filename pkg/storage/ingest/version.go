@@ -11,7 +11,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-const RecordVersionHeaderKey = "X-Record-Version"
+const (
+	RecordVersionHeaderKey = "X-Record-Version"
+	LatestRecordVersion    = 1
+)
 
 func ValidateRecordVersion(version int) error {
 	switch version {
