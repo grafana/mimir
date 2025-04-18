@@ -5,13 +5,12 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"strings"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"strings"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -56,48 +55,40 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 	key := ql.keyGen.QueryRequestLimiter(ctx, tenant.JoinTenantIDs(tenantIDs), req)
 	hashedKey := cacheHashKey(key)
+	// start at max duration value
+	cacheValue := validation.LimitedQuery{
+		Query:            "",
+		AllowedFrequency: 0, // start with min duration
+	}
+	query := strings.TrimSpace(req.GetQuery())
+	var tenantMinAllowedFrequency string
 
 	for _, tenantID := range tenantIDs {
-		if isBlocked, limitedQuery := ql.shouldBlock(ctx, key, hashedKey, tenantID, req.GetQuery()); isBlocked {
-			ql.blockedQueriesCounter.WithLabelValues(tenantID, "limited").Inc()
-			return nil, newQueryLimitedError(limitedQuery.AllowedFrequency)
-		}
-	}
-	return ql.next.Do(ctx, req)
-}
-
-// shouldBlock determines whether the given query string should be blocked by the query limiter, and returns the matching
-// *validation.LimitedQuery if the query should be blocked.
-func (ql *queryLimiterMiddleware) shouldBlock(ctx context.Context, key, hashedKey, tenantID, query string) (bool, *validation.LimitedQuery) {
-	limitedQueries := ql.limits.LimitedQueries(tenantID)
-
-	if len(limitedQueries) <= 0 {
-		return false, nil
-	}
-
-	logger := log.With(ql.logger, "user", tenantID)
-
-	for i, limitedQuery := range limitedQueries {
-		if strings.TrimSpace(limitedQuery.Query) == strings.TrimSpace(query) {
-			if !ql.enoughTimeSinceLastQuery(ctx, key, hashedKey, limitedQuery) {
-				level.Info(logger).Log("msg", "query limiter matched exact query", "query", query, "index", i)
-				return true, limitedQuery
+		logger := log.With(ql.logger, "user", tenantID)
+		for _, limitedQuery := range ql.limits.LimitedQueries(tenantID) {
+			if strings.TrimSpace(limitedQuery.Query) == query {
+				level.Info(logger).Log("msg", "query limiter matched exact query", "query", query, "tenant", tenantID)
+				if cacheValue.Query == "" {
+					cacheValue.Query = query
+				}
+				if limitedQuery.AllowedFrequency > cacheValue.AllowedFrequency {
+					cacheValue.AllowedFrequency = limitedQuery.AllowedFrequency
+					tenantMinAllowedFrequency = tenantID
+				}
 			}
 		}
 	}
-	return false, nil
-}
-
-func (ql *queryLimiterMiddleware) enoughTimeSinceLastQuery(ctx context.Context, cacheValue, hashedKey string, limitedQuery *validation.LimitedQuery) bool {
-	// If the query fails to be added to the cache with ErrNotStored, that means the last time the query was called
-	// is within AllowedFrequency, so we should block it. Otherwise, the query has now been added to the cache and
-	// will be blocked next time if the entry still exists in the cache.
-	err := ql.cache.Add(ctx, hashedKey, []byte(cacheValue), limitedQuery.AllowedFrequency)
-	if err != nil {
-		if errors.Is(err, cache.ErrNotStored) {
-			return false
+	// If we found any matching limited query, we should try to cache it
+	if cacheValue.Query != "" {
+		if err := ql.cache.Add(ctx, hashedKey, []byte(key), cacheValue.AllowedFrequency); err != nil {
+			// If we receive ErrNotStored, the entry is still in the cache and the query should be blocked
+			if errors.Is(err, cache.ErrNotStored) {
+				ql.blockedQueriesCounter.WithLabelValues(tenantMinAllowedFrequency, "limited").Inc()
+				return nil, newQueryLimitedError(cacheValue.AllowedFrequency, tenantMinAllowedFrequency)
+			}
+			ql.logger.Log("msg", "error while adding to query limiter cache", "err", err)
 		}
-		ql.logger.Log("msg", "error while adding to query limiter cache", "err", err)
 	}
-	return true
+
+	return ql.next.Do(ctx, req)
 }
