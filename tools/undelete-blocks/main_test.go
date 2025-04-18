@@ -511,9 +511,9 @@ func TestRestoreDryRun(t *testing.T) {
 	}
 
 	// Passing a nil bucket as a trap. A dry run should not touch it
-	restore(context.Background(), nil, r, nopSlog(), true)
+	require.NoError(t, restore(context.Background(), nil, r, nopSlog(), true))
 	r.shadowingDeleteMarkers = nil
-	restore(context.Background(), nil, r, nopSlog(), true)
+	require.NoError(t, restore(context.Background(), nil, r, nopSlog(), true))
 }
 
 func nopSlog() *slog.Logger {
