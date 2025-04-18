@@ -56,6 +56,7 @@
 * [ENHANCEMENT] Alerts: Make `MimirRolloutStuck` a critical alert if it has been firing for 6h. #10890
 * [ENHANCEMENT] Dashboards: Add panels to the `Mimir / Tenants` and `Mimir / Top Tenants` dashboards showing the rate of gateway requests. #10978
 * [ENHANCEMENT] Alerts: Improve `MimirIngesterFailsToProcessRecordsFromKafka` to not fire during forced TSDB head compaction. #11006
+* [ENHANCEMENT] Alerts: Add alerts for invalid cluster validation labels. #11255
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
 
 ### Jsonnet

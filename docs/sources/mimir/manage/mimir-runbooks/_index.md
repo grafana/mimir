@@ -1784,6 +1784,34 @@ How to **investigate**:
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
+### MimirServerInvalidClusterValidationLabelRequests
+
+This alert fires when Mimir components receive requests with a different cluster validation label than the Mimir components themselves are configured with.
+
+How it **works**:
+
+When Mimir components are configured to validate cluster validation labels on the server side, they will increase the `cortex_server_invalid_cluster_validation_label_requests_total` counter metric every time they receive an HTTP or gRPC request with the wrong cluster validation label.
+Whenever this occurs, it's cause for concern because unless the client in question is simply configured with the wrong label, mislabeled requests are coming from a different Mimir cluster.
+
+How to **investigate**:
+
+Unless Mimir is configured with soft validation of cluster validation labels on the server side, it should be rejecting the corresponding requests and the clients sending the requests should be increasing the corresponding client side metric `cortex_client_invalid_cluster_validation_label_requests_total`.
+By querying for the latter, you should be able to determine which clients are sending the mislabeled requests.
+
+### MimirClientInvalidClusterValidationLabelRequests
+
+This alert fires when requests between Mimir components are rejected due to having different cluster validation labels than the components receiving the requests are configured with.
+
+How it **works**:
+
+When Mimir components are configured with hard validation of cluster validation labels on the server side, they will reject HTTP and gRPC requests with the wrong cluster validation labels.
+Mimir components increase the `cortex_client_invalid_cluster_validation_label_requests_total` counter metric, when requests they've sent are rejected due to being mislabeled.
+Whenever this occurs, it's cause for concern because unless Mimir components are simply mis-configured with regards to cluster validation labels, rejected requests are sent to the wrong Mimir cluster.
+
+How to **investigate**:
+
+Query for the client side metric `cortex_client_invalid_cluster_validation_label_requests_total`, to determine which clients are sending the mislabeled requests.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
