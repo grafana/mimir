@@ -893,7 +893,8 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 2, pt.pendingJobs.Len(), "enqueue should be a no-op until the assigned job is completed")
 
-	sched.jobs.completeJob(j, "worker1")
+	e := sched.jobs.completeJob(j, "worker1")
+	require.NoError(t, e)
 
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 1, pt.pendingJobs.Len(), "enqueue should have succeeded after completing the job")

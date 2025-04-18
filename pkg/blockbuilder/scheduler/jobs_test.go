@@ -37,7 +37,8 @@ func TestAssign(t *testing.T) {
 	require.Zero(t, j2spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.add("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
+	e = s.add("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	j3, j3spec, err := s.assign("w0")
 	require.NotZero(t, j3.id)
 	require.NotZero(t, j3spec)
