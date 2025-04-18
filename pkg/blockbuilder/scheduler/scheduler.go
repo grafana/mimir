@@ -425,6 +425,8 @@ func probeInitialJobOffsets(ctx context.Context, offs offsetStore, topic string,
 	}
 
 	sentinels := []*offsetTime{}
+
+	// Pick a more high-resolution interval to scan for the sentinel offsets.
 	scanStep := jobSize / 4
 
 	// Iterate backwards from the boundary time by job size, stopping when we've
