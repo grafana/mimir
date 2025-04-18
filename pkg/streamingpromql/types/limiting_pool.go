@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -23,6 +24,15 @@ const (
 	// much science behind it. The minimum size of a FloatHistogram is 168 bytes + 10 buckets (10 * 8 bytes) + 5 spans
 	// (5 * 8 bytes). Some FloatHistograms will be bigger than this and some will be smaller.
 	nativeHistogramEstimatedSize = 288
+
+	// Estimated size of a label pair (name + value) in bytes.
+	// This is a conservative estimate that includes:
+	// - The size of Label struct
+	// - Average name length (8 bytes)
+	// - Average value length (8 bytes)
+	// - Average total of labels per series (10)
+	// The last 3 averages value are taken based on guesstimate.
+	LabelPairEstimatedSize = (uint64(unsafe.Sizeof(labels.Label{})) + 8 + 8) * 10
 
 	FPointSize           = uint64(unsafe.Sizeof(promql.FPoint{}))
 	HPointSize           = uint64(unsafe.Sizeof(promql.HPoint{}) + nativeHistogramEstimatedSize)
@@ -176,6 +186,11 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
+	// Series labels must be estimated only for VectorPool.
+	if _, isVector := any(s).(promql.Vector); isVector {
+		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize
+	}
+
 	if err := tracker.IncreaseMemoryConsumption(estimatedBytes); err != nil {
 		p.inner.Put(s)
 		return nil, err
@@ -200,7 +215,14 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)
+	estimatedBytes := uint64(cap(s)) * p.elementSize
+
+	// Series labels must be estimated only for VectorPool.
+	if _, isVector := any(s).(promql.Vector); isVector {
+		estimatedBytes += uint64(cap(s)) * LabelPairEstimatedSize
+	}
+
+	tracker.DecreaseMemoryConsumption(estimatedBytes)
 	p.inner.Put(s)
 }
 
