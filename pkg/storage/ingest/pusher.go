@@ -99,6 +99,10 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 				index:        index,
 			}
 
+			if r.version > LatestRecordVersion {
+				parsed.err = fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", r.version, LatestRecordVersion)
+			}
+
 			// We don't free the WriteRequest slices because they are being freed by a level below.
 			err := parsed.Unmarshal(r.content)
 			if err != nil {

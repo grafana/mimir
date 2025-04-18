@@ -26,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -86,6 +87,11 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		SkipUnmarshalingExemplars: true,
 	}
 	defer mimirpb.ReuseSlice(req.Timeseries)
+
+	version := ingest.ParseRecordVersion(rec)
+	if version > ingest.LatestRecordVersion {
+		return false, fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, ingest.LatestRecordVersion)
+	}
 
 	// TODO(codesome): see if we can skip parsing exemplars. They are not persisted in the block so we can save some parsing here.
 	err = req.Unmarshal(rec.Value)
