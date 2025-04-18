@@ -620,7 +620,7 @@ func (cl *Client) PauseFetchPartitions(topicPartitions map[string][]int32) map[s
 
 // ResumeFetchTopics resumes fetching the input topics if they were previously
 // paused. Resuming topics that are not currently paused is a per-topic no-op.
-// See the documentation on PauseTfetchTopics for more details.
+// See the documentation on PauseFetchTopics for more details.
 func (cl *Client) ResumeFetchTopics(topics ...string) {
 	defer cl.allSinksAndSources(func(sns sinkAndSource) {
 		sns.source.maybeConsume()
@@ -727,8 +727,20 @@ func (c *consumer) purgeTopics(topics []string) {
 
 	// The difference for groups is we need to lock the group and there is
 	// a slight type difference in g.using vs d.using.
+	//
+	// assignPartitions removes the topics from 'tps', which removes them
+	// from FUTURE metadata requests meaning they will not be repopulated
+	// in the future. Any loaded tps is fine; metadata updates the topic
+	// pointers underneath -- metadata does not re-store the tps itself
+	// with any new topics that we just purged (except in the case of regex,
+	// which is impossible to permanently purge anyway).
+	//
+	// We are guarded from adding back to 'using' via the consumer mu;
+	// this cannot run concurrent with findNewAssignments. Thus, we first
+	// purge tps, then clear using, and once the lock releases, findNewAssignments
+	// will use the now-purged tps and will not add back to using.
 	if c.g != nil {
-		c.g.mu.Lock()
+		c.g.mu.Lock() // required when updating using
 		defer c.g.mu.Unlock()
 		c.assignPartitions(purgeAssignments, assignPurgeMatching, c.g.tps, fmt.Sprintf("purge of %v requested", topics))
 		for _, topic := range topics {
@@ -742,6 +754,7 @@ func (c *consumer) purgeTopics(topics []string) {
 			delete(c.d.using, topic)
 			delete(c.d.reSeen, topic)
 			delete(c.d.m, topic)
+			delete(c.d.ps, topic)
 		}
 	}
 }
@@ -1186,6 +1199,44 @@ func (c *consumer) assignPartitions(assignments map[string]map[int32]Offset, how
 	}
 }
 
+// filterMetadataAllTopics, called BEFORE doOnMetadataUpdate, evaluates
+// all topics received against the user provided regex.
+func (c *consumer) filterMetadataAllTopics(topics []string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var rns reNews
+	defer rns.log(&c.cl.cfg)
+
+	var reSeen map[string]bool
+	if c.d != nil {
+		reSeen = c.d.reSeen
+	} else {
+		reSeen = c.g.reSeen
+	}
+
+	keep := topics[:0]
+	for _, topic := range topics {
+		want, seen := reSeen[topic]
+		if !seen {
+			for rawRe, re := range c.cl.cfg.topics {
+				if want = re.MatchString(topic); want {
+					rns.add(rawRe, topic)
+					break
+				}
+			}
+			if !want {
+				rns.skip(topic)
+			}
+			reSeen[topic] = want
+		}
+		if want {
+			keep = append(keep, topic)
+		}
+	}
+	return keep
+}
+
 func (c *consumer) doOnMetadataUpdate() {
 	if !c.consuming() {
 		return
@@ -1503,9 +1554,9 @@ func (s *consumerSession) manageFetchConcurrency() {
 			var found bool
 			for i, want := range wantFetch {
 				if want == cancel {
-					_ = append(wantFetch[i:], wantFetch[i+1:]...)
-					wantFetch = wantFetch[:len(wantFetch)-1]
+					wantFetch = append(wantFetch[:i], wantFetch[i+1:]...)
 					found = true
+					break
 				}
 			}
 			// If we did not find the channel, then we have already
@@ -1917,6 +1968,10 @@ func (s *consumerSession) mapLoadsToBrokers(loads listOrEpochLoads) map[*broker]
 						// If we are fetching from a follower, we can list
 						// offsets against the follower itself. The replica
 						// being non-negative signals that.
+						//
+						// Note this is not actually true (i.e. KIP-392 lies),
+						// but we keep this logic in case we can revert
+						// to using non-leaders someday.
 						brokerID = offset.replica
 					}
 					if tryBroker := findBroker(brokers, brokerID); tryBroker != nil {

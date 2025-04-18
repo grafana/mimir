@@ -89,7 +89,9 @@ func (b *basicLogger) Log(level LogLevel, msg string, keyvals ...any) {
 	if len(keyvals) > 0 {
 		buf.WriteString("; ")
 		format := strings.Repeat("%v: %v, ", len(keyvals)/2)
-		format = format[:len(format)-2] // trim trailing comma and space
+		if len(format) > 1 {
+			format = format[:len(format)-2] // trim trailing comma and space
+		}
 		fmt.Fprintf(buf, format, keyvals...)
 	}
 

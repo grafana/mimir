@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"os"
+
+	"github.com/twmb/franz-go/pkg/kerr"
 )
 
 func isRetryableBrokerErr(err error) bool {
@@ -311,11 +313,36 @@ func (e *errUnknownCoordinator) Error() string {
 // consumer group member was kicked from the group or was never able to join
 // the group.
 type ErrGroupSession struct {
-	err error
+	Err error
 }
 
 func (e *ErrGroupSession) Error() string {
-	return fmt.Sprintf("unable to join group session: %v", e.err)
+	return fmt.Sprintf("unable to join group session: %v", e.Err)
 }
 
-func (e *ErrGroupSession) Unwrap() error { return e.err }
+func (e *ErrGroupSession) Unwrap() error { return e.Err }
+
+type errDecompress struct {
+	err error
+}
+
+func (e *errDecompress) Error() string {
+	return fmt.Sprintf("unable to decompress batch: %v", e.err)
+}
+
+func (e *errDecompress) Unwrap() error { return e.err }
+
+func isDecompressErr(err error) bool {
+	var ed *errDecompress
+	return errors.As(err, &ed)
+}
+
+func errCodeMessage(code int16, errMessage *string) error {
+	if err := kerr.ErrorForCode(code); err != nil {
+		if errMessage != nil {
+			return fmt.Errorf("%s: %w", *errMessage, err)
+		}
+		return err
+	}
+	return nil
+}
