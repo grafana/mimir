@@ -915,10 +915,7 @@ func (cxn *brokerCxn) doSasl(authenticate bool) error {
 					return err
 				}
 
-				if err = kerr.ErrorForCode(resp.ErrorCode); err != nil {
-					if resp.ErrorMessage != nil {
-						return fmt.Errorf("%s: %w", *resp.ErrorMessage, err)
-					}
+				if err := errCodeMessage(resp.ErrorCode, resp.ErrorMessage); err != nil {
 					return err
 				}
 				challenge = resp.SASLAuthBytes

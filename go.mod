@@ -46,9 +46,9 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.36.0
+	golang.org/x/crypto v0.37.0
 	golang.org/x/net v0.38.0
-	golang.org/x/sync v0.12.0
+	golang.org/x/sync v0.13.0
 	golang.org/x/time v0.11.0
 	google.golang.org/grpc v1.71.1
 	gopkg.in/yaml.v2 v2.4.0
@@ -81,10 +81,10 @@ require (
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79
 	github.com/tjhop/slog-gokit v0.1.4
-	github.com/twmb/franz-go v1.18.1
+	github.com/twmb/franz-go v1.18.2-0.20250415202527-a6799499b8d1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250416232150-07cc0584a381
-	github.com/twmb/franz-go/pkg/kmsg v1.9.0
+	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
@@ -93,7 +93,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.35.0
 	go.opentelemetry.io/proto/otlp v1.5.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/term v0.30.0
+	golang.org/x/term v0.31.0
 	google.golang.org/api v0.227.0
 	google.golang.org/protobuf v1.36.6
 	sigs.k8s.io/kustomize/kyaml v0.18.1
@@ -300,8 +300,8 @@ require (
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/oauth2 v0.28.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
@@ -339,12 +339,6 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 
 // Replacing prometheus/alertmanager with our fork.
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250331083058-4563aec7a975
-
-// Replacing with a fork commit based on v1.17.1 having cherry-picked the following PRs:
-// - https://github.com/grafana/franz-go/pull/1
-// - https://github.com/grafana/franz-go/pull/3
-// - https://github.com/grafana/franz-go/pull/4
-replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
 
 // Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
