@@ -301,7 +301,6 @@ func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 
 // enqueuePendingJobs moves per-partition pending jobs to the active job queue
 // for assignment to workers, subject to the job creation policy.
-// Assumes the scheduler mutex is held.
 func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	// For each partition, attempt to enqueue jobs until we run into a rejection
 	// from the job creation policy. Pending jobs are created in order of their
