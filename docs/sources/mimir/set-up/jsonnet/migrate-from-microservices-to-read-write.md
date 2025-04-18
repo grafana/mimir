@@ -154,7 +154,7 @@ Perform a test query by port-forwarding to `mimir-read`.
 
 Ensure `mimir-read` is running queries:
 
-`sum by (pod) (rate(cortex_querier_request_duration_seconds_count{job=~".*mimir-read.*))", route=~"(prometheus|api_prom)_api_v1_.+"}[1m]))`
+`sum by (pod) (rate(cortex_querier_request_duration_seconds_count{job=~".*mimir-read.*", route=~"(prometheus|api_prom)_api_v1_.+"}[1m]))`
 
 ### Step 3.3: Route traffic to mimir-read
 
