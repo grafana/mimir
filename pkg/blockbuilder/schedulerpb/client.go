@@ -174,7 +174,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 		// If we get here, we have a newly assigned job. Track it and return it.
 		key := *response.GetKey()
 		spec := *response.GetSpec()
-		level.Info(s.logger).Log("msg", "assigned job", "job_id", key.Id, "epoch", key.Epoch)
+		level.Info(s.logger).Log("msg", "assigned job", "job_id", key.Id, "epoch", key.Epoch, "spec", spec.String())
 
 		s.mu.Lock()
 		if _, ok := s.jobs[key]; ok {

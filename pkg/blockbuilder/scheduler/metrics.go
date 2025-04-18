@@ -12,6 +12,10 @@ type schedulerMetrics struct {
 	partitionStartOffset     *prometheus.GaugeVec
 	partitionCommittedOffset *prometheus.GaugeVec
 	partitionEndOffset       *prometheus.GaugeVec
+	flushFailed              prometheus.Counter
+	outstandingJobs          prometheus.Gauge
+	assignedJobs             prometheus.Gauge
+	pendingJobs              *prometheus.GaugeVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -33,6 +37,22 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		partitionCommittedOffset: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_partition_committed_offset",
 			Help: "The observed committed offset of each partition.",
+		}, []string{"partition"}),
+		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
+			Help: "The total number of Kafka flushes that failed.",
+		}),
+		outstandingJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_outstanding_jobs",
+			Help: "The number of outstanding jobs.",
+		}),
+		assignedJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_assigned_jobs",
+			Help: "The number of jobs assigned to workers.",
+		}),
+		pendingJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_pending_jobs",
+			Help: "The number of jobs in the pending queues.",
 		}, []string{"partition"}),
 	}
 }
