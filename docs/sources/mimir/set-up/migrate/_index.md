@@ -5,8 +5,10 @@ aliases:
 description: Refer to these guides when migrating to Grafana Mimir.
 menuTitle: Migrate
 title: Migrate to Grafana Mimir
-weight: 20
+weight: 5
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Migrate to Grafana Mimir
 

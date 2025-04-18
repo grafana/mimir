@@ -7,6 +7,8 @@ title: Get started with Grafana Mimir
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Get started with Grafana Mimir
 
 You can get started with Grafana Mimir _imperatively_ or _declaratively_:

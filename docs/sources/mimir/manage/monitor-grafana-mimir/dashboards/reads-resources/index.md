@@ -9,6 +9,8 @@ title: Grafana Mimir Reads resources dashboard
 weight: 110
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Reads resources dashboard
 
 The Reads resources dashboard shows CPU, memory, disk, and other resources utilization metrics.

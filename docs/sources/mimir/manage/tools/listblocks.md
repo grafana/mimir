@@ -7,6 +7,8 @@ title: Grafana Mimir listblocks
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir listblocks
 
 The listblocks tool lists blocks and show the block details of a tenant.

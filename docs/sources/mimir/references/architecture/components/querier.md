@@ -7,6 +7,8 @@ title: Grafana Mimir querier
 weight: 50
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir querier
 
 The querier is a stateless component that evaluates [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)

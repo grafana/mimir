@@ -9,6 +9,8 @@ title: Grafana Mimir Tenants dashboard
 weight: 160
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Tenants dashboard
 
 The Tenants dashboard shows various metrics for the selected tenant.

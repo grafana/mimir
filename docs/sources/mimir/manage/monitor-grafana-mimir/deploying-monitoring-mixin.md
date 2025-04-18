@@ -9,6 +9,8 @@ title: Deploying the Grafana Mimir monitoring mixin
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Deploying the Grafana Mimir monitoring mixin
 
 Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. You can configure your Prometheus server to scrape Grafana Mimir or you can use the built-in functionality of the [Helm chart to automatically send these metrics to a remote](../collecting-metrics-and-logs/).

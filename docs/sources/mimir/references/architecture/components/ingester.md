@@ -7,6 +7,8 @@ title: Grafana Mimir ingester
 weight: 30
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir ingester
 
 The ingester is a stateful component that writes incoming series to [long-term storage](../../../../get-started/about-grafana-mimir-architecture/#long-term-storage) on the write path and returns series samples for queries on the read path.

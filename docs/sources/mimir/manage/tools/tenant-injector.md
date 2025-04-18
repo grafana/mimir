@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/tools/tenant-injector/
-description:
-  Use the tenant injector to query data for a tenant during development
-  and troubleshooting.
+description: Use the tenant injector to query data for a tenant during development and troubleshooting.
 menuTitle: Tenant injector
 title: Grafana Mimir tenant injector
 weight: 20
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir tenant injector
 

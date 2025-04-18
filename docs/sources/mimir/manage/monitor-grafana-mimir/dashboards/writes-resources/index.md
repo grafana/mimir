@@ -9,6 +9,8 @@ title: Grafana Mimir Writes resources dashboard
 weight: 200
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Writes resources dashboard
 
 The Writes resources dashboard shows CPU, memory, disk, and other resource utilization metrics.

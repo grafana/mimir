@@ -8,6 +8,8 @@ title: Grafana Mimir production tips
 weight: 40
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir production tips
 
 This topic provides tips and techniques for you to consider when setting up a production Grafana Mimir cluster.

@@ -3,9 +3,7 @@ aliases:
   - ../configuring/about-runtime-configuration/ # /docs/mimir/<MIMIR_VERSION>/configuring/about-runtime-configuration/
   - ../operators-guide/configure/about-runtime-configuration/ # /docs/mimir/<MIMIR_VERSION>/operators-guide/configure/about-runtime-configuration/
   - ../operators-guide/configuring/about-runtime-configuration/ # /docs/mimir/<MIMIR_VERSION>/operators-guide/configuring/about-runtime-configuration/
-description:
-  Runtime configuration enables you to change a subset of configurations
-  without restarting Grafana Mimir.
+description: Runtime configuration enables you to change a subset of configurations without restarting Grafana Mimir.
 menuTitle: Runtime configuration
 title: About Grafana Mimir runtime configuration
 weight: 40

@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/architecture/deployment-modes/
-description:
-  You can deploy Grafana Mimir in either monolithic mode or microservices
-  mode.
+description: You can deploy Grafana Mimir in either monolithic mode or microservices mode.
 menuTitle: Deployment modes
 title: Grafana Mimir deployment modes
 weight: 20
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir deployment modes
 

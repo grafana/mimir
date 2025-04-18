@@ -7,6 +7,8 @@ keywords:
   - query
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Query metric data from Grafana Mimir
 
 You can query data from Grafana Mimir via Grafana or the Grafana Mimir HTTP API.

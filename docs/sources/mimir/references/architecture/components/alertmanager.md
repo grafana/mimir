@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/alertmanager/
-description:
-  The Alertmanager groups alert notifications and routes them to various
-  notification channels.
+description: The Alertmanager groups alert notifications and routes them to various notification channels.
 menuTitle: (Optional) Alertmanager
 title: (Optional) Grafana Mimir Alertmanager
 weight: 100
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # (Optional) Grafana Mimir Alertmanager
 
