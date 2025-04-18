@@ -865,6 +865,7 @@ type limitPerPartitionJobCreationPolicy struct {
 }
 
 // canCreateJob allows at most $partitionLimit jobs per partition.
+// TODO(davidgrant): add an error return to explain the reason for rejection.
 func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedulerpb.JobSpec, existingJobs []*schedulerpb.JobSpec) bool {
 	remaining := p.partitionLimit - 1 // -1: we're about to add one.
 
