@@ -253,7 +253,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 		return nil, nil
 	}
 
-	switch c := newJobBucket.Compare(s.jobBucket); c {
+	switch newJobBucket.Compare(s.jobBucket) {
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
