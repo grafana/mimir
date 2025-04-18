@@ -4871,8 +4871,8 @@
           "required": false,
           "desc": "List of queries to limit and duration to limit them for.",
           "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldType": "limited_queries_config...",
+          "fieldDefaultValue": [],
+          "fieldType": "list of query (string) and allowed_frequency (duration)",
           "fieldCategory": "experimental"
         },
         {

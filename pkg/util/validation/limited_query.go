@@ -8,3 +8,15 @@ type LimitedQuery struct {
 	Query            string        `yaml:"query"`
 	AllowedFrequency time.Duration `yaml:"allowed_frequency"` // query may only be run once per this duration
 }
+
+type LimitedQueriesConfig []*LimitedQuery
+
+func (lq *LimitedQueriesConfig) ExampleDoc() (comment string, yaml interface{}) {
+	return `The following configuration limits the query "rate(metric_counter[5m])" to being run, at most, every 1m.`,
+		[]map[string]string{
+			{
+				"query":             "rate(metric_counter[5m])",
+				"allowed_frequency": "1m",
+			},
+		}
+}
