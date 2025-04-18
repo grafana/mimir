@@ -558,30 +558,30 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRec  *kgo.Record
 	)
 
-	fetcher, err := ingest.NewConcurrentFetchers(
-		ctx,
-		b.kafkaClient,
-		logger,
-		state.Commit.Topic,
-		state.Commit.Partition,
-		state.Commit.At,
-		b.cfg.ConcurrentFetcherConcurrency,
-		100_000_000,
-		false,
-		5*time.Second,
-		nil,
-		ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
-		backoff.Config{
-			MinBackoff: 100 * time.Millisecond,
-			MaxBackoff: 1 * time.Second,
-		},
-		nil)
-	if err != nil {
-		level.Warn(logger).Log("msg", "failed to create fetcher", "err", err)
-		return state, err
-	}
-
-	fetcher.Start(ctx)
+	//fetcher, err := ingest.NewConcurrentFetchers(
+	//	ctx,
+	//	b.kafkaClient,
+	//	logger,
+	//	state.Commit.Topic,
+	//	state.Commit.Partition,
+	//	state.Commit.At,
+	//	b.cfg.ConcurrentFetcherConcurrency,
+	//	100_000_000,
+	//	false,
+	//	5*time.Second,
+	//	nil,
+	//	ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+	//	backoff.Config{
+	//		MinBackoff: 100 * time.Millisecond,
+	//		MaxBackoff: 1 * time.Second,
+	//	},
+	//	nil)
+	//if err != nil {
+	//	level.Warn(logger).Log("msg", "failed to create fetcher", "err", err)
+	//	return state, err
+	//}
+	//
+	//fetcher.Start(ctx)
 
 	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprintf("%d", partition))
 	metricUpdatePending := 0
@@ -613,7 +613,8 @@ func (b *BlockBuilder) consumePartitionSection(
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
-		fetches, _ := fetcher.PollFetches(ctx)
+		fetches := b.kafkaClient.PollFetches(ctx)
+		//fetches, _ := fetcher.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
@@ -656,7 +657,7 @@ func (b *BlockBuilder) consumePartitionSection(
 				req := mimirpb.PreallocWriteRequest{
 					SkipUnmarshalingExemplars: true,
 				}
-				err = req.Unmarshal(rec.Value)
+				err := req.Unmarshal(rec.Value)
 				if err != nil {
 					mimirpb.ReuseSlice(req.Timeseries)
 					goruErr = fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
@@ -682,7 +683,7 @@ func (b *BlockBuilder) consumePartitionSection(
 			metricUpdatePending++
 			totalRecs++
 			userCtx := user.InjectOrgID(ctx, rec.userID)
-			err = parallelPusher.PushToStorage(userCtx, rec.req)
+			err := parallelPusher.PushToStorage(userCtx, rec.req)
 			mimirpb.ReuseSlice(rec.req.Timeseries)
 			if err != nil {
 				for range recC {
@@ -700,7 +701,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		}
 	}
 
-	fetcher.Stop()
+	//fetcher.Stop()
 
 	firstRecTs := time.Time{}
 	if firstRec != nil {
@@ -729,7 +730,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 	// All samples in all records were processed. We can commit the last record's offset.
 	commitRec := lastRec
-
+	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return state, err
