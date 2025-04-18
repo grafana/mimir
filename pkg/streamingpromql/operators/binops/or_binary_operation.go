@@ -317,6 +317,26 @@ func (o *OrBinaryOperation) ExpressionPosition() posrange.PositionRange {
 func (o *OrBinaryOperation) Close() {
 	o.Left.Close()
 	o.Right.Close()
+
+	for _, g := range o.leftSeriesGroups {
+		if g == nil {
+			continue
+		}
+
+		g.Close(o.MemoryConsumptionTracker)
+	}
+
+	o.leftSeriesGroups = nil
+
+	for _, g := range o.rightSeriesGroups {
+		if g == nil {
+			continue
+		}
+
+		g.Close(o.MemoryConsumptionTracker)
+	}
+
+	o.rightSeriesGroups = nil
 }
 
 type orGroup struct {
@@ -357,4 +377,5 @@ func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, mem
 
 func (g *orGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(g.leftSamplePresence, memoryConsumptionTracker)
+	g.leftSamplePresence = nil
 }

@@ -61,6 +61,11 @@ type groupedBinaryOperationOutputSeries struct {
 	oneSide  *oneSide
 }
 
+func (g *groupedBinaryOperationOutputSeries) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	g.manySide.Close(memoryConsumptionTracker)
+	g.oneSide.Close(memoryConsumptionTracker)
+}
+
 type groupedBinaryOperationOutputSeriesWithLabels struct {
 	labels       labels.Labels
 	outputSeries *groupedBinaryOperationOutputSeries
@@ -78,8 +83,13 @@ type manySide struct {
 // latestSeriesIndex returns the index of the last series from this side.
 //
 // It assumes that seriesIndices is sorted in ascending order.
-func (s manySide) latestSeriesIndex() int {
+func (s *manySide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
+}
+
+func (s *manySide) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
+	s.mergedData = types.InstantVectorSeriesData{}
 }
 
 type oneSide struct {
@@ -96,8 +106,18 @@ type oneSide struct {
 // latestSeriesIndex returns the index of the last series from this side.
 //
 // It assumes that seriesIndices is sorted in ascending order.
-func (s oneSide) latestSeriesIndex() int {
+func (s *oneSide) latestSeriesIndex() int {
 	return s.seriesIndices[len(s.seriesIndices)-1]
+}
+
+func (s *oneSide) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
+	s.mergedData = types.InstantVectorSeriesData{}
+
+	if s.matchGroup != nil {
+		types.IntSlicePool.Put(s.matchGroup.presence, memoryConsumptionTracker)
+		s.matchGroup.presence = nil
+	}
 }
 
 type matchGroup struct {
@@ -571,6 +591,15 @@ func (g *GroupedVectorVectorBinaryOperation) NextSeries(ctx context.Context) (ty
 		panic(fmt.Sprintf("unsupported cardinality '%v'", g.VectorMatching.Card))
 	}
 
+	// If this is the last output series for that side, then we've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool later.
+	if isLastOutputSeriesForOneSide {
+		thisSeries.oneSide.mergedData = types.InstantVectorSeriesData{}
+	}
+
+	if isLastOutputSeriesForManySide {
+		thisSeries.manySide.mergedData = types.InstantVectorSeriesData{}
+	}
+
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -742,4 +771,10 @@ func (g *GroupedVectorVectorBinaryOperation) Close() {
 		g.manySideBuffer.Close()
 		g.manySideBuffer = nil
 	}
+
+	for _, s := range g.remainingSeries {
+		s.Close(g.MemoryConsumptionTracker)
+	}
+
+	g.remainingSeries = nil
 }
