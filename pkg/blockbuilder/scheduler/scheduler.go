@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -283,7 +284,6 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 		return
 	}
 
-	boundary := time.Now().Truncate(s.cfg.JobSize)
 	offFinder := newOffsetFinder(s.adminClient, s.logger)
 
 	// randomize partition order until we have a fair ordering mechanism.
@@ -298,7 +298,8 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 		}
 
 		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
-			off.start, off.resume, off.end, boundary, s.cfg.JobSize, time.Now().Add(-s.cfg.MaxScanAge), s.logger)
+			off.start, off.resume, off.end, time.Now(), s.cfg.JobSize,
+			time.Now().Add(-s.cfg.MaxScanAge), s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue
@@ -343,48 +344,29 @@ type offsetTime struct {
 // partition's end offsets.
 func probeInitialJobOffsets(ctx context.Context, offs offsetStore,
 	topic string, partition int32, start, resume, end int64,
-	boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
+	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
 
-	// This routine begins at the given boundary time and iterates backwards by jobSize,
-	// stopping when we've crossed the committed offset or the min scan time.
-	//
 	// The general idea is that we know the commit offset, but we don't know
-	// whether that commit is hour-aligned. By picking an hour-aligned boundary
-	// time, we can create jobs that *are* generally hour-aligned.
+	// that offset's timestamp. We have an API to get offsets given a timestamp,
+	// so we iteratively call that API until we reach the committed offset.
 
 	if resume >= end || start >= end {
 		// No new data to consume.
 		return []*offsetTime{}, nil
 	}
 
-	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
-	if err != nil {
-		return nil, err
-	}
-	level.Debug(logger).Log("msg", "found window-end offset", "ts", boundaryTime,
-		"topic", topic, "partition", partition, "offset", windowEndOffset)
-
-	if resume >= windowEndOffset {
-		// No new data to consume.
-		return []*offsetTime{}, nil
-	}
-
 	sentinels := []*offsetTime{}
+	scanStep := jobSize / 4
 
 	// Iterate backwards from the boundary time by job size, stopping when we've
 	// either crossed the committed offset or the min scan time.
-	for pb := boundaryTime.Add(-jobSize); minScanTime.Before(pb); pb = pb.Add(-jobSize) {
-		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
+	for pb := endTime; minScanTime.Before(pb); pb = pb.Add(-scanStep) {
+		off, t, err := offs.offsetAfterTime(ctx, topic, partition, pb)
 		if err != nil {
 			return nil, err
 		}
 		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb,
 			"topic", topic, "partition", partition, "offset", off)
-
-		if off >= windowEndOffset {
-			// Found an offset later than our boundary time. Keep looking.
-			continue
-		}
 
 		// Don't want to create jobs that are before the resume offset.
 		off = max(off, resume)
@@ -392,7 +374,7 @@ func probeInitialJobOffsets(ctx context.Context, offs offsetStore,
 		if len(sentinels) == 0 || off != sentinels[len(sentinels)-1].offset {
 			sentinels = append(sentinels, &offsetTime{
 				offset: off,
-				time:   pb,
+				time:   t,
 			})
 		}
 
@@ -402,8 +384,11 @@ func probeInitialJobOffsets(ctx context.Context, offs offsetStore,
 		}
 	}
 
-	// Return them in increasing order,
-	slices.Reverse(sentinels)
+	// Return them in increasing order of offset.
+	slices.SortFunc(sentinels, func(a, b *offsetTime) int {
+		return cmp.Compare(a.offset, b.offset)
+	})
+
 	return sentinels, nil
 }
 
@@ -491,7 +476,7 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 }
 
 type offsetStore interface {
-	offsetAfterTime(context.Context, string, int32, time.Time) (int64, error)
+	offsetAfterTime(context.Context, string, int32, time.Time) (int64, time.Time, error)
 }
 
 type offsetFinder struct {
@@ -510,16 +495,16 @@ func newOffsetFinder(adminClient *kadm.Client, logger log.Logger) *offsetFinder 
 
 // offsetAfterTime is a cached version of adminClient.ListOffsetsAfterMilli that
 // makes use of the fact that we want to ask about the same times for all partitions.
-func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, error) {
+func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, time.Time, error) {
 	offs, ok := o.offsets[t]
 	if !ok {
 		var err error
 		offs, err = o.adminClient.ListOffsetsAfterMilli(ctx, t.UnixMilli(), topic)
 		if err != nil {
-			return 0, err
+			return 0, time.Time{}, err
 		}
 		if offs.Error() != nil {
-			return 0, offs.Error()
+			return 0, time.Time{}, offs.Error()
 		}
 
 		o.offsets[t] = offs
@@ -527,12 +512,13 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 
 	po, ok := offs.Lookup(topic, partition)
 	if !ok {
-		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: not present", partition, t)
+		return 0, time.Time{}, fmt.Errorf("failed to get offset for partition %d at time %s: not present", partition, t)
 	}
 	if po.Err != nil {
-		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, po.Err)
+		return 0, time.Time{}, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, po.Err)
 	}
-	return po.Offset, nil
+
+	return po.Offset, time.UnixMilli(po.Timestamp), nil
 }
 
 var _ offsetStore = (*offsetFinder)(nil)
