@@ -104,6 +104,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
 	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
+
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
 	for {
