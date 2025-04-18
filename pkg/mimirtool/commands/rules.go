@@ -297,14 +297,12 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
 	r.ruleLoadTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_timestamp_seconds",
-		Help:      "The timestamp of the last rule load.",
+		Name: "cortex_last_rule_load_timestamp_seconds",
+		Help: "The timestamp of the last rule load.",
 	})
 	r.ruleLoadSuccessTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_success_timestamp_seconds",
-		Help:      "The timestamp of the last successful rule load.",
+		Name: "cortex_last_rule_load_success_timestamp_seconds",
+		Help: "The timestamp of the last successful rule load.",
 	})
 
 	cli, err := client.New(r.ClientConfig)
