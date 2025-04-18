@@ -292,16 +292,15 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 	})
 
 	for _, off := range consumeOffs {
-		if off.resume >= off.end || off.start >= off.end {
-			// Nothing to consume, so skip.
-			continue
-		}
-
 		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
 			off.start, off.resume, off.end, time.Now(), s.cfg.JobSize,
 			time.Now().Add(-s.cfg.MaxScanAge), s.logger)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
+			continue
+		}
+		if len(o) == 0 {
+			// No new data to consume, so skip.
 			continue
 		}
 
@@ -342,8 +341,7 @@ type offsetTime struct {
 // is used to bootstrap the job queue when the scheduler starts up. After these
 // jobs are created, the scheduler is only concerned with keeping track of each
 // partition's end offsets.
-func probeInitialJobOffsets(ctx context.Context, offs offsetStore,
-	topic string, partition int32, start, resume, end int64,
+func probeInitialJobOffsets(ctx context.Context, offs offsetStore, topic string, partition int32, start, resume, end int64,
 	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
 
 	// The general idea is that we know the commit offset, but we don't know
@@ -372,10 +370,7 @@ func probeInitialJobOffsets(ctx context.Context, offs offsetStore,
 		off = max(off, resume)
 
 		if len(sentinels) == 0 || off != sentinels[len(sentinels)-1].offset {
-			sentinels = append(sentinels, &offsetTime{
-				offset: off,
-				time:   t,
-			})
+			sentinels = append(sentinels, &offsetTime{offset: off, time: t})
 		}
 
 		if off == resume {
