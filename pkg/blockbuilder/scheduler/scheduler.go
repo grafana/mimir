@@ -289,9 +289,8 @@ func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 	for {
 		select {
 		case <-enqueueTick.C:
-			s.mu.Lock()
 			s.enqueuePendingJobs()
-			s.mu.Unlock()
+
 		case <-ctx.Done():
 			return
 		}
@@ -306,7 +305,13 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	// from the job creation policy. Pending jobs are created in order of their
 	// offsets, therefore pulling from the front achieves the same.
 
+	pending := make(map[int32]int, len(s.partState))
+
+	s.mu.Lock()
+
 	for partition, ps := range s.partState {
+		pending[partition] = ps.pendingJobs.Len()
+
 		for ps.pendingJobs.Len() > 0 {
 			e := ps.pendingJobs.Front()
 			or := e.Value.(*offsetRange)
@@ -329,6 +334,14 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			// Otherwise, it was successful.
 			ps.pendingJobs.Remove(e)
 		}
+	}
+
+	s.mu.Unlock()
+
+	// And update the pending jobs metric.
+
+	for partition, count := range pending {
+		s.metrics.pendingJobs.WithLabelValues(fmt.Sprint(partition)).Set(float64(count))
 	}
 }
 
@@ -411,7 +424,7 @@ func probeInitialJobOffsets(ctx context.Context, offs offsetStore, topic string,
 		if err != nil {
 			return nil, err
 		}
-		level.Debug(logger).Log("msg", "found next boundary offset ", "ts", pb,
+		level.Debug(logger).Log("msg", "found next boundary offset", "ts", pb,
 			"topic", topic, "partition", partition, "offset", off)
 
 		// Don't want to create jobs that are before the resume offset.
@@ -623,9 +636,15 @@ func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 	return cp
 }
 
+// flushOffsetsToKafka flushes the committed offsets to Kafka and updates relevant metrics.
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	// TODO: only flush if dirty.
 	offsets := s.snapCommitted()
+
+	offsets.Each(func(o kadm.Offset) {
+		s.metrics.partitionCommittedOffset.WithLabelValues(fmt.Sprint(o.Partition)).Set(float64(o.At))
+	})
+
 	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
 	if err != nil {
 		return fmt.Errorf("commit offsets: %w", err)
