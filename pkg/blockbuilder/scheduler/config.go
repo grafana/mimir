@@ -18,7 +18,8 @@ type Config struct {
 	JobLeaseExpiry      time.Duration `yaml:"job_lease_expiry"`
 	LookbackOnNoCommit  time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
 	MaxScanAge          time.Duration `yaml:"max_scan_age" category:"advanced"`
-	MaxJobsPerPartition int           `yaml:"max_jobs_per_partition" category:"advanced"`
+	MaxJobsPerPartition int           `yaml:"max_jobs_per_partition" category:"experimental"`
+	EnqueueInterval     time.Duration `yaml:"enqueue_interval" category:"experimental"`
 
 	// Config parameters defined outside the block-builder-scheduler config and are injected dynamically.
 	Kafka ingest.KafkaConfig `yaml:"-"`
@@ -33,6 +34,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder-scheduler.lookback-on-no-commit", 6*time.Hour, "How much to look back if a commit is not found for a partition.")
 	f.DurationVar(&cfg.MaxScanAge, "block-builder-scheduler.max-scan-age", 12*time.Hour, "The oldest record age to consider when scanning for jobs.")
 	f.IntVar(&cfg.MaxJobsPerPartition, "block-builder-scheduler.max-jobs-per-partition", 1, "The maximum number of jobs that can be scheduled for a partition.")
+	f.DurationVar(&cfg.EnqueueInterval, "block-builder-scheduler.enqueue-interval", 2*time.Second, "How frequently to enqueue pending jobs.")
 }
 
 func (cfg *Config) Validate() error {
@@ -63,6 +65,9 @@ func (cfg *Config) Validate() error {
 	if cfg.MaxJobsPerPartition != 1 {
 		// TODO: revise once we've implemented safe bookkeeping under parallel region consumption.
 		return fmt.Errorf("max jobs per partition (%d) must be 1", cfg.MaxJobsPerPartition)
+	}
+	if cfg.EnqueueInterval <= 0 {
+		return fmt.Errorf("enqueue interval (%d) must be positive", cfg.EnqueueInterval)
 	}
 	return nil
 }

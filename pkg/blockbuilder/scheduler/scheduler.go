@@ -4,10 +4,10 @@ package scheduler
 
 import (
 	"cmp"
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"slices"
 	"strings"
 	"sync"
@@ -98,6 +98,8 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 
 	s.completeObservationMode(ctx)
+	go s.enqueuePendingJobsWorker(ctx)
+
 	level.Info(s.logger).Log("msg", "entering normal operation")
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
@@ -213,7 +215,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 			return
 		}
 		if job != nil {
-			s.addOrUpdateJobs(job)
+			ps.addPendingJob(job)
 		}
 	})
 
@@ -223,6 +225,8 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 type partitionState struct {
 	offset    int64
 	jobBucket time.Time
+
+	pendingJobs *list.List
 }
 
 const (
@@ -231,10 +235,14 @@ const (
 	bucketAfter  = 1
 )
 
+type offsetRange struct {
+	start, end int64
+}
+
 // updateEndOffset processes an end offset and returns a consumption job spec if
 // one is ready. This is expected to be called with monotonically increasing
 // end offsets, and called frequently, even in the absence of new data.
-func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*schedulerpb.JobSpec, error) {
+func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*offsetRange, error) {
 	newJobBucket := ts.Truncate(jobSize)
 
 	if s.jobBucket.IsZero() {
@@ -254,11 +262,11 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 		// We've entered a new job bucket. Emit a job for the current
 		// bucket if it has data and start a new one.
 
-		var job *schedulerpb.JobSpec
+		var job *offsetRange
 		if s.offset < end {
-			job = &schedulerpb.JobSpec{
-				StartOffset: s.offset,
-				EndOffset:   end,
+			job = &offsetRange{
+				start: s.offset,
+				end:   end,
 			}
 		}
 		s.offset = end
@@ -269,10 +277,58 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	return nil, nil
 }
 
-func (s *BlockBuilderScheduler) addOrUpdateJobs(jobs ...*schedulerpb.JobSpec) {
-	for _, job := range jobs {
-		jobID := fmt.Sprintf("%s/%d/%d", job.Topic, job.Partition, job.StartOffset)
-		s.jobs.addOrUpdate(jobID, *job)
+func (s *partitionState) addPendingJob(job *offsetRange) {
+	s.pendingJobs.PushBack(job)
+}
+
+// enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
+func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
+	enqueueTick := time.NewTicker(s.cfg.EnqueueInterval)
+	defer enqueueTick.Stop()
+
+	for {
+		select {
+		case <-enqueueTick.C:
+			s.mu.Lock()
+			s.enqueuePendingJobs()
+			s.mu.Unlock()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// enqueuePendingJobs moves per-partition pending jobs to the active job queue
+// for assignment to workers, subject to the job creation policy.
+// Assumes the scheduler mutex is held.
+func (s *BlockBuilderScheduler) enqueuePendingJobs() {
+	// For each partition, attempt to enqueue jobs until we run into a rejection
+	// from the job creation policy. Pending jobs are created in order of their
+	// offsets, therefore pulling from the front achieves the same.
+
+	for partition, ps := range s.partState {
+		for ps.pendingJobs.Len() > 0 {
+			e := ps.pendingJobs.Front()
+			or := e.Value.(*offsetRange)
+			jobID := fmt.Sprintf("%s/%d/%d", s.cfg.Kafka.Topic, partition, or.start)
+			spec := schedulerpb.JobSpec{
+				Topic:       s.cfg.Kafka.Topic,
+				Partition:   partition,
+				StartOffset: or.start,
+				EndOffset:   or.end,
+			}
+			if err := s.jobs.add(jobID, spec); err != nil {
+				if errors.Is(err, errJobCreationDisallowed) || errors.Is(err, errJobAlreadyExists) {
+					// We've hit the limit for this partition.
+				} else {
+					level.Warn(s.logger).Log("msg", "failed to enqueue job", "partition", partition, "job_id", jobID, "err", err)
+				}
+				// Move onto the next partition.
+				break
+			}
+			// Otherwise, it was successful.
+			ps.pendingJobs.Remove(e)
+		}
 	}
 }
 
@@ -285,11 +341,6 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 	}
 
 	offFinder := newOffsetFinder(s.adminClient, s.logger)
-
-	// randomize partition order until we have a fair ordering mechanism.
-	rand.Shuffle(len(consumeOffs), func(i, j int) {
-		consumeOffs[i], consumeOffs[j] = consumeOffs[j], consumeOffs[i]
-	})
 
 	for _, off := range consumeOffs {
 		o, err := probeInitialJobOffsets(ctx, offFinder, off.topic, off.partition,
@@ -310,12 +361,7 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context) {
 			if job, err := ps.updateEndOffset(io.offset, io.time, s.cfg.JobSize); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
 			} else if job != nil {
-				s.addOrUpdateJobs(&schedulerpb.JobSpec{
-					Topic:       off.topic,
-					Partition:   off.partition,
-					StartOffset: job.StartOffset,
-					EndOffset:   job.EndOffset,
-				})
+				ps.addPendingJob(job)
 			}
 		}
 	}
@@ -326,7 +372,9 @@ func (s *BlockBuilderScheduler) getPartitionState(partition int32) *partitionSta
 		return ps
 	}
 
-	ps := &partitionState{}
+	ps := &partitionState{
+		pendingJobs: list.New(),
+	}
 	s.partState[partition] = ps
 	return ps
 }

@@ -13,10 +13,12 @@ import (
 )
 
 var (
-	errNoJobAvailable = errors.New("no job available")
-	errJobNotFound    = errors.New("job not found")
-	errJobNotAssigned = errors.New("job not assigned to given worker")
-	errBadEpoch       = errors.New("bad epoch")
+	errNoJobAvailable        = errors.New("no job available")
+	errJobNotFound           = errors.New("job not found")
+	errJobNotAssigned        = errors.New("job not assigned to given worker")
+	errBadEpoch              = errors.New("bad epoch")
+	errJobAlreadyExists      = errors.New("job already exists")
+	errJobCreationDisallowed = errors.New("job creation policy disallowed job")
 )
 
 type jobQueue[T any] struct {
@@ -111,21 +113,25 @@ func (s *jobQueue[T]) importJob(key jobKey, workerID string, spec T) error {
 	return nil
 }
 
-// addOrUpdate adds a new job or updates an existing job with the given spec.
-func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
+// add adds a new job with the given spec.
+func (s *jobQueue[T]) add(id string, spec T) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if j, ok := s.jobs[id]; ok {
-		// We can only update an unassigned job.
-		if j.assignee == "" {
-			level.Debug(s.logger).Log("msg", "updated job", "job_id", id)
-			j.spec = spec
-		}
-		return
+	if _, ok := s.jobs[id]; ok {
+		return errJobAlreadyExists
 	}
 
-	// Otherwise, we need to add a new job.
+	// See if the creation policy would allow it.
+
+	existingJobs := make([]*T, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		existingJobs = append(existingJobs, &j.spec)
+	}
+	if !s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existingJobs) {
+		level.Debug(s.logger).Log("msg", "job creation policy disallowed job", "job_id", id)
+		return errJobCreationDisallowed
+	}
 
 	j := &job[T]{
 		key: jobKey{
@@ -142,6 +148,7 @@ func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 	s.unassigned.PushBack(j)
 
 	level.Info(s.logger).Log("msg", "created job", "job_id", id)
+	return nil
 }
 
 // renewLease renews the lease of the job with the given ID for the given

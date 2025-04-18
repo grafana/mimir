@@ -24,7 +24,7 @@ func TestAssign(t *testing.T) {
 	require.Zero(t, j0spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	j1, j1spec, err := s.assign("w0")
 	require.NotEmpty(t, j1.id)
 	require.NotZero(t, j1spec)
@@ -36,7 +36,7 @@ func TestAssign(t *testing.T) {
 	require.Zero(t, j2spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
+	s.add("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
 	j3, j3spec, err := s.assign("w0")
 	require.NotZero(t, j3.id)
 	require.NotZero(t, j3spec)
@@ -52,7 +52,7 @@ func TestAssignComplete(t *testing.T) {
 		require.ErrorIs(t, err, errJobNotFound)
 	}
 
-	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk)
 	require.NotZero(t, jspec)
@@ -90,7 +90,7 @@ func TestAssignComplete(t *testing.T) {
 
 func TestLease(t *testing.T) {
 	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
-	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
 	require.NotZero(t, jspec)
@@ -151,8 +151,8 @@ func TestJobCreationPolicies(t *testing.T) {
 		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
 		// noOp policy should always allow job creation
-		s.addOrUpdate("job1", testSpec{topic: "topic1"})
-		s.addOrUpdate("job2", testSpec{topic: "topic2"})
+		require.NoError(t, s.add("job1", testSpec{topic: "topic1"}))
+		require.NoError(t, s.add("job2", testSpec{topic: "topic2"}))
 
 		_, ok1 := s.jobs["job1"]
 		require.True(t, ok1, "job1 should be created")
@@ -164,8 +164,8 @@ func TestJobCreationPolicies(t *testing.T) {
 		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), allowNoneJobCreationPolicy[testSpec]{})
 
 		// allowNone policy should never allow job creation
-		s.addOrUpdate("job1", testSpec{topic: "topic1"})
-		s.addOrUpdate("job2", testSpec{topic: "topic2"})
+		require.ErrorIs(t, s.add("job1", testSpec{topic: "topic1"}), errJobCreationDisallowed)
+		require.ErrorIs(t, s.add("job2", testSpec{topic: "topic2"}), errJobCreationDisallowed)
 
 		_, ok1 := s.jobs["job1"]
 		require.False(t, ok1, "job1 should not be created")

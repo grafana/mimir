@@ -139,7 +139,7 @@ func TestStartup(t *testing.T) {
 	}
 
 	// And we can resume normal operation:
-	sched.jobs.addOrUpdate("ingest/65/256", schedulerpb.JobSpec{
+	sched.jobs.add("ingest/65/256", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   65,
 		StartOffset: 256,
@@ -158,26 +158,28 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	sched.cfg.MaxJobsPerPartition = 0
 	sched.completeObservationMode(context.Background())
 	// Add some jobs, then move the committed offsets past some of them.
-	s1 := &schedulerpb.JobSpec{
+	s1 := schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
 		StartOffset: 256,
 		EndOffset:   9111,
 	}
-	s2 := &schedulerpb.JobSpec{
+	s2 := schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 50,
 		EndOffset:   128,
 	}
-	s3 := &schedulerpb.JobSpec{
+	s3 := schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 700,
 		EndOffset:   900,
 	}
 
-	sched.addOrUpdateJobs(s1, s2, s3)
+	sched.jobs.add("ingest/1/256", s1)
+	sched.jobs.add("ingest/2/50", s2)
+	sched.jobs.add("ingest/2/700", s3)
 
 	require.Equal(t, 3, sched.jobs.count())
 
@@ -199,7 +201,7 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	}
 
 	require.ElementsMatch(t,
-		[]*schedulerpb.JobSpec{s1, s3}, assignedJobs,
+		[]*schedulerpb.JobSpec{&s1, &s3}, assignedJobs,
 		"s2 should be skipped because its start offset is behind p2's committed offset",
 	)
 }
@@ -370,7 +372,7 @@ func TestOffsetMovement(t *testing.T) {
 		EndOffset:   6000,
 	}
 
-	sched.jobs.addOrUpdate("ingest/1/5524", spec)
+	sched.jobs.add("ingest/1/5524", spec)
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
@@ -772,14 +774,14 @@ func TestPartitionState(t *testing.T) {
 
 	z := time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC)
 
-	var job *schedulerpb.JobSpec
+	var job *offsetRange
 	var err error
 
 	job, err = pt.updateEndOffset(100, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.Nil(t, err)
 	job, err = pt.updateEndOffset(200, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
-	require.Equal(t, &schedulerpb.JobSpec{StartOffset: 100, EndOffset: 200}, job)
+	require.Equal(t, &offsetRange{start: 100, end: 200}, job)
 	require.Nil(t, err)
 
 	job, err = pt.updateEndOffset(201, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
@@ -793,8 +795,13 @@ func TestPartitionState(t *testing.T) {
 	require.Nil(t, err)
 
 	job, err = pt.updateEndOffset(300, z.Add(2*time.Hour), sz)
-	require.Equal(t, &schedulerpb.JobSpec{StartOffset: 200, EndOffset: 300}, job)
+	require.Equal(t, &offsetRange{start: 200, end: 300}, job)
 	require.NoError(t, err)
+
+	// And, if the time goes backwards, we return an error.
+	job, err = pt.updateEndOffset(300, z.Add(-2*time.Hour), sz)
+	require.Nil(t, job)
+	require.ErrorContains(t, err, "time went backwards")
 }
 
 func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
@@ -815,7 +822,7 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	sz := 1 * time.Hour
 
 	// A bunch of data observed:
-	var j *schedulerpb.JobSpec
+	var j *offsetRange
 	var err error
 	j, err = pt.updateEndOffset(10, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	assert.Nil(t, j)
@@ -833,7 +840,7 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 
 	// as we cross into the next bucket, there's still no new data.
 	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC), sz)
-	assert.Equal(t, &schedulerpb.JobSpec{StartOffset: 10, EndOffset: 12}, j)
+	assert.Equal(t, &offsetRange{start: 10, end: 12}, j)
 	assert.NoError(t, err)
 	// and we keep getting the same offset.
 	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC), sz)
@@ -847,4 +854,63 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 12, 1, 0, 0, time.UTC), sz)
 	assert.Nil(t, j)
 	assert.NoError(t, err)
+}
+
+func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
+	// Test that job detection and enqueueiing work as expected w/r/t the
+	// job creation policy.
+
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 1
+	sched.completeObservationMode(context.Background())
+
+	part := int32(1)
+	pt := sched.getPartitionState(part)
+
+	pt.addPendingJob(&offsetRange{start: 10, end: 20})
+	pt.addPendingJob(&offsetRange{start: 20, end: 30})
+	pt.addPendingJob(&offsetRange{start: 30, end: 40})
+
+	assert.Equal(t, 3, pt.pendingJobs.Len())
+
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 2, pt.pendingJobs.Len())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 2, pt.pendingJobs.Len())
+
+	j, spec, err := sched.jobs.assign("worker1")
+
+	assert.NoError(t, err)
+	assert.Equal(t, "ingest/1/10", j.id)
+	assert.Equal(t, schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 10,
+		EndOffset:   20,
+	}, spec)
+
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 2, pt.pendingJobs.Len(), "enqueue should be a no-op until the assigned job is completed")
+
+	sched.jobs.completeJob(j, "worker1")
+
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 1, pt.pendingJobs.Len(), "enqueue should have succeeded after completing the job")
+}
+
+func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+
+	part := int32(1)
+	pt := sched.getPartitionState(part)
+
+	pt.addPendingJob(&offsetRange{start: 10, end: 20})
+	pt.addPendingJob(&offsetRange{start: 20, end: 30})
+	pt.addPendingJob(&offsetRange{start: 30, end: 40})
+
+	assert.Equal(t, 3, pt.pendingJobs.Len())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len(), "a single enqueue call should have drained all pending jobs")
 }
