@@ -103,7 +103,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "entering normal operation")
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
-
+	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
 	for {
@@ -220,6 +220,7 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	})
 
 	s.metrics.outstandingJobs.Set(float64(s.jobs.count()))
+	s.metrics.assignedJobs.Set(float64(s.jobs.assigned()))
 }
 
 type partitionState struct {

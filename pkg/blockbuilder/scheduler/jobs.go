@@ -268,6 +268,20 @@ func (s *jobQueue[T]) count() int {
 	return len(s.jobs)
 }
 
+// count returns the number of assigned jobs in the jobQueue.
+func (s *jobQueue[T]) assigned() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, j := range s.jobs {
+		if j.assignee != "" {
+			count++
+		}
+	}
+	return count
+}
+
 type job[T any] struct {
 	key jobKey
 

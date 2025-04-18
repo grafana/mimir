@@ -14,6 +14,7 @@ type schedulerMetrics struct {
 	partitionEndOffset       *prometheus.GaugeVec
 	flushFailed              prometheus.Counter
 	outstandingJobs          prometheus.Gauge
+	assignedJobs             prometheus.Gauge
 	pendingJobs              *prometheus.GaugeVec
 }
 
@@ -44,6 +45,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		outstandingJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_outstanding_jobs",
 			Help: "The number of outstanding jobs.",
+		}),
+		assignedJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_blockbuilder_scheduler_assigned_jobs",
+			Help: "The number of jobs assigned to workers.",
 		}),
 		pendingJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_pending_jobs",
