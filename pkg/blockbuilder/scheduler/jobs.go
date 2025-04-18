@@ -129,7 +129,6 @@ func (s *jobQueue[T]) add(id string, spec T) error {
 		existingJobs = append(existingJobs, &j.spec)
 	}
 	if !s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existingJobs) {
-		level.Debug(s.logger).Log("msg", "job creation policy disallowed job", "job_id", id)
 		return errJobCreationDisallowed
 	}
 

@@ -24,7 +24,8 @@ func TestAssign(t *testing.T) {
 	require.Zero(t, j0spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	j1, j1spec, err := s.assign("w0")
 	require.NotEmpty(t, j1.id)
 	require.NotZero(t, j1spec)
@@ -52,7 +53,8 @@ func TestAssignComplete(t *testing.T) {
 		require.ErrorIs(t, err, errJobNotFound)
 	}
 
-	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk)
 	require.NotZero(t, jspec)
@@ -90,7 +92,8 @@ func TestAssignComplete(t *testing.T) {
 
 func TestLease(t *testing.T) {
 	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
-	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
 	require.NotZero(t, jspec)

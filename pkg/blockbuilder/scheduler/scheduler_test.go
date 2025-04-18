@@ -139,13 +139,13 @@ func TestStartup(t *testing.T) {
 	}
 
 	// And we can resume normal operation:
-	sched.jobs.add("ingest/65/256", schedulerpb.JobSpec{
+	e := sched.jobs.add("ingest/65/256", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   65,
 		StartOffset: 256,
 		EndOffset:   9111,
 	})
-
+	require.NoError(t, e)
 	a1key, a1spec, err := sched.assignJob("w0")
 	require.NoError(t, err)
 	require.NotZero(t, a1spec)
@@ -177,9 +177,9 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 		EndOffset:   900,
 	}
 
-	sched.jobs.add("ingest/1/256", s1)
-	sched.jobs.add("ingest/2/50", s2)
-	sched.jobs.add("ingest/2/700", s3)
+	require.NoError(t, sched.jobs.add("ingest/1/256", s1))
+	require.NoError(t, sched.jobs.add("ingest/2/50", s2))
+	require.NoError(t, sched.jobs.add("ingest/2/700", s3))
 
 	require.Equal(t, 3, sched.jobs.count())
 
@@ -372,7 +372,8 @@ func TestOffsetMovement(t *testing.T) {
 		EndOffset:   6000,
 	}
 
-	sched.jobs.add("ingest/1/5524", spec)
+	e := sched.jobs.add("ingest/1/5524", spec)
+	require.NoError(t, e)
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
