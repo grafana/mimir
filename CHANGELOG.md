@@ -34,6 +34,8 @@
 * [ENHANCEMENT] Ruler: Don't log statistics that are not available when using a remote query-frontend as part of `query stats` log lines. #11083
 * [ENHANCEMENT] Ingester: Remove cost-attribution experimental `max_cost_attribution_labels_per_user` limit. #11090
 * [ENHANCEMENT] Update Go to 1.24.2. #11114
+* [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
+* [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_cache_adjusted_total` metric. #11164
 * [ENHANCEMENT] Ingester/Distributor: Add `cortex_cost_attribution_*` metrics to observe the state of the cost-attribution trackers. #11112
 * [ENHANCEMENT] gRPC/HTTP servers: Add `cortex_server_invalid_cluster_validation_label_requests_total` metric, that is increased for every request with an invalid cluster validation label. #11241
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
@@ -47,7 +49,6 @@
 * [BUGFIX] Memberlist: Fix hash ring updates before the full-join has been completed, when `-memberlist.notify-interval` is configured. #11098
 * [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
 * [BUGFIX] Ingester: read reactive limiters should activate and deactivate when the ingester changes state. #11234
-* [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
 
 ### Mixin
 
