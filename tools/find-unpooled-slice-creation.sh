@@ -21,11 +21,14 @@ MATCHES=$(
     -e 'make(\[\]bool,' \
     -e 'make(\[\]\*histogram\.FloatHistogram,' \
     -e 'make(promql\.Vector,' \
-    'pkg/streamingpromql' || true
+    'pkg/streamingpromql' | \
+    grep -v '// ignoreunpooledslice' || true
 )
 
 if [ -n "$MATCHES" ]; then
   echo "Found one or more instances of creating a slice directly that should be taken from a pool:"
   echo "$MATCHES"
+  echo
+  echo "If this slice cannot be taken from a pool (eg. the length is not known ahead of time), add '// ignoreunpooledslice' to the line to suppress this warning."
   exit 1
 fi

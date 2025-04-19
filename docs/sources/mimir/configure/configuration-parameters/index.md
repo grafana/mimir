@@ -1626,6 +1626,11 @@ mimir_query_engine:
   # (experimental) Use query planner when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.use-query-planning
   [use_query_planning: <boolean> | default = false]
+
+  # (experimental) Enable common subexpression elimination when evaluating
+  # queries. Only applies if query planner is enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
+  [enable_common_subexpression_elimination: <boolean> | default = true]
 ```
 
 ### frontend
