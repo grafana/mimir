@@ -4,13 +4,16 @@ package querymiddleware
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"strings"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
-	"strings"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -54,7 +57,7 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	}
 
 	key := ql.keyGen.QueryRequestLimiter(ctx, tenant.JoinTenantIDs(tenantIDs), req)
-	hashedKey := cacheHashKey(key)
+	hashedKey := maybeHashCacheKey(key)
 	// start at max duration value
 	cacheValue := validation.LimitedQuery{
 		Query:            "",
@@ -91,4 +94,13 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	}
 
 	return ql.next.Do(ctx, req)
+}
+
+func maybeHashCacheKey(key string) string {
+	if len(key) <= base64.RawURLEncoding.EncodedLen(blake2b.Size256) {
+		return key
+	}
+
+	sum := blake2b.Sum256([]byte(key))
+	return base64.RawURLEncoding.EncodeToString(sum[:blake2b.Size256])
 }

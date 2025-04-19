@@ -38,14 +38,14 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "non-empty limit should block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: "rate(metric_counter[5m])", AllowedFrequency: time.Minute},
+				{Query: query, AllowedFrequency: time.Minute},
 			}},
 			expectSecondQueryBlocked: true,
 		},
 		{
 			name: "short max frequency should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: "rate(metric_counter[5m])", AllowedFrequency: time.Nanosecond},
+				{Query: query, AllowedFrequency: time.Nanosecond},
 			}},
 		},
 		{
@@ -211,6 +211,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},
 	}
+	queryString := `{__name__="metric_counter",pod=~"app-.*"}`
 
 	tests := []struct {
 		name                     string
@@ -224,7 +225,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "matching query should block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: `{__name__="metric_counter",pod=~"app-.*"}`, AllowedFrequency: time.Minute},
+				{Query: queryString, AllowedFrequency: time.Minute},
 			}},
 			expectSecondQueryBlocked: true,
 		},
@@ -237,7 +238,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "short max frequency should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: `{__name__="metric_counter",pod=~"app-.*"}`, AllowedFrequency: time.Nanosecond},
+				{Query: queryString, AllowedFrequency: time.Nanosecond},
 			}},
 		},
 	}
@@ -284,6 +285,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 			{Type: prompb.LabelMatcher_RE, Name: "pod", Value: "app-.*"},
 		},
 	}
+	queryString := `{__name__="metric_counter",pod=~"app-.*"}`
 	userID := "test1|test2"
 
 	tests := []struct {
@@ -300,7 +302,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
 				"test2": {limitedQueries: []*validation.LimitedQuery{
 					{
-						Query:            `{__name__="metric_counter",pod=~"app-.*"}`,
+						Query:            queryString,
 						AllowedFrequency: time.Minute,
 					}},
 				},
@@ -312,7 +314,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
 				"test3": {limitedQueries: []*validation.LimitedQuery{
 					{
-						Query:            `{__name__="metric_counter",pod=~"app-.*"}`,
+						Query:            queryString,
 						AllowedFrequency: time.Minute,
 					}},
 				},
@@ -323,13 +325,13 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
 				"test1": {limitedQueries: []*validation.LimitedQuery{
 					{
-						Query:            `{__name__="metric_counter",pod=~"app-.*"}`,
+						Query:            queryString,
 						AllowedFrequency: time.Nanosecond,
 					}},
 				},
 				"test2": {limitedQueries: []*validation.LimitedQuery{
 					{
-						Query:            `{__name__="metric_counter",pod=~"app-.*"}`,
+						Query:            queryString,
 						AllowedFrequency: time.Minute,
 					}},
 				},
