@@ -62,7 +62,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(innerSeries)
+	defer types.SeriesMetadataSlicePool.Put(innerSeries, t.MemoryConsumptionTracker)
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
@@ -115,7 +115,11 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		types.PutInstantVectorSeriesData(data, t.MemoryConsumptionTracker)
 	}
 
-	outputSeries := types.GetSeriesMetadataSlice(outputSeriesCount)
+	outputSeries, err := types.SeriesMetadataSlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	t.values, err = types.Float64SlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err

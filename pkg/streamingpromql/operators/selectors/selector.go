@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -34,7 +35,8 @@ type Selector struct {
 	querier storage.Querier
 	series  *seriesList
 
-	seriesIdx int
+	seriesIdx                int
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
 func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
@@ -83,13 +85,18 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	}
 
 	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
-	s.series = newSeriesList()
+	s.series = newSeriesList(s.MemoryConsumptionTracker)
 
 	for ss.Next() {
 		s.series.Add(ss.At())
 	}
 
-	return s.series.ToSeriesMetadata(), ss.Err()
+	metadata, err := s.series.ToSeriesMetadata()
+	if err != nil {
+		return nil, err
+	}
+
+	return metadata, ss.Err()
 }
 
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
@@ -130,15 +137,17 @@ type seriesList struct {
 
 	lastSeriesBatch *seriesBatch
 
-	length int
+	length                   int
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
-func newSeriesList() *seriesList {
+func newSeriesList(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *seriesList {
 	firstBatch := getSeriesBatch()
 
 	return &seriesList{
-		currentSeriesBatch: firstBatch,
-		lastSeriesBatch:    firstBatch,
+		currentSeriesBatch:       firstBatch,
+		lastSeriesBatch:          firstBatch,
+		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
@@ -162,8 +171,12 @@ func (l *seriesList) Len() int {
 // ToSeriesMetadata returns a SeriesMetadata value for each series added to this seriesList.
 //
 // Calling ToSeriesMetadata after calling Pop may return an incomplete list.
-func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
-	metadata := types.GetSeriesMetadataSlice(l.length)
+func (l *seriesList) ToSeriesMetadata() ([]types.SeriesMetadata, error) {
+	metadata, err := types.SeriesMetadataSlicePool.Get(l.length, l.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	batch := l.currentSeriesBatch
 
 	for batch != nil {
@@ -174,7 +187,7 @@ func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
 		batch = batch.next
 	}
 
-	return metadata
+	return metadata, nil
 }
 
 // Pop returns the next series from the head of this seriesList, and advances

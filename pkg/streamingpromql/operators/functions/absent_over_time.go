@@ -51,7 +51,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 	if err != nil {
 		return nil, err
 	}
-	defer types.PutSeriesMetadataSlice(innerMetadata)
+	defer types.SeriesMetadataSlicePool.Put(innerMetadata, a.MemoryConsumptionTracker)
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
@@ -61,7 +61,11 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 	// Initialize presence slice
 	a.presence = a.presence[:a.TimeRange.StepCount]
 
-	metadata := types.GetSeriesMetadataSlice(1)
+	metadata, err := types.SeriesMetadataSlicePool.Get(1, a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	metadata = append(metadata, types.SeriesMetadata{
 		Labels: a.Labels,
 	})

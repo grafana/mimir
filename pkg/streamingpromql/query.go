@@ -187,7 +187,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 
-				ExpressionPosition: e.PositionRange(),
+				ExpressionPosition:       e.PositionRange(),
+				MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			},
 			Stats: q.stats,
 		}, nil
@@ -401,7 +402,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			Range:     e.Range,
 			Matchers:  vectorSelector.LabelMatchers,
 
-			ExpressionPosition: e.PositionRange(),
+			ExpressionPosition:       e.PositionRange(),
+			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
@@ -608,7 +610,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -621,7 +623,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)

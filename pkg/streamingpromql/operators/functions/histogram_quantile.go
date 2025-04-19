@@ -141,7 +141,7 @@ func (h *HistogramQuantileFunction) SeriesMetadata(ctx context.Context) ([]types
 	if err != nil {
 		return nil, err
 	}
-	defer types.PutSeriesMetadataSlice(innerSeries)
+	defer types.SeriesMetadataSlicePool.Put(innerSeries, h.memoryConsumptionTracker)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -197,7 +197,11 @@ func (h *HistogramQuantileFunction) SeriesMetadata(ctx context.Context) ([]types
 		h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
 	}
 
-	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
 		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})

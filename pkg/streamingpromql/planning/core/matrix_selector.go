@@ -63,13 +63,14 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	}
 
 	selector := &selectors.Selector{
-		Queryable:          params.Queryable,
-		TimeRange:          timeRange,
-		Timestamp:          TimestampFromTime(m.Timestamp),
-		Offset:             m.Offset.Milliseconds(),
-		Range:              m.Range,
-		Matchers:           matchers,
-		ExpressionPosition: m.ExpressionPosition.ToPrometheusType(),
+		Queryable:                params.Queryable,
+		TimeRange:                timeRange,
+		Timestamp:                TimestampFromTime(m.Timestamp),
+		Offset:                   m.Offset.Milliseconds(),
+		Range:                    m.Range,
+		Matchers:                 matchers,
+		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
+		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.Stats)

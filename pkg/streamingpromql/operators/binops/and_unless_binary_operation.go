@@ -75,7 +75,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 
 	if len(leftMetadata) == 0 {
 		// We can't produce any series, we are done.
-		types.PutSeriesMetadataSlice(leftMetadata)
+		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -84,7 +84,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(rightMetadata)
+	defer types.SeriesMetadataSlicePool.Put(rightMetadata, a.MemoryConsumptionTracker)
 
 	if len(rightMetadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.

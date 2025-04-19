@@ -124,7 +124,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(innerSeries)
+	defer types.SeriesMetadataSlicePool.Put(innerSeries, a.MemoryConsumptionTracker)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -160,7 +160,11 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	}
 
 	// Sort the list of series we'll return, and maintain the order of the corresponding groups at the same time
-	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), a.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {

@@ -73,8 +73,8 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	if len(leftMetadata) == 0 && len(rightMetadata) == 0 {
 		// Nothing to return.
-		types.PutSeriesMetadataSlice(leftMetadata)
-		types.PutSeriesMetadataSlice(rightMetadata)
+		types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 		o.Right.Close()
@@ -86,7 +86,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the right side.
 		o.nextSeriesIsFromLeft = false
 		o.rightSeriesCount = []int{len(rightMetadata)}
-		types.PutSeriesMetadataSlice(leftMetadata)
+		types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 
@@ -97,19 +97,19 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the left side.
 		o.nextSeriesIsFromLeft = true
 		o.leftSeriesCount = []int{len(leftMetadata)}
-		types.PutSeriesMetadataSlice(rightMetadata)
+		types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Right.Close()
 
 		return leftMetadata, nil
 	}
 
-	defer types.PutSeriesMetadataSlice(leftMetadata)
-	defer types.PutSeriesMetadataSlice(rightMetadata)
+	defer types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
 
 	o.computeGroups(leftMetadata, rightMetadata)
 
-	return o.computeSeriesOutputOrder(leftMetadata, rightMetadata), nil
+	return o.computeSeriesOutputOrder(leftMetadata, rightMetadata)
 }
 
 func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) {
@@ -155,7 +155,7 @@ func (o *OrBinaryOperation) computeGroups(leftMetadata []types.SeriesMetadata, r
 	}
 }
 
-func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) []types.SeriesMetadata {
+func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.SeriesMetadata, rightMetadata []types.SeriesMetadata) ([]types.SeriesMetadata, error) {
 	// The idea here is to determine the order we should return series in, returning series from the right side as soon as we've seen all
 	// the series from the left that we need.
 	//
@@ -174,7 +174,10 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 	// state on both sides.
 
 	nextLeftSeriesToRead := 0
-	series := types.GetSeriesMetadataSlice(len(leftMetadata) + len(rightMetadata))
+	series, err := types.SeriesMetadataSlicePool.Get(len(leftMetadata)+len(rightMetadata), o.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 
 	for nextRightSeriesToRead, rightGroup := range o.rightSeriesGroups {
 		lastSeriesFromLeft := false
@@ -215,7 +218,7 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
 
-	return series
+	return series, nil
 }
 
 func (o *OrBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {

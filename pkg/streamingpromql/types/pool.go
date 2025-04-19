@@ -18,10 +18,6 @@ var (
 	matrixPool = pool.NewBucketedPool(MaxExpectedSeriesPerResult, func(size int) promql.Matrix {
 		return make(promql.Matrix, 0, size)
 	})
-
-	seriesMetadataSlicePool = pool.NewBucketedPool(MaxExpectedSeriesPerResult, func(size int) []SeriesMetadata {
-		return make([]SeriesMetadata, 0, size)
-	})
 )
 
 func GetMatrix(size int) promql.Matrix {
@@ -30,12 +26,4 @@ func GetMatrix(size int) promql.Matrix {
 
 func PutMatrix(m promql.Matrix) {
 	matrixPool.Put(m)
-}
-
-func GetSeriesMetadataSlice(size int) []SeriesMetadata {
-	return seriesMetadataSlicePool.Get(size)
-}
-
-func PutSeriesMetadataSlice(s []SeriesMetadata) {
-	seriesMetadataSlicePool.Put(s)
 }
