@@ -737,6 +737,14 @@ type PrometheusLabelsResponse struct {
 	Infos     []string            `json:"infos,omitempty"`
 }
 
+func (m *PrometheusLabelsResponse) Close() {
+	// Nothing to do
+}
+
+func (resp *PrometheusLabelsResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
+}
+
 func (m *PrometheusLabelsResponse) GetHeaders() []*PrometheusHeader {
 	if m != nil {
 		return m.Headers
@@ -760,6 +768,14 @@ type PrometheusSeriesResponse struct {
 	Headers   []*PrometheusHeader `json:"-"`
 	Warnings  []string            `json:"warnings,omitempty"`
 	Infos     []string            `json:"infos,omitempty"`
+}
+
+func (m *PrometheusSeriesResponse) Close() {
+	// Nothing to do
+}
+
+func (resp *PrometheusSeriesResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return nil, false
 }
 
 func (m *PrometheusSeriesResponse) GetHeaders() []*PrometheusHeader {
@@ -1031,6 +1047,27 @@ func (resp *PrometheusResponse) minTime() int64 {
 		return -1
 	}
 	return result[0].Samples[0].TimestampMs
+}
+
+func (resp *PrometheusResponse) Close() {
+	// Nothing to do
+}
+
+func (resp *PrometheusResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return resp, true
+}
+
+type PrometheusResponseWithFinalizer struct {
+	*PrometheusResponse
+	finalizer func()
+}
+
+func (resp *PrometheusResponseWithFinalizer) Close() {
+	resp.finalizer()
+}
+
+func (resp *PrometheusResponseWithFinalizer) GetPrometheusResponse() (*PrometheusResponse, bool) {
+	return resp.PrometheusResponse, true
 }
 
 // EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.

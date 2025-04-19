@@ -190,15 +190,18 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		headers = shardedQueryable.getResponseHeaders()
 	}
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  headers,
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  headers,
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
 }
 
