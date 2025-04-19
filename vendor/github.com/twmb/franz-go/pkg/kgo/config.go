@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kgo/pool"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/kversion"
 	"github.com/twmb/franz-go/pkg/sasl"
@@ -70,6 +69,7 @@ type cfg struct {
 	/////////////////////
 
 	id                     *string // client ID
+	ctx                    context.Context
 	dialFn                 func(context.Context, string, string) (net.Conn, error)
 	dialTimeout            time.Duration
 	dialTLS                *tls.Config
@@ -84,6 +84,8 @@ type cfg struct {
 	seedBrokers []string
 	maxVersions *kversion.Versions
 	minVersions *kversion.Versions
+
+	onRebootstrapRequired func() ([]string, error)
 
 	retryBackoff func(int) time.Duration
 	retries      int64
@@ -100,6 +102,7 @@ type cfg struct {
 	sasls []sasl.Mechanism
 
 	hooks hooks
+	pools pools
 
 	//////////////////////
 	// PRODUCER SECTION //
@@ -112,20 +115,22 @@ type cfg struct {
 	maxProduceInflight int                // if idempotency is disabled, we allow a configurable max inflight
 	compression        []CompressionCodec // order of preference
 
-	defaultProduceTopic string
-	maxRecordBatchBytes int32
-	maxBufferedRecords  int64
-	maxBufferedBytes    int64
-	produceTimeout      time.Duration
-	recordRetries       int64
-	maxUnknownFailures  int64
-	linger              time.Duration
-	recordTimeout       time.Duration
-	manualFlushing      bool
-	txnBackoff          time.Duration
-	missingTopicDelete  time.Duration
+	defaultProduceTopic       string
+	defaultProduceTopicAlways bool
+	maxRecordBatchBytes       int32
+	maxBufferedRecords        int64
+	maxBufferedBytes          int64
+	produceTimeout            time.Duration
+	recordRetries             int64
+	maxUnknownFailures        int64
+	linger                    time.Duration
+	recordTimeout             time.Duration
+	manualFlushing            bool
+	txnBackoff                time.Duration
+	missingTopicDelete        time.Duration
 
 	partitioner Partitioner
+	compressor  Compressor
 
 	stopOnDataLoss bool
 	onDataLoss     func(string, int32)
@@ -143,17 +148,18 @@ type cfg struct {
 	keepControl    bool
 	rack           string
 	preferLagFn    PreferLagFn
+	decompressor   Decompressor
 
-	maxConcurrentFetches     int
-	disableFetchSessions     bool
-	keepRetryableFetchErrors bool
+	maxConcurrentFetches      int
+	disableFetchSessions      bool
+	keepRetryableFetchErrors  bool
+	disableFetchCRCValidation bool
+
+	recheckPreferredReplicaInterval time.Duration
 
 	topics     map[string]*regexp.Regexp   // topics to consume; if regex is true, values are compiled regular expressions
 	partitions map[string]map[int32]Offset // partitions to directly consume from
 	regex      bool
-
-	recordsPool          *recordsPool
-	decompressBufferPool *pool.BucketedPool[byte]
 
 	////////////////////////////
 	// CONSUMER GROUP SECTION //
@@ -296,6 +302,10 @@ func (cfg *cfg) validate() error {
 		{name: "metadata min age", v: int64(cfg.metadataMinAge), allowed: int64(10 * time.Millisecond), badcmp: i64lt, durs: true},
 		{v: int64(cfg.metadataMaxAge), allowed: int64(cfg.metadataMinAge), badcmp: i64lt, fmt: "metadata max age %v is erroneously less than metadata min age %v", durs: true},
 
+		// 10ms <= preferred recheck interval <= 7d
+		{name: "recheck preferred replica interval", v: int64(cfg.recheckPreferredReplicaInterval), allowed: int64(10 * time.Millisecond), badcmp: i64lt, durs: true},
+		{name: "recheck preferred replica interval", v: int64(cfg.recheckPreferredReplicaInterval), allowed: int64(7 * 24 * time.Hour), badcmp: i64gt, durs: true},
+
 		// Some random producer settings.
 		{name: "max buffered records", v: cfg.maxBufferedRecords, allowed: 1, badcmp: i64lt},
 		{name: "max buffered bytes", v: cfg.maxBufferedBytes, allowed: 0, badcmp: i64lt},
@@ -336,6 +346,10 @@ func (cfg *cfg) validate() error {
 			}
 			return fmt.Errorf("%s %v is %s than allowed %v", limit.name, limit.v, cmp, limit.allowed)
 		}
+	}
+
+	if cfg.defaultProduceTopicAlways && cfg.defaultProduceTopic == "" {
+		return errors.New("invalid empty DefaultProduceTopic when using DefaultProduceTopicAlways")
 	}
 
 	if cfg.dialFn != nil {
@@ -393,11 +407,12 @@ func (cfg *cfg) validate() error {
 	}
 	cfg.hooks = processedHooks
 
-	// Assume a 2x compression ratio.
-	maxDecompressedBatchSize := int(cfg.maxBytes.load()) * 2
-	cfg.decompressBufferPool = pool.NewBucketedPool[byte](4096, maxDecompressedBatchSize, 2, func(sz int) []byte {
-		return make([]byte, sz)
-	})
+	processedPools, err := processPools(cfg.pools)
+	if err != nil {
+		return err
+	}
+	cfg.pools = processedPools
+
 	return nil
 }
 
@@ -420,6 +435,25 @@ func processHooks(hooks []Hook) ([]Hook, error) {
 		}
 	}
 	return processedHooks, nil
+}
+
+// Same as the above, but for pools.
+func processPools(pools []Pool) ([]Pool, error) {
+	var processedPools []Pool
+	for _, pool := range pools {
+		if implementsAnyPool(pool) {
+			processedPools = append(processedPools, pool)
+		} else if morePools, ok := pool.([]Pool); ok {
+			more, err := processPools(morePools)
+			if err != nil {
+				return nil, err
+			}
+			processedPools = append(processedPools, more...)
+		} else {
+			return nil, errors.New("found an argument that implements no pool interfaces")
+		}
+	}
+	return processedPools, nil
 }
 
 var reVersion = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
@@ -456,7 +490,7 @@ func defaultCfg() cfg {
 		logger: new(nopLogger),
 
 		seedBrokers: []string{"127.0.0.1"},
-		maxVersions: kversion.Stable(),
+		maxVersions: kversion.Stable(), // kversion bumps what is returned from Stable on the same release we add support for new features to kgo
 
 		retryBackoff: func() func(int) time.Duration {
 			var rngMu sync.Mutex
@@ -525,6 +559,8 @@ func defaultCfg() cfg {
 
 		maxConcurrentFetches: 0, // unbounded default
 
+		recheckPreferredReplicaInterval: 30 * time.Minute,
+
 		///////////
 		// group //
 		///////////
@@ -575,6 +611,13 @@ func SoftwareNameAndVersion(name, version string) Opt {
 // It is invalid to use a nil logger; doing so will cause panics.
 func WithLogger(l Logger) Opt {
 	return clientOpt{func(cfg *cfg) { cfg.logger = &wrappedLogger{l} }}
+}
+
+// WithContext sets the client to use a custom context.
+//
+// By default, the client uses context.Background.
+func WithContext(ctx context.Context) Opt {
+	return clientOpt{func(cfg *cfg) { cfg.ctx = ctx }}
 }
 
 // RequestTimeoutOverhead uses the given time as overhead while deadlining
@@ -826,10 +869,25 @@ func SASL(sasls ...sasl.Mechanism) Opt {
 // Hooks can be used to layer in metrics (such as Prometheus hooks) or anything
 // else. The client will call all hooks in order. See the Hooks interface for
 // more information, as well as any interface that contains "Hook" in the name
-// to know the available hooks. A single hook can implement zero or all hook
+// to know the available hooks. A single hook can implement any or all hook
 // interfaces, and only the hooks that it implements will be called.
 func WithHooks(hooks ...Hook) Opt {
 	return clientOpt{func(cfg *cfg) { cfg.hooks = append(cfg.hooks, hooks...) }}
+}
+
+// WithPools sets memory pools to use wherever relevant.
+//
+// Pools can be used to optimize memory usage for data that is frequently
+// thrown away after a short usage. For a list of all supported pools, look at
+// the documentation for any interface that begins with "Pool". Multiple pools
+// may be used; the first pool that is received from is the first pull put back
+// into. A single pool can implement any or all pool interfaces.
+//
+// If you use pools for fetching, the record Context field will be populated.
+// This field is used for recycling the underlying memory once Recycle is
+// called; do not clear the field.
+func WithPools(pools ...Pool) Opt {
+	return clientOpt{func(cfg *cfg) { cfg.pools = append(cfg.pools, pools...) }}
 }
 
 // ConcurrentTransactionsBackoff sets the backoff interval to use during
@@ -859,6 +917,29 @@ func ConsiderMissingTopicDeletedAfter(t time.Duration) Opt {
 	return clientOpt{func(cfg *cfg) { cfg.missingTopicDelete = t }}
 }
 
+// OnRebootstrapRequired sets the function to call when a metadata response has
+// the REBOOTSTRAP_REQUIRED errored. The function should return new seed
+// brokers for the client to use, or an error. Internally, the client will then
+// call UpdateSeedBrokers with the seeds you return. All other live connections
+// to brokers are stopped and active requests are failed.
+//
+// The REBOOTSTRAP_REQUIRED error was introduced in Kafka 4.0, as a way for
+// Kafka to tell the client that the client needs to stop all non seed broker
+// connections to stop and for the client to query the seed brokers again.
+// Franz-go by default already periodically sends a request to a seed broker
+// to prevent a scenario where all previously discovered brokers are down
+// or unavailable, so this client does not have as much of a need for
+// REBOOTSTRAP_REQUIRED. That said, this function can be useful if Kafka knows
+// the client should specifically talk to seed brokers next, and this function
+// allows you a chance to update your seed brokers at the same time. If you
+// do not want to update your seed brokers, you can just return the same value
+// that you use in your [SeedBrokers] configuration option.
+//
+// You can read KIP-1102 for more info about this option.
+func OnRebootstrapRequired(fn func() ([]string, error)) Opt {
+	return clientOpt{func(cfg *cfg) { cfg.onRebootstrapRequired = fn }}
+}
+
 ////////////////////////////
 // PRODUCER CONFIGURATION //
 ////////////////////////////
@@ -870,6 +951,13 @@ func ConsiderMissingTopicDeletedAfter(t time.Duration) Opt {
 // cannot be produced and will be failed immediately.
 func DefaultProduceTopic(t string) ProducerOpt {
 	return producerOpt{func(cfg *cfg) { cfg.defaultProduceTopic = t }}
+}
+
+// DefaultProduceTopicAlways sets the client to ALWAYS produce to the
+// [DefaultProduceTopic], overriding any Topic field that may be present
+// in the Record when producing.
+func DefaultProduceTopicAlways() ProducerOpt {
+	return producerOpt{func(cfg *cfg) { cfg.defaultProduceTopicAlways = true }}
 }
 
 // Acks represents the number of acks a broker leader must have before
@@ -931,16 +1019,29 @@ func MaxProduceRequestsInflightPerBroker(n int) ProducerOpt {
 // ProducerBatchCompression sets the compression codec to use for producing
 // records.
 //
-// Compression is chosen in the order preferred based on broker support.  For
-// example, zstd compression was introduced in Kafka 2.1, so the preference
-// can be first zstd, fallback snappy, fallback none.
+// Compression is chosen in the order preferred based on broker support. For
+// example, zstd compression was introduced in Kafka 2.1, so the preference can
+// be first zstd, fallback snappy, fallback none.
 //
 // The default preference is [snappy, none], which should be fine for all old
 // consumers since snappy compression has existed since Kafka 0.8.0.  To use
 // zstd, your brokers must be at least 2.1 and all consumers must be upgraded
 // to support decoding zstd records.
+//
+// Alternatively, if you want finer control over compression you can use
+// [WithCompressor] for complete control.
 func ProducerBatchCompression(preference ...CompressionCodec) ProducerOpt {
 	return producerOpt{func(cfg *cfg) { cfg.compression = preference }}
+}
+
+// WithCompressor allows you to completely control how produce batches are
+// compressed, allowing you to use alternative libraries than what franz-go
+// supports, allowing you to have more control over memory & pooling, and
+// other benefits. It is recommended to just use [ProducerBatchCompression]
+// for simplicity (or specify nothing, which opts into snappy by default).
+// The client default compressor is the [DefaultCompressor].
+func WithCompressor(compressor Compressor) ProducerOpt {
+	return producerOpt{func(cfg *cfg) { cfg.compressor = compressor }}
 }
 
 // ProducerBatchMaxBytes upper bounds the size of a record batch, overriding
@@ -951,7 +1052,7 @@ func ProducerBatchCompression(preference ...CompressionCodec) ProducerOpt {
 // many record batches for many topics.
 //
 // If a single record encodes larger than this number (before compression), it
-// will will not be written and a callback will have the appropriate error.
+// will not be written and a callback will have the appropriate error.
 //
 // Note that this is the maximum size of a record batch before compression. If
 // a batch compresses poorly and actually grows the batch, the uncompressed
@@ -1108,7 +1209,7 @@ func ManualFlushing() ProducerOpt {
 // only to produce a later one successfully. This also allows for easier
 // sequence number ordering internally.
 //
-// The timeout is only evaluated evaluated before writing a request or after a
+// The timeout is only evaluated before writing a request or after a
 // produce response. Thus, a sink backoff may delay record timeout slightly.
 //
 // This option is roughly equivalent to delivery.timeout.ms.
@@ -1122,8 +1223,8 @@ func RecordDeliveryTimeout(timeout time.Duration) ProducerOpt {
 // For Kafka-to-Kafka transactions, the transactional ID is only one half of
 // the equation. You must also assign a group to consume from.
 //
-// To produce transactionally, you first BeginTransaction, then produce records
-// consumed from a group, then you EndTransaction. All records produced outside
+// To produce transactionally, you first [BeginTransaction], then produce records
+// consumed from a group, then you [EndTransaction]. All records produced outside
 // of a transaction will fail immediately with an error.
 //
 // After producing a batch, you must commit what you consumed. Auto committing
@@ -1356,21 +1457,9 @@ func ConsumeRegex() ConsumerOpt {
 	return consumerOpt{func(cfg *cfg) { cfg.regex = true }}
 }
 
-// EnableRecordsPool sets the client to obtain the *kgo.Record objects from a pool,
-// in order to minimize the number of allocations.
-//
-// By enabling this option, the records returned by PollFetches/PollRecords
-// can be sent back to the pool via ReuseRecords method in order to be recycled.
-//
-// This option is particularly useful for use cases where the volume of generated records is very high,
-// as it can negatively impact performance due to the extra GC overhead.
-func EnableRecordsPool() ConsumerOpt {
-	return consumerOpt{func(cfg *cfg) { cfg.recordsPool = newRecordsPool() }}
-}
-
 // DisableFetchSessions sets the client to not use fetch sessions (Kafka 1.0+).
 //
-// A "fetch session" is is a way to reduce bandwidth for fetch requests &
+// A "fetch session" is a way to reduce bandwidth for fetch requests &
 // responses, and to potentially reduce the amount of work that brokers have to
 // do to handle fetch requests. A fetch session opts into the broker tracking
 // some state of what the client is interested in. For example, say that you
@@ -1418,6 +1507,14 @@ func ConsumePreferringLagFn(fn PreferLagFn) ConsumerOpt {
 	return consumerOpt{func(cfg *cfg) { cfg.preferLagFn = fn }}
 }
 
+// WithDecompressor allows you to completely control how fetch batches are
+// decompressed, allowing you to use alternative libraries than what franz-go
+// supports, allowing you to have more control over memory & pooling, and other
+// benefits. The client default compressor is the [DefaultDecompressor].
+func WithDecompressor(decompressor Decompressor) ConsumerOpt {
+	return consumerOpt{func(cfg *cfg) { cfg.decompressor = decompressor }}
+}
+
 // KeepRetryableFetchErrors switches the client to always return any retryable
 // broker error when fetching, rather than stripping them. By default, the
 // client strips retryable errors from fetch responses; these are usually
@@ -1430,6 +1527,26 @@ func ConsumePreferringLagFn(fn PreferLagFn) ConsumerOpt {
 // errors being returned in fetches (and ignore the other errors).
 func KeepRetryableFetchErrors() ConsumerOpt {
 	return consumerOpt{func(cfg *cfg) { cfg.keepRetryableFetchErrors = true }}
+}
+
+// DisableFetchCRCValidation disables crc32 checksum validation when fetching.
+// This should only be used if you are working with a broker that does not
+// properly support CRCs in record batches.
+func DisableFetchCRCValidation() ConsumerOpt {
+	return consumerOpt{func(cfg *cfg) { cfg.disableFetchCRCValidation = true }}
+}
+
+// RecheckPreferredReplicaInterval configures how long the consumer should
+// fetch from a preferred replica before switching back to the leader.
+// Periodically switching back to the leader allows the leader to re-choose a
+// perhaps better preferred replica (say you added a new cluster, or added
+// nodes to an existing cluster, or something else changed). For implementation
+// simplicity, the interval is checked after fetch responses, meaning one more
+// request can be issued after the interval has elapsed.
+//
+// The default interval is 30 minutes.
+func RecheckPreferredReplicaInterval(interval time.Duration) ConsumerOpt {
+	return consumerOpt{func(cfg *cfg) { cfg.recheckPreferredReplicaInterval = interval }}
 }
 
 //////////////////////////////////
@@ -1470,7 +1587,7 @@ func Balancers(balancers ...GroupBalancer) GroupOpt {
 // in this timeout, the broker will remove the member from the group and
 // initiate a rebalance.
 //
-// If you are using a GroupTransactSession for EOS, wish to lower this, and are
+// If you are using a [GroupTransactSession] for EOS, wish to lower this, and are
 // talking to a Kafka cluster pre 2.5, consider lowering the
 // TransactionTimeout. If you do not, you risk a transaction finishing after a
 // group has rebalanced, which could lead to duplicate processing. If you are
