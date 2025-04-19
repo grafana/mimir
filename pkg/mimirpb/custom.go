@@ -4,11 +4,177 @@ package mimirpb
 
 import (
 	"bytes"
+	encoding_binary "encoding/binary"
 	"fmt"
+	io "io"
 	"math"
+	"sync"
 
+	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
+	protobufproto "google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 )
+
+var (
+	metricPool = sync.Pool{
+		New: func() any {
+			return &Metric{}
+		},
+	}
+)
+
+func init() {
+	c := encoding.GetCodecV2(proto.Name)
+	encoding.RegisterCodecV2(&codecV2{codec: c})
+}
+
+// codecV2 customizes gRPC unmarshalling.
+type codecV2 struct {
+	codec encoding.CodecV2
+}
+
+var _ encoding.CodecV2 = &codecV2{}
+
+func messageV2Of(v any) protobufproto.Message {
+	switch v := v.(type) {
+	case protoadapt.MessageV1:
+		return protoadapt.MessageV2Of(v)
+	case protoadapt.MessageV2:
+		return v
+	default:
+		panic(fmt.Errorf("unrecognized message type %T", v))
+	}
+}
+
+func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
+	vv := messageV2Of(v)
+	if vv == nil {
+		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
+	}
+
+	var size int
+	if sizer, ok := v.(gogoproto.Sizer); ok {
+		size = sizer.Size()
+	} else {
+		size = protobufproto.Size(vv)
+	}
+
+	var data mem.BufferSlice
+	// MarshalWithSize should be the most optimized method.
+	if marshaler, ok := v.(MarshalerWithSize); ok {
+		var buf []byte
+		var err error
+		buf, err = marshaler.MarshalWithSize(size)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, mem.SliceBuffer(buf))
+	} else if mem.IsBelowBufferPoolingThreshold(size) {
+		marshaler, ok := v.(gogoproto.Marshaler)
+		var buf []byte
+		var err error
+		if ok {
+			buf, err = marshaler.Marshal()
+		} else {
+			buf, err = protobufproto.Marshal(vv)
+		}
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, mem.SliceBuffer(buf))
+	} else {
+		pool := mem.DefaultBufferPool()
+		buf := pool.Get(size)
+		var err error
+		marshaler, ok := v.(SizedMarshaler)
+		if ok {
+			_, err = marshaler.MarshalToSizedBuffer((*buf)[:size])
+		} else {
+			_, err = (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv)
+		}
+		if err != nil {
+			pool.Put(buf)
+			return nil, err
+		}
+		data = append(data, mem.NewBuffer(buf, pool))
+	}
+
+	return data, nil
+}
+
+// mem.DefaultBufferPool() only has five sizes: 256 B, 4 KB, 16 KB, 32 KB and 1 MB.
+// This means that for messages between 32 KB and 1 MB, we may over-allocate by up to 992 KB,
+// or ~97%. If we have a lot of messages in this range, we can waste a lot of memory.
+// So instead, we create our own buffer pool with more sizes to reduce this wasted space, and
+// also include pools for larger sizes up to 256 MB.
+var unmarshalSlicePool = mem.NewTieredBufferPool(unmarshalSlicePoolSizes()...)
+
+func unmarshalSlicePoolSizes() []int {
+	var sizes []int
+
+	for s := 256; s <= 256<<20; s <<= 1 {
+		sizes = append(sizes, s)
+	}
+
+	return sizes
+}
+
+// Unmarshal customizes gRPC unmarshalling.
+// If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
+func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	buf := data.MaterializeToBuffer(unmarshalSlicePool)
+	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
+	// we increase buf's reference count first so it doesn't go to zero.
+	defer buf.Free()
+
+	if unmarshaler, ok := v.(gogoproto.Unmarshaler); ok {
+		if err := unmarshaler.Unmarshal(buf.ReadOnlyData()); err != nil {
+			return err
+		}
+	} else {
+		vv := messageV2Of(v)
+		if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+			return err
+		}
+	}
+
+	if holder, ok := v.(MessageWithBufferRef); ok {
+		buf.Ref()
+		holder.SetBuffer(buf)
+	}
+
+	return nil
+}
+
+func (c *codecV2) Name() string {
+	return c.codec.Name()
+}
+
+type MessageWithBufferRef interface {
+	SetBuffer(mem.Buffer)
+	FreeBuffer()
+}
+
+// BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
+// Implementations of this interface should keep a reference to said buffer.
+type BufferHolder struct {
+	buffer mem.Buffer
+}
+
+func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
+	m.buffer = buf
+}
+
+func (m *BufferHolder) FreeBuffer() {
+	if m.buffer != nil {
+		m.buffer.Free()
+		m.buffer = nil
+	}
+}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
@@ -249,4 +415,566 @@ func (t *UnsafeByteSlice) Size() int {
 
 func (t UnsafeByteSlice) Equal(other UnsafeByteSlice) bool {
 	return bytes.Equal(t, other)
+}
+
+type CustomTimeSeries struct {
+	*TimeSeries
+}
+
+// Release back to pool.
+func (m *CustomTimeSeries) Release() {
+	ReuseTimeseries(m.TimeSeries)
+	m.TimeSeries = nil
+}
+
+func (m *CustomTimeSeries) Unmarshal(data []byte) error {
+	m.TimeSeries = TimeseriesFromPool()
+	m.Labels = m.Labels[:0]
+	m.Samples = m.Samples[:0]
+	m.Exemplars = m.Exemplars[:0]
+	m.Histograms = m.Histograms[:0]
+
+	l := len(data)
+	index := 0
+	for index < l {
+		preIndex := index
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMimir
+			}
+			if index >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[index]
+			index++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: TimeSeries: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: TimeSeries: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var la LabelAdapter
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+				return err
+			}
+			m.Labels = append(m.Labels, la)
+			index = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Samples", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Samples = append(m.Samples, Sample{})
+			if err := m.Samples[len(m.Samples)-1].Unmarshal(data[index:postIndex]); err != nil {
+				return err
+			}
+			index = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Exemplars", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if !m.SkipUnmarshalingExemplars {
+				var ex Exemplar
+				if err := unmarshalExemplar(&ex, data[index:postIndex]); err != nil {
+					return err
+				}
+				m.Exemplars = append(m.Exemplars, ex)
+			}
+			index = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Histograms", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Histograms = append(m.Histograms, Histogram{})
+			if err := m.Histograms[len(m.Histograms)-1].Unmarshal(data[index:postIndex]); err != nil {
+				return err
+			}
+			index = postIndex
+		default:
+			index = preIndex
+			skippy, err := skipMimir(data[index:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			index += skippy
+		}
+	}
+
+	if index > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+func unmarshalLabelAdapter(la *LabelAdapter, data []byte) error {
+	l := len(data)
+	index := 0
+	for index < l {
+		preIndex := index
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMimir
+			}
+			if index >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[index]
+			index++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelPair: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelPair: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			// TODO: Consider using a pool: Get byte slice from pool, copy the data to it, and take a yoloString.
+			la.Name = string(data[index:postIndex])
+			index = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			// TODO: Consider using a pool: Get byte slice from pool, copy the data to it, and take a yoloString.
+			la.Value = string(data[index:postIndex])
+			index = postIndex
+		default:
+			index = preIndex
+			skippy, err := skipMimir(data[index:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			index += skippy
+		}
+	}
+	if index > l {
+		return io.ErrUnexpectedEOF
+	}
+
+	return nil
+}
+
+func unmarshalExemplar(ex *Exemplar, data []byte) error {
+	l := len(data)
+	index := 0
+	for index < l {
+		preIndex := index
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMimir
+			}
+			if index >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[index]
+			index++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Exemplar: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Exemplar: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var la LabelAdapter
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+				return err
+			}
+			ex.Labels = append(ex.Labels, la)
+			index = postIndex
+		case 2:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var v uint64
+			if (index + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(data[index:]))
+			index += 8
+			ex.Value = float64(math.Float64frombits(v))
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimestampMs", wireType)
+			}
+			ex.TimestampMs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				ex.TimestampMs |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			index = preIndex
+			skippy, err := skipMimir(data[index:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			index += skippy
+		}
+	}
+
+	if index > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+type CustomMetric struct {
+	*Metric
+}
+
+// Release back to pool.
+func (m *CustomMetric) Release() {
+	m.Labels = m.Labels[:0]
+	metricPool.Put(m.Metric)
+	m.Metric = nil
+}
+
+func (m *CustomMetric) Unmarshal(data []byte) error {
+	m.Metric = metricPool.Get().(*Metric)
+	m.Labels = m.Labels[:0]
+
+	l := len(data)
+	index := 0
+	for index < l {
+		preIndex := index
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMimir
+			}
+			if index >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[index]
+			index++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Metric: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Metric: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMimir
+				}
+				if index >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[index]
+				index++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMimir
+			}
+			postIndex := index + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var la LabelAdapter
+			if err := unmarshalLabelAdapter(&la, data[index:postIndex]); err != nil {
+				return err
+			}
+			m.Labels = append(m.Labels, la)
+			index = postIndex
+		default:
+			index = preIndex
+			skippy, err := skipMimir(data[index:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) < 0 {
+				return ErrInvalidLengthMimir
+			}
+			if (index + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			index += skippy
+		}
+	}
+
+	if index > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+// SizedMarshaler supports marshaling a protobuf message to a sized buffer.
+type SizedMarshaler interface {
+	// MarshalToSizedBuffer appends the wire-format encoding of m to b.
+	MarshalToSizedBuffer(b []byte) (int, error)
+}
+
+// MarshalerWithSize supports marshaling a protobuf message with a predetermined buffer size.
+type MarshalerWithSize interface {
+	// MarshalToSizedBuffer returns a wire format byte slice of the given size.
+	MarshalWithSize(size int) ([]byte, error)
 }

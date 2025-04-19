@@ -1586,8 +1586,14 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 			return next(ctx, req)
 		},
 		func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
+			if !cleanupInDefer {
+				return
+			}
+
+			req, _ := pushReq.WriteRequest()
+			pushReq.CleanUp()
+			if req != nil {
+				req.FreeBuffer()
 			}
 		}
 }
@@ -1596,6 +1602,7 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
+		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
@@ -2786,6 +2793,11 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for _, resp := range resps {
+			resp.Release()
+		}
+	}()
 
 	metrics := map[uint64]labels.Labels{}
 respsLoop:
@@ -2806,6 +2818,9 @@ respsLoop:
 		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
+		// Make safe copies of labels.
+		// TODO: Review.
+		m.InternStrings(strings.Clone)
 		result = append(result, m)
 	}
 	return result, nil
