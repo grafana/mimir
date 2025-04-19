@@ -347,6 +347,7 @@
 * [ENHANCEMENT] Ruler: Support OAuth2 and proxies in Alertmanager client #9945 #10030
 * [ENHANCEMENT] Ingester: Add `-blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples` to build 24h blocks for out-of-order data belonging to the previous days instead of building smaller 2h blocks. This reduces pressure on compactors and ingesters when the out-of-order samples span multiple days in the past. #9844 #10033 #10035
 * [ENHANCEMENT] Distributor: allow a different limit for info series (series ending in `_info`) label count, via `-validation.max-label-names-per-info-series`. #10028
+* [ENHANCEMENT] Ingester: print fewer max-series-per-user errors. #10039
 * [ENHANCEMENT] Ingester: do not reuse labels, samples and histograms slices in the write request if there are more entries than 10x the pre-allocated size. This should help to reduce the in-use memory in case of few requests with a very large number of labels, samples or histograms. #10040
 * [ENHANCEMENT] Query-Frontend: prune `<subquery> and on() (vector(x)==y)` style queries and stop pruning `<subquery> < -Inf`. Triggered by https://github.com/prometheus/prometheus/pull/15245. #10026
 * [ENHANCEMENT] Query-Frontend: perform request format validation before processing the request. #10093
