@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -119,7 +120,7 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 				"range query": &PrometheusRangeQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
 				},
-				"instant query": &PrometheusRangeQueryRequest{
+				"instant query": &PrometheusInstantQueryRequest{
 					queryExpr: parseQuery(t, tt.query),
 				},
 			}
@@ -127,8 +128,12 @@ func TestQueryBlockerMiddleware_RangeAndInstantQuery(t *testing.T) {
 			for reqType, req := range reqs {
 				t.Run(reqType, func(t *testing.T) {
 					reg := prometheus.NewPedanticRegistry()
+					blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+						Name: "cortex_query_frontend_rejected_queries_total",
+						Help: "Number of queries that were rejected by the cluster administrator.",
+					}, []string{"user", "reason"})
 					logger := log.NewNopLogger()
-					mw := newQueryBlockerMiddleware(tt.limits, logger, reg)
+					mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
 					_, err := mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
 					if tt.expectedBlocked {
@@ -226,8 +231,12 @@ func TestQueryBlockerMiddleware_RemoteRead(t *testing.T) {
 			require.NoError(t, err)
 
 			reg := prometheus.NewPedanticRegistry()
+			blockedQueriesCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+				Name: "cortex_query_frontend_rejected_queries_total",
+				Help: "Number of queries that were rejected by the cluster administrator.",
+			}, []string{"user", "reason"})
 			logger := log.NewNopLogger()
-			mw := newQueryBlockerMiddleware(tt.limits, logger, reg)
+			mw := newQueryBlockerMiddleware(tt.limits, logger, blockedQueriesCounter)
 			_, err = mw.Wrap(&mockNextHandler{t: t, shouldContinue: !tt.expectedBlocked}).Do(user.InjectOrgID(context.Background(), "test"), req)
 
 			if tt.expectedBlocked {

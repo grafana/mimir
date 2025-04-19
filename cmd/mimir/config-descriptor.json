@@ -4867,6 +4867,16 @@
         },
         {
           "kind": "field",
+          "name": "limited_queries",
+          "required": false,
+          "desc": "List of queries to limit and duration to limit them for.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldType": "list of query (string) and allowed_frequency (duration)",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "blocked_requests",
           "required": false,
           "desc": "List of http requests to block.",
