@@ -2019,7 +2019,7 @@ func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t
 }
 
 // This test is critical because it reproduces a bug that caused data loss. This test has been designed to
-// *not* mock PartitionReader or concurrentFetchers, and just mock responses from Kafka to reproduce a scenario
+// *not* mock PartitionReader or ConcurrentFetchers, and just mock responses from Kafka to reproduce a scenario
 // where *both* conditions are met:
 // 1. Fetch request failures
 // 2. Fetch responses containing less records than requested
