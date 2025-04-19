@@ -12,7 +12,7 @@ type LimitedQuery struct {
 type LimitedQueriesConfig []*LimitedQuery
 
 func (lq *LimitedQueriesConfig) ExampleDoc() (comment string, yaml interface{}) {
-	return `The following configuration limits the query "rate(metric_counter[5m])" to being run, at most, every 1m.`,
+	return `The following configuration limits the query "rate(metric_counter[5m])" to running, at most, every minute.`,
 		[]map[string]string{
 			{
 				"query":             "rate(metric_counter[5m])",
