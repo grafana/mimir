@@ -58,6 +58,7 @@
 * [ENHANCEMENT] Alerts: Improve `MimirIngesterFailsToProcessRecordsFromKafka` to not fire during forced TSDB head compaction. #11006
 * [ENHANCEMENT] Alerts: Add alerts for invalid cluster validation labels. #11255
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
+* [CHANGE] Alerts: Change pending period for `MimirBucketIndexNotUpdated` alert to fire after being 5m active to avoid false positives. #11193
 
 ### Jsonnet
 

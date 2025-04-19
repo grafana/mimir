@@ -225,6 +225,7 @@
           // that this alert fire before queriers start to return errors because the bucket index is too old (3600 seconds
           // by default).
           alert: $.alertName('BucketIndexNotUpdated'),
+          'for': '5m',
           expr: |||
             min by(%(alert_aggregation_labels)s, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
           ||| % $._config,
