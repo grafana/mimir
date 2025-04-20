@@ -1208,7 +1208,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
-		dedupedPerMetric := make(map[string]int, len(req.Timeseries))
+		// Cap how many metrics with dedupled samples to emit trace events for.
+		const maxTrace = 10
+		dedupedPerMetric := make(map[string]int, maxTrace)
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1235,7 +1237,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
 			if dedupedSamplesAndHistograms > 0 {
 				for _, l := range ts.Labels {
-					if l.Name == labels.MetricName {
+					if l.Name != labels.MetricName {
+						continue
+					}
+					if _, exists := dedupedPerMetric[l.Value]; exists || len(dedupedPerMetric) < maxTrace {
 						dedupedPerMetric[l.Value] += dedupedSamplesAndHistograms
 						break
 					}
@@ -1259,7 +1264,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedExemplars += len(ts.Exemplars)
 		}
 
-		// Emit a tracing span event for each metric with deduped samples.
+		// Emit tracing span events for metrics with deduped samples.
 		spanLogger, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.prePushValidationMiddleware")
 		defer spanLogger.Finish()
 		for m, c := range dedupedPerMetric {
