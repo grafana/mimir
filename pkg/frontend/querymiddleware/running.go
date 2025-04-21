@@ -50,7 +50,7 @@ func awaitQueryFrontendServiceRunning(ctx context.Context, service services.Serv
 		return fmt.Errorf("frontend not running: %v", state)
 	}
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, log, "awaitQueryFrontendServiceRunning")
+	spanLog, ctx := spanlogger.New(ctx, log, tracer, "awaitQueryFrontendServiceRunning")
 	defer spanLog.Finish()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)

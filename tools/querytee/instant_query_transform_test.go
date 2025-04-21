@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -172,7 +174,7 @@ func TestAddMissingTimeParam(t *testing.T) {
 		},
 	}
 
-	logger, _ := spanlogger.New(context.Background(), "test")
+	logger, _ := spanlogger.New(context.Background(), log.NewNopLogger(), otel.Tracer("querytee.test"), "test")
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {

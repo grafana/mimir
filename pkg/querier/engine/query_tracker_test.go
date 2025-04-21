@@ -35,7 +35,7 @@ func TestActivityDescription(t *testing.T) {
 	defer func() { _ = closers.Close() }()
 	opentracing.SetGlobalTracer(tr)
 
-	_, ctxWithTrace := opentracing.StartSpanFromContext(ctx, "operation")
+	ctxWithTrace, _ := tracer.Start(ctx, "operation")
 	{
 		activity := generateActivityDescription(ctxWithTrace, "query string")
 		assert.Contains(t, activity, "traceID=")

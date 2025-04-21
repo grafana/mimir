@@ -36,7 +36,7 @@ type mergeMetadataSupplier struct {
 }
 
 func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeMetadataSupplier.MetricsMetadata")
+	spanlog, ctx := spanlogger.New(ctx, m.logger, tracer, "mergeMetadataSupplier.MetricsMetadata")
 	defer spanlog.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)

@@ -694,7 +694,6 @@ github.com/grafana/dskit/servicediscovery
 github.com/grafana/dskit/services
 github.com/grafana/dskit/signals
 github.com/grafana/dskit/spanlogger
-github.com/grafana/dskit/spanprofiler
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/tracing
@@ -1245,7 +1244,7 @@ github.com/thanos-io/objstore/providers/filesystem
 github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
-github.com/thanos-io/objstore/tracing/opentracing
+github.com/thanos-io/objstore/tracing/opentelemetry
 # github.com/tjhop/slog-gokit v0.1.4
 ## explicit; go 1.21
 github.com/tjhop/slog-gokit

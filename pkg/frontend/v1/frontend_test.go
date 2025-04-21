@@ -90,9 +90,9 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	}))
 
 	test := func(addr string, _ *Frontend) {
-		sp, ctx := opentracing.StartSpanFromContext(context.Background(), "client")
-		defer sp.Finish()
-		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
+		ctx, sp := tracer.Start(context.Background(), "client")
+		defer sp.End()
+		traceID := sp.SpanContext().TraceID().String()
 
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/%s", addr, query), nil)
 		require.NoError(t, err)

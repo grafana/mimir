@@ -15,10 +15,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+var tracer = otel.Tracer("pkg/continuoustest")
 
 const (
 	writeInterval = 20 * time.Second
@@ -179,7 +182,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 }
 
 func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
-	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
 
@@ -290,7 +293,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 
 	step := getQueryStep(start, end, writeInterval)
 
-	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runRangeQueryAndVerifyResult")
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runRangeQueryAndVerifyResult")
 	defer sp.Finish()
 
 	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
@@ -327,7 +330,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 		return nil
 	}
 
-	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
 	defer sp.Finish()
 
 	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
