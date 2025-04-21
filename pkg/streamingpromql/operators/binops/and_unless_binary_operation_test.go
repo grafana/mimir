@@ -359,8 +359,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			require.Equal(t, types.EOS, err)
 
 			o.Close()
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 			// Make sure we've returned everything to their pools.
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}

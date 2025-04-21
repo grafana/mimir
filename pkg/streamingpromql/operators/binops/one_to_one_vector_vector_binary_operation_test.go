@@ -670,6 +670,7 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}

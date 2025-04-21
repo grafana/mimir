@@ -466,10 +466,10 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
-			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
-			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
 			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
@@ -517,6 +517,7 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}

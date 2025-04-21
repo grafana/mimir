@@ -291,14 +291,15 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			left := &operators.TestOperator{Series: testCase.leftSeries}
-			right := &operators.TestOperator{Series: testCase.rightSeries}
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 
 			op := NewOrBinaryOperation(
 				left,
 				right,
 				parser.VectorMatching{MatchingLabels: []string{"group"}, On: true},
-				limiting.NewMemoryConsumptionTracker(0, nil),
+				memoryConsumptionTracker,
 				types.NewInstantQueryTimeRange(timestamp.Time(0)),
 				posrange.PositionRange{},
 			)
@@ -529,10 +530,10 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
-			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
-			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
 			ctx := context.Background()
@@ -579,6 +580,7 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}
