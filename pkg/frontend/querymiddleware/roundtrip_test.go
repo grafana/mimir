@@ -625,7 +625,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 			exceptions: []string{
 				"splitInstantQueryByIntervalMiddleware",
 				"spinOffSubqueriesMiddleware", // This middleware is only for instant queries.
-				"queryLimiterMiddleware",      // This middleware is only for instant queries.
 			},
 		},
 		"remote read": {

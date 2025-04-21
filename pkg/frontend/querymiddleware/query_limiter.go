@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/blake2b"
 
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -51,6 +52,7 @@ func newQueryLimiterMiddleware(
 }
 
 func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	spanLog := spanlogger.FromContext(ctx, ql.logger)
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return ql.next.Do(ctx, req)
@@ -58,38 +60,33 @@ func (ql *queryLimiterMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 	key := ql.keyGen.QueryRequestLimiter(ctx, tenant.JoinTenantIDs(tenantIDs), req)
 	hashedKey := maybeHashCacheKey(key)
-	// start at max duration value
-	cacheValue := validation.LimitedQuery{
-		Query:            "",
-		AllowedFrequency: 0, // start with min duration
-	}
+	limitedQueryToEnforce := validation.LimitedQuery{}
 	query := strings.TrimSpace(req.GetQuery())
 	var tenantMinAllowedFrequency string
 
 	for _, tenantID := range tenantIDs {
-		logger := log.With(ql.logger, "user", tenantID)
 		for _, limitedQuery := range ql.limits.LimitedQueries(tenantID) {
 			if strings.TrimSpace(limitedQuery.Query) == query {
-				level.Info(logger).Log("msg", "query limiter matched exact query", "query", query, "tenant", tenantID)
-				if cacheValue.Query == "" {
-					cacheValue.Query = query
+				level.Debug(spanLog).Log("msg", "query limiter matched exact query", "query", query, "user", tenantID)
+				if limitedQueryToEnforce.Query == "" {
+					limitedQueryToEnforce.Query = query
 				}
-				if limitedQuery.AllowedFrequency > cacheValue.AllowedFrequency {
-					cacheValue.AllowedFrequency = limitedQuery.AllowedFrequency
+				if limitedQuery.AllowedFrequency > limitedQueryToEnforce.AllowedFrequency {
+					limitedQueryToEnforce.AllowedFrequency = limitedQuery.AllowedFrequency
 					tenantMinAllowedFrequency = tenantID
 				}
 			}
 		}
 	}
 	// If we found any matching limited query, we should try to cache it
-	if cacheValue.Query != "" {
-		if err := ql.cache.Add(ctx, hashedKey, []byte(key), cacheValue.AllowedFrequency); err != nil {
+	if limitedQueryToEnforce.Query != "" {
+		if err := ql.cache.Add(ctx, hashedKey, []byte{}, limitedQueryToEnforce.AllowedFrequency); err != nil {
 			// If we receive ErrNotStored, the entry is still in the cache and the query should be blocked
 			if errors.Is(err, cache.ErrNotStored) {
 				ql.blockedQueriesCounter.WithLabelValues(tenantMinAllowedFrequency, "limited").Inc()
-				return nil, newQueryLimitedError(cacheValue.AllowedFrequency, tenantMinAllowedFrequency)
+				return nil, newQueryLimitedError(limitedQueryToEnforce.AllowedFrequency, tenantMinAllowedFrequency)
 			}
-			ql.logger.Log("msg", "error while adding to query limiter cache", "err", err)
+			level.Warn(ql.logger).Log("msg", "error while adding to query limiter cache", "err", err)
 		}
 	}
 

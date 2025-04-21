@@ -403,7 +403,7 @@ type Extent struct {
 func (m *Extent) Reset()      { *m = Extent{} }
 func (*Extent) ProtoMessage() {}
 func (*Extent) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{7}
+	return fileDescriptor_4c16552f9fdb66d8, []int{6}
 }
 func (m *Extent) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)

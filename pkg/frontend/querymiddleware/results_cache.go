@@ -195,6 +195,7 @@ type CacheKeyGenerator interface {
 	// QueryRequestError should generate a cache key based on errors for the tenant ID and MetricsQueryRequest.
 	QueryRequestError(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
+	// QueryRequestLimiter should generate a cache key based on the tenant ID and MetricsQueryRequest.
 	QueryRequestLimiter(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.

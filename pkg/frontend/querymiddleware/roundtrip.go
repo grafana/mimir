@@ -387,6 +387,7 @@ func newQueryMiddlewares(
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),

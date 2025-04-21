@@ -45,7 +45,7 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 		{
 			name: "short max frequency should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: query, AllowedFrequency: time.Nanosecond},
+				{Query: query, AllowedFrequency: time.Second},
 			}},
 		},
 		{
@@ -94,7 +94,7 @@ func TestQueryLimiterMiddleware_RangeAndInstantQuery(t *testing.T) {
 							require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 						}
 						// Advance cache time by enough to allow very short frequency queries to be run again
-						c.Advance(2 * time.Nanosecond)
+						c.Advance(time.Second)
 					}
 
 				})
@@ -144,7 +144,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 			limits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
 				"test1": {limitedQueries: []*validation.LimitedQuery{
 					{
-						Query: query, AllowedFrequency: time.Nanosecond,
+						Query: query, AllowedFrequency: time.Second,
 					}},
 				},
 				"test2": {limitedQueries: []*validation.LimitedQuery{
@@ -195,7 +195,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RangeAndInstantQuery(t *testing.T)
 							require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 						}
 						// Advance cache time by enough to allow very short frequency queries to be run again
-						c.Advance(2 * time.Nanosecond)
+						c.Advance(time.Second)
 					}
 
 				})
@@ -238,7 +238,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 		{
 			name: "short max frequency should not block",
 			limits: mockLimits{limitedQueries: []*validation.LimitedQuery{
-				{Query: queryString, AllowedFrequency: time.Nanosecond},
+				{Query: queryString, AllowedFrequency: time.Second},
 			}},
 		},
 	}
@@ -271,7 +271,7 @@ func TestQueryLimiterMiddleware_RemoteRead(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 				}
-				c.Advance(time.Nanosecond)
+				c.Advance(time.Second)
 			}
 
 		})
@@ -326,7 +326,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 				"test1": {limitedQueries: []*validation.LimitedQuery{
 					{
 						Query:            queryString,
-						AllowedFrequency: time.Nanosecond,
+						AllowedFrequency: time.Second,
 					}},
 				},
 				"test2": {limitedQueries: []*validation.LimitedQuery{
@@ -368,7 +368,7 @@ func TestQueryLimiterMiddleware_MultipleUsers_RemoteRead(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(``)))
 				}
-				c.Advance(time.Nanosecond)
+				c.Advance(time.Second)
 			}
 
 		})
