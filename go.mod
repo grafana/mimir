@@ -29,7 +29,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.90
 	github.com/mitchellh/go-wordwrap v1.0.1
-	github.com/oklog/ulid v1.3.1 // indirect
+	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.1.2
 	github.com/opentracing-contrib/go-stdlib v1.1.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
@@ -81,6 +81,7 @@ require (
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79
+	github.com/thanos-io/thanos v0.38.0
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
@@ -88,6 +89,7 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
+	github.com/weaveworks/common v0.0.0-20230728070032-dd9e68f319d5
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.29.0
 	go.opentelemetry.io/otel v1.35.0
@@ -107,10 +109,10 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.3.3 // indirect
-	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
+	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alicebob/gopher-json v0.0.0-20230218143504-906a9b012302 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/at-wat/mqtt-go v0.19.4 // indirect
@@ -119,6 +121,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.29.1 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/ebitengine/purego v0.8.1 // indirect
+	github.com/efficientgo/tools/extkingpin v0.0.0-20220817170617-6c25e3b627dd // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
@@ -130,6 +133,7 @@ require (
 	github.com/golang/glog v1.2.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
@@ -146,6 +150,7 @@ require (
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
 	github.com/minio/crc64nvme v1.0.1 // indirect
+	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
@@ -163,8 +168,10 @@ require (
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/sony/gobreaker v1.0.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
+	github.com/thanos-io/promql-engine v0.0.0-20250329215917-4055a112d1ea // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/weaveworks/promrus v1.2.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -177,7 +184,17 @@ require (
 	go.opentelemetry.io/collector/processor v0.122.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.60.0 // indirect
+	go.opentelemetry.io/contrib/propagators/autoprop v0.54.0 // indirect
+	go.opentelemetry.io/contrib/propagators/aws v1.29.0 // indirect
+	go.opentelemetry.io/contrib/propagators/b3 v1.29.0 // indirect
+	go.opentelemetry.io/contrib/propagators/jaeger v1.29.0 // indirect
+	go.opentelemetry.io/contrib/propagators/ot v1.29.0 // indirect
+	go.opentelemetry.io/otel/bridge/opentracing v1.31.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
+	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
+	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
 	gonum.org/v1/gonum v0.15.1 // indirect
+	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
