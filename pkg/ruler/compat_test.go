@@ -75,8 +75,8 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, normal value",
 			series: []util_test.Series{
 				{
-					labels.Labels{{"__name__", "foo_bar"}},
-					[]util_test.Sample{{TS: 120_000, Val: 1.234}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Samples: []util_test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
 		},
@@ -86,8 +86,8 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []util_test.Series{
 				{
-					labels.Labels{{"__name__", "foo_bar"}},
-					[]util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Samples: []util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
 		},
@@ -95,11 +95,11 @@ func TestPusherAppendable(t *testing.T) {
 			name: "ALERTS, normal value",
 			series: []util_test.Series{
 				{
-					labels.Labels{
-						{"__name__", "ALERT"},
-						{"alertname", "boop"},
+					Labels: labels.Labels{
+						labels.Label{"__name__", "ALERT"},
+						labels.Label{Name: "alertname", Value: "boop"},
 					},
-					[]util_test.Sample{{TS: 120_000, Val: 1.234}},
+					Samples: []util_test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
 		},
@@ -108,11 +108,11 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []util_test.Series{
 				{
-					labels.Labels{
-						{"__name__", "ALERT"},
-						{"alertname", "boop"},
+					Labels: labels.Labels{
+						labels.Label{Name: "__name__", Value: "ALERT"},
+						labels.Label{Name: "alertname", Value: "boop"},
 					},
-					[]util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
+					Samples: []util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
 		},
@@ -120,8 +120,8 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, histogram value",
 			series: []util_test.Series{
 				{
-					labels.Labels{{"__name__", "foo_bar"}},
-					[]util_test.Sample{{TS: 200_000, Hist: util_test.GenerateTestHistogram(10)}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Samples: []util_test.Sample{{TS: 200_000, Hist: util_test.GenerateTestHistogram(10)}},
 				},
 			},
 		},
@@ -129,8 +129,8 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, float histogram value",
 			series: []util_test.Series{
 				{
-					labels.Labels{{"__name__", "foo_bar"}},
-					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
 				},
 			},
 		},
@@ -138,20 +138,20 @@ func TestPusherAppendable(t *testing.T) {
 			name: "mix of float and float histogram",
 			series: []util_test.Series{
 				{
-					labels.Labels{{"__name__", "foo_bar1"}},
-					[]util_test.Sample{{TS: 230_000, Val: 999}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar1"}},
+					Samples: []util_test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
-					labels.Labels{{"__name__", "foo_bar3"}},
-					[]util_test.Sample{{TS: 230_000, Val: 888}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar3"}},
+					Samples: []util_test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
-					labels.Labels{{"__name__", "foo_bar3"}},
-					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar3"}},
+					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
 				},
 				{
-					labels.Labels{{"__name__", "foo_bar4"}},
-					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(99)}},
+					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar4"}},
+					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(99)}},
 				},
 			},
 		},
