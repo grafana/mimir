@@ -31,14 +31,17 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_storage "github.com/grafana/mimir/pkg/storage/parquet"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -50,16 +53,15 @@ const (
 type ParquetQueryable struct {
 	services.Service
 
-	finder               *ParquetBucketIndexBlocksFinder
-	logger               log.Logger
-	queryStoreAfter      time.Duration
-	queryIngestersWithin time.Duration
-	limits               BlocksStoreLimits
-	bucket               objstore.InstrumentedBucket
-	chunkDecoder         *mimir_storage.PrometheusParquetChunksDecoder
-	asyncRead            bool
-	dictionaryCacheSize  int
-	projectionPushdown   bool
+	finder              *ParquetBucketIndexBlocksFinder
+	logger              log.Logger
+	queryStoreAfter     time.Duration
+	limits              BlocksStoreLimits
+	bucket              objstore.InstrumentedBucket
+	chunkDecoder        *mimir_storage.PrometheusParquetChunksDecoder
+	asyncRead           bool
+	dictionaryCacheSize int
+	projectionPushdown  bool
 
 	metrics *metrics
 
@@ -109,11 +111,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 func NewParquetStoreQueryable(
 	limits BlocksStoreLimits,
 	config Config,
-	storageCfg cortex_tsdb.BlocksStorageConfig,
+	storageCfg mimir_tsdb.BlocksStorageConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*ParquetQueryable, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, nil, ModuleName, logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, ModuleName, logger, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -137,21 +139,20 @@ func NewParquetStoreQueryable(
 	manager, err := services.NewManager(finder)
 
 	q := &ParquetQueryable{
-		bucket:               bucketClient,
-		finder:               finder,
-		queryStoreAfter:      config.QueryStoreAfter,
-		queryIngestersWithin: config.QueryIngestersWithin,
-		logger:               logger,
-		subservices:          manager,
-		subservicesWatcher:   services.NewFailureWatcher(),
-		limits:               limits,
-		chunkDecoder:         mimir_storage.NewPrometheusParquetChunksDecoder(),
-		asyncRead:            true,
-		dictionaryCacheSize:  1024,
-		metrics:              newMetrics(reg),
-		readerCache:          cache,
-		cacheMetrics:         cacheMetrics,
-		projectionPushdown:   false,
+		bucket:              bucketClient,
+		finder:              finder,
+		queryStoreAfter:     config.QueryStoreAfter,
+		logger:              logger,
+		subservices:         manager,
+		subservicesWatcher:  services.NewFailureWatcher(),
+		limits:              limits,
+		chunkDecoder:        mimir_storage.NewPrometheusParquetChunksDecoder(),
+		asyncRead:           true,
+		dictionaryCacheSize: 1024,
+		metrics:             newMetrics(reg),
+		readerCache:         cache,
+		cacheMetrics:        cacheMetrics,
+		projectionPushdown:  false,
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stopping)
@@ -328,7 +329,7 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 	}
 
 	spanLog, ctx := spanlogger.New(ctx, "ParquetQuerier.selectSorted")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 	requestStart := time.Now()
 
 	var (
@@ -853,7 +854,7 @@ func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint,
 
 		lblsBuilder.Sort()
 		lbls := lblsBuilder.Labels()
-		if err := queryLimiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(lbls)); err != nil {
+		if err := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(lbls)); err != nil {
 			return nil, validation.LimitError(err.Error())
 		}
 
