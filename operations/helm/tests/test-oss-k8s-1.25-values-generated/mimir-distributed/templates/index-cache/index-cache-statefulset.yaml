@@ -42,7 +42,15 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-k8s-1.25-values
+            app.kubernetes.io/component: index-cache
       terminationGracePeriodSeconds: 30
       volumes:
       containers:

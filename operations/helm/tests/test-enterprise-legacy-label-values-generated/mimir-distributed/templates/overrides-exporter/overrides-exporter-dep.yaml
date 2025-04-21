@@ -85,7 +85,14 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-      
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-overrides-exporter
+            release: test-enterprise-legacy-label-values
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config

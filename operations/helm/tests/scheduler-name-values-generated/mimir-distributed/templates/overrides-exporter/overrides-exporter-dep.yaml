@@ -85,7 +85,15 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-      
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: scheduler-name-values
+            app.kubernetes.io/component: overrides-exporter
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config
