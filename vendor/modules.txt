@@ -113,6 +113,8 @@ github.com/AzureAD/microsoft-authentication-library-for-go/apps/public
 # github.com/DmitriyVTitov/size v1.5.0
 ## explicit; go 1.14
 github.com/DmitriyVTitov/size
+# github.com/HdrHistogram/hdrhistogram-go v1.1.2
+## explicit; go 1.14
 # github.com/Masterminds/goutils v1.1.1
 ## explicit
 github.com/Masterminds/goutils
@@ -134,10 +136,6 @@ github.com/alecthomas/chroma/v2/styles
 # github.com/alecthomas/kingpin/v2 v2.4.0
 ## explicit; go 1.17
 github.com/alecthomas/kingpin/v2
-# github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751
-## explicit
-github.com/alecthomas/template
-github.com/alecthomas/template/parse
 # github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 ## explicit; go 1.15
 github.com/alecthomas/units
@@ -370,9 +368,8 @@ github.com/efficientgo/core/logerrcapture
 github.com/efficientgo/core/merrors
 github.com/efficientgo/core/testutil
 github.com/efficientgo/core/testutil/internal
-# github.com/efficientgo/tools/extkingpin v0.0.0-20220817170617-6c25e3b627dd
-## explicit; go 1.15
-github.com/efficientgo/tools/extkingpin
+# github.com/efficientgo/e2e v0.14.1-0.20230710114240-c316eb95ae5b
+## explicit; go 1.18
 # github.com/envoyproxy/go-control-plane/envoy v1.32.4
 ## explicit; go 1.22
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
@@ -727,10 +724,6 @@ github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 ## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0
-## explicit; go 1.19
-github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors
-github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging
 # github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3
 ## explicit; go 1.23.0
 github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule
@@ -928,9 +921,6 @@ github.com/minio/minio-go/v7/pkg/set
 github.com/minio/minio-go/v7/pkg/signer
 github.com/minio/minio-go/v7/pkg/sse
 github.com/minio/minio-go/v7/pkg/tags
-# github.com/minio/sha256-simd v1.0.1
-## explicit; go 1.17
-github.com/minio/sha256-simd
 # github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 ## explicit
 github.com/mitchellh/colorstring
@@ -1303,37 +1293,6 @@ github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
 github.com/thanos-io/objstore/tracing/opentracing
-# github.com/thanos-io/promql-engine v0.0.0-20250329215917-4055a112d1ea
-## explicit; go 1.24
-github.com/thanos-io/promql-engine/api
-github.com/thanos-io/promql-engine/execution/aggregate
-github.com/thanos-io/promql-engine/execution/function
-github.com/thanos-io/promql-engine/execution/model
-github.com/thanos-io/promql-engine/execution/parse
-github.com/thanos-io/promql-engine/execution/telemetry
-github.com/thanos-io/promql-engine/execution/warnings
-github.com/thanos-io/promql-engine/extlabels
-github.com/thanos-io/promql-engine/logicalplan
-github.com/thanos-io/promql-engine/query
-# github.com/thanos-io/thanos v0.38.0
-## explicit; go 1.24
-github.com/thanos-io/thanos/pkg/block
-github.com/thanos-io/thanos/pkg/block/metadata
-github.com/thanos-io/thanos/pkg/compact/downsample
-github.com/thanos-io/thanos/pkg/dedup
-github.com/thanos-io/thanos/pkg/errutil
-github.com/thanos-io/thanos/pkg/extprom
-github.com/thanos-io/thanos/pkg/extpromql
-github.com/thanos-io/thanos/pkg/logging
-github.com/thanos-io/thanos/pkg/logutil
-github.com/thanos-io/thanos/pkg/model
-github.com/thanos-io/thanos/pkg/runutil
-github.com/thanos-io/thanos/pkg/server/http/middleware
-github.com/thanos-io/thanos/pkg/store/labelpb
-github.com/thanos-io/thanos/pkg/store/storepb
-github.com/thanos-io/thanos/pkg/store/storepb/prompb
-github.com/thanos-io/thanos/pkg/strutil
-github.com/thanos-io/thanos/pkg/tracing/migration
 # github.com/tjhop/slog-gokit v0.1.4
 ## explicit; go 1.21
 github.com/tjhop/slog-gokit
@@ -1521,21 +1480,6 @@ go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/request
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconv
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconvutil
-# go.opentelemetry.io/contrib/propagators/autoprop v0.54.0
-## explicit; go 1.21
-go.opentelemetry.io/contrib/propagators/autoprop
-# go.opentelemetry.io/contrib/propagators/aws v1.29.0
-## explicit; go 1.21
-go.opentelemetry.io/contrib/propagators/aws/xray
-# go.opentelemetry.io/contrib/propagators/b3 v1.29.0
-## explicit; go 1.21
-go.opentelemetry.io/contrib/propagators/b3
-# go.opentelemetry.io/contrib/propagators/jaeger v1.29.0
-## explicit; go 1.21
-go.opentelemetry.io/contrib/propagators/jaeger
-# go.opentelemetry.io/contrib/propagators/ot v1.29.0
-## explicit; go 1.21
-go.opentelemetry.io/contrib/propagators/ot
 # go.opentelemetry.io/otel v1.35.0
 ## explicit; go 1.22.0
 go.opentelemetry.io/otel
@@ -1552,23 +1496,11 @@ go.opentelemetry.io/otel/semconv/v1.18.0
 go.opentelemetry.io/otel/semconv/v1.20.0
 go.opentelemetry.io/otel/semconv/v1.21.0
 go.opentelemetry.io/otel/semconv/v1.26.0
-# go.opentelemetry.io/otel/bridge/opentracing v1.31.0
-## explicit; go 1.22
-go.opentelemetry.io/otel/bridge/opentracing
-go.opentelemetry.io/otel/bridge/opentracing/migration
 # go.opentelemetry.io/otel/metric v1.35.0
 ## explicit; go 1.22.0
 go.opentelemetry.io/otel/metric
 go.opentelemetry.io/otel/metric/embedded
 go.opentelemetry.io/otel/metric/noop
-# go.opentelemetry.io/otel/sdk v1.35.0
-## explicit; go 1.22.0
-go.opentelemetry.io/otel/sdk
-go.opentelemetry.io/otel/sdk/instrumentation
-go.opentelemetry.io/otel/sdk/internal/env
-go.opentelemetry.io/otel/sdk/internal/x
-go.opentelemetry.io/otel/sdk/resource
-go.opentelemetry.io/otel/sdk/trace
 # go.opentelemetry.io/otel/trace v1.35.0
 ## explicit; go 1.22.0
 go.opentelemetry.io/otel/trace
@@ -1603,12 +1535,6 @@ go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
-# go4.org/intern v0.0.0-20230525184215-6c62f75575cb
-## explicit; go 1.13
-go4.org/intern
-# go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2
-## explicit; go 1.11
-go4.org/unsafe/assume-no-moving-gc
 # golang.org/x/crypto v0.36.0
 ## explicit; go 1.23.0
 golang.org/x/crypto/argon2
@@ -1718,9 +1644,6 @@ golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
 # gonum.org/v1/gonum v0.15.1
 ## explicit; go 1.22
-gonum.org/v1/gonum/floats
-gonum.org/v1/gonum/floats/scalar
-gonum.org/v1/gonum/internal/asm/f64
 # google.golang.org/api v0.227.0
 ## explicit; go 1.23.0
 google.golang.org/api/googleapi
@@ -1866,9 +1789,6 @@ google.golang.org/protobuf/types/known/fieldmaskpb
 google.golang.org/protobuf/types/known/structpb
 google.golang.org/protobuf/types/known/timestamppb
 google.golang.org/protobuf/types/known/wrapperspb
-# gopkg.in/alecthomas/kingpin.v2 v2.2.6
-## explicit
-gopkg.in/alecthomas/kingpin.v2
 # gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc
 ## explicit
 gopkg.in/alexcesaro/quotedprintable.v3
