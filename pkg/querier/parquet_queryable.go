@@ -26,8 +26,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/dedup"
-	"github.com/thanos-io/thanos/pkg/strutil"
 	"github.com/weaveworks/common/instrument"
 	"golang.org/x/sync/errgroup"
 
@@ -495,11 +493,12 @@ func (q *parquetQuerier) LabelNames(ctx context.Context, hints *storage.LabelHin
 	spanLog, ctx := spanlogger.New(ctx, "ParquetQuerier.LabelNames")
 	defer spanLog.Finish()
 
-	minT, maxT, limit := q.minT, q.maxT, int64(0)
+	minT, maxT, _ := q.minT, q.maxT, int64(0)
 
-	if hints != nil {
-		limit = int64(hints.Limit)
-	}
+	// TODO: honour limit hint
+	// if hints != nil {
+	// 	limit = int64(hints.Limit)
+	// }
 
 	var (
 		resMtx      sync.Mutex
@@ -557,7 +556,7 @@ func (q *parquetQuerier) LabelNames(ctx context.Context, hints *storage.LabelHin
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(int(limit), resNameSets...), resWarnings, nil
+	return util.MergeSlices(resNameSets...), resWarnings, nil
 }
 
 func (q *parquetQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -569,11 +568,12 @@ func (q *parquetQuerier) LabelValues(ctx context.Context, name string, hints *st
 	spanLog, ctx := spanlogger.New(ctx, "ParquetQuerier.LabelValues")
 	defer spanLog.Finish()
 
-	minT, maxT, limit := q.minT, q.maxT, int64(0)
+	minT, maxT, _ := q.minT, q.maxT, int64(0)
 
-	if hints != nil {
-		limit = int64(hints.Limit)
-	}
+	// TODO: honour limit hint
+	// if hints != nil {
+	// 	limit = int64(hints.Limit)
+	// }
 
 	var (
 		resValueSets = [][]string{}
@@ -645,7 +645,7 @@ func (q *parquetQuerier) LabelValues(ctx context.Context, name string, hints *st
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(int(limit), resValueSets...), resWarnings, nil
+	return util.MergeSlices(resValueSets...), resWarnings, nil
 }
 
 func (q *parquetQuerier) Close() error {
@@ -806,7 +806,8 @@ func (s Series) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
 	for _, chk := range s.chks {
 		iters = append(iters, chk.Chunk.Iterator(nil))
 	}
-	return dedup.NewBoundedSeriesIterator(newChunkSeriesIterator(iters), s.mint, s.maxt)
+	// TODO: honour mint and maxt
+	return newChunkSeriesIterator(iters)
 }
 
 func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint, maxt int64, skipChunks bool, chunksDecoder *mimir_storage.PrometheusParquetChunksDecoder, projectionPushdown bool, queryLimiter *limiter.QueryLimiter, reqStats *stats.Stats, sts *mimir_storage.Stats) (*ParquetRowsSeriesSet, error) {
