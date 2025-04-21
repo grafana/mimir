@@ -33,6 +33,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/httpgrpc"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
@@ -451,6 +453,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpc.MaxSendMsgSize(cfg.GRPCServerMaxSendMsgSize),
 		grpc.MaxConcurrentStreams(uint32(cfg.GRPCServerMaxConcurrentStreams)),
 		grpc.NumStreamWorkers(uint32(cfg.GRPCServerNumWorkers)),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	}
 
 	if grpcServerLimit != nil {
