@@ -220,7 +220,9 @@ func handler(
 				level.Error(logger).Log("msg", "error write response stats not found in context", "err", err)
 			}
 		}
-		if err != nil {
+		if err == nil {
+			addSuccessHeaders(w, req.artificialDelay)
+		} else {
 			if errors.Is(err, context.Canceled) {
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
@@ -248,8 +250,6 @@ func handler(
 			}
 			addErrorHeaders(w, err, r, code, retryCfg)
 			http.Error(w, validUTF8Message(msg), code)
-		} else {
-			addSuccessHeaders(w, req.artificialDelay)
 		}
 	})
 }
@@ -374,7 +374,8 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 
 func addSuccessHeaders(w http.ResponseWriter, delay time.Duration) {
 	if delay >= 0 {
-		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%d", delay))
+		durationInMs := strconv.FormatFloat(float64(delay)/float64(time.Millisecond), 'f', -1, 64)
+		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%s", durationInMs))
 	}
 }
 
