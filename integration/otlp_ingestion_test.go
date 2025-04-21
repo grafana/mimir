@@ -311,37 +311,46 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 		// Verify that when flag is disabled, OTel explicit bucket histograms are converted to native histograms with custom buckets
 		result, err := c.Query("explicit_bucket_histogram_series", now)
 		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Histogram.Count, model.FloatString(10))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(20))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Buckets[0].Upper, model.FloatString(5))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Buckets[0].Count, model.FloatString(4))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Buckets[1].Upper, model.FloatString(10))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Buckets[1].Count, model.FloatString(3))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Buckets[2].Upper, model.FloatString(math.Inf(1)))
-		require.Equal(t, result.(model.Vector)[0].Histogram.Buckets[2].Count, model.FloatString(3))
+		require.Equal(t, result.(model.Vector)[0].Histogram, &model.SampleHistogram{
+			Count: model.FloatString(10),
+			Sum:   model.FloatString(20),
+			Buckets: model.HistogramBuckets{
+				{
+					Lower: model.FloatString(0),
+					Upper: model.FloatString(5),
+					Count: model.FloatString(4),
+				},
+				{
+					Lower: model.FloatString(5),
+					Upper: model.FloatString(10),
+					Count: model.FloatString(3),
+				},
+				{
+					Lower: model.FloatString(15),
+					Upper: model.FloatString(math.Inf(1)),
+					Count: model.FloatString(3),
+				},
+			},
+		})
 	} else {
 		// Verify that when flag is enabled, OTel explicit bucket histograms are converted to classic histograms
-		result, err := c.Query("explicit_bucket_histogram_series_count", now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(10))
-		result, err = c.Query("explicit_bucket_histogram_series_sum", now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(20))
-		result, err = c.Query(`explicit_bucket_histogram_series_bucket{le="0"}`, now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(0))
-		result, err = c.Query(`explicit_bucket_histogram_series_bucket{le="5"}`, now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(4))
-		result, err = c.Query(`explicit_bucket_histogram_series_bucket{le="10"}`, now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(7))
-		result, err = c.Query(`explicit_bucket_histogram_series_bucket{le="15"}`, now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(7))
-		result, err = c.Query(`explicit_bucket_histogram_series_bucket{le="+Inf"}`, now)
-		require.NoError(t, err)
-		require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(10))
+		expected := []struct {
+			name  string
+			value model.SampleValue
+		}{
+			{"explicit_bucket_histogram_series_count", 10},
+			{"explicit_bucket_histogram_series_sum", 20},
+			{`explicit_bucket_histogram_series_bucket{le="0"}`, 0},
+			{`explicit_bucket_histogram_series_bucket{le="5"}`, 4},
+			{`explicit_bucket_histogram_series_bucket{le="10"}`, 7},
+			{`explicit_bucket_histogram_series_bucket{le="15"}`, 7},
+			{`explicit_bucket_histogram_series_bucket{le="+Inf"}`, 10},
+		}
+		for _, exp := range expected {
+			result, err := c.Query(exp.name, now)
+			require.NoError(t, err)
+			require.Equal(t, exp.value, result.(model.Vector)[0].Value)
+		}
 	}
 
 	// Verify that OTel exponential histograms are converted to native histograms
