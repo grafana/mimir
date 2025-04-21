@@ -373,7 +373,7 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 }
 
 func addSuccessHeaders(w http.ResponseWriter, delay time.Duration) {
-	if delay > 0 {
+	if delay >= 0 {
 		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%d", delay))
 	}
 }
