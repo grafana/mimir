@@ -62,6 +62,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 									createDummyData(t, true, timeRange, memoryConsumptionTracker),
 									createDummyData(t, false, timeRange, memoryConsumptionTracker),
 								},
+								MemoryConsumptionTracker: memoryConsumptionTracker,
 							}
 
 							param := scalars.NewScalarConstant(6, timeRange, memoryConsumptionTracker, posrange.PositionRange{})
@@ -92,6 +93,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 							// Close the operator and confirm all memory has been released.
 							o.Close()
+							types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
 							require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 						})
 					}

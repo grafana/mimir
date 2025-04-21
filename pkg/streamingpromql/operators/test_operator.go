@@ -15,9 +15,10 @@ import (
 
 // TestOperator is an InstantVectorOperator used only in tests.
 type TestOperator struct {
-	Series []labels.Labels
-	Data   []types.InstantVectorSeriesData
-	Closed bool
+	Series                   []labels.Labels
+	Data                     []types.InstantVectorSeriesData
+	Closed                   bool
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
@@ -27,7 +28,15 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	return testutils.LabelsToSeriesMetadata(t.Series), nil
+	series := testutils.LabelsToSeriesMetadata(t.Series)
+	seriesPool, err := types.SeriesMetadataSlicePool.Get(len(series), t.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	seriesPool = seriesPool[:len(series)]
+	copy(seriesPool, series)
+	return seriesPool, nil
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

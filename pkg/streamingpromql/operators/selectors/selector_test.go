@@ -115,9 +115,10 @@ func TestSelector_QueryRanges(t *testing.T) {
 		queryable := &mockQueryable{}
 		lookbackDelta := 5 * time.Minute
 		s := &Selector{
-			Queryable:     queryable,
-			TimeRange:     timeRange,
-			LookbackDelta: lookbackDelta,
+			Queryable:                queryable,
+			TimeRange:                timeRange,
+			LookbackDelta:            lookbackDelta,
+			MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 		}
 
 		_, err := s.SeriesMetadata(context.Background())
@@ -135,9 +136,10 @@ func TestSelector_QueryRanges(t *testing.T) {
 		queryable := &mockQueryable{}
 		selectorRange := 15 * time.Minute
 		s := &Selector{
-			Queryable: queryable,
-			TimeRange: timeRange,
-			Range:     selectorRange,
+			Queryable:                queryable,
+			TimeRange:                timeRange,
+			Range:                    selectorRange,
+			MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 		}
 
 		_, err := s.SeriesMetadata(context.Background())

@@ -296,8 +296,9 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			left := &operators.TestOperator{Series: testCase.leftSeries}
-			right := &operators.TestOperator{Series: testCase.rightSeries}
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 
 			o, err := NewGroupedVectorVectorBinaryOperation(
 				left,
@@ -305,7 +306,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 				testCase.matching,
 				testCase.op,
 				testCase.returnBool,
-				limiting.NewMemoryConsumptionTracker(0, nil),
+				memoryConsumptionTracker,
 				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},

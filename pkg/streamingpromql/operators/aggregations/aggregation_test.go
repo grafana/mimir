@@ -85,11 +85,13 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			aggregator := &Aggregation{
-				Inner:                   &operators.TestOperator{Series: testCase.inputSeries},
-				Grouping:                testCase.grouping,
-				metricNames:             &operators.MetricNames{},
-				aggregationGroupFactory: func() AggregationGroup { return &SumAggregationGroup{} },
+				Inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
+				Grouping:                 testCase.grouping,
+				metricNames:              &operators.MetricNames{},
+				aggregationGroupFactory:  func() AggregationGroup { return &SumAggregationGroup{} },
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
@@ -366,6 +368,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 					{}, // The last two series won't be read, so don't bother creating series for them.
 					{},
 				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			o, err := testCase.createOperator(inner, timeRange, memoryConsumptionTracker)
@@ -389,6 +392,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 			// Close the operator and confirm all memory has been released.
 			o.Close()
+			types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}
