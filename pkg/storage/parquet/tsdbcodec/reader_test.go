@@ -28,10 +28,9 @@ func TestReader(t *testing.T) {
 		batchStreamBufferSize    = 10
 	)
 
-	//labelSets := GenerateTestLabelSets([]int{1}, DefaultHistogramBuckets)
-	//storageSeries := GenerateTestStorageSeriesFromLabelSets(labelSets)
+	labelSets := GenerateTestLabelSets([]int{1, 2}, 100)
+	storageSeries := GenerateTestStorageSeriesFromLabelSets(labelSets, []int{1, 2}, 0, 100)
 
-	storageSeries := genSeries([]int{1, 2}, 0, 100)
 	blockFilePath, err := tsdb.CreateBlock(storageSeries, tmpDir, 0, logger)
 	require.NoError(t, err)
 
@@ -44,5 +43,4 @@ func TestReader(t *testing.T) {
 		rows = append(rows, rowBatch...)
 	}
 	require.Equal(t, numRows, len(rows))
-	//require.Equal(t, len(labelSets), len(labelNames))
 }
