@@ -4445,10 +4445,19 @@ func l2m(lbls labels.Labels) model.Metric {
 }
 
 func Test_Ingester_Query(t *testing.T) {
-	series := []series{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+	series := []util_test.Series{
+		{
+			labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
+			[]util_test.Sample{{TS: 100000, Val: 1}},
+		},
+		{
+			labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
+			[]util_test.Sample{{TS: 110000, Val: 1}},
+		},
+		{
+			labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
+			[]util_test.Sample{{TS: 200000, Val: 2}},
+		},
 	}
 
 	tests := map[string]struct {
@@ -4472,8 +4481,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -4483,7 +4492,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].Labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -4493,8 +4502,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -4504,7 +4513,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].Labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -4515,7 +4524,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -4525,7 +4534,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
@@ -4545,7 +4554,7 @@ func Test_Ingester_Query(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		req, _, _, _ := mockWriteRequest(t, series.Labels, series.Samples[0].F(), series.Samples[0].T())
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -4579,11 +4588,23 @@ func Test_Ingester_Query(t *testing.T) {
 }
 
 func TestIngester_LabelNamesAndValues(t *testing.T) {
-	series := []series{
-		{labels.FromStrings(labels.MetricName, "metric_0", "status", "500"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "metric_0", "status", "200"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"), 2, 200000},
-		{labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"), 3, 200000},
+	series := []util_test.Series{
+		{
+			labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			[]util_test.Sample{{TS: 100000, Val: 1}},
+		},
+		{
+			labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			[]util_test.Sample{{TS: 110000, Val: 1}},
+		},
+		{
+			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			[]util_test.Sample{{TS: 200000, Val: 2}},
+		},
+		{
+			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			[]util_test.Sample{{TS: 200000, Val: 3}},
+		},
 	}
 
 	tests := []struct {
@@ -4631,26 +4652,22 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
-	series := []series{
+	series := []util_test.Series{
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
-			value:     1.5,
-			timestamp: 100000,
+			labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			[]util_test.Sample{{TS: 100000, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
-			value:     1.5,
-			timestamp: 110030,
+			labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			[]util_test.Sample{{TS: 110030, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
-			value:     1.5,
-			timestamp: 100060,
+			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			[]util_test.Sample{{TS: 100060, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
-			value:     1.5,
-			timestamp: 100090,
+			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			[]util_test.Sample{{TS: 100090, Val: 1.5}},
 		},
 	}
 	tests := map[string]struct {
@@ -4735,15 +4752,9 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
-type series struct {
-	lbls      labels.Labels
-	value     float64
-	timestamp int64
-}
-
-func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []series) error {
-	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []util_test.Series) error {
+	for _, s := range series {
+		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
 		_, err := i.Push(ctx, req)
 		if err != nil {
 			return err

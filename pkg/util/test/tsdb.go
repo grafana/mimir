@@ -10,43 +10,27 @@ import (
 )
 
 type Series struct {
-	lbls    labels.Labels
-	samples []Sample
-}
-
-func NewSeries(lbls labels.Labels, samples []Sample) Series {
-	return Series{lbls, samples}
-}
-
-func (s Series) Labels() labels.Labels {
-	return s.lbls
-}
-
-func (s Series) Samples() []Sample {
-	return s.samples
+	Labels  labels.Labels
+	Samples []Sample
 }
 
 type Sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
+	TS        int64
+	Val       float64
+	Hist      *histogram.Histogram
+	FloatHist *histogram.FloatHistogram
 }
 
-func NewSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) Sample {
-	return Sample{t, v, h, fh}
-}
-
-func (s Sample) T() int64                      { return s.t }
-func (s Sample) F() float64                    { return s.v }
-func (s Sample) H() *histogram.Histogram       { return s.h }
-func (s Sample) FH() *histogram.FloatHistogram { return s.fh }
+func (s Sample) T() int64                      { return s.TS }
+func (s Sample) F() float64                    { return s.Val }
+func (s Sample) H() *histogram.Histogram       { return s.Hist }
+func (s Sample) FH() *histogram.FloatHistogram { return s.FloatHist }
 
 func (s Sample) Type() chunkenc.ValueType {
 	switch {
-	case s.h != nil:
+	case s.Hist != nil:
 		return chunkenc.ValHistogram
-	case s.fh != nil:
+	case s.FloatHist != nil:
 		return chunkenc.ValFloatHistogram
 	default:
 		return chunkenc.ValFloat
@@ -54,12 +38,12 @@ func (s Sample) Type() chunkenc.ValueType {
 }
 
 func (s Sample) Copy() chunks.Sample {
-	c := Sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
+	c := Sample{TS: s.TS, Val: s.Val}
+	if s.Hist != nil {
+		c.Hist = s.Hist.Copy()
 	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
+	if s.FloatHist != nil {
+		c.FloatHist = s.FloatHist.Copy()
 	}
 	return c
 }

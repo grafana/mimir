@@ -74,12 +74,10 @@ func TestPusherAppendable(t *testing.T) {
 		{
 			name: "tenant without delay, normal value",
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{{"__name__", "foo_bar"}},
-					[]util_test.Sample{
-						util_test.NewSample(120_000, 1.234, nil, nil),
-					},
-				),
+					[]util_test.Sample{{TS: 120_000, Val: 1.234}},
+				},
 			},
 		},
 
@@ -87,92 +85,74 @@ func TestPusherAppendable(t *testing.T) {
 			name:         "tenant without delay, stale nan value",
 			hasNanSample: true,
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{{"__name__", "foo_bar"}},
-					[]util_test.Sample{
-						util_test.NewSample(120_000, math.Float64frombits(value.StaleNaN), nil, nil),
-					},
-				),
+					[]util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
+				},
 			},
 		},
 		{
 			name: "ALERTS, normal value",
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{
 						{"__name__", "ALERT"},
 						{"alertname", "boop"},
 					},
-					[]util_test.Sample{
-						util_test.NewSample(120_000, 1.234, nil, nil),
-					},
-				),
+					[]util_test.Sample{{TS: 120_000, Val: 1.234}},
+				},
 			},
 		},
 		{
 			name:         "ALERTS, stale nan value",
 			hasNanSample: true,
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{
 						{"__name__", "ALERT"},
 						{"alertname", "boop"},
 					},
-					[]util_test.Sample{
-						util_test.NewSample(120_000, math.Float64frombits(value.StaleNaN), nil, nil),
-					},
-				),
+					[]util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
+				},
 			},
 		},
 		{
 			name: "tenant without delay, histogram value",
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{{"__name__", "foo_bar"}},
-					[]util_test.Sample{
-						util_test.NewSample(200_000, 0, util_test.GenerateTestHistogram(10), nil),
-					},
-				),
+					[]util_test.Sample{{TS: 200_000, Hist: util_test.GenerateTestHistogram(10)}},
+				},
 			},
 		},
 		{
 			name: "tenant without delay, float histogram value",
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{{"__name__", "foo_bar"}},
-					[]util_test.Sample{
-						util_test.NewSample(230_000, 0, nil, util_test.GenerateTestFloatHistogram(10)),
-					},
-				),
+					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
+				},
 			},
 		},
 		{
 			name: "mix of float and float histogram",
 			series: []util_test.Series{
-				util_test.NewSeries(
+				{
 					[]labels.Label{{"__name__", "foo_bar1"}},
-					[]util_test.Sample{
-						util_test.NewSample(230_000, 999, nil, nil),
-					},
-				),
-				util_test.NewSeries(
+					[]util_test.Sample{{TS: 230_000, Val: 999}},
+				},
+				{
 					[]labels.Label{{"__name__", "foo_bar3"}},
-					[]util_test.Sample{
-						util_test.NewSample(230_000, 888, nil, nil),
-					},
-				),
-				util_test.NewSeries(
+					[]util_test.Sample{{TS: 230_000, Val: 888}},
+				},
+				{
 					[]labels.Label{{"__name__", "foo_bar3"}},
-					[]util_test.Sample{
-						util_test.NewSample(230_000, 0, nil, util_test.GenerateTestFloatHistogram(10)),
-					},
-				),
-				util_test.NewSeries(
+					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
+				},
+				{
 					[]labels.Label{{"__name__", "foo_bar4"}},
-					[]util_test.Sample{
-						util_test.NewSample(230_000, 0, nil, util_test.GenerateTestFloatHistogram(99)),
-					},
-				),
+					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(99)}},
+				},
 			},
 		},
 	} {
@@ -185,8 +165,8 @@ func TestPusherAppendable(t *testing.T) {
 			a := pa.Appender(ctx)
 			for _, tcSeries := range tc.series {
 				var err error
-				lbls := tcSeries.Labels()
-				sample := tcSeries.Samples()[0] // each input tcSeries only has one sample
+				lbls := tcSeries.Labels
+				sample := tcSeries.Samples[0] // each input tcSeries only has one sample
 				timeseries := mimirpb.PreallocTimeseries{
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels:    mimirpb.FromLabelsToLabelAdapters(lbls),
@@ -222,9 +202,9 @@ func TestPusherAppendable(t *testing.T) {
 			// For NaN, we cannot use require.Equal.
 			require.Len(t, pusher.request.Timeseries, 1)
 			require.Len(t, pusher.request.Timeseries[0].Samples, 1)
-			lbls := tc.series[0].Labels()
+			lbls := tc.series[0].Labels
 			require.Equal(t, 0, labels.Compare(mimirpb.FromLabelAdaptersToLabels(pusher.request.Timeseries[0].Labels), lbls))
-			require.Equal(t, tc.series[0].Samples()[0].T(), pusher.request.Timeseries[0].Samples[0].TimestampMs)
+			require.Equal(t, tc.series[0].Samples[0].T(), pusher.request.Timeseries[0].Samples[0].TimestampMs)
 			require.True(t, math.IsNaN(pusher.request.Timeseries[0].Samples[0].Value))
 		})
 	}
