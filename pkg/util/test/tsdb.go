@@ -14,6 +14,10 @@ type Series struct {
 	samples []Sample
 }
 
+func NewSeries(lbls labels.Labels, samples []Sample) Series {
+	return Series{lbls, samples}
+}
+
 type Sample struct {
 	t  int64
 	v  float64
@@ -21,7 +25,7 @@ type Sample struct {
 	fh *histogram.FloatHistogram
 }
 
-func NewSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+func NewSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) Sample {
 	return Sample{t, v, h, fh}
 }
 
