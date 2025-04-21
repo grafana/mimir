@@ -70,16 +70,16 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					util_test.NewSample(10, 0, util_test.GenerateTestHistogram(1), nil),
-					util_test.NewSample(20, 0, util_test.GenerateTestHistogram(2), nil),
+					util_test.Sample{TS: 10, Hist: util_test.GenerateTestHistogram(1)},
+					util_test.Sample{TS: 20, Hist: util_test.GenerateTestHistogram(2)},
 				})),
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					util_test.NewSample(30, 0, util_test.GenerateTestHistogram(3), nil),
-					util_test.NewSample(40, 0, util_test.GenerateTestHistogram(4), nil),
+					util_test.Sample{TS: 30, Hist: util_test.GenerateTestHistogram(3)},
+					util_test.Sample{TS: 40, Hist: util_test.GenerateTestHistogram(4)},
 				})),
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					util_test.NewSample(50, 0, util_test.GenerateTestHistogram(5), nil),
-					util_test.NewSample(2*time.Hour.Milliseconds()-1, 0, util_test.GenerateTestHistogram(6), nil),
+					util_test.Sample{TS: 50, Hist: util_test.GenerateTestHistogram(5)},
+					util_test.Sample{TS: 2*time.Hour.Milliseconds() - 1, Hist: util_test.GenerateTestHistogram(6)},
 				})),
 			},
 		}
@@ -90,10 +90,10 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				samples = append(samples, util_test.NewSample(ts, 0, h, nil))
+				samples = append(samples, util_test.Sample{TS: ts, Hist: h})
 			}
 		}
-		expectedSeries[i] = util_test.NewSeries(spec.Labels, samples)
+		expectedSeries[i] = util_test.Series{Labels: spec.Labels, Samples: samples}
 
 		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
@@ -161,14 +161,14 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 						break
 					} else if valType == chunkenc.ValHistogram {
 						ts, h := it.AtHistogram(nil)
-						samples = append(samples, util_test.NewSample(ts, 0, h, nil))
+						samples = append(samples, util_test.Sample{TS: ts, Hist: h})
 					} else {
 						t.Error("Unexpected chunkenc.ValueType (we're expecting only histograms): " + string(valType))
 					}
 				}
 			}
 
-			compactedSeries = append(compactedSeries, util_test.NewSeries(lbls.Labels(), samples))
+			compactedSeries = append(compactedSeries, util_test.Series{Labels: lbls.Labels(), Samples: samples})
 		}
 
 		require.NoError(t, ixReader.Close())
