@@ -170,28 +170,49 @@ const (
 )
 
 // genSeries generates series of float64 samples with a given number of labels and values.
-func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
-	sampleCount := maxt - mint
-	if totalSeries == 0 || labelCount == 0 {
+func genSeries(labelCardinalities []int, minT int, sampleCount int) []storage.Series {
+	maxT := minT + sampleCount
+
+	totalSeries := 0
+	for _, labelCount := range labelCardinalities {
+		totalSeries += 2 * labelCount // one series each for a_ and b_ metric names
+	}
+
+	if len(labelCardinalities) == 0 {
 		return nil
 	}
 
-	series := make([]storage.Series, totalSeries)
+	metricLabels := make([]labels.Labels, 0, sampleCount)
 
-	for i := 0; i < totalSeries; i++ {
-		lbls := make(map[string]string, labelCount)
-		lbls[defaultLabelName] = strconv.Itoa(i)
-		for j := 1; len(lbls) < labelCount; j++ {
-			lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
+	for _, labelCount := range labelCardinalities {
+		aMetricName := "a_" + strconv.Itoa(labelCount)
+		bMetricName := "b_" + strconv.Itoa(labelCount)
+
+		if labelCount == 1 {
+			// metricLabels with one series only have the __name__ label
+			metricLabels = append(metricLabels, labels.FromStrings("__name__", aMetricName))
+			metricLabels = append(metricLabels, labels.FromStrings("__name__", bMetricName))
+		} else {
+			// metricLabels with more than one series have the __name__ label
+			// and a one "l" label with `labelCount` different values
+			for i := 0; i < labelCount; i++ {
+				labelValue := strconv.Itoa(i)
+				metricLabels = append(metricLabels, labels.FromStrings("__name__", aMetricName, "l", labelValue))
+				metricLabels = append(metricLabels, labels.FromStrings("__name__", bMetricName, "l", labelValue))
+			}
 		}
+	}
+
+	series := make([]storage.Series, totalSeries)
+	for i, metricLabelSet := range metricLabels {
 		samples := make([]chunks.Sample, 0, sampleCount)
-		for t := mint; t < maxt; t++ {
+		for t := minT; t < maxT; t++ {
 			samples = append(samples, sample{
-				t: t * interval.Milliseconds(),
+				t: int64(t) * interval.Milliseconds(),
 				f: float64(t) + float64(i)/float64(totalSeries),
 			})
 		}
-		series[i] = storage.NewListSeries(labels.FromMap(lbls), samples)
+		series[i] = storage.NewListSeries(metricLabelSet, samples)
 	}
 	return series
 }

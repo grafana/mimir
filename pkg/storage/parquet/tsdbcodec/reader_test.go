@@ -31,7 +31,7 @@ func TestReader(t *testing.T) {
 	//labelSets := GenerateTestLabelSets([]int{1}, DefaultHistogramBuckets)
 	//storageSeries := GenerateTestStorageSeriesFromLabelSets(labelSets)
 
-	storageSeries := genSeries(10, 1, 1, 100)
+	storageSeries := genSeries([]int{1, 2}, 0, 100)
 	blockFilePath, err := tsdb.CreateBlock(storageSeries, tmpDir, 0, logger)
 	require.NoError(t, err)
 
