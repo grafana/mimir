@@ -1366,12 +1366,17 @@ func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
 
 		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
 		if userErr == nil {
-			// Target delay - time spent processing the middleware chain including the push.
-			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
-			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
-				delay = util.DurationWithJitter(delay, 0.10)
-				pushReq.artificialDelay = delay
-				d.sleep(delay)
+			if delay := d.limits.DistributorIngestionArtificialDelay(userID); delay > 0 {
+				// Target delay - time spent processing the middleware chain including the push.
+				// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+				if delay = delay - d.now().Sub(start); delay > 0 {
+					// Delay is configured but request is taking less than the delay
+					pushReq.artificialDelay = util.DurationWithJitter(delay, 0.10)
+					d.sleep(pushReq.artificialDelay)
+				} else {
+					// Delay is configured but request is already taking longer than the delay
+					pushReq.artificialDelay = 0
+				}
 			}
 			return err
 		}

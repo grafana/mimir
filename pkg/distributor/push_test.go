@@ -935,7 +935,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 				req.Header.Add("Retry-Attempt", tc.retryAttempt)
 			}
 
-			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg, 0)
+			addErrorHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg)
 
 			retryAfter := recorder.Header().Get("Retry-After")
 			if !tc.expectRetry {
@@ -1120,18 +1120,25 @@ func TestHandler_toHTTPStatus(t *testing.T) {
 
 func TestHandler_ServerTiming(t *testing.T) {
 	tests := []struct {
-		name   string
-		userID string
-		delay  time.Duration
+		name        string
+		userID      string
+		slowRequest bool
+		delay       time.Duration
 	}{
 		{
 			name:   "No delay configured",
 			userID: "user1",
-			delay:  0,
+			delay:  -1,
+		},
+		{
+			name:        "With delay configured but request takes longer",
+			userID:      "user2",
+			slowRequest: true,
+			delay:       500 * time.Millisecond,
 		},
 		{
 			name:   "With delay configured",
-			userID: "user2",
+			userID: "user3",
 			delay:  500 * time.Millisecond,
 		},
 	}
@@ -1157,6 +1164,13 @@ func TestHandler_ServerTiming(t *testing.T) {
 			req = req.WithContext(user.InjectOrgID(req.Context(), tc.userID))
 			w := httptest.NewRecorder()
 
+			dummyPushFunc := func(ctx context.Context, pushReq *Request) error {
+				if tc.slowRequest {
+					time.Sleep(tc.delay * 2)
+				}
+				return nil
+			}
+
 			handler := Handler(
 				1024*1024,
 				nil,
@@ -1166,7 +1180,7 @@ func TestHandler_ServerTiming(t *testing.T) {
 				overrides,
 				RetryConfig{},
 				// Just outerMaybeDelayMiddleware and not wrapPushWithMiddlewares
-				d.outerMaybeDelayMiddleware(d.push),
+				d.outerMaybeDelayMiddleware(dummyPushFunc),
 				nil,
 				log.NewNopLogger(),
 			)
