@@ -75,7 +75,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, normal value",
 			series: []util_test.Series{
 				{
-					[]labels.Label{{"__name__", "foo_bar"}},
+					labels.Labels{{"__name__", "foo_bar"}},
 					[]util_test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -86,7 +86,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []util_test.Series{
 				{
-					[]labels.Label{{"__name__", "foo_bar"}},
+					labels.Labels{{"__name__", "foo_bar"}},
 					[]util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -95,7 +95,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "ALERTS, normal value",
 			series: []util_test.Series{
 				{
-					[]labels.Label{
+					labels.Labels{
 						{"__name__", "ALERT"},
 						{"alertname", "boop"},
 					},
@@ -108,7 +108,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []util_test.Series{
 				{
-					[]labels.Label{
+					labels.Labels{
 						{"__name__", "ALERT"},
 						{"alertname", "boop"},
 					},
@@ -120,7 +120,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, histogram value",
 			series: []util_test.Series{
 				{
-					[]labels.Label{{"__name__", "foo_bar"}},
+					labels.Labels{{"__name__", "foo_bar"}},
 					[]util_test.Sample{{TS: 200_000, Hist: util_test.GenerateTestHistogram(10)}},
 				},
 			},
@@ -129,7 +129,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, float histogram value",
 			series: []util_test.Series{
 				{
-					[]labels.Label{{"__name__", "foo_bar"}},
+					labels.Labels{{"__name__", "foo_bar"}},
 					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
 				},
 			},
@@ -138,19 +138,19 @@ func TestPusherAppendable(t *testing.T) {
 			name: "mix of float and float histogram",
 			series: []util_test.Series{
 				{
-					[]labels.Label{{"__name__", "foo_bar1"}},
+					labels.Labels{{"__name__", "foo_bar1"}},
 					[]util_test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
-					[]labels.Label{{"__name__", "foo_bar3"}},
+					labels.Labels{{"__name__", "foo_bar3"}},
 					[]util_test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
-					[]labels.Label{{"__name__", "foo_bar3"}},
+					labels.Labels{{"__name__", "foo_bar3"}},
 					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
 				},
 				{
-					[]labels.Label{{"__name__", "foo_bar4"}},
+					labels.Labels{{"__name__", "foo_bar4"}},
 					[]util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(99)}},
 				},
 			},
