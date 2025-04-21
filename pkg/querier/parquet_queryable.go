@@ -31,7 +31,6 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_storage "github.com/grafana/mimir/pkg/storage/parquet"
@@ -40,8 +39,8 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -53,15 +52,16 @@ const (
 type ParquetQueryable struct {
 	services.Service
 
-	finder              *ParquetBucketIndexBlocksFinder
-	logger              log.Logger
-	queryStoreAfter     time.Duration
-	limits              BlocksStoreLimits
-	bucket              objstore.InstrumentedBucket
-	chunkDecoder        *mimir_storage.PrometheusParquetChunksDecoder
-	asyncRead           bool
-	dictionaryCacheSize int
-	projectionPushdown  bool
+	finder               *ParquetBucketIndexBlocksFinder
+	logger               log.Logger
+	queryStoreAfter      time.Duration
+	queryIngestersWithin time.Duration
+	limits               BlocksStoreLimits
+	bucket               objstore.InstrumentedBucket
+	chunkDecoder         *mimir_storage.PrometheusParquetChunksDecoder
+	asyncRead            bool
+	dictionaryCacheSize  int
+	projectionPushdown   bool
 
 	metrics *metrics
 
@@ -394,8 +394,6 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 			"fetchedSeries", reqStats.LoadFetchedSeries(),
 			"fetchedChunks", reqStats.LoadFetchedChunks(),
 			"fetchedChunkBytes", reqStats.LoadFetchedChunkBytes(),
-			"fetchedSamples", reqStats.LoadFetchedSamples(),
-			"fetchedDataBytes", reqStats.LoadFetchedDataBytes(),
 		}
 		if len(grouping) > 0 {
 			extraFields = append(extraFields, "grouping", strings.Join(grouping, ","))
@@ -435,7 +433,6 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 			resultMtx.Lock()
 			resSeriesSets = append(resSeriesSets, ss)
 			defer resultMtx.Unlock()
-			return nil
 			return nil
 		})
 	}
@@ -496,7 +493,7 @@ func (q *parquetQuerier) LabelNames(ctx context.Context, hints *storage.LabelHin
 	}
 
 	spanLog, ctx := spanlogger.New(ctx, "ParquetQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	minT, maxT, limit := q.minT, q.maxT, int64(0)
 
@@ -570,7 +567,7 @@ func (q *parquetQuerier) LabelValues(ctx context.Context, name string, hints *st
 	}
 
 	spanLog, ctx := spanlogger.New(ctx, "ParquetQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	minT, maxT, limit := q.minT, q.maxT, int64(0)
 
@@ -854,8 +851,8 @@ func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint,
 
 		lblsBuilder.Sort()
 		lbls := lblsBuilder.Labels()
-		if err := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(lbls)); err != nil {
-			return nil, validation.LimitError(err.Error())
+		if err := queryLimiter.AddSeries(lbls); err != nil {
+			return nil, validation.NewLimitError(err.Error())
 		}
 
 		chksCount := 0
@@ -866,20 +863,16 @@ func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint,
 		}
 
 		if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksBytes); chunkBytesLimitErr != nil {
-			return nil, validation.LimitError(chunkBytesLimitErr.Error())
+			return nil, validation.NewLimitError(chunkBytesLimitErr.Error())
 		}
 		if chunkLimitErr := queryLimiter.AddChunks(chksCount); chunkLimitErr != nil {
-			return nil, validation.LimitError(chunkLimitErr.Error())
+			return nil, validation.NewLimitError(chunkLimitErr.Error())
 		}
 
 		labelsBytes := 0
 		lbls.Range(func(l labels.Label) {
 			labelsBytes += len(l.Name) + len(l.Value)
 		})
-
-		if dataBytesLimitErr := queryLimiter.AddDataBytes(chunksBytes + labelsBytes); dataBytesLimitErr != nil {
-			return nil, validation.LimitError(dataBytesLimitErr.Error())
-		}
 
 		chunksCount += uint64(chksCount)
 		chunksSizeBytes += uint64(chunksBytes)
@@ -897,8 +890,6 @@ func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint,
 	reqStats.AddFetchedSeries(uint64(len(series)))
 	reqStats.AddFetchedChunks(chunksCount)
 	reqStats.AddFetchedChunkBytes(chunksSizeBytes)
-	reqStats.AddFetchedSamples(samples)
-	reqStats.AddFetchedDataBytes(chunksSizeBytes + labelsSizeBytes)
 
 	if sorted {
 		sort.Sort(byLabels(series))
