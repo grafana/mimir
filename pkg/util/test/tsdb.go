@@ -18,6 +18,14 @@ func NewSeries(lbls labels.Labels, samples []Sample) Series {
 	return Series{lbls, samples}
 }
 
+func (s Series) Labels() labels.Labels {
+	return s.lbls
+}
+
+func (s Series) Samples() []Sample {
+	return s.samples
+}
+
 type Sample struct {
 	t  int64
 	v  float64
