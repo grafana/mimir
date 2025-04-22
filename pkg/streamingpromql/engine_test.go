@@ -1648,7 +1648,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 3 * 8 * types.FPointSize // Allow up to three series with five points (which will be rounded up to 8, the nearest power of 2)
+	limit := 3*8*types.FPointSize + 8*types.SeriesMetadataSize // Allow up to three series and its SeriesMetadatawith five points (which will be rounded up to 8, the nearest power of 2)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
