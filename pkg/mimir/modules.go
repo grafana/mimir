@@ -651,13 +651,20 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
-	q, err := querier.NewBlocksStoreQueryableFromConfig(
-		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
-	)
+	/*	q, err := querier.NewBlocksStoreQueryableFromConfig(
+			t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
+		}
+		t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
+	*/
+	q, err := querier.NewParquetStoreQueryable(t.Overrides, t.Cfg.Querier, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
+		return nil, fmt.Errorf("failed to initialize parquet store queryable: %v", err)
 	}
-	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier)) // TODO(jesus.vazquez) Remove NewStoreGatewayTimeRangeQueryable and use the new ParquetQueryable
+	t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewParquetTimeRangeQueryable(q, t.Cfg.Querier))
+
 	return q, nil
 }
 
