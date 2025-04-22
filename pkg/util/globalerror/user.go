@@ -67,6 +67,7 @@ const (
 	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
 	QueryBlocked                ID = "query-blocked"
 	RequestBlocked              ID = "request-blocked"
+	QueryLimited                ID = "query-limited"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"

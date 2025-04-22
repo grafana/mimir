@@ -2688,7 +2688,20 @@ How it **works**:
 
 How to **fix** it:
 
-This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
+This error only occurs when an administrator has explicitly defined a blocked list for a given tenant. After assessing the reason for blocking one or multiple queries, you can update the tenant's limits and remove the pattern.
+
+### err-mimir-query-limited
+
+This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits and the query is being run too frequently.
+
+How it **works**:
+
+- The query-frontend implements a middleware responsible for assessing whether the query should be limited and whether it has been run within the last allowed frequency.
+- To configure the limit, set the block `limited_queries` in the `limits`.
+
+How to **fix** it:
+
+Consider running this query less frequently. This error only occurs when an administrator has explicitly defined a limited queries list for a given tenant. After assessing the reason for limiting one or multiple queries, you can update the tenant's limits and remove the pattern.
 
 ### err-mimir-request-blocked
 

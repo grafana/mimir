@@ -191,6 +191,7 @@ type Limits struct {
 	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
 	BlockedQueries                         []*BlockedQuery        `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
 	BlockedRequests                        []*BlockedRequest      `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of http requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
@@ -748,6 +749,10 @@ func (o *Overrides) MaxQueryExpressionSizeBytes(userID string) int {
 // BlockedQueries returns the blocked queries.
 func (o *Overrides) BlockedQueries(userID string) []*BlockedQuery {
 	return o.getOverridesForUser(userID).BlockedQueries
+}
+
+func (o *Overrides) LimitedQueries(userID string) []*LimitedQuery {
+	return o.getOverridesForUser(userID).LimitedQueries
 }
 
 // BlockedRequests returns the blocked http requests.

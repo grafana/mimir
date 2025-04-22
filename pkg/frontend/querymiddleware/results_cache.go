@@ -195,6 +195,9 @@ type CacheKeyGenerator interface {
 	// QueryRequestError should generate a cache key based on errors for the tenant ID and MetricsQueryRequest.
 	QueryRequestError(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
+	// QueryRequestLimiter should generate a cache key based on the tenant ID and MetricsQueryRequest.
+	QueryRequestLimiter(ctx context.Context, tenantID string, r MetricsQueryRequest) string
+
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
 	// LabelValues should return a nil *GenericQueryCacheKey when it returns an error and
@@ -244,6 +247,10 @@ func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID 
 		end = 0
 	}
 	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), start, end, r.GetStep())
+}
+
+func (g DefaultCacheKeyGenerator) QueryRequestLimiter(_ context.Context, tenantID string, r MetricsQueryRequest) string {
+	return fmt.Sprintf("QL:%s:%s", tenantID, r.GetQuery())
 }
 
 // shouldCacheFn checks whether the current request should go to cache

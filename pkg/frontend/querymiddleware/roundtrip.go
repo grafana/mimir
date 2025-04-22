@@ -364,7 +364,13 @@ func newQueryMiddlewares(
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
-	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
+	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_frontend_rejected_queries_total",
+		Help: "Number of queries that were rejected by the cluster administrator.",
+	}, []string{"user", "reason"})
+
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, blockedQueriesCounter)
+	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
 	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
@@ -381,6 +387,7 @@ func newQueryMiddlewares(
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
@@ -392,6 +399,7 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
+		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		prom2CompatMiddleware,
 	)

@@ -3676,6 +3676,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
 
+# (experimental) List of queries to limit and duration to limit them for.
+# Example:
+#   The following configuration limits the query "rate(metric_counter[5m])" to
+#   running, at most, every minute.
+#   limited_queries:
+#       - allowed_frequency: 1m
+#         query: rate(metric_counter[5m])
+[limited_queries: <list of query (string) and allowed_frequency (duration)> | default = ]
+
 # (experimental) List of http requests to block.
 [blocked_requests: <blocked_requests_config...> | default = ]
 
