@@ -1654,8 +1654,8 @@ github.com/prometheus/common/sigv4 v0.1.0 h1:qoVebwtwwEhS85Czm2dSROY5fTo2PAPEVdD
 github.com/prometheus/common/sigv4 v0.1.0/go.mod h1:2Jkxxk9yYvCkE5G1sQT7GuEXm57JrvHu9k5YwTjsNtI=
 github.com/prometheus/exporter-toolkit v0.14.0 h1:NMlswfibpcZZ+H0sZBiTjrA3/aBFHkNZqE+iCj5EmRg=
 github.com/prometheus/exporter-toolkit v0.14.0/go.mod h1:Gu5LnVvt7Nr/oqTBUC23WILZepW0nffNo10XdhQcwWA=
-github.com/prometheus/otlptranslator v0.0.0-20250327120010-71240eaf1a23 h1:78kLtSqyBpTKFwC0Rb80uwfiCQlgFM64xdyToBCa9OE=
-github.com/prometheus/otlptranslator v0.0.0-20250327120010-71240eaf1a23/go.mod h1:2mVNRoVALPKtI/VByLYjq8b+GHt6/F7Ux3xgNLEAaag=
+github.com/prometheus/otlptranslator v0.0.0-20250417063547-0a6a352a36dc h1:lWmqYqUPTxA//JPe79gAnklB0UTcVLXB4i1OimyBgBo=
+github.com/prometheus/otlptranslator v0.0.0-20250417063547-0a6a352a36dc/go.mod h1:MODxKEGmFPC2oBP0822SsjaNd4FhYRBTvvbCnXXnbjY=
 github.com/prometheus/procfs v0.0.0-20181005140218-185b4288413d/go.mod h1:c3At6R/oaqEKCNdg8wHV1ftS6bRYblBhIjjI8uT2IGk=
 github.com/prometheus/procfs v0.0.2/go.mod h1:TjEm7ze935MbeOT/UhFTIMYKhuLP4wbCsTZCD3I8kEA=
 github.com/prometheus/procfs v0.0.8/go.mod h1:7Qr8sr6344vo1JqZ6HhLceV9o3AJ1Ff+GxbHq6oeK9A=
@@ -1840,8 +1840,8 @@ go.opentelemetry.io/collector/consumer/xconsumer v0.122.1 h1:iK1hGbho/XICdBfGb4M
 go.opentelemetry.io/collector/consumer/xconsumer v0.122.1/go.mod h1:xYbRPP1oWcYUUDQJTlv78M/rlYb+qE4weiv++ObZRSU=
 go.opentelemetry.io/collector/featuregate v1.28.0 h1:nkaMw0HyOSxojLwlezF2O/xJ9T/Jo1a0iEetesT9lr0=
 go.opentelemetry.io/collector/featuregate v1.28.0/go.mod h1:Y/KsHbvREENKvvN9RlpiWk/IGBK+CATBYzIIpU7nccc=
-go.opentelemetry.io/collector/pdata v1.28.1 h1:ORl5WLpQJvjzBVpHu12lqKMdcf/qDBwRXMcUubhybiQ=
-go.opentelemetry.io/collector/pdata v1.28.1/go.mod h1:asKE8MD/4SOKz1mCrGdAz4VO2U2HUNg8A6094uK7pq0=
+go.opentelemetry.io/collector/pdata v1.29.0 h1:ZXSZ2fROdAEbv4JKKiCspBpjIjYZ5XaNt71LNH4RpQw=
+go.opentelemetry.io/collector/pdata v1.29.0/go.mod h1:9kb3zMtLFXBPA6WGWkBHbkFwlwwYL/OHk1m0ASWZpeY=
 go.opentelemetry.io/collector/pdata/pprofile v0.122.1 h1:25Fs0eL/J/M2ZEaVplesbI1H7pYx462zUUVxVOszpOg=
 go.opentelemetry.io/collector/pdata/pprofile v0.122.1/go.mod h1:+jSjgb4zRnNmr1R/zgVLVyTVSm9irfGrvGTrk3lDxSE=
 go.opentelemetry.io/collector/pdata/testdata v0.122.1 h1:9DO8nUUnPAGYMKmrep6wLAfOHprvKY4w/7LpE4jldPQ=
