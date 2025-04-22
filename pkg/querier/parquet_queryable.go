@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/26344c3ec7409713fcf52a9c41cd0dce537b3100/pkg/querier/parquet_queryable.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package querier
 
 import (
@@ -35,6 +40,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/dedup"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -806,8 +812,7 @@ func (s Series) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
 	for _, chk := range s.chks {
 		iters = append(iters, chk.Chunk.Iterator(nil))
 	}
-	// TODO: honour mint and maxt
-	return newChunkSeriesIterator(iters)
+	return dedup.NewBoundedSeriesIterator(newChunkSeriesIterator(iters), s.mint, s.maxt)
 }
 
 func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint, maxt int64, skipChunks bool, chunksDecoder *mimir_storage.PrometheusParquetChunksDecoder, projectionPushdown bool, queryLimiter *limiter.QueryLimiter, reqStats *stats.Stats, sts *mimir_storage.Stats) (*ParquetRowsSeriesSet, error) {
