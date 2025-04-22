@@ -1509,7 +1509,7 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 }
 
 // mockTSDB create 1+ TSDB blocks storing numSeries of series, each series
-// with 1 test.Sample and its timestamp evenly distributed between minT and maxT.
+// with 1 sample and its timestamp evenly distributed between minT and maxT.
 // If numBlocks > 0, then it uses numSeries only to find the distribution of
 // samples.
 func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int64) {
