@@ -419,6 +419,17 @@ func newQueryMiddlewares(
 		)
 	}
 
+	// Inject the extra middlewares provided by the user before the caching, query pruning, and
+	// query sharding middlewares.
+	// This is important because these extra middlewares can potentially mutate the incoming
+	// query.
+	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
+		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
+	}
+	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
+		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
+	}
+
 	// Create split and cache middleware if either splitting or caching is enabled
 	var splitAndCacheMiddleware MetricsQueryMiddleware
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
@@ -444,15 +455,6 @@ func newQueryMiddlewares(
 		newInstrumentMiddleware("spin_off_subqueries", metrics),
 		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
 	)
-
-	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
-	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
-		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
-	}
-	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
-	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
-	}
 
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and
