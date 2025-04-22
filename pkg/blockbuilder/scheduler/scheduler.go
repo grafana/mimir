@@ -581,7 +581,7 @@ func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
-		MaxRetries: 0, // Keep trying indefinitely.
+		MaxRetries: 20,
 	})
 	var lastErr error
 
