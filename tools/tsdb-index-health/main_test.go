@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestGatherIndexHealthStats(t *testing.T) {
@@ -23,9 +23,9 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				util_test.Sample{TS: 10, Val: 11},
-				util_test.Sample{TS: 20, Val: 12},
-				util_test.Sample{TS: 30, Val: 13},
+				test.Sample{TS: 10, Val: 11},
+				test.Sample{TS: 20, Val: 12},
+				test.Sample{TS: 30, Val: 13},
 			})),
 		},
 	}
@@ -33,14 +33,14 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				util_test.Sample{TS: 40, Hist: util_test.GenerateTestHistogram(1)},
-				util_test.Sample{TS: 50, Hist: util_test.GenerateTestHistogram(2)},
-				util_test.Sample{TS: 60, Hist: util_test.GenerateTestHistogram(3)},
+				test.Sample{TS: 40, Hist: test.GenerateTestHistogram(1)},
+				test.Sample{TS: 50, Hist: test.GenerateTestHistogram(2)},
+				test.Sample{TS: 60, Hist: test.GenerateTestHistogram(3)},
 			})),
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				util_test.Sample{TS: 70, Hist: util_test.GenerateTestHistogram(4)},
-				util_test.Sample{TS: 80, Hist: util_test.GenerateTestHistogram(5)},
-				util_test.Sample{TS: 90, Hist: util_test.GenerateTestHistogram(6)},
+				test.Sample{TS: 70, Hist: test.GenerateTestHistogram(4)},
+				test.Sample{TS: 80, Hist: test.GenerateTestHistogram(5)},
+				test.Sample{TS: 90, Hist: test.GenerateTestHistogram(6)},
 			})),
 		},
 	}
