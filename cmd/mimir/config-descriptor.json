@@ -5473,6 +5473,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_convert_histograms_to_nhcb",
+          "required": false,
+          "desc": "Whether to convert OTel explicit histograms into native histograms with custom buckets.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-convert-histograms-to-nhcb",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",

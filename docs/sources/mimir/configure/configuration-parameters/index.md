@@ -4001,6 +4001,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.otel-keep-identifying-resource-attributes
 [otel_keep_identifying_resource_attributes: <boolean> | default = false]
 
+# (experimental) Whether to convert OTel explicit histograms into native
+# histograms with custom buckets.
+# CLI flag: -distributor.otel-convert-histograms-to-nhcb
+[otel_convert_histograms_to_nhcb: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
