@@ -267,7 +267,7 @@ func (s *jobQueue[T]) count() int {
 	return len(s.jobs)
 }
 
-// count returns the number of assigned jobs in the jobQueue.
+// assigned returns the number of assigned jobs in the jobQueue.
 func (s *jobQueue[T]) assigned() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
