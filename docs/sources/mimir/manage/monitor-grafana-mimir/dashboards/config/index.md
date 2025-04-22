@@ -9,6 +9,8 @@ title: Grafana Mimir Config dashboard
 weight: 50
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Config dashboard
 
 The Config dashboard shows details about the runtime configuration currently loaded by each Grafana Mimir instance.

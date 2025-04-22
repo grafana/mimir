@@ -2,13 +2,13 @@
 aliases:
   - ../../operators-guide/using-exemplars/about-exemplars/
   - ../../operators-guide/use-exemplars/about-exemplars/
-description:
-  Learn about using exemplars in Grafana Mimir to identify high cardinality
-  in time series events.
+description: Learn about using exemplars in Grafana Mimir to identify high cardinality in time series events.
 menuTitle: About exemplars
 title: About Grafana Mimir exemplars
 weight: 10
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # About Grafana Mimir exemplars
 

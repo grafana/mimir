@@ -9,6 +9,8 @@ title: Grafana Mimir Overrides dashboard
 weight: 70
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Overrides dashboard
 
 The Overrides dashboard shows global limits and per-tenant overrides.
