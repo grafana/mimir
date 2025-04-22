@@ -517,16 +517,16 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			{
 				Labels: seriesWithOutOfOrderChunks,
 				Chunks: []chunks.Meta{
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 20, Val: 20}, test.Sample{TS: 21, Val: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 10, Val: 10}, test.Sample{TS: 11, Val: 11}})),
 				},
 			},
 			// Series with out of order and overlapping chunks.
 			{
 				Labels: seriesWithOverlappingChunks,
 				Chunks: []chunks.Meta{
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 20, Val: 20}, test.Sample{TS: 21, Val: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 10, Val: 10}, test.Sample{TS: 20, Val: 20}})),
 				},
 			},
 		}
@@ -564,26 +564,26 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	tests := map[string]struct {
 		minT                                int64
 		maxT                                int64
-		expectedSamplesForOutOfOrderChunks  []sample
-		expectedSamplesForOverlappingChunks []sample
+		expectedSamplesForOutOfOrderChunks  []test.Sample
+		expectedSamplesForOverlappingChunks []test.Sample
 	}{
 		"query all samples": {
 			minT:                                math.MinInt64,
 			maxT:                                math.MaxInt64,
-			expectedSamplesForOutOfOrderChunks:  []sample{{t: 20, v: 20}, {t: 21, v: 21}, {t: 10, v: 10}, {t: 11, v: 11}},
-			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}, {t: 10, v: 10}, {t: 20, v: 20}},
+			expectedSamplesForOutOfOrderChunks:  []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}, {TS: 10, Val: 10}, {TS: 11, Val: 11}},
+			expectedSamplesForOverlappingChunks: []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}, {TS: 10, Val: 10}, {TS: 20, Val: 20}},
 		},
 		"query samples from 1st chunk only": {
 			minT:                                21,
 			maxT:                                22, // Not included.
-			expectedSamplesForOutOfOrderChunks:  []sample{{t: 20, v: 20}, {t: 21, v: 21}},
-			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}},
+			expectedSamplesForOutOfOrderChunks:  []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}},
+			expectedSamplesForOverlappingChunks: []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}},
 		},
 		"query samples from 2nd (out of order) chunk only": {
 			minT:                                10,
 			maxT:                                11, // Not included.
-			expectedSamplesForOutOfOrderChunks:  []sample{{t: 10, v: 10}, {t: 11, v: 11}},
-			expectedSamplesForOverlappingChunks: []sample{{t: 10, v: 10}, {t: 20, v: 20}},
+			expectedSamplesForOutOfOrderChunks:  []test.Sample{{TS: 10, Val: 10}, {TS: 11, Val: 11}},
+			expectedSamplesForOverlappingChunks: []test.Sample{{TS: 10, Val: 10}, {TS: 20, Val: 20}},
 		},
 	}
 
