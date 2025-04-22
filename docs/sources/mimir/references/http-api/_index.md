@@ -1,9 +1,7 @@
 ---
 aliases:
   - ../operators-guide/reference-http-api/
-description:
-  Use the HTTP API to write and query time-series data, and to operate
-  a Grafana Mimir cluster.
+description: Use the HTTP API to write and query time-series data, and to operate a Grafana Mimir cluster.
 keywords:
   - Mimir API
   - Mimir endpoints
@@ -13,6 +11,8 @@ menuTitle: HTTP API
 title: Grafana Mimir HTTP API
 weight: 120
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir HTTP API
 

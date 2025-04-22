@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/ruler/
-description:
-  The ruler evaluates PromQL expressions defined in recording and alerting
-  rules.
+description: The ruler evaluates PromQL expressions defined in recording and alerting rules.
 menuTitle: (Optional) Ruler
 title: (Optional) Grafana Mimir ruler
 weight: 130
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # (Optional) Grafana Mimir ruler
 

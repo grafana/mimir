@@ -1,9 +1,7 @@
 ---
 aliases:
   - ../operators-guide/configure/configure-object-storage-backend/
-description:
-  Learn how to configure Grafana Mimir to use different object storage
-  backend implementations.
+description: Learn how to configure Grafana Mimir to use different object storage backend implementations.
 menuTitle: Object storage
 title: Configure Grafana Mimir object storage backend
 weight: 65
@@ -28,9 +26,9 @@ empty directories behind when removing blocks. For example, if you use Azure Blo
 [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
 {{% /admonition %}}
 
-Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`](../configuration-parameters/#filesystem_storage_backend) object storage implementation.
+To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration](../about-runtime-configuration/):
 
-[Ruler and alertmanager support a `local` implementation](../../references/architecture/components/ruler/#local-storage),
+Ruler and alertmanager support a [`local` implementation](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ruler/#local-storage),
 which is similar to `filesystem` in the way that it uses the local file system,
 but it is a read-only data source and can be used to provision state into those components.
 
