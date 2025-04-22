@@ -7,14 +7,12 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/util/test"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestTSDBPrintChunk(t *testing.T) {
@@ -24,14 +22,14 @@ func TestTSDBPrintChunk(t *testing.T) {
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				sample{10, 11, nil, nil},
-				sample{20, 12, nil, nil},
-				sample{30, 13, nil, nil},
+				util_test.Sample{TS: 10, Val: 11},
+				util_test.Sample{TS: 20, Val: 12},
+				util_test.Sample{TS: 30, Val: 13},
 			})),
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				sample{40, 0, test.GenerateTestHistogram(1), nil},
-				sample{50, 0, test.GenerateTestHistogram(2), nil},
-				sample{60, 0, test.GenerateTestHistogram(3), nil},
+				util_test.Sample{TS: 40, Hist: util_test.GenerateTestHistogram(1)},
+				util_test.Sample{TS: 50, Hist: util_test.GenerateTestHistogram(2)},
+				util_test.Sample{TS: 60, Hist: util_test.GenerateTestHistogram(3)},
 			})),
 		},
 	}
@@ -46,7 +44,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 		chunkRefs = append(chunkRefs, strconv.Itoa(int(chkMeta.Ref)))
 	}
 
-	co := test.CaptureOutput(t)
+	co := util_test.CaptureOutput(t)
 	printChunks(blockDir, chunkRefs)
 	sout, _ := co.Done()
 
@@ -61,40 +59,6 @@ Chunk ref: 29 samples: 3 bytes: 56
 `
 
 	require.Equal(t, expected, sout)
-}
-
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func (s sample) T() int64                      { return s.t }
-func (s sample) F() float64                    { return s.v }
-func (s sample) H() *histogram.Histogram       { return s.h }
-func (s sample) FH() *histogram.FloatHistogram { return s.fh }
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	c := sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
-	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
-	}
-	return c
 }
 
 func must[T any](v T, err error) T {
