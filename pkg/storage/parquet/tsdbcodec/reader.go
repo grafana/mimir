@@ -8,11 +8,11 @@ package tsdbcodec
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"runtime"
 	"slices"
 	"sync"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -30,10 +30,10 @@ func BlockToParquetRowsStream(
 	maxParquetIndexSizeLimit int, // TODO what does this mean and how to set it?
 	rowsPerBatch int,
 	batchStreamBufferSize int,
-	logger *slog.Logger,
+	logger log.Logger,
 ) (chan []parquet.ParquetRow, []string, int, error) {
 	// TODO
-	b, err := tsdb.OpenBlock(logger, path, nil, tsdb.DefaultPostingsDecoderFactory)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), path, nil, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, nil, 0, err
 	}

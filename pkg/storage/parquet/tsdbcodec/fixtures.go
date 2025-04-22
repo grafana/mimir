@@ -88,10 +88,6 @@ type sample struct {
 	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
-	return sample{t, v, h, fh}
-}
-
 func (s sample) T() int64                      { return s.t }
 func (s sample) F() float64                    { return s.f }
 func (s sample) H() *histogram.Histogram       { return s.h }
