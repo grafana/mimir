@@ -171,6 +171,9 @@ This is a symptom of setting GOMEMLIMIT too low, so GC is triggered too frequent
 How to **fix** it:
 
 1. Ensure that distributor horizontal pod auto-scaling works properly, so that distributors are scaled out horizontally in response to CPU pressure.
+1. Aggregate the alert query by pod to see if the alert is being triggered by outlier pods. As distrbutors are stateless, we expect each pod to have roughly
+   equal GC-related CPU usage. If there are pods using far more GC CPU than others, examine the nodes housing those pods, and if they're over-taxed, CPU-wise,
+   you can attempt to move these pods to different nodes by deleting them.
 
 ### MimirDistributorReachingInflightPushRequestLimit
 

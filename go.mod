@@ -76,19 +76,19 @@ require (
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250327120010-71240eaf1a23
+	github.com/prometheus/otlptranslator v0.0.0-20250417063547-0a6a352a36dc
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250413173443-1d5a55fa468d
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250416232150-07cc0584a381
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
-	go.opentelemetry.io/collector/pdata v1.28.1
+	go.opentelemetry.io/collector/pdata v1.29.0
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0
 	go.opentelemetry.io/proto/otlp v1.5.0

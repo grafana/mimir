@@ -119,6 +119,7 @@ func OTLPHandler(
 				// Respond as per spec:
 				// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
 				var expResp colmetricpb.ExportMetricsServiceResponse
+				addSuccessHeaders(w, req.artificialDelay)
 				writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 				return
 			}
@@ -152,7 +153,7 @@ func OTLPHandler(
 			}
 			level.Error(logger).Log(msgs...)
 		}
-		addHeaders(w, pushErr, r, httpCode, retryCfg, req.artificialDelay)
+		addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
 		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 	})
 }

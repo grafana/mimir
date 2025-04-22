@@ -220,7 +220,9 @@ func handler(
 				level.Error(logger).Log("msg", "error write response stats not found in context", "err", err)
 			}
 		}
-		if err != nil {
+		if err == nil {
+			addSuccessHeaders(w, req.artificialDelay)
+		} else {
 			if errors.Is(err, context.Canceled) {
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
@@ -246,7 +248,7 @@ func handler(
 				}
 				level.Error(logger).Log(msgs...)
 			}
-			addHeaders(w, err, r, code, retryCfg, req.artificialDelay)
+			addErrorHeaders(w, err, r, code, retryCfg)
 			http.Error(w, validUTF8Message(msg), code)
 		}
 	})
@@ -370,14 +372,17 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig, delay time.Duration) {
+func addSuccessHeaders(w http.ResponseWriter, delay time.Duration) {
+	if delay >= 0 {
+		durationInMs := strconv.FormatFloat(float64(delay)/float64(time.Millisecond), 'f', -1, 64)
+		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%s", durationInMs))
+	}
+}
+
+func addErrorHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
-	}
-
-	if delay > 0 {
-		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%d", delay))
 	}
 
 	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
