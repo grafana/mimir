@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestTSDBChunks(t *testing.T) {
@@ -22,14 +22,14 @@ func TestTSDBChunks(t *testing.T) {
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				util_test.Sample{TS: 10, Val: 11},
-				util_test.Sample{TS: 20, Val: 12},
-				util_test.Sample{TS: 30, Val: 13},
+				test.Sample{TS: 10, Val: 11},
+				test.Sample{TS: 20, Val: 12},
+				test.Sample{TS: 30, Val: 13},
 			})),
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				util_test.Sample{TS: 40, Hist: util_test.GenerateTestHistogram(1)},
-				util_test.Sample{TS: 50, Hist: util_test.GenerateTestHistogram(2)},
-				util_test.Sample{TS: 60, Hist: util_test.GenerateTestHistogram(3)},
+				test.Sample{TS: 40, Hist: test.GenerateTestHistogram(1)},
+				test.Sample{TS: 50, Hist: test.GenerateTestHistogram(2)},
+				test.Sample{TS: 60, Hist: test.GenerateTestHistogram(3)},
 			})),
 		},
 	}
@@ -37,7 +37,7 @@ func TestTSDBChunks(t *testing.T) {
 	meta, err := block.GenerateBlockFromSpec(tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
-	co := util_test.CaptureOutput(t)
+	co := test.CaptureOutput(t)
 
 	chunkFilename := path.Join(tmpDir, meta.ULID.String(), "chunks", "000001")
 	require.NoError(t, printChunksFile(chunkFilename, true))
