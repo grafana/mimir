@@ -1209,7 +1209,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		// Cap how many metrics with dedupled samples to emit trace events for.
-		const maxTrace = 10
+		const maxMetricsWithDeduplicatedSamplesToTrace = 10
 		dedupedPerMetric := make(map[string]int, maxTrace)
 
 		for tsIdx, ts := range req.Timeseries {
