@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
@@ -63,37 +63,37 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 	// Create a few blocks to compact and upload them to the bucket.
 	metas := make([]*block.Meta, 0, numBlocks)
-	expectedSeries := make([]util_test.Series, numBlocks)
+	expectedSeries := make([]test.Series, numBlocks)
 
 	for i := 0; i < numBlocks; i++ {
 		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					util_test.Sample{TS: 10, Hist: util_test.GenerateTestHistogram(1)},
-					util_test.Sample{TS: 20, Hist: util_test.GenerateTestHistogram(2)},
+					test.Sample{TS: 10, Hist: test.GenerateTestHistogram(1)},
+					test.Sample{TS: 20, Hist: test.GenerateTestHistogram(2)},
 				})),
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					util_test.Sample{TS: 30, Hist: util_test.GenerateTestHistogram(3)},
-					util_test.Sample{TS: 40, Hist: util_test.GenerateTestHistogram(4)},
+					test.Sample{TS: 30, Hist: test.GenerateTestHistogram(3)},
+					test.Sample{TS: 40, Hist: test.GenerateTestHistogram(4)},
 				})),
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					util_test.Sample{TS: 50, Hist: util_test.GenerateTestHistogram(5)},
-					util_test.Sample{TS: 2*time.Hour.Milliseconds() - 1, Hist: util_test.GenerateTestHistogram(6)},
+					test.Sample{TS: 50, Hist: test.GenerateTestHistogram(5)},
+					test.Sample{TS: 2*time.Hour.Milliseconds() - 1, Hist: test.GenerateTestHistogram(6)},
 				})),
 			},
 		}
 
 		// Populate expectedSeries for comparison w/ compactedSeries later.
-		var samples []util_test.Sample
+		var samples []test.Sample
 		for _, chk := range spec.Chunks {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				samples = append(samples, util_test.Sample{TS: ts, Hist: h})
+				samples = append(samples, test.Sample{TS: ts, Hist: h})
 			}
 		}
-		expectedSeries[i] = util_test.Series{Labels: spec.Labels, Samples: samples}
+		expectedSeries[i] = test.Series{Labels: spec.Labels, Samples: samples}
 
 		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		return nil
 	}))
 
-	var compactedSeries []util_test.Series
+	var compactedSeries []test.Series
 
 	for _, blockID := range blocks {
 		require.NoError(t, block.Download(context.Background(), log.NewNopLogger(), bktClient, ulid.MustParseStrict(blockID), filepath.Join(outDir, blockID)))
@@ -143,7 +143,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			var lbls labels.ScratchBuilder
 			var chks []chunks.Meta
 
-			var samples []util_test.Sample
+			var samples []test.Sample
 
 			require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
 
@@ -161,14 +161,14 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 						break
 					} else if valType == chunkenc.ValHistogram {
 						ts, h := it.AtHistogram(nil)
-						samples = append(samples, util_test.Sample{TS: ts, Hist: h})
+						samples = append(samples, test.Sample{TS: ts, Hist: h})
 					} else {
 						t.Error("Unexpected chunkenc.ValueType (we're expecting only histograms): " + string(valType))
 					}
 				}
 			}
 
-			compactedSeries = append(compactedSeries, util_test.Series{Labels: lbls.Labels(), Samples: samples})
+			compactedSeries = append(compactedSeries, test.Series{Labels: lbls.Labels(), Samples: samples})
 		}
 
 		require.NoError(t, ixReader.Close())
