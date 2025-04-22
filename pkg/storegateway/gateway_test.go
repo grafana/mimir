@@ -1417,7 +1417,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 
 	storageDir := t.TempDir()
 
-	// Generate 1 TSDB block with chunksQueried series. Since each mocked series contains only 1 test.Sample,
+	// Generate 1 TSDB block with chunksQueried series. Since each mocked series contains only 1 sample,
 	// it will also only have 1 chunk.
 	now := time.Now()
 	minT := now.Add(-1*time.Hour).Unix() * 1000
