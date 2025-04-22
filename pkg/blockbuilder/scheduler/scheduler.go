@@ -591,7 +591,7 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 
 var _ offsetStore = (*offsetFinder)(nil)
 
-// fetchCommittedOffsets fetches the committed offsets for the given consumer group.
+// fetchCommittedOffsets fetches the committed offsets for the scheduler's consumer group.
 // It returns empty offsets if the consumer group is not found.
 func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm.Offsets, error) {
 	boff := backoff.New(ctx, backoff.Config{
