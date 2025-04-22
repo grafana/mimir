@@ -6150,7 +6150,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]util_test.Sample) {
 		s, err := c.QueryStream(ctx, &client.QueryRequest{
 			StartTimestampMs: 0,
 			EndTimestampMs:   5,
@@ -6186,17 +6186,17 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 		})
 
 		headers := []chunkenc.CounterResetHeader{}
-		var samples [][]sample
+		var samples [][]util_test.Sample
 		for _, c := range chunks {
 			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
 			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
 			require.NoError(t, err)
 
-			s := []sample{}
+			s := []util_test.Sample{}
 			it := chk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				s = append(s, sample{t: ts, h: h})
+				s = append(s, util_test.Sample{TS: ts, Hist: h})
 			}
 			samples = append(samples, s)
 			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
@@ -6207,17 +6207,17 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
 	actHeaders, actSamples := runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]util_test.Sample{
 		{
-			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{TS: 0, Hist: histogramWithHint(4, histogram.UnknownCounterReset)},
 		},
 		{
-			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+			{TS: 1, Hist: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{TS: 2, Hist: histogramWithHint(6, histogram.NotCounterReset)},
 		},
 		{
-			{t: 3, h: histogramWithHint(3, histogram.UnknownCounterReset)},
-			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+			{TS: 3, Hist: histogramWithHint(3, histogram.UnknownCounterReset)},
+			{TS: 4, Hist: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 	}, actSamples)
 
@@ -6231,15 +6231,15 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 	actHeaders, actSamples = runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]util_test.Sample{
 		{
-			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
-			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
-			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+			{TS: 0, Hist: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{TS: 2, Hist: histogramWithHint(6, histogram.NotCounterReset)},
+			{TS: 4, Hist: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 		{
-			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 3, h: histogramWithHint(3, histogram.NotCounterReset)},
+			{TS: 1, Hist: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{TS: 3, Hist: histogramWithHint(3, histogram.NotCounterReset)},
 		},
 	}, actSamples)
 }
@@ -6248,11 +6248,6 @@ func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Hist
 	h := util_test.GenerateTestHistogram(idx)
 	h.CounterResetHint = hint
 	return h
-}
-
-type sample struct {
-	t int64
-	h *histogram.Histogram
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
