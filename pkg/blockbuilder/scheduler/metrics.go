@@ -13,6 +13,7 @@ type schedulerMetrics struct {
 	partitionCommittedOffset *prometheus.GaugeVec
 	partitionEndOffset       *prometheus.GaugeVec
 	flushFailed              prometheus.Counter
+	fetchOffsetsFailed       prometheus.Counter
 	outstandingJobs          prometheus.Gauge
 	assignedJobs             prometheus.Gauge
 	pendingJobs              *prometheus.GaugeVec
@@ -41,6 +42,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		flushFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_flush_failed_total",
 			Help: "The total number of Kafka flushes that failed.",
+		}),
+		fetchOffsetsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_fetch_offsets_failed_total",
+			Help: "The number of times we've persistently failed to fetch committed offsets.",
 		}),
 		outstandingJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_outstanding_jobs",

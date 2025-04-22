@@ -92,10 +92,27 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	level.Info(s.logger).Log("msg", "entering observation mode")
 
-	if err := s.observe(ctx); err != nil {
-		level.Error(s.logger).Log("msg", "failed to observe updates", "err", err)
-		return fmt.Errorf("observe: %w", err)
+	observeComplete := time.After(s.cfg.StartupObserveTime)
+
+	c, err := s.fetchCommittedOffsets(ctx)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed to fetch committed offsets", "err", err)
+		s.metrics.fetchOffsetsFailed.Inc()
+		return fmt.Errorf("fetch committed offsets: %w", err)
 	}
+	level.Debug(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
+	s.mu.Lock()
+	s.committed = c
+	s.mu.Unlock()
+
+	// Wait for StartupObserveTime to pass.
+	select {
+	case <-observeComplete:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// Now we can transition to normal operation.
 
 	s.completeObservationMode(ctx)
 	go s.enqueuePendingJobsWorker(ctx)
@@ -125,39 +142,6 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			return nil
 		}
 	}
-}
-
-// observe carries out the startup process for block-builder-scheduler which entails learning the state of the world:
-//  1. obtain an initial set of offset info from Kafka
-//  2. listen to worker updates for a while to learn what the previous scheduler knew
-func (s *BlockBuilderScheduler) observe(ctx context.Context) error {
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-
-		c, err := s.fetchCommittedOffsets(ctx)
-		if err != nil {
-			panic(err)
-		}
-
-		level.Debug(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
-
-		s.mu.Lock()
-		s.committed = c
-		s.mu.Unlock()
-	}()
-	go func() {
-		defer wg.Done()
-		select {
-		case <-time.After(s.cfg.StartupObserveTime):
-		case <-ctx.Done():
-		}
-	}()
-
-	wg.Wait()
-	return ctx.Err()
 }
 
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
@@ -596,8 +580,8 @@ var _ offsetStore = (*offsetFinder)(nil)
 func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm.Offsets, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: time.Second,
-		MaxRetries: 10,
+		MaxBackoff: 5 * time.Second,
+		MaxRetries: 0, // Keep trying indefinitely.
 	})
 	var lastErr error
 
