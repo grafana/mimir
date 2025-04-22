@@ -4447,16 +4447,16 @@ func l2m(lbls labels.Labels) model.Metric {
 func Test_Ingester_Query(t *testing.T) {
 	series := []util_test.Series{
 		{
-			labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
-			[]util_test.Sample{{TS: 100000, Val: 1}},
+			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
-			[]util_test.Sample{{TS: 110000, Val: 1}},
+			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
-			[]util_test.Sample{{TS: 200000, Val: 2}},
+			Labels:  labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
 		},
 	}
 
@@ -4590,20 +4590,20 @@ func Test_Ingester_Query(t *testing.T) {
 func TestIngester_LabelNamesAndValues(t *testing.T) {
 	series := []util_test.Series{
 		{
-			labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
-			[]util_test.Sample{{TS: 100000, Val: 1}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
-			[]util_test.Sample{{TS: 110000, Val: 1}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
-			[]util_test.Sample{{TS: 200000, Val: 2}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
-			[]util_test.Sample{{TS: 200000, Val: 3}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 3}},
 		},
 	}
 
@@ -4654,20 +4654,20 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 func TestIngester_LabelValuesCardinality(t *testing.T) {
 	series := []util_test.Series{
 		{
-			labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
-			[]util_test.Sample{{TS: 100000, Val: 1.5}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1.5}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
-			[]util_test.Sample{{TS: 110030, Val: 1.5}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Samples: []util_test.Sample{{TS: 110030, Val: 1.5}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
-			[]util_test.Sample{{TS: 100060, Val: 1.5}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Samples: []util_test.Sample{{TS: 100060, Val: 1.5}},
 		},
 		{
-			labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
-			[]util_test.Sample{{TS: 100090, Val: 1.5}},
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Samples: []util_test.Sample{{TS: 100090, Val: 1.5}},
 		},
 	}
 	tests := map[string]struct {

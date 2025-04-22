@@ -75,7 +75,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, normal value",
 			series: []util_test.Series{
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
 					Samples: []util_test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -86,7 +86,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []util_test.Series{
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
 					Samples: []util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -95,10 +95,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "ALERTS, normal value",
 			series: []util_test.Series{
 				{
-					Labels: labels.Labels{
-						labels.Label{"__name__", "ALERT"},
-						labels.Label{Name: "alertname", Value: "boop"},
-					},
+					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
 					Samples: []util_test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -108,10 +105,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []util_test.Series{
 				{
-					Labels: labels.Labels{
-						labels.Label{Name: "__name__", Value: "ALERT"},
-						labels.Label{Name: "alertname", Value: "boop"},
-					},
+					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
 					Samples: []util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -120,7 +114,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, histogram value",
 			series: []util_test.Series{
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
 					Samples: []util_test.Sample{{TS: 200_000, Hist: util_test.GenerateTestHistogram(10)}},
 				},
 			},
@@ -129,7 +123,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, float histogram value",
 			series: []util_test.Series{
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
 					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
 				},
 			},
@@ -138,19 +132,19 @@ func TestPusherAppendable(t *testing.T) {
 			name: "mix of float and float histogram",
 			series: []util_test.Series{
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar1"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar1"),
 					Samples: []util_test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar3"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar3"),
 					Samples: []util_test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar3"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar2"),
 					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
 				},
 				{
-					Labels:  labels.Labels{labels.Label{Name: "__name__", Value: "foo_bar4"}},
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar4"),
 					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(99)}},
 				},
 			},

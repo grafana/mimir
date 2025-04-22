@@ -120,8 +120,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	// Push 10 series.
 	for seriesID := 0; seriesID < 10; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
-			[]util_test.Sample{{TS: sampleTimestamp, Val: 0}},
+			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
 	}
 
@@ -140,8 +140,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	// Push 20 more series.
 	for seriesID := 10; seriesID < 30; seriesID++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
-			[]util_test.Sample{{TS: sampleTimestamp, Val: 0}},
+			Labels:  labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%d", seriesID)),
+			Samples: []util_test.Sample{{TS: sampleTimestamp, Val: 0}},
 		}}))
 	}
 
@@ -205,8 +205,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			metricLabels,
-			[]util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 1.0}},
 		}}))
 
 		// Advance time and then check if TSDB head early compaction is triggered.
@@ -243,8 +243,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		sampleTime := now
 		sampleTimes = append(sampleTimes, sampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			metricLabels,
-			[]util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 2.0}},
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: sampleTime.UnixMilli(), Val: 2.0}},
 		}}))
 
 		// Advance time, trigger the TSDB head early compaction, and then check the compacted block.
@@ -274,8 +274,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		firstSampleTime := now
 		sampleTimes = append(sampleTimes, firstSampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			metricLabels,
-			[]util_test.Sample{{TS: firstSampleTime.UnixMilli(), Val: 3.0}},
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: firstSampleTime.UnixMilli(), Val: 3.0}},
 		}}))
 
 		// Push a sample with the timestamp AFTER the next TSDB block range boundary.
@@ -283,8 +283,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		secondSampleTime := now
 		sampleTimes = append(sampleTimes, secondSampleTime)
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			metricLabels,
-			[]util_test.Sample{{TS: secondSampleTime.UnixMilli(), Val: 4.0}},
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: secondSampleTime.UnixMilli(), Val: 4.0}},
 		}}))
 
 		// Trigger a normal TSDB head compaction.
@@ -368,8 +368,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 
 	for i := 0; i < 5; i++ {
 		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-			metricLabels,
-			[]util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Hour).UnixMilli(), Val: float64(i)}},
+			Labels:  metricLabels,
+			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Hour).UnixMilli(), Val: float64(i)}},
 		}}))
 	}
 
@@ -441,12 +441,12 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	require.NoError(t, err)
 
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		labels.FromStrings(labels.MetricName, "metric_1"),
-		[]util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
+		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}))
 	require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		labels.FromStrings(labels.MetricName, "metric_1"),
-		[]util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
+		Labels:  labels.FromStrings(labels.MetricName, "metric_1"),
+		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 
 	// TSDB Head early compaction.
@@ -466,16 +466,16 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 
 	// Should allow to push samples after "now - active series idle timeout", but not before that.
 	assert.ErrorContains(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		labels.FromStrings(labels.MetricName, "metric_2"),
-		[]util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
+		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Samples: []util_test.Sample{{TS: startTime.UnixMilli(), Val: 1.0}},
 	}}), "the sample has been rejected because its timestamp is too old")
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		labels.FromStrings(labels.MetricName, "metric_2"),
-		[]util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
+		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Samples: []util_test.Sample{{TS: startTime.Add(20 * time.Minute).UnixMilli(), Val: 2.0}},
 	}}))
 	assert.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
-		labels.FromStrings(labels.MetricName, "metric_2"),
-		[]util_test.Sample{{TS: startTime.Add(30 * time.Minute).UnixMilli(), Val: 3.0}},
+		Labels:  labels.FromStrings(labels.MetricName, "metric_2"),
+		Samples: []util_test.Sample{{TS: startTime.Add(30 * time.Minute).UnixMilli(), Val: 3.0}},
 	}}))
 }
 
