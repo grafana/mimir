@@ -213,7 +213,8 @@ The following features are currently experimental:
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
   - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
-  - Support for cluster validation via `-query-frontend.client-cluster-validation.label`.
+  - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
+    Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -253,18 +254,19 @@ The following features are currently experimental:
 - Server
   - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
     - `-server.proxy-protocol-enabled`
-  - Cross-cluster validation support for gRPC communication
+  - Cross-cluster validation support for gRPC and HTTP communication
     - `-server.cluster-validation.label`
     - `-server.cluster-validation.grpc.enabled`
     - `-server.cluster-validation.grpc.soft-validation`
     - `-server.cluster-validation.http.enabled`
     - `-server.cluster-validation.http.soft-validation`
     - `-server.cluster-validation.http.excluded-paths`
+    - Requests with invalid cluster validation labels are tracked via the `cortex_server_invalid_cluster_validation_label_requests_total` metric.
 - gRPC clients
   - Cross-cluster validation support for gRPC communication:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
-    - Invalid cluster label validations are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metrics.
+    - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Kafka-based ingest storage
   - `-ingest-storage.*`
   - `-ingester.partition-ring.*`
