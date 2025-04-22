@@ -7,6 +7,8 @@ title: Grafana Mimir query sharding
 weight: 90
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir query sharding
 
 Mimir includes the ability to run a single query across multiple machines. This is

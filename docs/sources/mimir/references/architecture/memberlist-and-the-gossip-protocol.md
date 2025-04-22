@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/architecture/memberlist-and-the-gossip-protocol/
-description:
-  Memberlist manages Grafana Mimir cluster membership and node detection
-  failure.
+description: Memberlist manages Grafana Mimir cluster membership and node detection failure.
 menuTitle: Memberlist and gossip protocol
 title: Grafana Mimir memberlist and gossip protocol
 weight: 80
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir memberlist and gossip protocol
 
