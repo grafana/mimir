@@ -164,7 +164,7 @@ func TestClientPool_ClusterValidation(t *testing.T) {
 				grpcOptions = []grpc.ServerOption{
 					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(
 						testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation,
-						middleware.NewInvalidClusterRequests(reg), log.NewNopLogger(),
+						middleware.NewInvalidClusterRequests(reg, "cortex"), log.NewNopLogger(),
 					)),
 				}
 			}

@@ -93,6 +93,6 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
-		InvalidClusterRequests: middleware.NewInvalidClusterRequests(reg),
+		InvalidClusterRequests: middleware.NewInvalidClusterRequests(reg, cfg.MetricsNamespace),
 	}
 }
