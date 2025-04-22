@@ -1075,7 +1075,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				assert.Equal(t, []mimirpb.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
 
 				// Ensure samples have been correctly queried. The store-gateway doesn't deduplicate chunks,
-				// so the same test.Sample is returned twice because in this test we query two identical blocks.
+				// so the same sample is returned twice because in this test we query two identical blocks.
 				samples, err := readSamplesFromChunks(actual.Chunks)
 				require.NoError(t, err)
 				assert.Equal(t, []test.Sample{
