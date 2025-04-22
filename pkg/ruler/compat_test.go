@@ -43,7 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 type fakePusher struct {
@@ -69,14 +69,14 @@ func TestPusherAppendable(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		hasNanSample bool // If true, it will be a single float sample with NaN.
-		series       []util_test.Series
+		series       []test.Series
 	}{
 		{
 			name: "tenant without delay, normal value",
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
-					Samples: []util_test.Sample{{TS: 120_000, Val: 1.234}},
+					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
 		},
@@ -84,68 +84,68 @@ func TestPusherAppendable(t *testing.T) {
 		{
 			name:         "tenant without delay, stale nan value",
 			hasNanSample: true,
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
-					Samples: []util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
+					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
 		},
 		{
 			name: "ALERTS, normal value",
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
-					Samples: []util_test.Sample{{TS: 120_000, Val: 1.234}},
+					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
 		},
 		{
 			name:         "ALERTS, stale nan value",
 			hasNanSample: true,
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
-					Samples: []util_test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
+					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
 		},
 		{
 			name: "tenant without delay, histogram value",
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
-					Samples: []util_test.Sample{{TS: 200_000, Hist: util_test.GenerateTestHistogram(10)}},
+					Samples: []test.Sample{{TS: 200_000, Hist: test.GenerateTestHistogram(10)}},
 				},
 			},
 		},
 		{
 			name: "tenant without delay, float histogram value",
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
-					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
+					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 			},
 		},
 		{
 			name: "mix of float and float histogram",
-			series: []util_test.Series{
+			series: []test.Series{
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar1"),
-					Samples: []util_test.Sample{{TS: 230_000, Val: 999}},
+					Samples: []test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar3"),
-					Samples: []util_test.Sample{{TS: 230_000, Val: 888}},
+					Samples: []test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar2"),
-					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(10)}},
+					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 				{
 					Labels:  labels.FromStrings(labels.MetricName, "foo_bar4"),
-					Samples: []util_test.Sample{{TS: 230_000, FloatHist: util_test.GenerateTestFloatHistogram(99)}},
+					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(99)}},
 				},
 			},
 		},
@@ -579,7 +579,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// Ensure the result has been written.
 			require.EventuallyWithT(t, func(collect *assert.CollectT) {
-				pusher.AssertCalled(util_test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
+				pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
 			}, 5*time.Second, 100*time.Millisecond)
 
 			manager.Stop()
@@ -643,7 +643,7 @@ func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t 
 			if writeEnabled {
 				// Ensure the result has been written.
 				require.EventuallyWithT(t, func(collect *assert.CollectT) {
-					pusher.AssertCalled(util_test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
+					pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
 				}, 5*time.Second, 100*time.Millisecond)
 			} else {
 				// Ensure no write occurred within a reasonable amount of time.
