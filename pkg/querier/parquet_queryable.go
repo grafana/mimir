@@ -736,6 +736,7 @@ func (q *parquetQuerier) blocksToParquetReader(ctx context.Context, uname string
 				spanLog.SetError()
 				return err
 			}
+			spanLog.Log("msg", "parquet file attributes", "path", name, "size", attr.Size, "lastModified", attr.LastModified)
 			t := time.Now()
 			r := &bReadAt{path: name, obj: q.bucket, m: q.metrics}
 			pr, err := mimir_storage.NewParquetReader(r.CreateReadAtWithContext, attr.Size, q.asyncRead, q.cacheMetrics, q.dictionaryCacheSize, q.metrics.pagesSkippedPageIndex, q.metrics.projectionPushdown)
