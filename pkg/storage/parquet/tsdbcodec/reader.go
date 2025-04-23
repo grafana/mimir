@@ -81,6 +81,7 @@ func BlockToParquetRowsStream(
 		defer cReader.Close()
 		defer idx.Close()
 		defer close(rc)
+		idxMutex := &sync.Mutex{}
 		batch := make([]parquet.ParquetRow, 0, rowsPerBatch)
 		batchMutex := &sync.Mutex{}
 		for _, metricName := range metricNames {
@@ -95,7 +96,7 @@ func BlockToParquetRowsStream(
 			eg.SetLimit(runtime.GOMAXPROCS(0))
 
 			for p.Next() {
-				chks := []chunks.Meta{}
+				var chks []chunks.Meta
 				builder := labels.ScratchBuilder{}
 
 				at := p.At()
@@ -104,14 +105,17 @@ func BlockToParquetRowsStream(
 					return
 				}
 				eg.Go(func() error {
+					idxMutex.Lock()
 					for i := range chks {
 						chks[i].Chunk, _, err = cReader.ChunkOrIterable(chks[i])
 						if err != nil {
+							idxMutex.Unlock()
 							return err
 						}
 					}
 
 					data, err := chunksEncoder.Encode(chks)
+					idxMutex.Unlock()
 					if err != nil {
 						return err
 					}
