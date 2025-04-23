@@ -3006,7 +3006,7 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 		require.Equal(t, 1, len(res.Topics[0].Partitions))
 
 		// Parse the response, just to check how many records we got.
-		parseOptions := kgo.ProcessFetchPartitionOptions{
+		parseOptions := kgo.ProcessFetchPartitionOpts{
 			KeepControlRecords: false,
 			Offset:             offset,
 			IsolationLevel:     kgo.ReadUncommitted(),
@@ -3015,7 +3015,7 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 		}
 
 		rawPartitionResp := res.Topics[0].Partitions[0]
-		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(_ kgo.FetchBatchMetrics) {})
+		partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor(), func(_ kgo.FetchBatchMetrics) {})
 
 		// Ensure we got a low number of records, otherwise the premise of this test is wrong
 		// because we want a single fetchWatch to be fulfilled in many Fetch requests.

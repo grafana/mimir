@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/grafana/e2e/images"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1107,6 +1108,10 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			tc.assertEvalResult(result.(model.Vector))
 		})
 	}
+}
+
+func init() {
+	images.Kafka = "apache/kafka:4.0.0"
 }
 
 func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRulesWhenUsingTheIngestStorage(t *testing.T) {

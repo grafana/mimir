@@ -41,6 +41,8 @@ func (p *pinReq) SetVersion(v int16) {
 	p.Request.SetVersion(v)
 }
 
+type forceOpenReq struct{ kmsg.Request }
+
 type promisedReq struct {
 	ctx     context.Context
 	req     kmsg.Request
@@ -408,6 +410,16 @@ start:
 	default:
 	}
 
+	if _, isForceOpen := req.(*forceOpenReq); isForceOpen {
+		// We issue ApiVersions with v0; we could try to bound the
+		// version by going to the start above, but it really does
+		// not matter much.
+		kreq := kmsg.NewPtrApiVersionsRequest()
+		kreq.ClientSoftwareName = b.cl.cfg.softwareName
+		kreq.ClientSoftwareVersion = b.cl.cfg.softwareVersion
+		req = kreq
+	}
+
 	// Produce requests (and only produce requests) can be written
 	// without receiving a reply. If we see required acks is 0,
 	// then we immediately call the promise with no response.
@@ -766,6 +778,7 @@ start:
 			maxVersion = 0
 			goto start
 		}
+		cxn.cl.cfg.logger.Log(LogLevelDebug, "broker does not know our ApiVersions version but replied with all keys, deserializing as v0", "broker", logID(cxn.b.meta.NodeID))
 		resp.Version = 0
 	}
 
@@ -915,10 +928,7 @@ func (cxn *brokerCxn) doSasl(authenticate bool) error {
 					return err
 				}
 
-				if err = kerr.ErrorForCode(resp.ErrorCode); err != nil {
-					if resp.ErrorMessage != nil {
-						return fmt.Errorf("%s: %w", *resp.ErrorMessage, err)
-					}
+				if err := errCodeMessage(resp.ErrorCode, resp.ErrorMessage); err != nil {
 					return err
 				}
 				challenge = resp.SASLAuthBytes
@@ -1474,6 +1484,11 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 		pr.promise(nil, err)
 		cxn.die()
 		return
+	}
+
+	if pr.resp.Key() == 18 && len(rawResp) > 2 && rawResp[1] == 35 {
+		cxn.b.cl.cfg.logger.Log(LogLevelDebug, "ApiVersions response returned with UNSUPPORTED_VERSION error at byte 1, downgraded to v0 to deserialize response")
+		pr.resp.SetVersion(0)
 	}
 
 	cxn.successes++

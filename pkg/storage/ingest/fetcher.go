@@ -618,7 +618,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
-	parseOptions := kgo.ProcessFetchPartitionOptions{
+	parseOptions := kgo.ProcessFetchPartitionOpts{
 		KeepControlRecords: false,
 		Offset:             startOffset,
 		IsolationLevel:     kgo.ReadUncommitted(), // we don't produce in transactions, but leaving this here so it's explicit.
@@ -631,7 +631,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
-	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor( /* TODO: use pool? */ ), observeMetrics)
 	if partition.Err != nil {
 		// This should never happen because we already check the ErrorCode above, but we keep this double check
 		// in case Err will be set because of other reasons by kgo.ProcessRespPartition() in the future.
