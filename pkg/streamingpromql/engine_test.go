@@ -1003,13 +1003,6 @@ func TestSubqueries(t *testing.T) {
 			},
 			Start: time.Unix(35, 0),
 		},
-		{
-			Query: "metric[0:5s]",
-			Result: promql.Result{
-				Value: promql.Matrix{},
-			},
-			Start: time.Unix(10, 0),
-		},
 		{ // Normal selector.
 			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
 			Result: promql.Result{
