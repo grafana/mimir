@@ -1830,7 +1830,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 		"without concurrency": {
 			concurrencyVariant:                []readerTestCfgOpt{withFetchConcurrency(0)},
 			expectedBufferedRecords:           1,
-			expectedBufferedBytes:             28,
+			expectedBufferedBytes:             19,
 			expectedBufferedRecordsFromClient: 1,
 		},
 		"with fetch concurrency": {

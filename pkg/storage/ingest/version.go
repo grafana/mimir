@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	RecordVersionHeaderKey = "X-Record-Version"
+	RecordVersionHeaderKey = "Version"
 	LatestRecordVersion    = 1
 )
 
