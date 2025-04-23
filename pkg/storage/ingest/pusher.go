@@ -380,6 +380,7 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 // its main stripes are split by unique ID which we don't yet know.
 func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 	const sep = '\xff'
+	b = b[:0]
 	for _, v := range ls {
 		b = append(b, v.Name...)
 		b = append(b, sep)
