@@ -142,7 +142,7 @@ func BlockToParquetRowsStream(
 
 			err = eg.Wait()
 			if err != nil {
-				level.Error(util_log.Logger).Log("msg", "failed to process chunk", "err", err)
+				level.Error(logger).Log("msg", "failed to process chunk", "err", err)
 				return
 			}
 		}

@@ -50,6 +50,7 @@ func TestReader(t *testing.T) {
 	parquetRowsStream, _, numRows, err := BlockToParquetRowsStream(
 		ctx, blockFilePath, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
 	)
+	require.NoError(t, err)
 
 	// collect rows; not bothering with batching over channel to avoid reading all into memory for now
 	rows := make([]parquet.ParquetRow, 0)
