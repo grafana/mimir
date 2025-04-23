@@ -84,8 +84,7 @@ func NewParquetReader(readerFactory CreateReadAtWithContext, size int64, asyncRe
 	options := []parquet.FileOption{
 		parquet.SkipBloomFilters(true), // we don't use bloom filters
 		parquet.ReadBufferSize(1024 * 512),
-		// parquet.OptimisticRead(true), // TODO: removing to see if it helps fix a weird bug
-		parquet.OptimisticRead(false),
+		parquet.OptimisticRead(true),
 		parquet.SkipMagicBytes(true),
 	}
 
