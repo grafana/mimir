@@ -3,6 +3,10 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Prometheus Authors
 
+# TODO(56quarters) This is disabled because duration expressions are experimental
+#  and we'd like to discuss enabling them before doing it as part of a vendor of
+#  upstream Prometheus.
+
 # Test for different duration expression formats in range selectors.
 # This tests the parser's ability to handle various duration expression.
 
