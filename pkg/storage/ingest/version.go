@@ -46,7 +46,7 @@ func ParseRecordVersion(rec *kgo.Record) int {
 }
 
 func recordSerializerFromCfg(cfg KafkaConfig) recordSerializer {
-	switch cfg.ProducerSupportedRecordVersion {
+	switch cfg.ProducerRecordVersion {
 	case 0:
 		return versionZeroRecordSerializer{}
 	case 1:

@@ -7528,12 +7528,12 @@
             },
             {
               "kind": "field",
-              "name": "producer_supported_record_version",
+              "name": "producer_record_version",
               "required": false,
-              "desc": "The record version that this producer prefers.",
+              "desc": "The record version that this producer sends.",
               "fieldValue": null,
               "fieldDefaultValue": 0,
-              "fieldFlag": "ingest-storage.kafka.producer-supported-record-version",
+              "fieldFlag": "ingest-storage.kafka.producer-record-version",
               "fieldType": "int",
               "fieldCategory": "experimental"
             },
