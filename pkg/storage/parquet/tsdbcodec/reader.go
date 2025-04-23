@@ -78,6 +78,9 @@ func BlockToParquetRowsStream(
 	chunksEncoder := parquet.NewPrometheusParquetChunksEncoder()
 
 	go func() {
+		defer b.Close()
+		defer cReader.Close()
+		defer idx.Close()
 		defer close(rc)
 		batch := make([]parquet.ParquetRow, 0, rowsPerBatch)
 		batchMutex := &sync.Mutex{}
