@@ -360,22 +360,26 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
           expr: |
             (
-              max without (revision) (
-                sum without(statefulset) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+              # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
+              max by (cluster, namespace, rollout_group) (
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
                   unless
-                sum without(statefulset) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
               )
+                # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                 *
               (
-                sum without(statefulset) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
                   !=
-                sum without(statefulset) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
               )
             ) and (
-              changes(sum without(statefulset) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+              # Pick only those which are unchanging for the interval.
+              changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
                 ==
               0
             )
+            # Include only Mimir namespaces.
             * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
           for: 30m
           labels:
@@ -388,22 +392,26 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrolloutstuck
           expr: |
             (
-              max without (revision) (
-                sum without(statefulset) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+              # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
+              max by (cluster, namespace, rollout_group) (
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_current_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
                   unless
-                sum without(statefulset) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group, revision) (label_replace(kube_statefulset_status_update_revision, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
               )
+                # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
                 *
               (
-                sum without(statefulset) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_replicas, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
                   !=
-                sum without(statefulset) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
+                sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))
               )
             ) and (
-              changes(sum without(statefulset) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
+              # Pick only those which are unchanging for the interval.
+              changes(sum by (cluster, namespace, rollout_group) (label_replace(kube_statefulset_status_replicas_updated, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))[15m:1m])
                 ==
               0
             )
+            # Include only Mimir namespaces.
             * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
           for: 6h
           labels:
