@@ -4445,10 +4445,19 @@ func l2m(lbls labels.Labels) model.Metric {
 }
 
 func Test_Ingester_Query(t *testing.T) {
-	series := []series{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+	series := []util_test.Series{
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
+		},
 	}
 
 	tests := map[string]struct {
@@ -4472,8 +4481,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -4483,7 +4492,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].Labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -4493,8 +4502,8 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -4504,7 +4513,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: l2m(series[2].Labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -4515,7 +4524,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: l2m(series[1].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -4525,7 +4534,7 @@ func Test_Ingester_Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: l2m(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: l2m(series[0].Labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
@@ -4545,7 +4554,7 @@ func Test_Ingester_Query(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		req, _, _, _ := mockWriteRequest(t, series.Labels, series.Samples[0].F(), series.Samples[0].T())
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -4579,11 +4588,23 @@ func Test_Ingester_Query(t *testing.T) {
 }
 
 func TestIngester_LabelNamesAndValues(t *testing.T) {
-	series := []series{
-		{labels.FromStrings(labels.MetricName, "metric_0", "status", "500"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "metric_0", "status", "200"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"), 2, 200000},
-		{labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"), 3, 200000},
+	series := []util_test.Series{
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
+		},
+		{
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Samples: []util_test.Sample{{TS: 200000, Val: 3}},
+		},
 	}
 
 	tests := []struct {
@@ -4631,26 +4652,22 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
-	series := []series{
+	series := []util_test.Series{
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
-			value:     1.5,
-			timestamp: 100000,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Samples: []util_test.Sample{{TS: 100000, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
-			value:     1.5,
-			timestamp: 110030,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Samples: []util_test.Sample{{TS: 110030, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
-			value:     1.5,
-			timestamp: 100060,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Samples: []util_test.Sample{{TS: 100060, Val: 1.5}},
 		},
 		{
-			lbls:      labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
-			value:     1.5,
-			timestamp: 100090,
+			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Samples: []util_test.Sample{{TS: 100090, Val: 1.5}},
 		},
 	}
 	tests := map[string]struct {
@@ -4735,15 +4752,9 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
-type series struct {
-	lbls      labels.Labels
-	value     float64
-	timestamp int64
-}
-
-func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []series) error {
-	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+func pushSeriesToIngester(ctx context.Context, t testing.TB, i *Ingester, series []util_test.Series) error {
+	for _, s := range series {
+		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
 		_, err := i.Push(ctx, req)
 		if err != nil {
 			return err
@@ -6139,7 +6150,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]util_test.Sample) {
 		s, err := c.QueryStream(ctx, &client.QueryRequest{
 			StartTimestampMs: 0,
 			EndTimestampMs:   5,
@@ -6175,17 +6186,17 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 		})
 
 		headers := []chunkenc.CounterResetHeader{}
-		var samples [][]sample
+		var samples [][]util_test.Sample
 		for _, c := range chunks {
 			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
 			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
 			require.NoError(t, err)
 
-			s := []sample{}
+			s := []util_test.Sample{}
 			it := chk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				s = append(s, sample{t: ts, h: h})
+				s = append(s, util_test.Sample{TS: ts, Hist: h})
 			}
 			samples = append(samples, s)
 			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
@@ -6196,17 +6207,17 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
 	actHeaders, actSamples := runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]util_test.Sample{
 		{
-			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{TS: 0, Hist: histogramWithHint(4, histogram.UnknownCounterReset)},
 		},
 		{
-			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+			{TS: 1, Hist: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{TS: 2, Hist: histogramWithHint(6, histogram.NotCounterReset)},
 		},
 		{
-			{t: 3, h: histogramWithHint(3, histogram.UnknownCounterReset)},
-			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+			{TS: 3, Hist: histogramWithHint(3, histogram.UnknownCounterReset)},
+			{TS: 4, Hist: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 	}, actSamples)
 
@@ -6220,15 +6231,15 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 
 	actHeaders, actSamples = runQuery()
 	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
-	require.Equal(t, [][]sample{
+	require.Equal(t, [][]util_test.Sample{
 		{
-			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
-			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
-			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+			{TS: 0, Hist: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{TS: 2, Hist: histogramWithHint(6, histogram.NotCounterReset)},
+			{TS: 4, Hist: histogramWithHint(8, histogram.NotCounterReset)},
 		},
 		{
-			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
-			{t: 3, h: histogramWithHint(3, histogram.NotCounterReset)},
+			{TS: 1, Hist: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{TS: 3, Hist: histogramWithHint(3, histogram.NotCounterReset)},
 		},
 	}, actSamples)
 }
@@ -6237,11 +6248,6 @@ func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Hist
 	h := util_test.GenerateTestHistogram(idx)
 	h.CounterResetHint = hint
 	return h
-}
-
-type sample struct {
-	t int64
-	h *histogram.Histogram
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {

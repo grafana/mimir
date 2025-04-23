@@ -32,10 +32,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1234,8 +1232,8 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 			Labels: labels.FromStrings("case", "source_spec_1"),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(1000, 1000, nil, nil),
-					newSample(2000, 2000, nil, nil)})),
+					testutil.Sample{TS: 1000, Val: 1000},
+					testutil.Sample{TS: 2000, Val: 2000}})),
 			},
 		},
 	}
@@ -1245,8 +1243,8 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 			Labels: labels.FromStrings("case", "source_spec_2"),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(1500, 1500, nil, nil),
-					newSample(2500, 2500, nil, nil)})),
+					testutil.Sample{TS: 1500, Val: 1500},
+					testutil.Sample{TS: 2500, Val: 2500}})),
 			},
 		},
 	}
@@ -1257,8 +1255,8 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 			Labels: labels.FromStrings("case", "source_spec_3"),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(0, 0, nil, nil),
-					newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+					testutil.Sample{TS: 0, Val: 0},
+					testutil.Sample{TS: 2*time.Hour.Milliseconds() - 1}})),
 			},
 		},
 	}
@@ -1269,8 +1267,8 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 			Labels: labels.FromStrings("case", "compacted_spec"),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(1250, 1250, nil, nil),
-					newSample(2250, 2250, nil, nil)})),
+					testutil.Sample{TS: 1250, Val: 1250},
+					testutil.Sample{TS: 2250, Val: 2250}})),
 			},
 		},
 	}
@@ -1461,8 +1459,8 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	spec := []*block.SeriesSpec{{
 		Labels: labels.FromStrings(labels.MetricName, "series_1"),
 		Chunks: []chunks.Meta{must(chunks.ChunkFromSamples([]chunks.Sample{
-			newSample(1574776800000, 0, nil, nil),
-			newSample(1574783999999, 0, nil, nil),
+			testutil.Sample{TS: 1574776800000, Val: 0},
+			testutil.Sample{TS: 1574783999999, Val: 0},
 		}))},
 	}}
 
@@ -2200,10 +2198,10 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 			{
 				Labels: labels.FromStrings("case", "out_of_order"),
 				Chunks: []chunks.Meta{
-					must(chunks.ChunkFromSamples([]chunks.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)})),
-					must(chunks.ChunkFromSamples([]chunks.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{testutil.Sample{TS: 20, Val: 20}, testutil.Sample{TS: 21, Val: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{testutil.Sample{TS: 10, Val: 10}, testutil.Sample{TS: 11, Val: 11}})),
 					// Extend block to cover 2h.
-					must(chunks.ChunkFromSamples([]chunks.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{testutil.Sample{TS: 0, Val: 0}, testutil.Sample{TS: 2*time.Hour.Milliseconds() - 1, Val: 0}})),
 				},
 			},
 		}
@@ -2293,8 +2291,8 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 			Labels: labels.FromStrings("case", "critical"),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(0, 0, nil, nil),
-					newSample(2*time.Hour.Milliseconds()-1, 1, nil, nil),
+					testutil.Sample{TS: 0, Val: 0},
+					testutil.Sample{TS: 2*time.Hour.Milliseconds() - 1, Val: 1},
 				})),
 			},
 		},
@@ -2354,43 +2352,6 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
-}
-
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
-	return sample{t, v, h, fh}
-}
-func (s sample) T() int64                      { return s.t }
-func (s sample) F() float64                    { return s.v }
-func (s sample) H() *histogram.Histogram       { return s.h }
-func (s sample) FH() *histogram.FloatHistogram { return s.fh }
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	c := sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
-	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
-	}
-	return c
 }
 
 type bucketWithMockedAttributes struct {
