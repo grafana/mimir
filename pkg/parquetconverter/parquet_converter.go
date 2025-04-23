@@ -487,8 +487,8 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 		}
 	}()
 
-	batchedRowsStream, ln, totalMetrics, err := tsdbcodec.BlockToParquetRowsStream(
-		ctx, bDir, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
+	batchedRows, ln, totalMetrics, err := tsdbcodec.BlockToParquetRows(
+		ctx, bDir, maxParquetIndexSizeLimit, batchSize, logger,
 	)
 	if err != nil {
 		return err
@@ -500,7 +500,7 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 	}
 
 	total := 0
-	for rows := range batchedRowsStream {
+	for _, rows := range batchedRows {
 		if ctx.Err() != nil {
 			err = ctx.Err()
 		}

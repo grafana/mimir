@@ -8,36 +8,33 @@ package tsdbcodec
 import (
 	"bytes"
 	"context"
-	"runtime"
 	"slices"
-	"sync"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/parquet"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-func BlockToParquetRowsStream(
+func BlockToParquetRows(
 	ctx context.Context,
 	path string,
-	maxParquetIndexSizeLimit int, // TODO what does this mean and how to set it?
+	maxParquetIndexSizeLimit int,
 	rowsPerBatch int,
-	batchStreamBufferSize int,
 	logger log.Logger,
-) (chan []parquet.ParquetRow, []string, int, error) {
-	// TODO
+) ([][]parquet.ParquetRow, []string, int, error) {
 	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), path, nil, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
 		return nil, nil, 0, err
 	}
+	defer b.Close()
+
 	idx, err := b.Index()
+	defer idx.Close()
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -46,11 +43,13 @@ func BlockToParquetRowsStream(
 	if err != nil {
 		return nil, nil, 0, err
 	}
+	defer cReader.Close()
 
 	metricNames, err := idx.LabelValues(ctx, labels.MetricName)
 	if err != nil {
 		return nil, nil, 0, err
 	}
+
 	k, v := index.AllPostingsKey()
 	all, err := idx.Postings(ctx, k, v)
 	if err != nil {
@@ -73,89 +72,66 @@ func BlockToParquetRowsStream(
 			truncateByteArray([]byte(b), maxParquetIndexSizeLimit),
 		)
 	})
-	rc := make(chan []parquet.ParquetRow, batchStreamBufferSize)
+
 	chunksEncoder := parquet.NewPrometheusParquetChunksEncoder()
+	var allRows [][]parquet.ParquetRow
+	currentBatch := make([]parquet.ParquetRow, 0, rowsPerBatch)
 
-	go func() {
-		defer b.Close()
-		defer cReader.Close()
-		defer idx.Close()
-		defer close(rc)
-		idxMutex := &sync.Mutex{}
-		batch := make([]parquet.ParquetRow, 0, rowsPerBatch)
-		batchMutex := &sync.Mutex{}
-		for _, metricName := range metricNames {
-			if ctx.Err() != nil {
-				return
+	for _, metricName := range metricNames {
+		if ctx.Err() != nil {
+			return nil, nil, 0, ctx.Err()
+		}
+
+		p, err := idx.Postings(ctx, labels.MetricName, metricName)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+
+		for p.Next() {
+			var chks []chunks.Meta
+			builder := labels.ScratchBuilder{}
+
+			at := p.At()
+			if err := idx.Series(at, &builder, &chks); err != nil {
+				return nil, nil, 0, err
 			}
-			p, err := idx.Postings(ctx, labels.MetricName, metricName)
-			if err != nil {
-				return
-			}
-			eg := &errgroup.Group{}
-			eg.SetLimit(runtime.GOMAXPROCS(0))
 
-			for p.Next() {
-				var chks []chunks.Meta
-				builder := labels.ScratchBuilder{}
-
-				at := p.At()
-				err = idx.Series(at, &builder, &chks)
+			for i := range chks {
+				chks[i].Chunk, _, err = cReader.ChunkOrIterable(chks[i])
 				if err != nil {
-					return
+					return nil, nil, 0, err
 				}
-				eg.Go(func() error {
-					idxMutex.Lock()
-					for i := range chks {
-						chks[i].Chunk, _, err = cReader.ChunkOrIterable(chks[i])
-						if err != nil {
-							idxMutex.Unlock()
-							return err
-						}
-					}
-
-					data, err := chunksEncoder.Encode(chks)
-					idxMutex.Unlock()
-					if err != nil {
-						return err
-					}
-
-					promLbls := builder.Labels()
-					lbsls := make(map[string]string)
-
-					promLbls.Range(func(l labels.Label) {
-						lbsls[l.Name] = l.Value
-					})
-
-					row := parquet.ParquetRow{
-						Hash:    promLbls.Hash(),
-						Columns: lbsls,
-						Data:    data,
-					}
-
-					batchMutex.Lock()
-					batch = append(batch, row)
-					if len(batch) >= rowsPerBatch {
-						rc <- batch
-						batch = make([]parquet.ParquetRow, 0, rowsPerBatch)
-					}
-					batchMutex.Unlock()
-					return nil
-				})
 			}
 
-			err = eg.Wait()
+			data, err := chunksEncoder.Encode(chks)
 			if err != nil {
-				level.Error(logger).Log("msg", "failed to process chunk", "err", err)
-				return
+				return nil, nil, 0, err
+			}
+
+			promLbls := builder.Labels()
+			lbsls := make(map[string]string)
+			promLbls.Range(func(l labels.Label) {
+				lbsls[l.Name] = l.Value
+			})
+
+			row := parquet.ParquetRow{
+				Hash:    promLbls.Hash(),
+				Columns: lbsls,
+				Data:    data,
+			}
+
+			currentBatch = append(currentBatch, row)
+			if len(currentBatch) >= rowsPerBatch {
+				allRows = append(allRows, currentBatch)
+				currentBatch = make([]parquet.ParquetRow, 0, rowsPerBatch)
 			}
 		}
-		if len(batch) > 0 {
-			rc <- batch
-		}
-	}()
+	}
+	if len(currentBatch) > 0 {
+		allRows = append(allRows, currentBatch)
+	}
 
-	return rc, labelNames, total, nil
+	return allRows, labelNames, total, nil
 }
 
 func truncateByteArray(value []byte, sizeLimit int) []byte {
