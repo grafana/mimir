@@ -14,6 +14,10 @@ type Series struct {
 	Samples []Sample
 }
 
+// Sample is a test implementation of the prometheus chunks.Sample interface.
+// The possible sample value types are mutually exclusive -
+// a sample can only be a float, histogram, or float histogram.
+// This is not enforced in a constructor for convenience in test code.
 type Sample struct {
 	TS        int64
 	Val       float64
