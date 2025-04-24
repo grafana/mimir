@@ -66,10 +66,21 @@ func TestPartitionReader(t *testing.T) {
 
 	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 1"))
 	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 2"))
+	produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, []byte("record 3"), 0)
+	produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, []byte("record 4"), 2)
 
-	records, err := consumer.waitRecords(2, 5*time.Second, 0)
+	records, err := consumer.waitRecordsAndMetadata(4, 5*time.Second, 0)
+
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{[]byte("record 1"), []byte("record 2")}, records)
+	assert.Len(t, records, 4)
+	assert.Equal(t, []byte("record 1"), records[0].content)
+	assert.Equal(t, 1, records[0].version)
+	assert.Equal(t, []byte("record 2"), records[1].content)
+	assert.Equal(t, 1, records[1].version)
+	assert.Equal(t, []byte("record 3"), records[2].content)
+	assert.Equal(t, 0, records[2].version)
+	assert.Equal(t, []byte("record 4"), records[3].content)
+	assert.Equal(t, 2, records[3].version)
 }
 
 func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
@@ -1819,7 +1830,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 		"without concurrency": {
 			concurrencyVariant:                []readerTestCfgOpt{withFetchConcurrency(0)},
 			expectedBufferedRecords:           1,
-			expectedBufferedBytes:             8,
+			expectedBufferedBytes:             19,
 			expectedBufferedRecordsFromClient: 1,
 		},
 		"with fetch concurrency": {
@@ -2622,11 +2633,21 @@ func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 }
 
 func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
+	return produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, content, 1)
+}
+
+func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, version int) int64 {
 	rec := &kgo.Record{
 		Value:     content,
 		Topic:     topicName,
 		Partition: partitionID,
 	}
+	if version == 0 {
+		rec.Headers = nil
+	} else {
+		rec.Headers = []kgo.RecordHeader{RecordVersionHeader(version)}
+	}
+
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
 
@@ -2872,12 +2893,12 @@ func TestPartitionReader_Commit(t *testing.T) {
 }
 
 type testConsumer struct {
-	records chan []byte
+	records chan record
 }
 
 func newTestConsumer(capacity int) testConsumer {
 	return testConsumer{
-		records: make(chan []byte, capacity),
+		records: make(chan record, capacity),
 	}
 }
 
@@ -2887,7 +2908,7 @@ func (t testConsumer) Consume(ctx context.Context, records []record) error {
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case t.records <- r.content:
+		case t.records <- r:
 			// Nothing to do.
 		}
 	}
@@ -2898,7 +2919,16 @@ func (t testConsumer) Consume(ctx context.Context, records []record) error {
 // waitRecords waits for an additional drainPeriod after receiving numRecords records to ensure that no more records are received.
 // waitRecords returns an error if a different number of records is received.
 func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.Duration) ([][]byte, error) {
-	var records [][]byte
+	recs, err := t.waitRecordsAndMetadata(numRecords, waitTimeout, drainPeriod)
+	var content [][]byte
+	for _, rec := range recs {
+		content = append(content, rec.content)
+	}
+	return content, err
+}
+
+func (t testConsumer) waitRecordsAndMetadata(numRecords int, waitTimeout, drainPeriod time.Duration) ([]record, error) {
+	var records []record
 	timeout := time.After(waitTimeout)
 	for {
 		select {

@@ -50,6 +50,7 @@ type record struct {
 	ctx      context.Context
 	tenantID string
 	content  []byte
+	version  int
 }
 
 type recordConsumer interface {
@@ -552,6 +553,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 			ctx:      rec.Context,
 			tenantID: string(rec.Key),
 			content:  rec.Value,
+			version:  ParseRecordVersion(rec),
 		})
 	})
 
