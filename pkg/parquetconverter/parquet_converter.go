@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -198,6 +200,66 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-t.C:
+			u, err := c.discoverUsers(ctx)
+			if err != nil {
+				level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
+				return err
+			}
+
+			for _, u := range u {
+				if !c.Cfg.allowedTenants.IsAllowed(u) {
+					continue
+				}
+				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
+
+				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, util_log.Logger)
+				if err != nil {
+					level.Error(util_log.Logger).Log("msg", "Error loading index", "err", err)
+					break
+				}
+
+				for {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+
+					level.Info(util_log.Logger).Log("msg", "Scanning User", "user", u)
+
+					idx, err := c.loader.GetIndex(ctx, u)
+					if err != nil {
+						level.Error(util_log.Logger).Log("msg", "Error loading index", "err", err)
+						break
+					}
+
+					level.Info(util_log.Logger).Log("msg", "Loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
+
+					level.Info(util_log.Logger).Log("msg", "Loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
+
+					ownedBlocks, totalBlocks := c.findNextBlockToCompact(ctx, uBucket, idx, pIdx)
+					if len(ownedBlocks) == 0 {
+						level.Info(util_log.Logger).Log("msg", "No owned blocks to compact", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
+						break
+					}
+
+					b := ownedBlocks[0]
+
+					if err := os.RemoveAll(c.compactRootDir()); err != nil {
+						level.Error(util_log.Logger).Log("msg", "failed to remove compaction work directory", "path", c.compactRootDir(), "err", err)
+					}
+					bdir := filepath.Join(c.compactDirForUser(u), b.ID.String())
+					level.Info(util_log.Logger).Log("msg", "Downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
+					if err := block.Download(ctx, util_log.Logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
+						level.Error(util_log.Logger).Log("msg", "Error downloading block", "err", err)
+						continue
+					}
+					//err = TSDBBlockToParquet(ctx, b.ID, uBucket, bdir, c.logger)
+					//if err != nil {
+					//	level.Error(util_log.Logger).Log("msg", "failed to import block", "block", b.String(), "err", err)
+					//}
+					// Add the blocks
+					pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b}
+				}
+			}
 		}
 	}
 }
@@ -292,6 +354,54 @@ func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *buc
 //	}
 //}
 
+func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
+	deleted := map[ulid.ULID]struct{}{}
+	result := make([]*bucketindex.Block, 0, len(idx.Blocks))
+	totalBlocks := 0
+
+	for _, b := range idx.BlockDeletionMarks {
+		deleted[b.ID] = struct{}{}
+	}
+
+	for _, b := range idx.Blocks {
+		// Do not compact if deleted
+		if _, ok := deleted[b.ID]; ok {
+			continue
+		}
+
+		// Do not compact if is already compacted
+		if _, ok := pIdx.Blocks[b.ID]; ok {
+			continue
+		}
+
+		// Don't try to compact 2h block. Compact 12h and 24h.
+		if getBlockTimeRange(b, c.blockRanges) == c.blockRanges[0] {
+			continue
+		}
+
+		totalBlocks++
+
+		// Do not compact block if is not owned
+		if ok, err := c.ownBlock(b.ID.String()); err != nil || !ok {
+			continue
+		}
+
+		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
+
+		if err == nil && marker.Version == CurrentVersion {
+			continue
+		}
+
+		result = append(result, b)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].MinTime > result[j].MinTime
+	})
+
+	return result, totalBlocks
+}
+
 func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
 	var users []string
 
@@ -302,6 +412,15 @@ func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) 
 	})
 
 	return users, err
+}
+
+// compactDirForUser returns the directory to be used to download and compact the blocks for a user
+func (c *ParquetConverter) compactDirForUser(userID string) string {
+	return filepath.Join(c.compactRootDir(), userID)
+}
+
+func (c *ParquetConverter) compactRootDir() string {
+	return filepath.Join(c.CompactorCfg.DataDir, "compact")
 }
 
 func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
@@ -343,4 +462,30 @@ func (i *InDiskUploader) Upload(ctx context.Context, path string, r io.Reader) e
 
 	_, err = io.Copy(f, r)
 	return err
+}
+
+func getBlockTimeRange(b *bucketindex.Block, timeRanges []int64) int64 {
+	timeRange := int64(0)
+	// fallback logic to guess block time range based
+	// on MaxTime and MinTime
+	blockRange := b.MaxTime - b.MinTime
+	for _, tr := range timeRanges {
+		rangeStart := getStart(b.MinTime, tr)
+		rangeEnd := rangeStart + tr
+		if tr >= blockRange && rangeEnd >= b.MaxTime {
+			timeRange = tr
+			break
+		}
+	}
+	return timeRange
+}
+
+func getStart(mint int64, tr int64) int64 {
+	// Compute start of aligned time range of size tr closest to the current block's start.
+	// This code has been copied from TSDB.
+	if mint >= 0 {
+		return tr * (mint / tr)
+	}
+
+	return tr * ((mint - tr + 1) / tr)
 }
