@@ -259,6 +259,16 @@ func NewStoreGatewayTimeRangeQueryable(q storage.Queryable, querierConfig Config
 	}
 }
 
+func NewParquetTimeRangeQueryable(q storage.Queryable, querierConfig Config) TimeRangeQueryable {
+	return TimeRangeQueryable{
+		Queryable:   q,
+		StorageName: "parquet-storage", // TODO review this
+		IsApplicable: func(_ context.Context, _ string, now time.Time, queryMinT, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
+			return ShouldQueryBlockStore(querierConfig.QueryStoreAfter, now, queryMinT)
+		},
+	}
+}
+
 // multiQuerier implements storage.Querier, orchestrating requests across a set of queriers.
 type multiQuerier struct {
 	queryables   []TimeRangeQueryable
