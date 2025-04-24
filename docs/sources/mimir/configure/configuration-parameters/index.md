@@ -201,6 +201,13 @@ api:
 # The compactor block configures the compactor component.
 [compactor: <compactor>]
 
+parquet_converter:
+  # (advanced)
+  [enabled_tenants: <string> | default = ""]
+
+  # (advanced)
+  [disabled_tenants: <string> | default = ""]
+
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
 

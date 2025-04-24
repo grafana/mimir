@@ -11854,6 +11854,36 @@
     },
     {
       "kind": "block",
+      "name": "parquet_converter",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled_tenants",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "disabled_tenants",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
       "name": "store_gateway",
       "required": false,
       "desc": "",
