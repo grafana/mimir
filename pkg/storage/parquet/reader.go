@@ -358,7 +358,7 @@ func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool
 					for {
 						page, err := pages.ReadPage()
 						if err != nil {
-							if errors.Is(err, io.EOF) {
+							if !errors.Is(err, io.EOF) {
 								return nil
 							}
 							return err
@@ -657,7 +657,7 @@ func (pr *ParquetReader) MaterializeColumn(ctx context.Context, rows [][]int64, 
 						for {
 							values := [1024]parquet.Value{}
 							n, err := vr.ReadValues(values[:])
-							if err != nil && errors.Is(err, io.EOF) {
+							if err != nil && !errors.Is(err, io.EOF) {
 								parquet.Release(page)
 								return err
 							}
