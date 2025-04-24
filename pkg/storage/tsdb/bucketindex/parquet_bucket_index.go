@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/klauspost/compress/gzip"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
@@ -51,8 +52,12 @@ func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 		return nil, err
 	}
 
-	// TODO
-	// defer runutil.CloseWithLogOnErr(logger, reader, "close bucket index reader")
+	defer func() {
+		err := reader.Close()
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to close bucket index reader", "err", err)
+		}
+	}()
 
 	// Read all the content.
 	gzipReader, err := gzip.NewReader(reader)
@@ -60,8 +65,12 @@ func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 		return nil, ErrIndexCorrupted
 	}
 
-	// TODO
-	// defer runutil.CloseWithLogOnErr(logger, gzipReader, "close bucket index gzip reader")
+	defer func() {
+		err := gzipReader.Close()
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to close bucket index gzip reader", "err", err)
+		}
+	}()
 
 	// Deserialize it.
 	index := &ParquetIndex{}

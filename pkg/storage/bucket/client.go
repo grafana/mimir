@@ -56,6 +56,7 @@ var (
 
 	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
 	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain digits and English alphabet letters")
+	ErrCustomerManagedKeyAccessDenied   = errors.New("access denied: customer key")
 )
 
 type StorageBackendConfig struct {
