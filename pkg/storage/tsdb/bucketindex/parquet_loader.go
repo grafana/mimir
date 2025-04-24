@@ -12,13 +12,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
@@ -40,10 +38,10 @@ type ParquetLoader struct {
 	indexes   map[string]*cachedParquetIndex
 
 	// Metrics.
-	loadAttempts prometheus.Counter
-	loadFailures prometheus.Counter
-	loadDuration prometheus.Histogram
-	loaded       prometheus.GaugeFunc
+	//loadAttempts prometheus.Counter
+	//loadFailures prometheus.Counter
+	//loadDuration prometheus.Histogram
+	//loaded       prometheus.GaugeFunc
 }
 
 // NewLParquetLoader makes a new ParquetLoader.
@@ -55,25 +53,25 @@ func NewLParquetLoader(cfg LoaderConfig, bucketClient objstore.Bucket, cfgProvid
 		cfgProvider: cfgProvider,
 		indexes:     map[string]*cachedParquetIndex{},
 
-		loadAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_bucket_index_loads_total",
-			Help: "Total number of bucket index loading attempts.",
-		}),
-		loadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_bucket_index_load_failures_total",
-			Help: "Total number of bucket index loading failures.",
-		}),
-		loadDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_bucket_index_load_duration_seconds",
-			Help:    "Duration of the a single bucket index loading operation in seconds.",
-			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 1, 10},
-		}),
+		//loadAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		//	Name: "cortex_bucket_index_loads_total",
+		//	Help: "Total number of bucket index loading attempts.",
+		//}),
+		//loadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		//	Name: "cortex_bucket_index_load_failures_total",
+		//	Help: "Total number of bucket index loading failures.",
+		//}),
+		//loadDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		//	Name:    "cortex_bucket_index_load_duration_seconds",
+		//	Help:    "Duration of the a single bucket index loading operation in seconds.",
+		//	Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 1, 10},
+		//}),
 	}
 
-	l.loaded = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_bucket_index_loaded",
-		Help: "Number of bucket indexes currently loaded in-memory.",
-	}, l.countLoadedIndexesMetric)
+	//l.loaded = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+	//	Name: "cortex_bucket_index_loaded",
+	//	Help: "Number of bucket indexes currently loaded in-memory.",
+	//}, l.countLoadedIndexesMetric)
 
 	// Apply a jitter to the sync frequency in order to increase the probability
 	// of hitting the shared cache (if any).
@@ -106,7 +104,7 @@ func (l *ParquetLoader) GetIndex(ctx context.Context, userID string) (*ParquetIn
 	// }
 
 	startTime := time.Now()
-	l.loadAttempts.Inc()
+	//l.loadAttempts.Inc()
 	uBucket := bucket.NewUserBucketClient(userID, l.bkt, l.cfgProvider)
 	idx, err := ReadParquetIndex(ctx, uBucket, l.logger)
 	if err != nil {
@@ -126,7 +124,7 @@ func (l *ParquetLoader) GetIndex(ctx context.Context, userID string) (*ParquetIn
 		} else {
 			// We don't track ErrIndexNotFound as failure because it's a legit case (eg. a tenant just
 			// started to remote write and its blocks haven't uploaded to storage yet).
-			l.loadFailures.Inc()
+			//l.loadFailures.Inc()
 			level.Error(l.logger).Log("msg", "unable to load bucket index", "user", userID, "err", err)
 		}
 
@@ -137,7 +135,7 @@ func (l *ParquetLoader) GetIndex(ctx context.Context, userID string) (*ParquetIn
 	l.cacheIndex(userID, idx, nil)
 
 	elapsedTime := time.Since(startTime)
-	l.loadDuration.Observe(elapsedTime.Seconds())
+	//l.loadDuration.Observe(elapsedTime.Seconds())
 	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "duration", elapsedTime)
 	return idx, nil
 }
@@ -205,7 +203,7 @@ func (l *ParquetLoader) updateCachedIndex(ctx context.Context, userID string) {
 	readCtx, cancel := context.WithTimeout(ctx, 15*time.Second) // TODO
 	defer cancel()
 
-	l.loadAttempts.Inc()
+	//l.loadAttempts.Inc()
 	startTime := time.Now()
 
 	// ss, err := ReadSyncStatus(ctx, l.bkt, userID, l.logger)
@@ -224,12 +222,12 @@ func (l *ParquetLoader) updateCachedIndex(ctx context.Context, userID string) {
 		!errors.Is(err, ErrIndexNotFound) &&
 		// !errors.Is(err, bucket.ErrCustomerManagedKeyAccessDenied) && // TODO
 		!errors.Is(err, context.Canceled) {
-		l.loadFailures.Inc()
+		//l.loadFailures.Inc()
 		level.Warn(l.logger).Log("msg", "unable to update bucket index", "user", userID, "err", err)
 		return
 	}
 
-	l.loadDuration.Observe(time.Since(startTime).Seconds())
+	//l.loadDuration.Observe(time.Since(startTime).Seconds())
 
 	// We cache it either it was successfully refreshed,  wasn't found or when is a CMK error. An use case for caching the ErrIndexNotFound
 	// is when a tenant has rules configured but hasn't started remote writing yet. Rules will be evaluated and
@@ -249,18 +247,19 @@ func (l *ParquetLoader) deleteCachedIndex(userID string) {
 	level.Info(l.logger).Log("msg", "unloaded bucket index", "user", userID, "reason", "idle")
 }
 
-func (l *ParquetLoader) countLoadedIndexesMetric() float64 {
-	l.indexesMx.RLock()
-	defer l.indexesMx.RUnlock()
-
-	count := 0
-	for _, idx := range l.indexes {
-		if idx.index != nil {
-			count++
-		}
-	}
-	return float64(count)
-}
+// TODO this function sets off the linter as it is not used yet
+//func (l *ParquetLoader) countLoadedIndexesMetric() float64 {
+//	l.indexesMx.RLock()
+//	defer l.indexesMx.RUnlock()
+//
+//	count := 0
+//	for _, idx := range l.indexes {
+//		if idx.index != nil {
+//			count++
+//		}
+//	}
+//	return float64(count)
+//}
 
 type cachedParquetIndex struct {
 	// We cache either the index or the error occurred while fetching it. They're

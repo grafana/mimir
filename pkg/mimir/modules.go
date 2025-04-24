@@ -128,6 +128,8 @@ var (
 	// so we need to make sure the series registered by the individual queryables are unique.
 	querierEngine = prometheus.Labels{"engine": "querier"}
 	rulerEngine   = prometheus.Labels{"engine": "ruler"}
+
+	parquetStorage = prometheus.Labels{"storage": "parquet"}
 )
 
 func newDefaultConfig() *Config {
@@ -1069,7 +1071,9 @@ func (t *Mimir) initParquetConverter() (serv services.Service, err error) {
 	// TODO The converter relies on the compactor sharding configuration for now
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
+	registerer := prometheus.WrapRegistererWith(parquetStorage, t.Registerer)
+
+	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, registerer, t.Overrides)
 	if err != nil {
 		return
 	}
@@ -1282,11 +1286,11 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
 
-		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter, ParquetConverter},
 		Read:    {QueryFrontend, Querier},
 		Write:   {Distributor, Ingester},
 
-		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor, ParquetConverter},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

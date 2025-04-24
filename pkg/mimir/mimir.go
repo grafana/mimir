@@ -216,6 +216,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageStats.RegisterFlags(f)
 	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
+	c.ParquetConverter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
 }

@@ -18,19 +18,19 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/grafana/mimir/pkg/storegateway"
-
 	"github.com/efficientgo/core/errors"
-
 	"github.com/opentracing/opentracing-go"
 	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/storegateway"
 )
 
 const (
-	defaultReadBufferSize = 100 * 1024 // 100k
+// TODO this sets off the linter as it is not used yet
+// defaultReadBufferSize = 100 * 1024 // 100k
 )
 
 type CreateReadAtWithContext func(ctx context.Context) io.ReaderAt
@@ -149,7 +149,7 @@ func (pr *ParquetReader) ColumnNames() []string {
 			names = append(names, colName)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
@@ -359,7 +359,7 @@ func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool
 					for {
 						page, err := pages.ReadPage()
 						if err != nil {
-							if err == io.EOF {
+							if errors.Is(err, io.EOF) {
 								return nil
 							}
 							return err
@@ -449,7 +449,7 @@ func (pr *ParquetReader) ColumnValues(ctx context.Context, c string) ([]string, 
 	for v := range r {
 		results = append(results, v)
 	}
-	sort.Strings(results)
+	slices.Sort(results)
 	return results, nil
 }
 
@@ -658,7 +658,7 @@ func (pr *ParquetReader) MaterializeColumn(ctx context.Context, rows [][]int64, 
 						for {
 							values := [1024]parquet.Value{}
 							n, err := vr.ReadValues(values[:])
-							if err != nil && err != io.EOF {
+							if err != nil && !errors.Is(err, io.EOF) {
 								parquet.Release(page)
 								return err
 							}
@@ -680,7 +680,7 @@ func (pr *ParquetReader) MaterializeColumn(ctx context.Context, rows [][]int64, 
 									return errors.Newf("did not find rows: next %d current %d remaining %d", next, currentRow, len(pagesToRead.rows))
 								}
 							}
-							if err == io.EOF {
+							if errors.Is(err, io.EOF) {
 								parquet.Release(page)
 								break
 							}
@@ -716,7 +716,7 @@ func (pr *ParquetReader) MaterializeColumnNames(ctx context.Context, rows [][]in
 	for col := range colsMap {
 		cols = append(cols, col)
 	}
-	sort.Strings(cols)
+	slices.Sort(cols)
 	return cols, nil
 }
 
