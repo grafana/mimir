@@ -150,6 +150,7 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
+	sampleDelayHistogram             *prometheus.HistogramVec
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
@@ -450,6 +451,13 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Number of labels per sample.",
 			Buckets: []float64{5, 10, 15, 20, 25},
 		}),
+		sampleDelayHistogram: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_sample_delay_seconds",
+			Help:                            "Number of seconds by which a sample came in late wrt wallclock.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_samples_per_request",
 			Help:                            "Number of samples per request before deduplication and validation.",
@@ -729,6 +737,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
 	d.incomingSamplesPerRequest.DeleteLabelValues(userID)
+	d.sampleDelayHistogram.DeleteLabelValues(userID)
 	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
@@ -800,6 +809,8 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 
 	cat := d.costAttributionMgr.SampleTracker(userID)
 	if len(ts.Samples) == 1 {
+		delta := now - model.Time(ts.Samples[0].TimestampMs)
+		d.sampleDelayHistogram.WithLabelValues(userID).Observe(float64(delta) / 1000)
 		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
 	}
 
@@ -814,6 +825,10 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 		}
 
 		timestamps[s.TimestampMs] = struct{}{}
+
+		delta := now - model.Time(s.TimestampMs)
+		d.sampleDelayHistogram.WithLabelValues(userID).Observe(float64(delta) / 1000)
+
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cat); err != nil {
 			return err
 		}
@@ -841,6 +856,9 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 
 	cat := d.costAttributionMgr.SampleTracker(userID)
 	if len(ts.Histograms) == 1 {
+		delta := now - model.Time(ts.Histograms[0].Timestamp)
+		d.sampleDelayHistogram.WithLabelValues(userID).Observe(float64(delta) / 1000)
+
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
 		if err != nil {
 			return err
@@ -862,6 +880,10 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		}
 
 		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
+
+		delta := now - model.Time(ts.Histograms[idx].Timestamp)
+		d.sampleDelayHistogram.WithLabelValues(userID).Observe(float64(delta) / 1000)
+
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
 		if err != nil {
 			return err
