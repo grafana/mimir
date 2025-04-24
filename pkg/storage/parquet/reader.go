@@ -358,7 +358,7 @@ func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool
 					for {
 						page, err := pages.ReadPage()
 						if err != nil {
-							if !errors.Is(err, io.EOF) {
+							if errors.Is(err, io.EOF) {
 								return nil
 							}
 							return err
