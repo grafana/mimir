@@ -12,9 +12,11 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,10 +28,13 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/parquet"
+	"github.com/grafana/mimir/pkg/storage/parquet/tsdbcodec"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -252,10 +257,10 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 						level.Error(util_log.Logger).Log("msg", "Error downloading block", "err", err)
 						continue
 					}
-					//err = TSDBBlockToParquet(ctx, b.ID, uBucket, bdir, c.logger)
-					//if err != nil {
-					//	level.Error(util_log.Logger).Log("msg", "failed to import block", "block", b.String(), "err", err)
-					//}
+					err = TSDBBlockToParquet(ctx, b.ID, uBucket, bdir, c.logger)
+					if err != nil {
+						level.Error(util_log.Logger).Log("msg", "failed to import block", "block", b.String(), "err", err)
+					}
 					// Add the blocks
 					pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b}
 				}
@@ -461,6 +466,61 @@ func (i *InDiskUploader) Upload(ctx context.Context, path string, r io.Reader) e
 	defer f.Close()
 
 	_, err = io.Copy(f, r)
+	return err
+}
+
+func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bDir string, logger log.Logger) (err error) {
+	r, w := io.Pipe()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer r.Close()
+		err = uploader.Upload(context.Background(), path.Join(id.String(), parquetFileName), r)
+		if err != nil {
+			level.Error(util_log.Logger).Log("msg", "failed to upload file", "err", err)
+		}
+		if err == nil {
+			err = WriteCompactMark(ctx, id, uploader)
+		}
+	}()
+
+	batchedRowsStream, ln, totalMetrics, err := tsdbcodec.BlockToParquetRowsStream(
+		ctx, bDir, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
+	)
+	if err != nil {
+		return err
+	}
+
+	writer := parquet.NewParquetWriter(w, 1e6, maxParquetIndexSizeLimit, parquet.ChunkColumnsPerDay, ln, labels.MetricName)
+	if err != nil {
+		return err
+	}
+
+	total := 0
+	for rows := range batchedRowsStream {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		fmt.Printf("Writing Metrics [%v] [%v]\n", 100*(float64(total)/float64(totalMetrics)), rows[0].Columns[labels.MetricName])
+		err := writer.WriteRows(rows)
+		if err != nil {
+			return err
+		}
+		total += len(rows)
+	}
+
+	if e := writer.Close(); err == nil {
+		err = e
+	}
+
+	if e := w.Close(); err == nil {
+		err = e
+	}
+
+	wg.Wait()
 	return err
 }
 

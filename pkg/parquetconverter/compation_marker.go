@@ -6,6 +6,7 @@
 package parquetconverter
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -54,15 +55,14 @@ func ReadCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.Instrum
 	return &marker, err
 }
 
-// TODO this function sets off the linter as it is not used yet
-//func WriteCompactMark(ctx context.Context, id ulid.ULID, uploader Uploader) error {
-//	marker := CompactionMark{
-//		Version: CurrentVersion,
-//	}
-//	markerPath := path.Join(id.String(), ParquetCompactionMakerFileName)
-//	b, err := json.Marshal(marker)
-//	if err != nil {
-//		return err
-//	}
-//	return uploader.Upload(ctx, markerPath, bytes.NewReader(b))
-//}
+func WriteCompactMark(ctx context.Context, id ulid.ULID, uploader Uploader) error {
+	marker := CompactionMark{
+		Version: CurrentVersion,
+	}
+	markerPath := path.Join(id.String(), ParquetCompactionMakerFileName)
+	b, err := json.Marshal(marker)
+	if err != nil {
+		return err
+	}
+	return uploader.Upload(ctx, markerPath, bytes.NewReader(b))
+}
