@@ -88,6 +88,7 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
+	github.com/weaveworks/common v0.0.0-20230728070032-dd9e68f319d5
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.29.0
 	go.opentelemetry.io/otel v1.35.0
@@ -161,6 +162,7 @@ require (
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/weaveworks/promrus v1.2.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/collector/component v1.28.1 // indirect

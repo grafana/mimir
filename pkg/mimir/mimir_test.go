@@ -82,7 +82,7 @@ func TestMimir(t *testing.T) {
 					Store: "inmemory",
 				},
 				ReplicationFactor:      3,
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
@@ -133,7 +133,7 @@ func TestMimir(t *testing.T) {
 			ShardingRing: alertmanager.RingConfig{
 				Common: util.CommonRingConfig{
 					KVStore:                kv.Config{Store: "memberlist"},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 				},
 				ReplicationFactor: 1,
 			},
@@ -154,14 +154,14 @@ func TestMimir(t *testing.T) {
 					KVStore: kv.Config{
 						Store: "inmemory",
 					},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 				},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
 			KVStore:                kv.Config{Store: "memberlist"},
 			ReplicationFactor:      1,
-			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 		}},
 		Querier: querier.Config{
 			QueryEngine: "prometheus",
