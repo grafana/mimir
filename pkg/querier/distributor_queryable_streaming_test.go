@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/metrics"
+	dskitmetrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -50,7 +50,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, series.labels, expectedChunks))
 
-	m, err := metrics.NewMetricFamilyMapFromGatherer(reg)
+	m, err := dskitmetrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
 	require.Equal(t, 4.0, m.SumCounters("cortex_distributor_query_ingester_chunks_total"))
 	require.Equal(t, 1.0, m.SumCounters("cortex_distributor_query_ingester_chunks_deduped_total"))

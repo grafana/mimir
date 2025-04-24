@@ -77,6 +77,13 @@ var (
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 )
 
+// AccessDeniedError are errors that do not comply with the limits specified.
+type AccessDeniedError string
+
+func (e AccessDeniedError) Error() string {
+	return string(e)
+}
+
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
 	error
