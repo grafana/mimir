@@ -304,14 +304,19 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	// The ruler config points at alertmanager 1.
 	cfg := Config{
 		RulePath:                  t.TempDir(),
-		AlertmanagerURL:           alertmanager1.URL,
 		NotificationQueueCapacity: 1000,
 		NotificationTimeout:       10 * time.Second,
 	}
 
-	// user-2's tenant configuration is overriddent to point at alertmanager 2.
-	overrides := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
-		tenantLimits[user1] = validation.MockDefaultLimits()
+	// By default, tenants use alertmanager 1.
+	// user-2's tenant configuration is overridden to point at alertmanager 2.
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			AlertmanagerURL: alertmanager1.URL,
+		}
+
+		// tenantLimits[user1] = validation.MockDefaultLimits()
 		tenantLimits[user2] = validation.MockDefaultLimits()
 		tenantLimits[user2].RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
 			AlertmanagerURL: alertmanager2.URL,
@@ -411,11 +416,15 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 
 	cfg := Config{
 		RulePath:                  t.TempDir(),
-		AlertmanagerURL:           server.URL,
 		NotificationQueueCapacity: 1000,
 		NotificationTimeout:       10 * time.Second,
 	}
-	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, validation.MockOverrides(nil))
+	limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = server.URL
+	})
+
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, limits)
 	require.NoError(t, err)
 
 	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{

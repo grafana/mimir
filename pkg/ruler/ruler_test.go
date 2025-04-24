@@ -46,7 +46,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimirNotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
@@ -250,7 +249,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
 	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, validation.MockOverrides(nil))
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits)
 	require.NoError(t, err)
 
 	return manager
@@ -273,16 +272,12 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 
 	// We create an empty rule store so that the ruler will not load any rule from it.
 	cfg := defaultRulerConfig(t)
-	// cfg.AlertmanagerURL = ts.URL
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = ts.URL
+	})
 
-	defaultLimits := validation.Limits{
-		RulerAlertmanagerClientConfig: mimirNotifier.AlertmanagerClientConfig{
-			AlertmanagerURL: ts.URL,
-		},
-	}
-	limits := validation.NewOverrides(defaultLimits, nil)
-
-	manager := prepareRulerManager(t, cfg, withLimits(limits))
+	manager := prepareRulerManager(t, cfg, withLimits(overrides))
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")

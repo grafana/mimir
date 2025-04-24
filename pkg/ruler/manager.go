@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -33,7 +32,6 @@ import (
 
 type DefaultMultiTenantManager struct {
 	cfg            Config
-	notifierCfg    *config.Config
 	managerFactory ManagerFactory
 	limits         RulesLimits
 	dnsResolver    AddressProvider
@@ -64,10 +62,6 @@ type DefaultMultiTenantManager struct {
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	ncfg, err := buildNotifierConfig(cfg.DeprecatedAlertmanagerURL, cfg.DeprecatedNotifier, dnsResolver, cfg.NotificationTimeout, cfg.AlertmanagerRefreshInterval, refreshMetrics)
-	if err != nil {
-		return nil, err
-	}
 
 	userManagerMetrics := NewManagerMetrics(logger)
 	if reg != nil {
@@ -76,7 +70,6 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 
 	return &DefaultMultiTenantManager{
 		cfg:                cfg,
-		notifierCfg:        ncfg,
 		managerFactory:     managerFactory,
 		limits:             limits,
 		dnsResolver:        dnsResolver,
@@ -323,13 +316,10 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	n.run()
 
-	notifierCfg := r.notifierCfg
 	userSpecificCfg := r.limits.RulerAlertmanagerClientConfig(userID)
-	if !userSpecificCfg.IsDefault() {
-		notifierCfg, err = buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
-		if err != nil {
-			return nil, err
-		}
+	notifierCfg, err := buildNotifierConfig(userSpecificCfg.AlertmanagerURL, userSpecificCfg.NotifierConfig, r.dnsResolver, r.cfg.NotificationTimeout, r.cfg.AlertmanagerRefreshInterval, r.refreshMetrics)
+	if err != nil {
+		return nil, err
 	}
 
 	// This should never fail, unless there's a programming mistake.
