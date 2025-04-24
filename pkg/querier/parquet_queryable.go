@@ -37,6 +37,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_storage "github.com/grafana/mimir/pkg/storage/parquet"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
@@ -260,7 +261,18 @@ func (q *parquetQuerier) findBlocks(ctx context.Context, userID string, logger l
 // The bool passed is ignored because the series is always sorted.
 func (q *parquetQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	n := time.Now()
-	ss := q.selectSorted(ctx, sp, matchers...)
+	// TODO (jesus.vazquez) This is a hack to remove a couple matchers that we are not sure about.
+	newMatchers := make([]*labels.Matcher, 0, 2)
+	for _, m := range matchers {
+		if strings.EqualFold(m.Name, "__aggregation__") {
+			continue
+		}
+		if strings.EqualFold(m.Name, sharding.ShardLabel) {
+			continue
+		}
+		newMatchers = append(newMatchers, m)
+	}
+	ss := q.selectSorted(ctx, sp, newMatchers...)
 	q.metrics.dataFetchDuration.WithLabelValues("select").Observe(time.Since(n).Seconds())
 	return ss
 }
