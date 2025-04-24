@@ -83,13 +83,15 @@ type ParquetConverter struct {
 }
 
 func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, registerer)
+	metricsPrefix := "parquet_converter_"
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", metricsPrefix, logger, registerer)
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 
 	if err != nil {
 		return nil, err
 	}
 	indexLoaderConfig := bucketindex.LoaderConfig{
+		MetricsPrefix:         metricsPrefix,
 		CheckInterval:         time.Minute,
 		UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
 		UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,

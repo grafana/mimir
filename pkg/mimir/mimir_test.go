@@ -177,16 +177,16 @@ func TestMimir(t *testing.T) {
 		expectedEnabledModules  []string
 		expectedDisabledModules []string
 	}{
-		//"-target=all,alertmanager": {
-		//	target: []string{All, AlertManager},
-		//	expectedEnabledModules: []string{
-		//		// Check random modules that we expect to be configured when using Target=All.
-		//		Server, IngesterService, IngesterRing, DistributorService, Compactor, ParquetConverter,
-		//
-		//		// Check that Alertmanager is configured which is not part of Target=All.
-		//		AlertManager,
-		//	},
-		//},
+		"-target=all,alertmanager": {
+			target: []string{All, AlertManager},
+			expectedEnabledModules: []string{
+				// Check random modules that we expect to be configured when using Target=All.
+				Server, IngesterService, IngesterRing, DistributorService, Compactor, ParquetConverter,
+
+				// Check that Alertmanager is configured which is not part of Target=All.
+				AlertManager,
+			},
+		},
 		"-target=write": {
 			target:                  []string{Write},
 			expectedEnabledModules:  []string{DistributorService, IngesterService},
@@ -197,11 +197,11 @@ func TestMimir(t *testing.T) {
 			expectedEnabledModules:  []string{QueryFrontend, Querier},
 			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 		},
-		//"-target=backend": {
-		//	target:                  []string{Backend},
-		//	expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
-		//	expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
-		//},
+		"-target=backend": {
+			target:                  []string{Backend},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
+			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
+		},
 	}
 
 	for testName, testData := range tests {

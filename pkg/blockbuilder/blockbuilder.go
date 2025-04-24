@@ -86,7 +86,7 @@ func newWithSchedulerClient(
 		tsdbBuilderMetrics:  newTSDBBBuilderMetrics(reg),
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorage.Bucket, "block-builder", "", logger, reg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create the bucket client: %w", err)
 	}

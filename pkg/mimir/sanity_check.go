@@ -149,7 +149,7 @@ func checkObjectStoreConfig(ctx context.Context, cfg bucket.Config, logger log.L
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	client, err := bucket.NewClient(ctx, cfg, "sanity-check", logger, nil)
+	client, err := bucket.NewClient(ctx, cfg, "sanity-check", "", logger, nil)
 	if err != nil {
 		return errors.Wrap(err, errObjectStorage)
 	}

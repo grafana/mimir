@@ -83,7 +83,7 @@ func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantCon
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
 
-	bucketClient, err := bucket.NewClient(ctx, cfg.Config, "alertmanager-storage", logger, reg)
+	bucketClient, err := bucket.NewClient(ctx, cfg.Config, "alertmanager-storage", "", logger, reg)
 	if err != nil {
 		return nil, err
 	}

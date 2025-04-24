@@ -202,7 +202,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		bucketClient objstore.Bucket
 	)
 
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "querier", logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "querier", "", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create bucket client")
 	}

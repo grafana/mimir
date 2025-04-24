@@ -327,7 +327,7 @@ type MultitenantCompactor struct {
 // NewMultitenantCompactor makes a new MultitenantCompactor.
 func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
-		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
+		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", "", logger, registerer)
 	}
 
 	// Configure the compactor and grouper factories only if they weren't already set by a downstream project.

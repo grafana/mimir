@@ -40,7 +40,7 @@ func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.
 		level.Warn(logger).Log("msg", "-ruler-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
 
-	directBucketClient, err := bucket.NewClient(ctx, cfg.Config, "ruler-storage", logger, reg)
+	directBucketClient, err := bucket.NewClient(ctx, cfg.Config, "ruler-storage", "", logger, reg)
 	if err != nil {
 		return nil, err
 	}

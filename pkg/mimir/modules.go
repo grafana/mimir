@@ -128,6 +128,8 @@ var (
 	// so we need to make sure the series registered by the individual queryables are unique.
 	querierEngine = prometheus.Labels{"engine": "querier"}
 	rulerEngine   = prometheus.Labels{"engine": "ruler"}
+
+	parquetStorage = prometheus.Labels{"storage": "parquet"}
 )
 
 func newDefaultConfig() *Config {
@@ -1066,10 +1068,12 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initParquetConverter() (serv services.Service, err error) {
+	registerer := prometheus.WrapRegistererWith(parquetStorage, t.Registerer)
+
 	// TODO The converter relies on the compactor sharding configuration for now
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
+	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, registerer, t.Overrides)
 	if err != nil {
 		return
 	}
@@ -1146,7 +1150,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 		return nil, nil
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, UsageStats, util_log.Logger, t.Registerer)
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, UsageStats, "", util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrapf(err, "create %s bucket client", UsageStats)
 	}

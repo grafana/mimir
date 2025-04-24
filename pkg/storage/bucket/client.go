@@ -157,7 +157,7 @@ func (cfg *Config) Validate() error {
 }
 
 // NewClient creates a new bucket client based on the configured backend
-func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
+func NewClient(ctx context.Context, cfg Config, name string, extraMetricsPrefix string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
 	var (
 		backendClient objstore.Bucket
 		err           error
@@ -186,7 +186,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, extraMetricsPrefix, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
@@ -199,14 +199,14 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 	return instrumentedClient, nil
 }
 
-func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus.Registerer) objstore.Bucket {
+func bucketWithMetrics(bucketClient objstore.Bucket, name string, metricsPrefix string, reg prometheus.Registerer) objstore.Bucket {
 	if reg == nil {
 		return bucketClient
 	}
 
 	// Thanos objstore no longer includes a "thanos_" prefix but all our dashboards
 	// rely on object storage related metrics including a "thanos_" prefix.
-	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
+	reg = prometheus.WrapRegistererWithPrefix(fmt.Sprintf("thanos_%s", metricsPrefix), reg)
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
 
 	return objstore.WrapWithMetrics(
