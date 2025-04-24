@@ -2942,7 +2942,24 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alerting-rules-evaluation-enabled
     	Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis. (default true)
   -ruler.alertmanager-client-config value
-    	Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default.
+    	Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default. (default alertmanager_url: ""
+tls_enabled: true
+tls_cert_path: ""
+tls_key_path: ""
+tls_ca_path: ""
+tls_server_name: ""
+tls_insecure_skip_verify: false
+tls_cipher_suites: ""
+tls_min_version: ""
+basic_auth_username: ""
+basic_auth_password: ""
+oauth2:
+    client_id: ""
+    client_secret: ""
+    token_url: ""
+    endpoint_params: {}
+proxy_url: ""
+)
   -ruler.alertmanager-client.basic-auth-password string
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string

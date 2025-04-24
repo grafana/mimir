@@ -29,7 +29,7 @@ var (
 // Represents the client configuration for sending to an alertmanager.
 // It is mountable as a single config option/yaml sub-block, or as individual CLI options.
 type AlertmanagerClientConfig struct {
-	AlertmanagerURL string `yaml:"alertmanager_url" doc:"nocli"`
+	AlertmanagerURL string `yaml:"alertmanager_url"`
 	NotifierConfig  Config `yaml:",inline" json:",inline"`
 }
 
