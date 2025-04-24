@@ -1201,29 +1201,24 @@ type notifyMetrics struct {
 func newNotifyMetrics(r prometheus.Registerer) *notifyMetrics {
 	m := &notifyMetrics{
 		numNotifications: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notifications_total",
-			Help:      "The total number of attempted notifications.",
+			Name: "alertmanager_notifications_total",
+			Help: "The total number of attempted notifications.",
 		}, []string{"integration"}),
 		numTotalFailedNotifications: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notifications_failed_total",
-			Help:      "The total number of failed notifications.",
+			Name: "alertmanager_notifications_failed_total",
+			Help: "The total number of failed notifications.",
 		}, []string{"integration", "reason"}),
 		numNotificationRequestsTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notification_requests_total",
-			Help:      "The total number of attempted notification requests.",
+			Name: "alertmanager_notification_requests_total",
+			Help: "The total number of attempted notification requests.",
 		}, []string{"integration"}),
 		numNotificationRequestsFailedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notification_requests_failed_total",
-			Help:      "The total number of failed notification requests.",
+			Name: "alertmanager_notification_requests_failed_total",
+			Help: "The total number of failed notification requests.",
 		}, []string{"integration"}),
 		numNotificationSuppressedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "alertmanager",
-			Name:      "notifications_suppressed_total",
-			Help:      "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
+			Name: "alertmanager_notifications_suppressed_total",
+			Help: "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
 		}, []string{"reason"}),
 		notificationLatencySeconds: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "alertmanager",

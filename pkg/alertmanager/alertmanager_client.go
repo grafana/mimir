@@ -87,9 +87,8 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_distributor_clients",
-		Help:      "The current number of alertmanager distributor clients in the pool.",
+		Name: "cortex_alertmanager_distributor_clients",
+		Help: "The current number of alertmanager distributor clients in the pool.",
 	})
 
 	return &alertmanagerClientsPool{pool: client.NewPool("alertmanager", poolCfg, discovery, factory, clientsCount, logger)}

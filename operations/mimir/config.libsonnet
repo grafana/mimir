@@ -389,9 +389,9 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // 1400 rules
+        // 1700 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 70,
+        ruler_max_rule_groups_per_tenant: 85,
 
         // No retention for now.
         compactor_blocks_retention_period: '0',
@@ -405,9 +405,9 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // 2000 rules
+        // 2400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 100,
+        ruler_max_rule_groups_per_tenant: 120,
       },
 
       small_user:: {
@@ -418,9 +418,9 @@
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
 
-        // 2800 rules
+        // 3000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 140,
+        ruler_max_rule_groups_per_tenant: 150,
       },
 
       medium_user:: {
@@ -733,6 +733,7 @@
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
         'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
         'ruler-storage.cache.memcached.max-async-concurrency': 50,
+        'ruler-storage.cache.memcached.timeout': '500ms',
       } + if $._config.memcached_metadata_mtls_enabled then {
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
         'ruler-storage.cache.memcached.connect-timeout': '1s',

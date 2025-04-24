@@ -11,7 +11,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -128,29 +128,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	matched := false
-	for _, tenantID := range tenantIDs {
-		patterns := s.limits.InstantQueriesWithSubquerySpinOff(tenantID)
-
-		for _, pattern := range patterns {
-			matcher, err := labels.NewFastRegexMatcher(pattern)
-			if err != nil {
-				return nil, apierror.New(apierror.TypeBadData, err.Error())
-			}
-
-			if matcher.MatchString(req.GetQuery()) {
-				matched = true
-				break
-			}
-		}
-
-		if matched {
-			break
-		}
-	}
-
-	if !matched {
-		spanLog.DebugLog("msg", "expression did not match any configured subquery spin-off patterns, so subquery spin-off is disabled for this query")
+	if !validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.SubquerySpinOffEnabled) {
+		spanLog.DebugLog("msg", "subquery spin-off is disabled for a tenant", "tenant_ids", tenantIDs)
 		return s.next.Do(ctx, req)
 	}
 

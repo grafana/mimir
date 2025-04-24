@@ -399,6 +399,94 @@ func TestMaxPartialQueryLengthWithoutDefault(t *testing.T) {
 	assert.Equal(t, time.Duration(0), ov.MaxPartialQueryLength("tenant-b"))
 }
 
+func TestDistributorIngestionArtificialDelay(t *testing.T) {
+	tests := map[string]struct {
+		tenantID      string
+		tenantLimits  func(*Limits)
+		expectedDelay time.Duration
+	}{
+		"should not apply delay by default": {
+			tenantID:      "tenant-a",
+			tenantLimits:  func(*Limits) {},
+			expectedDelay: 0,
+		},
+		"should apply delay if a plain delay has been configured for the tenant": {
+			tenantID: "tenant-a",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelay = model.Duration(time.Second)
+			},
+			expectedDelay: time.Second,
+		},
+		"should apply delay based on 'max series less than' condition if tenant max series is < the threshold": {
+			tenantID: "tenant-a",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
+				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
+				l.MaxGlobalSeriesPerUser = 15000
+			},
+			expectedDelay: time.Second,
+		},
+		"should not apply delay based on 'max series less than' condition if tenant max series is >= the threshold": {
+			tenantID: "tenant-a",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
+				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
+				l.MaxGlobalSeriesPerUser = 15001
+			},
+			expectedDelay: 0,
+		},
+		"should apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and > the condition": {
+			tenantID: "12346",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
+			},
+			expectedDelay: time.Second,
+		},
+		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and <= the condition": {
+			tenantID: "12345",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
+			},
+			expectedDelay: 0,
+		},
+		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is not numeric": {
+			tenantID: "tenant-123456",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
+			},
+			expectedDelay: 0,
+		},
+		"should apply the highest delay among matching conditions": {
+			tenantID: "12346",
+			tenantLimits: func(l *Limits) {
+				l.IngestionArtificialDelay = model.Duration(300 * time.Millisecond)
+
+				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
+				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(200 * time.Millisecond)
+				l.MaxGlobalSeriesPerUser = 15000
+
+				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
+				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(100 * time.Millisecond)
+			},
+			expectedDelay: 300 * time.Millisecond,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			tenantLimits := &Limits{}
+			flagext.DefaultValues(tenantLimits)
+			testData.tenantLimits(tenantLimits)
+
+			ov := NewOverrides(Limits{}, NewMockTenantLimits(map[string]*Limits{testData.tenantID: tenantLimits}))
+			require.Equal(t, testData.expectedDelay, ov.DistributorIngestionArtificialDelay(testData.tenantID))
+		})
+	}
+}
+
 func TestAlertmanagerNotificationLimits(t *testing.T) {
 	for name, tc := range map[string]struct {
 		inputYAML         string

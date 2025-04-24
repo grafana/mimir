@@ -2249,13 +2249,13 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "disabled_functions",
+              "name": "use_query_planning",
               "required": false,
-              "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
+              "desc": "Use query planner when evaluating queries.",
               "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.mimir-query-engine.disabled-functions",
-              "fieldType": "string",
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.use-query-planning",
+              "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
           ],
@@ -4867,6 +4867,16 @@
         },
         {
           "kind": "field",
+          "name": "limited_queries",
+          "required": false,
+          "desc": "List of queries to limit and duration to limit them for.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldType": "list of query (string) and allowed_frequency (duration)",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "blocked_requests",
           "required": false,
           "desc": "List of http requests to block.",
@@ -4909,13 +4919,13 @@
         },
         {
           "kind": "field",
-          "name": "instant_queries_with_subquery_spin_off",
+          "name": "subquery_spin_off_enabled",
           "required": false,
-          "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "desc": "Enable spinning off subqueries from instant queries as range queries to optimize their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.instant-queries-with-subquery-spin-off",
-          "fieldType": "string",
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -5468,6 +5478,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-keep-identifying-resource-attributes",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_convert_histograms_to_nhcb",
+          "required": false,
+          "desc": "Whether to convert OTel explicit histograms into native histograms with custom buckets.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-convert-histograms-to-nhcb",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

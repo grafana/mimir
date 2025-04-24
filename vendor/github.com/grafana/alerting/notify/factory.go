@@ -36,6 +36,8 @@ import (
 	"github.com/grafana/alerting/templates"
 )
 
+type WrapNotifierFunc func(integrationName string, notifier notify.Notifier) notify.Notifier
+
 // BuildReceiverIntegrations creates integrations for each configured notification channel in GrafanaReceiverConfig.
 // It returns a slice of Integration objects, one for each notification channel, along with any errors that occurred.
 func BuildReceiverIntegrations(
@@ -45,6 +47,7 @@ func BuildReceiverIntegrations(
 	logger logging.LoggerFactory,
 	httpClientConfiguration http.ClientConfiguration,
 	newEmailSender func(n receivers.Metadata) (receivers.EmailSender, error),
+	wrapNotifier WrapNotifierFunc,
 	orgID int64,
 	version string,
 ) ([]*Integration, error) {
@@ -59,7 +62,8 @@ func BuildReceiverIntegrations(
 			return logger("ngalert.notifier."+meta.Type, "notifierUID", meta.UID)
 		}
 		ci = func(idx int, cfg receivers.Metadata, n notificationChannel) {
-			i := NewIntegration(n, n, cfg.Type, idx, cfg.Name)
+			notify := wrapNotifier(cfg.Name, n)
+			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name)
 			integrations = append(integrations, i)
 		}
 		nw = func(cfg receivers.Metadata) receivers.WebhookSender {

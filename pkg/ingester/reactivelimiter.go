@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 )
@@ -29,15 +30,21 @@ type ingesterReactiveLimiter struct {
 
 	prioritizer *rejectionPrioritizer
 	push        reactivelimiter.BlockingLimiter
-	read        reactivelimiter.BlockingLimiter
+	// The read limiter is activated and deactivated when ingesters become active or read only. When deactivated, the limit resets.
+	read *activatableLimiter
 }
 
 // Returns an ingesterReactiveLimiter that uses reactivelimiter.PriorityLimiters with a Prioritizer when push and read
 // limiting is enabled, else that uses reactivelimiter.BlockingLimiter if only one of these is enabled.
 func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrioritizerConfig, pushConfig *reactivelimiter.Config, readConfig *reactivelimiter.Config, logger log.Logger, registerer prometheus.Registerer) *ingesterReactiveLimiter {
+	var prioritizer *rejectionPrioritizer
+	var pushLimiter reactivelimiter.BlockingLimiter
+	var blockingReadLimiter reactivelimiter.BlockingLimiter
+	var readLimiter *activatableLimiter
+
 	if pushConfig.Enabled && readConfig.Enabled {
 		// Create prioritizer to prioritize the rejection threshold between push and read limiters
-		prioritizer := &rejectionPrioritizer{
+		prioritizer = &rejectionPrioritizer{
 			cfg:         prioritizerConfig,
 			Prioritizer: reactivelimiter.NewPrioritizer(logger),
 		}
@@ -57,24 +64,53 @@ func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrio
 		})
 
 		// Create limiters that use prioritizer
-		limiter := &ingesterReactiveLimiter{
-			prioritizer: prioritizer,
-			push:        newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer),
-			read:        newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer),
-		}
-		limiter.service = services.NewTimerService(prioritizerConfig.CalibrationInterval, nil, limiter.update, nil)
-		return limiter
+		pushLimiter = newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer)
+		blockingReadLimiter = newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer)
+	} else {
+		pushLimiter = newBlockingLimiter(pushConfig, "push", logger, registerer)
+		blockingReadLimiter = newBlockingLimiter(readConfig, "read", logger, registerer)
 	}
 
-	return &ingesterReactiveLimiter{
-		push: newBlockingLimiter(pushConfig, "push", logger, registerer),
-		read: newBlockingLimiter(readConfig, "read", logger, registerer),
+	if blockingReadLimiter != nil {
+		readLimiter = &activatableLimiter{
+			BlockingLimiter: blockingReadLimiter,
+		}
 	}
+
+	limiter := &ingesterReactiveLimiter{
+		prioritizer: prioritizer,
+		push:        pushLimiter,
+		read:        readLimiter,
+	}
+
+	if prioritizer != nil {
+		limiter.service = services.NewTimerService(prioritizerConfig.CalibrationInterval, nil, limiter.update, nil)
+	}
+
+	return limiter
+}
+
+func (l *ingesterReactiveLimiter) isReadLimiterActive() bool {
+	return l.read != nil && l.read.active.Load()
 }
 
 func (l *ingesterReactiveLimiter) update(_ context.Context) error {
 	l.prioritizer.Calibrate()
 	return nil
+}
+
+type activatableLimiter struct {
+	active atomic.Bool
+	reactivelimiter.BlockingLimiter
+}
+
+func (l *activatableLimiter) activate() {
+	l.active.Store(true)
+}
+
+func (l *activatableLimiter) deactivate() {
+	l.active.Store(false)
+	l.Reset()
 }
 
 func newBlockingLimiter(cfg *reactivelimiter.Config, requestType string, logger log.Logger, registerer prometheus.Registerer) reactivelimiter.BlockingLimiter {

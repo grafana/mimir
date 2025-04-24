@@ -770,7 +770,7 @@ local filename = 'mimir-writes.json';
       $._config.show_reactive_limiter_panels,
       $.row('Instance Limits')
       .addPanel(
-        $.timeseriesPanel('Ingester per %s blocked requests' % $._config.per_instance_label) +
+        $.timeseriesPanel('Ingester per %s queued requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'sum by (%s) (cortex_ingester_reactive_limiter_blocked_requests{%s, request_type="push"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',

@@ -90,7 +90,7 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
+func (st *SampleTracker) collectCostAttribution(out chan<- prometheus.Metric) {
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
 	st.observedMtx.RLock()
@@ -317,4 +317,10 @@ func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
 		delete(st.observed, key)
 	}
 	st.observedMtx.Unlock()
+}
+
+func (st *SampleTracker) cardinality() (cardinality int, overflown bool) {
+	st.observedMtx.RLock()
+	defer st.observedMtx.RUnlock()
+	return len(st.observed), !st.overflowSince.IsZero()
 }

@@ -136,12 +136,15 @@ func AddDetails(err error, details string) error {
 // IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.
 func IsNonRetryableAPIError(err error) bool {
 	apiErr := &APIError{}
+	return errors.As(err, &apiErr) && IsNonRetryableAPIErrorType(apiErr.Type)
+}
+
+func IsNonRetryableAPIErrorType(typ Type) bool {
 	// Reasoning:
 	// TypeNone and TypeNotFound are not used anywhere in Mimir nor Prometheus;
 	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable, TypeUnavailable we presume a retry of the same request will fail in the same way.
 	// TypeCanceled means something wants us to stop.
 	// TypeExec, TypeBadData and TypeTooLargeEntry are caused by the input data.
 	// TypeInternal can be a 500 error e.g. from querier failing to contact store-gateway.
-
-	return errors.As(err, &apiErr) && apiErr.Type != TypeInternal
+	return typ != TypeInternal
 }

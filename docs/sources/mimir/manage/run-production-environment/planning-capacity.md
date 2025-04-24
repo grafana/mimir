@@ -8,6 +8,8 @@ title: Planning Grafana Mimir capacity
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Planning Grafana Mimir capacity
 
 The information that follows is an overview about the CPU, memory, and disk space that Grafana Mimir requires at scale.

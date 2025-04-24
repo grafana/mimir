@@ -93,12 +93,14 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds    *prometheus.CounterVec
-	querySeries     *prometheus.CounterVec
-	queryChunkBytes *prometheus.CounterVec
-	queryChunks     *prometheus.CounterVec
-	queryIndexBytes *prometheus.CounterVec
-	activeUsers     *util.ActiveUsersCleanupService
+	querySeconds                       *prometheus.CounterVec
+	querySeries                        *prometheus.CounterVec
+	queryChunkBytes                    *prometheus.CounterVec
+	queryChunks                        *prometheus.CounterVec
+	queryIndexBytes                    *prometheus.CounterVec
+	querySamplesProcessed              *prometheus.CounterVec
+	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
+	activeUsers                        *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -143,6 +145,15 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of TSDB index bytes fetched from store-gateway to execute a query.",
 		}, []string{"user"})
 
+		h.querySamplesProcessed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_total",
+			Help: "Number of samples processed to execute a query.",
+		}, []string{"user"})
+		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_cache_adjusted_total",
+			Help: "Number of samples processed to execute a query taking in account the original number of samples processed for parts of the query results looked up from the cache. Note, that this number is approximate.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
@@ -150,6 +161,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunkBytes.DeleteLabelValues(user)
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
+			h.querySamplesProcessed.DeleteLabelValues(user)
+			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -317,8 +330,10 @@ func (f *Handler) reportQueryStats(
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 	var stats *querier_stats.Stats
+	var samplesProcessedFromCache uint64
 	if details != nil {
 		stats = details.QuerierStats
+		samplesProcessedFromCache = details.SamplesProcessedFromCache
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
@@ -326,7 +341,8 @@ func (f *Handler) reportQueryStats(
 	numChunks := stats.LoadFetchedChunks()
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
-
+	samplesProcessed := stats.LoadSamplesProcessed()
+	samplesProcessedCacheAdjusted := samplesProcessed + samplesProcessedFromCache
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -334,7 +350,9 @@ func (f *Handler) reportQueryStats(
 		f.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
+		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
+		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -359,7 +377,8 @@ func (f *Handler) reportQueryStats(
 		estimatedSeriesCount, stats.GetEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
-		"samples_processed", stats.LoadSamplesProcessed(),
+		"samples_processed", samplesProcessed,
+		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {

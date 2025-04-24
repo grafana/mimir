@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/oklog/ulid/v2"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -64,37 +63,37 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 
 	// Create a few blocks to compact and upload them to the bucket.
 	metas := make([]*block.Meta, 0, numBlocks)
-	expectedSeries := make([]series, numBlocks)
+	expectedSeries := make([]test.Series, numBlocks)
 
 	for i := 0; i < numBlocks; i++ {
 		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					sample{10, 0, test.GenerateTestHistogram(1), nil},
-					sample{20, 0, test.GenerateTestHistogram(2), nil},
+					test.Sample{TS: 10, Hist: test.GenerateTestHistogram(1)},
+					test.Sample{TS: 20, Hist: test.GenerateTestHistogram(2)},
 				})),
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					sample{30, 0, test.GenerateTestHistogram(3), nil},
-					sample{40, 0, test.GenerateTestHistogram(4), nil},
+					test.Sample{TS: 30, Hist: test.GenerateTestHistogram(3)},
+					test.Sample{TS: 40, Hist: test.GenerateTestHistogram(4)},
 				})),
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					sample{50, 0, test.GenerateTestHistogram(5), nil},
-					sample{2*time.Hour.Milliseconds() - 1, 0, test.GenerateTestHistogram(6), nil},
+					test.Sample{TS: 50, Hist: test.GenerateTestHistogram(5)},
+					test.Sample{TS: 2*time.Hour.Milliseconds() - 1, Hist: test.GenerateTestHistogram(6)},
 				})),
 			},
 		}
 
 		// Populate expectedSeries for comparison w/ compactedSeries later.
-		var samples []sample
+		var samples []test.Sample
 		for _, chk := range spec.Chunks {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
 				ts, h := it.AtHistogram(nil)
-				samples = append(samples, sample{t: ts, h: h})
+				samples = append(samples, test.Sample{TS: ts, Hist: h})
 			}
 		}
-		expectedSeries[i] = series{lbls: spec.Labels, samples: samples}
+		expectedSeries[i] = test.Series{Labels: spec.Labels, Samples: samples}
 
 		meta, err := block.GenerateBlockFromSpec(inDir, []*block.SeriesSpec{&spec})
 		require.NoError(t, err)
@@ -120,7 +119,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		return nil
 	}))
 
-	var compactedSeries []series
+	var compactedSeries []test.Series
 
 	for _, blockID := range blocks {
 		require.NoError(t, block.Download(context.Background(), log.NewNopLogger(), bktClient, ulid.MustParseStrict(blockID), filepath.Join(outDir, blockID)))
@@ -144,7 +143,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			var lbls labels.ScratchBuilder
 			var chks []chunks.Meta
 
-			var samples []sample
+			var samples []test.Sample
 
 			require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
 
@@ -162,20 +161,14 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 						break
 					} else if valType == chunkenc.ValHistogram {
 						ts, h := it.AtHistogram(nil)
-						samples = append(samples, sample{
-							t: ts,
-							h: h,
-						})
+						samples = append(samples, test.Sample{TS: ts, Hist: h})
 					} else {
 						t.Error("Unexpected chunkenc.ValueType (we're expecting only histograms): " + string(valType))
 					}
 				}
 			}
 
-			compactedSeries = append(compactedSeries, series{
-				lbls:    lbls.Labels(),
-				samples: samples,
-			})
+			compactedSeries = append(compactedSeries, test.Series{Labels: lbls.Labels(), Samples: samples})
 		}
 
 		require.NoError(t, ixReader.Close())
@@ -202,45 +195,6 @@ func isMarkedForDeletionDueToCompaction(t *testing.T, blockPath string) bool {
 	require.NoError(t, json.Unmarshal(b, deletionMark))
 
 	return deletionMark.Details == "source of compacted block"
-}
-
-type series struct {
-	lbls    labels.Labels
-	samples []sample
-}
-
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func (s sample) T() int64                      { return s.t }
-func (s sample) F() float64                    { return s.v }
-func (s sample) H() *histogram.Histogram       { return s.h }
-func (s sample) FH() *histogram.FloatHistogram { return s.fh }
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	c := sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
-	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
-	}
-	return c
 }
 
 func must[T any](v T, err error) T {

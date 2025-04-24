@@ -356,6 +356,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_received_exemplars_total",
 		"cortex_distributor_received_metadata_total",
 		"cortex_distributor_deduped_samples_total",
+		"cortex_distributor_requests_in_total",
 		"cortex_distributor_samples_in_total",
 		"cortex_distributor_exemplars_in_total",
 		"cortex_distributor_metadata_in_total",
@@ -370,6 +371,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.receivedExemplars.WithLabelValues("userB").Add(10)
 	d.receivedMetadata.WithLabelValues("userA").Add(5)
 	d.receivedMetadata.WithLabelValues("userB").Add(10)
+	d.incomingRequests.WithLabelValues("userA", "2.0").Add(1)
 	d.incomingSamples.WithLabelValues("userA").Add(5)
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
 	d.incomingMetadata.WithLabelValues("userA").Add(5)
@@ -413,6 +415,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userA"} 5
 		cortex_distributor_received_exemplars_total{user="userB"} 10
+
+		# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
+        # TYPE cortex_distributor_requests_in_total counter
+        cortex_distributor_requests_in_total{user="userA",version="2.0"} 1
 
 		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
@@ -2384,7 +2390,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					// Initialize the cost attribution manager
 					var cam *costattribution.Manager
 					if caCase.customRegistry != nil {
-						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, prometheus.NewRegistry(), caCase.customRegistry)
 						require.NoError(b, err)
 					}
 
@@ -7481,7 +7487,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return fmt.Sprintf(`
 				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
-				cortex_distributor_requests_in_total{user="%s"} %d
+				cortex_distributor_requests_in_total{user="%s",version="1.0"} %d
 				# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
 				# TYPE cortex_distributor_samples_in_total counter
 				cortex_distributor_samples_in_total{user="%s"} %d

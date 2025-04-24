@@ -1623,10 +1623,9 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
-  # (experimental) Comma-separated list of function names to disable support
-  # for. Only applies if MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.disabled-functions
-  [disabled_functions: <string> | default = ""]
+  # (experimental) Use query planner when evaluating queries.
+  # CLI flag: -querier.mimir-query-engine.use-query-planning
+  [use_query_planning: <boolean> | default = false]
 ```
 
 ### frontend
@@ -3677,6 +3676,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
 
+# (experimental) List of queries to limit and duration to limit them for.
+# Example:
+#   The following configuration limits the query "rate(metric_counter[5m])" to
+#   running, at most, every minute.
+#   limited_queries:
+#       - allowed_frequency: 1m
+#         query: rate(metric_counter[5m])
+[limited_queries: <list of query (string) and allowed_frequency (duration)> | default = ]
+
 # (experimental) List of http requests to block.
 [blocked_requests: <blocked_requests_config...> | default = ]
 
@@ -3698,11 +3706,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.prom2-range-compat
 [prom2_range_compat: <boolean> | default = false]
 
-# (experimental) List of regular expression patterns matching instant queries.
-# Subqueries within those instant queries will be spun off as range queries to
-# optimize their performance.
-# CLI flag: -query-frontend.instant-queries-with-subquery-spin-off
-[instant_queries_with_subquery_spin_off: <string> | default = ""]
+# (experimental) Enable spinning off subqueries from instant queries as range
+# queries to optimize their performance.
+# CLI flag: -query-frontend.subquery-spin-off-enabled
+[subquery_spin_off_enabled: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4002,6 +4009,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # target_info metric on top of converting to job and instance labels.
 # CLI flag: -distributor.otel-keep-identifying-resource-attributes
 [otel_keep_identifying_resource_attributes: <boolean> | default = false]
+
+# (experimental) Whether to convert OTel explicit histograms into native
+# histograms with custom buckets.
+# CLI flag: -distributor.otel-convert-histograms-to-nhcb
+[otel_convert_histograms_to_nhcb: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.

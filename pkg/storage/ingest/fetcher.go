@@ -53,6 +53,9 @@ type fetcher interface {
 	// record and use the returned context when doing something that is common to all records.
 	PollFetches(context.Context) (kgo.Fetches, context.Context)
 
+	// Start starts the fetcher.
+	Start(ctx context.Context)
+
 	// Stop stops the fetcher.
 	Stop()
 
@@ -265,7 +268,9 @@ type concurrentFetchers struct {
 	orderedFetches chan fetchResult
 
 	lastReturnedOffset int64
-	startOffsets       *genericOffsetReader[int64]
+	startOffset        int64
+	startConcurrency   int
+	startOffsetsReader *genericOffsetReader[int64]
 
 	// fetchBackoffConfig is the config to use for the backoff in case of Fetch errors.
 	// We set it here so that tests can override it run faster.
@@ -334,7 +339,9 @@ func newConcurrentFetchers(
 		metrics:                 metrics,
 		minBytesWaitTime:        minBytesWaitTime,
 		lastReturnedOffset:      startOffset - 1,
-		startOffsets:            startOffsetsReader,
+		startOffset:             startOffset,
+		startConcurrency:        concurrency,
+		startOffsetsReader:      startOffsetsReader,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
 		tracer:                  recordsTracer(),
@@ -355,9 +362,6 @@ func newConcurrentFetchers(
 	}
 	f.topicID = topics[topic].ID
 
-	f.wg.Add(1)
-	go f.start(ctx, startOffset, concurrency)
-
 	return f, nil
 }
 
@@ -373,6 +377,12 @@ func (r *concurrentFetchers) BufferedBytes() int64 {
 
 func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
+}
+
+// Start implements fetcher.
+func (r *concurrentFetchers) Start(ctx context.Context) {
+	r.wg.Add(1)
+	go r.start(ctx, r.startOffset, r.startConcurrency)
 }
 
 // Stop implements fetcher.
@@ -675,7 +685,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 			// Run a single Fetch request.
 			if res := r.fetchSingle(ctx, w); res.Err != nil {
 				// We got an error. We handle it and then discard this fetch result content.
-				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
+				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsetsReader, r.client, attemptSpan)
 			} else {
 				// We increase the count of buffered records as soon as we fetch them.
 				r.bufferedFetchedRecords.Add(int64(len(res.Records)))

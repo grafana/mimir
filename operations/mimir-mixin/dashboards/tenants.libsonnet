@@ -283,9 +283,9 @@ local filename = 'mimir-tenants.json';
         local title = 'Distributor requests incoming rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          'sum(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]))'
+          'sum by (version) (label_replace(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]), "version", "1.0", "version", ""))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
-          'rate',
+          'rate (remote-write {{version}})',
         ) +
         { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(

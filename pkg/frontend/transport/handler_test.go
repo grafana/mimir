@@ -116,7 +116,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
@@ -134,7 +134,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
@@ -152,7 +152,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: api.ReadConsistencyStrong,
 		},
@@ -167,7 +167,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			downstreamResponse:      makeSuccessfulDownstreamResponse(),
 			expectedStatusCode:      200,
 			expectedParams:          url.Values{},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
 			expectedReadConsistency: "",
 		},
@@ -226,7 +226,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			},
 			downstreamResponse: makeSuccessfulDownstreamResponse(),
 			expectedActivity:   "user:12345 UA:test-user-agent req:GET /api/v1/read end_0=42&end_1=20&hints_1=%7B%22step_ms%22%3A1000%7D&matchers_0=%7B__name__%3D%22some_metric%22%2Cfoo%3D~%22.%2Abar.%2A%22%7D&matchers_1=%7B__name__%3D%22up%22%7D&start_0=0&start_1=10",
-			expectedMetrics:    5,
+			expectedMetrics:    6,
 			expectedStatusCode: 200,
 			expectedParams: url.Values{
 				"matchers_0": []string{"{__name__=\"some_metric\",foo=~\".*bar.*\"}"},
@@ -250,7 +250,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
@@ -266,7 +266,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
@@ -282,7 +282,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
@@ -300,7 +300,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
@@ -325,7 +325,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         5,
+			expectedMetrics:         6,
 			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
@@ -427,6 +427,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
 				"cortex_query_fetched_index_bytes_total",
+				"cortex_query_samples_processed_total",
 			)
 
 			assert.NoError(t, err)
@@ -530,7 +531,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				return nil, context.Canceled
 			},
 			expectedStatusCode:  StatusClientClosedRequest,
-			expectedMetrics:     5,
+			expectedMetrics:     7,
 			expectedStatusLog:   "canceled",
 			expectQueryParamLog: false,
 		},
@@ -545,7 +546,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				}, nil
 			},
 			expectedStatusCode:  http.StatusInternalServerError,
-			expectedMetrics:     5,
+			expectedMetrics:     7,
 			expectedStatusLog:   "failed",
 			expectQueryParamLog: false,
 		},
@@ -571,6 +572,8 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
 				"cortex_query_fetched_index_bytes_total",
+				"cortex_query_samples_processed_total",
+				"cortex_query_samples_processed_cache_adjusted_total",
 			)
 			require.NoError(t, err)
 

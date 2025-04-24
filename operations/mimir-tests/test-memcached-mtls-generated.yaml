@@ -913,6 +913,7 @@ spec:
         - -ruler-storage.cache.memcached.connect-timeout=1s
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.cache.memcached.tls-ca-path=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem
         - -ruler-storage.cache.memcached.tls-cert-path=/var/secrets/memcached-client-cert/memcached-client-cert.pem
         - -ruler-storage.cache.memcached.tls-enabled=true
@@ -920,7 +921,7 @@ spec:
         - -ruler-storage.cache.memcached.tls-server-name=memcached-cluster
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
-        - -ruler.max-rule-groups-per-tenant=70
+        - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules

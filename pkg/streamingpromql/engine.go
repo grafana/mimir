@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
+	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
@@ -28,7 +29,7 @@ func init() {
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (promql.QueryEngine, error) {
+func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, logger log.Logger) (*Engine, error) {
 	lookbackDelta := opts.CommonOpts.LookbackDelta
 	if lookbackDelta == 0 {
 		lookbackDelta = defaultLookbackDelta
@@ -50,15 +51,20 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
-	// We must sort DisabledFunctions as we use a binary search on it later.
-	slices.Sort(opts.Features.DisabledFunctions)
+	if opts.UseQueryPlanning && planner == nil {
+		return nil, errors.New("query planning enabled but no planner provided")
+	}
+
+	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	if activeQueryTracker == nil {
+		activeQueryTracker = &NoopQueryTracker{}
+	}
 
 	return &Engine{
 		lookbackDelta:            lookbackDelta,
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
-		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
-		features:                 opts.Features,
+		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
@@ -69,7 +75,9 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic: opts.Pedantic,
+		pedantic:         opts.Pedantic,
+		useQueryPlanning: opts.UseQueryPlanning,
+		planner:          planner,
 	}, nil
 }
 
@@ -78,7 +86,6 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
-	features           Features
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -86,13 +93,23 @@ type Engine struct {
 	estimatedPeakMemoryConsumption            prometheus.Histogram
 	queriesRejectedDueToPeakMemoryConsumption prometheus.Counter
 
-	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
-	// (indicating something was not returned to a pool).
+	// When operating in pedantic mode:
+	// - Query.Exec() will call Close() on the root operator a second time to ensure it behaves correctly if Close() is called multiple times.
+	// - Query.Close() will panic if memory consumption is > 0, which indicates something was not returned to a pool.
+	//
+	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
+
+	useQueryPlanning bool
+	planner          *QueryPlanner
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	return newQuery(ctx, q, opts, qs, ts, ts, 0, e)
+	if e.useQueryPlanning {
+		return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
+	}
+
+	return e.newQueryFromExpression(ctx, q, opts, qs, ts, ts, 0)
 }
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
@@ -104,7 +121,25 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
 	}
 
-	return newQuery(ctx, q, opts, qs, start, end, interval, e)
+	if e.useQueryPlanning {
+		return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))
+	}
+
+	return e.newQueryFromExpression(ctx, q, opts, qs, start, end, interval)
+}
+
+func (e *Engine) newQueryFromPlanner(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := e.Materialize(ctx, plan, q, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return query, nil
 }
 
 type QueryLimitsProvider interface {
@@ -127,4 +162,24 @@ type staticQueryLimitsProvider struct {
 
 func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
 	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+type NoopQueryTracker struct{}
+
+func (n *NoopQueryTracker) GetMaxConcurrent() int {
+	return math.MaxInt
+}
+
+func (n *NoopQueryTracker) Insert(_ context.Context, _ string) (int, error) {
+	// Nothing to do.
+	return 0, nil
+}
+
+func (n *NoopQueryTracker) Delete(_ int) {
+	// Nothing to do.
+}
+
+func (n *NoopQueryTracker) Close() error {
+	// Nothing to do.
+	return nil
 }

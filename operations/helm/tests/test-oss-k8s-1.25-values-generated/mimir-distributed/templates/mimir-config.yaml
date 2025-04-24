@@ -129,6 +129,7 @@ data:
         memcached:
           addresses: dnssrvnoa+test-oss-k8s-1.25-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
           max_item_size: 1048576
+          timeout: 500ms
       s3:
         access_key_id: grafana-mimir
         bucket_name: mimir-ruler

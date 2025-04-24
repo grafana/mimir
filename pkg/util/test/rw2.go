@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package rw2
+package test
 
 import (
-	"fmt"
-
 	"github.com/prometheus/prometheus/model/labels"
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
@@ -29,10 +27,12 @@ func AddFloatSeries(
 		req = NewWriteRequest()
 	}
 
+	symBuilder := NewSymbolTableBuilder(req.Symbols)
+
 	var labelsRefs []uint32
 	lbls.Range(func(l labels.Label) {
-		labelsRefs = append(labelsRefs, getSymbol(l.Name, &req.Symbols))
-		labelsRefs = append(labelsRefs, getSymbol(l.Value, &req.Symbols))
+		labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Name))
+		labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Value))
 	})
 
 	ts := promRW2.TimeSeries{
@@ -40,14 +40,14 @@ func AddFloatSeries(
 		Samples:    floats,
 		Metadata: promRW2.Metadata{
 			Type:    metricType,
-			HelpRef: getSymbol(help, &req.Symbols),
-			UnitRef: getSymbol(unit, &req.Symbols),
+			HelpRef: symBuilder.GetSymbol(help),
+			UnitRef: symBuilder.GetSymbol(unit),
 		},
 		Exemplars:        exemplars,
 		CreatedTimestamp: createdTimestamp,
 	}
-	fmt.Printf("KRAJO: AddFloatSeries: %v\n", ts.Metadata)
 	req.Timeseries = append(req.Timeseries, ts)
+	req.Symbols = symBuilder.GetSymbols()
 
 	return req
 }
@@ -66,10 +66,12 @@ func AddHistogramSeries(
 		req = NewWriteRequest()
 	}
 
+	symBuilder := NewSymbolTableBuilder(req.Symbols)
+
 	var labelsRefs []uint32
 	lbls.Range(func(l labels.Label) {
-		labelsRefs = append(labelsRefs, getSymbol(l.Name, &req.Symbols))
-		labelsRefs = append(labelsRefs, getSymbol(l.Value, &req.Symbols))
+		labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Name))
+		labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Value))
 	})
 
 	metricType := promRW2.Metadata_METRIC_TYPE_HISTOGRAM
@@ -82,23 +84,47 @@ func AddHistogramSeries(
 		Histograms: histograms,
 		Metadata: promRW2.Metadata{
 			Type:    metricType,
-			HelpRef: getSymbol(help, &req.Symbols),
-			UnitRef: getSymbol(unit, &req.Symbols),
+			HelpRef: symBuilder.GetSymbol(help),
+			UnitRef: symBuilder.GetSymbol(unit),
 		},
 		Exemplars:        exemplars,
 		CreatedTimestamp: createdTimestamp,
 	}
 	req.Timeseries = append(req.Timeseries, ts)
+	req.Symbols = symBuilder.GetSymbols()
 
 	return req
 }
 
-func getSymbol(sym string, symbols *[]string) uint32 {
-	for i, s := range *symbols {
-		if s == sym {
-			return uint32(i)
-		}
+type SymbolTableBuilder struct {
+	count   uint32
+	symbols map[string]uint32
+}
+
+func NewSymbolTableBuilder(symbols []string) *SymbolTableBuilder {
+	symbolsMap := make(map[string]uint32)
+	for i, sym := range symbols {
+		symbolsMap[sym] = uint32(i)
 	}
-	*symbols = append(*symbols, sym)
-	return uint32(len(*symbols) - 1)
+	return &SymbolTableBuilder{
+		count:   uint32(len(symbols)),
+		symbols: symbolsMap,
+	}
+}
+
+func (symbols *SymbolTableBuilder) GetSymbol(sym string) uint32 {
+	if i, ok := symbols.symbols[sym]; ok {
+		return i
+	}
+	symbols.symbols[sym] = symbols.count
+	symbols.count++
+	return symbols.count - 1
+}
+
+func (symbols *SymbolTableBuilder) GetSymbols() []string {
+	res := make([]string, len(symbols.symbols))
+	for sym, i := range symbols.symbols {
+		res[i] = sym
+	}
+	return res
 }

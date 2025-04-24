@@ -48,6 +48,9 @@ type PriorityLimiter interface {
 
 	// CanAcquirePermit returns whether it's currently possible to acquire a permit for the priority.
 	CanAcquirePermit(priority Priority) bool
+
+	// Reset resets the limiter to its initial limit.
+	Reset()
 }
 
 func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logger) PriorityLimiter {

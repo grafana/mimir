@@ -287,6 +287,7 @@ func (t *InstantQuery) Close() {
 	t.Param.Close()
 
 	types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
+	t.values = nil
 }
 
 type instantQueryGroup struct {

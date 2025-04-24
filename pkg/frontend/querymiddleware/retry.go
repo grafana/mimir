@@ -27,10 +27,9 @@ type retryMiddlewareMetrics struct {
 func newRetryMiddlewareMetrics(registerer prometheus.Registerer) prometheus.Observer {
 	return &retryMiddlewareMetrics{
 		retriesCount: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "query_frontend_retries",
-			Help:      "Number of times a request is retried.",
-			Buckets:   []float64{0, 1, 2, 3, 4, 5},
+			Name:    "cortex_query_frontend_retries",
+			Help:    "Number of times a request is retried.",
+			Buckets: []float64{0, 1, 2, 3, 4, 5},
 		}),
 	}
 }

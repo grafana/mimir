@@ -67,6 +67,7 @@ const (
 	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
 	QueryBlocked                ID = "query-blocked"
 	RequestBlocked              ID = "request-blocked"
+	QueryLimited                ID = "query-limited"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"
@@ -89,6 +90,11 @@ const (
 	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
+	// NHCB.
+	NativeHistogramCustomBucketsMismatch     ID = "native-histogram-custom-buckets-mismatch"
+	NativeHistogramCustomBucketsInvalid      ID = "native-histogram-custom-buckets-invalid"
+	NativeHistogramCustomBucketsInfinite     ID = "native-histogram-custom-buckets-infinite"
+	NativeHistogramCustomBucketsNotReducible ID = "native-histogram-custom-buckets-not-reducible"
 
 	// Alertmanager errors
 	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"

@@ -74,6 +74,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -231,6 +232,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
 			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
 			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
+			"query_frontend_client":            &c.Frontend.ClusterValidationConfig,
 			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
 			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
@@ -604,7 +606,7 @@ type CommonConfigInheriter interface {
 }
 
 // UnmarshalCommonYAML provides the implementation for UnmarshalYAML functions to unmarshal the CommonConfig.
-// A list of CommonConfig inheriters can be provided
+// A list of CommonConfig inheriters can be provided.
 func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) error {
 	for _, inh := range inheriters {
 		specificStorageLocations := specificLocationsUnmarshaler{}
@@ -760,6 +762,7 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
