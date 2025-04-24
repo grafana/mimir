@@ -72,7 +72,7 @@ type ParquetConverter struct {
 }
 
 func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, registerer)
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 
 	if err != nil {
@@ -85,7 +85,7 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 		IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
 	}
 
-	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, util_log.Logger, prometheus.DefaultRegisterer)
+	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, util_log.Logger, registerer)
 
 	c := &ParquetConverter{
 		Cfg:          cfg,
