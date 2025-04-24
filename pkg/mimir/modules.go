@@ -95,6 +95,7 @@ const (
 	MemberlistKV                     string = "memberlist-kv"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
+	ParquetConverter                 string = "parquet-converter"
 	Querier                          string = "querier"
 	QueryFrontend                    string = "query-frontend"
 	QueryFrontendCodec               string = "query-frontend-codec"
@@ -1219,6 +1220,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
+	mm.RegisterModule(ParquetConverter, t.initParquetConverter)
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
@@ -1264,6 +1266,7 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
+		ParquetConverter:                 {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},

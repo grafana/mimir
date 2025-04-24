@@ -137,7 +137,9 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 			c.ringSubservicesWatcher = services.NewFailureWatcher()
 			c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
 
-			err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
+			if err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices); err != nil {
+				return errors.Wrap(err, "unable to start parquet-converter subservices")
+			}
 		}
 	}
 
