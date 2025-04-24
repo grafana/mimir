@@ -383,6 +383,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance := 512     // Ingesters ring.
 				numTokensPerInstance++          // Distributors ring
 				numTokensPerInstance += 512     // Compactor ring.
+				numTokensPerInstance += 512     // Parquet-converter ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))

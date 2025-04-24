@@ -128,8 +128,6 @@ var (
 	// so we need to make sure the series registered by the individual queryables are unique.
 	querierEngine = prometheus.Labels{"engine": "querier"}
 	rulerEngine   = prometheus.Labels{"engine": "ruler"}
-
-	parquetStorage = prometheus.Labels{"storage": "parquet"}
 )
 
 func newDefaultConfig() *Config {

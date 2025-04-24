@@ -47,8 +47,12 @@ const (
 	batchSize                = 50000
 	batchStreamBufferSize    = 10
 	parquetFileName          = "block.parquet"
-	compactorRingKey         = "parquet-converter"
+	ringKey                  = "parquet-converter"
 	maxParquetIndexSizeLimit = 100
+)
+
+var (
+	RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
 type Config struct {
@@ -80,6 +84,10 @@ type ParquetConverter struct {
 	ring                   *ring.Ring
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
+
+	//Subservices manager.
+	subservices        *services.Manager
+	subservicesWatcher *services.FailureWatcher
 }
 
 func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -101,6 +109,11 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 
 	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, util_log.Logger, registerer)
 
+	manager, err := services.NewManager(loader)
+	if err != nil {
+		return nil, errors.Wrap(err, "register parquet-converter subservices")
+	}
+
 	c := &ParquetConverter{
 		Cfg:          cfg,
 		CompactorCfg: compactorCfg,
@@ -110,104 +123,136 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 		registerer:   registerer,
 		blockRanges:  compactorCfg.BlockRanges.ToMilliseconds(),
 		limits:       limits,
+
+		subservices:        manager,
+		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
-	c.Service = services.NewBasicService(c.starting, c.run, c.stopping)
+	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
 	return c, nil
 }
 
-func (c *ParquetConverter) stopping(err error) error {
-	return nil
-}
-
 func (c *ParquetConverter) starting(ctx context.Context) error {
-	if true /*c.Cfg.ShardingEnabled*/ { // TODO
-		kvStore, err := kv.NewClient(c.CompactorCfg.ShardingRing.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(c.registerer, "parquet-converter-lifecycler"), c.logger)
-		if err != nil {
-			return errors.Wrap(err, "failed to initialize parquet-converter' KV store")
-		}
-		lifecyclerCfg, err := c.CompactorCfg.ShardingRing.ToBasicLifecyclerConfig(c.logger)
-		if err != nil {
-			return errors.Wrap(err, "unable to create parquet-converter ring lifecycler config")
-		}
-		var delegate ring.BasicLifecyclerDelegate
-		delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
-		delegate = ring.NewLeaveOnStoppingDelegate(delegate, c.logger)
-		delegate = ring.NewAutoForgetDelegate(compactor.RingAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, c.logger)
+	var err error
 
-		c.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg,
-			"parquet-converter", compactorRingKey, kvStore, delegate, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-		if err != nil {
-			return errors.Wrap(err, "unable to initialize parquet-converter ring lifecycler")
-		}
-
-		c.ring, err = ring.New(c.CompactorCfg.ShardingRing.ToRingConfig(), "parquet-converter", compactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
-		if err != nil {
-			return errors.Wrap(err, "unable to initialize parquet-converter ring")
-		}
-
-		c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
-		if err == nil {
-			c.ringSubservicesWatcher = services.NewFailureWatcher()
-			c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
-
-			if err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices); err != nil {
-				return errors.Wrap(err, "unable to start parquet-converter subservices")
-			}
-		}
-	}
-
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, c.CompactorCfg.ShardingRing.WaitActiveInstanceTimeout)
-	defer cancel()
-	if err := ring.WaitInstanceState(ctxWithTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
-		level.Error(c.logger).Log("msg", "parquet-converter failed to become ACTIVE in the ring", "err", err)
+	// Initialize the parquet-converters ring if sharding is enabled.
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.CompactorCfg.ShardingRing, c.logger, c.registerer)
+	if err != nil {
 		return err
 	}
-	level.Info(c.logger).Log("msg", "parquet-converter is ACTIVE in the ring")
-	if err := c.loader.StartAsync(context.Background()); err != nil {
-		return errors.Wrap(err, "failed to start loader")
+
+	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
+	if err != nil {
+		return errors.Wrap(err, "unable to create parquet-converter ring dependencies")
 	}
 
-	if err := c.loader.AwaitRunning(ctx); err != nil {
-		return errors.Wrap(err, "failed to start loader")
+	c.ringSubservicesWatcher = services.NewFailureWatcher()
+	c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
+	if err = c.ringSubservices.StartAsync(ctx); err != nil {
+		return errors.Wrap(err, "unable to start parquet-converter ring dependencies")
 	}
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, c.CompactorCfg.ShardingRing.WaitActiveInstanceTimeout)
+	defer cancel()
+	if err = c.ringSubservices.AwaitHealthy(ctxTimeout); err != nil {
+		return errors.Wrap(err, "unable to start parquet-converter ring dependencies")
+	}
+
+	// If sharding is enabled we should wait until this instance is ACTIVE within the ring. This
+	// MUST be done before starting any other component depending on the users scanner, because
+	// the users scanner depends on the ring (to check whether a user belongs to this shard or not).
+	level.Info(c.logger).Log("msg", "waiting until parquet-converter is ACTIVE in the ring")
+	if err = ring.WaitInstanceState(ctxTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "parquet-converter failed to become ACTIVE in the ring")
+	}
+
+	level.Info(c.logger).Log("msg", "parquet-converter is ACTIVE in the ring")
+
+	// In the event of a cluster cold start or scale up of 2+ parquet-converter instances at the same
+	// time, we may end up in a situation where each new parquet-converter instance starts at a slightly
+	// different time and thus each one starts with a different state of the ring. It's better
+	// to just wait a short time for ring stability.
+	if c.CompactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
+		minWaiting := c.CompactorCfg.ShardingRing.WaitStabilityMinDuration
+		maxWaiting := c.CompactorCfg.ShardingRing.WaitStabilityMaxDuration
+
+		level.Info(c.logger).Log("msg", "waiting until parquet-converter ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
+		if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
+			level.Warn(c.logger).Log("msg", "parquet-converter ring topology is not stable after the max waiting time, proceeding anyway")
+		} else {
+			level.Info(c.logger).Log("msg", "parquet-converter ring topology is stable")
+		}
+	}
+
+	c.subservicesWatcher.WatchManager(c.subservices)
+
+	if err := services.StartManagerAndAwaitHealthy(context.Background(), c.subservices); err != nil {
+		return errors.Wrap(err, "unable to start parquet-converter subservices")
+	}
+
 	return nil
 }
 
-func (c *ParquetConverter) run(ctx context.Context) error {
+func newRingAndLifecycler(cfg compactor.RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
+	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "parquet-converter-lifecycler"), logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converters' KV store")
+	}
 
-	go func() {
-		updateIndexTicker := time.NewTicker(time.Second * 60)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-updateIndexTicker.C:
-				users, err := c.discoverUsers(ctx)
-				if err != nil {
-					level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
-					break
-				}
-				for _, u := range users {
-					if c.Cfg.allowedTenants.IsAllowed(u) {
-						if ok, _ := c.ownBlock(u); ok {
-							err := c.updateParquetIndex(ctx, u)
-							if err != nil {
-								level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
-							}
+	lifecyclerCfg, err := cfg.ToBasicLifecyclerConfig(logger)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to build parquet-converters' lifecycler config")
+	}
+
+	var delegate ring.BasicLifecyclerDelegate
+	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
+	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
+	delegate = ring.NewAutoForgetDelegate(compactor.RingAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
+
+	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "parquet-converter", ringKey, kvStore, delegate, logger, reg)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converter' lifecycler")
+	}
+
+	compactorsRing, err := ring.New(cfg.ToRingConfig(), "parquet-converter", ringKey, logger, reg)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converter' ring client")
+	}
+
+	return compactorsRing, compactorsLifecycler, nil
+}
+
+func (c *ParquetConverter) running(ctx context.Context) error {
+	updateIndexTicker := time.NewTicker(time.Second * 60)
+	convertBlocksTicker := time.NewTicker(time.Second * 10)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-c.ringSubservicesWatcher.Chan():
+			return errors.Wrap(err, "parquet-converter ring subservice failed")
+		case err := <-c.subservicesWatcher.Chan():
+			return errors.Wrap(err, "parquet-converter subservice failed")
+
+		case <-updateIndexTicker.C:
+			users, err := c.discoverUsers(ctx)
+			if err != nil {
+				level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
+				break
+			}
+			for _, u := range users {
+				if c.Cfg.allowedTenants.IsAllowed(u) {
+					if ok, _ := c.ownBlock(u); ok {
+						err := c.updateParquetIndex(ctx, u)
+						if err != nil {
+							level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
 						}
 					}
 				}
 			}
-		}
-	}()
 
-	t := time.NewTicker(time.Second * 10)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-t.C:
+		case <-convertBlocksTicker.C:
 			u, err := c.discoverUsers(ctx)
 			if err != nil {
 				level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
@@ -270,6 +315,16 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (c *ParquetConverter) stopping(_ error) error {
+	ctx := context.Background()
+
+	services.StopAndAwaitTerminated(ctx, c.loader) //nolint:errcheck
+	if c.ringSubservices != nil {
+		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
+	}
+	return nil
 }
 
 func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) error {
@@ -437,7 +492,7 @@ func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
 	_, _ = hasher.Write([]byte(userID))
 	userHash := hasher.Sum32()
 
-	rs, err := c.ring.Get(userHash, compactor.RingOp, nil, nil, nil)
+	rs, err := c.ring.Get(userHash, RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}
