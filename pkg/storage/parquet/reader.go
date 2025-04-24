@@ -246,13 +246,16 @@ func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool
 	span, _ := opentracing.StartSpanFromContext(ctx, "ParquetReader.ScanRows")
 	defer span.Finish()
 
-	mtx := sync.Mutex{}
-	results := make([][]int64, len(pr.f.RowGroups()))
-
 	ci, ok := pr.columnIndexMap[m.Name]
 	if !ok {
-		return results, nil
+		if m.Matches("") {
+			return rows, nil
+		}
+		return make([][]int64, len(pr.f.RowGroups())), nil
 	}
+
+	mtx := sync.Mutex{}
+	results := make([][]int64, len(pr.f.RowGroups()))
 
 	var pagesSkippedCounter prometheus.Counter
 	if pr.pagesSkippedPageIndex != nil {
