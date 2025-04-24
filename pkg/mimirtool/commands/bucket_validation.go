@@ -120,7 +120,7 @@ func (b *BucketValidationCommand) validate(_ *kingpin.ParseContext) error {
 	b.objectContent = "testData"
 	ctx := context.Background()
 
-	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, nil)
+	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", "", b.logger, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create the bucket client")
 	}
