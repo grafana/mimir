@@ -483,7 +483,7 @@ func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 			}
 			return 0, nil
 		}
-		return 0, apierror.New(apierror.TypeBadData, fmt.Sprintf("missing required parameter %q", p.timeType))
+		return 0, apierror.New(apierror.TypeBadData, fmt.Sprintf("missing required parameter %q", p.paramName))
 	}
 
 	var t int64
