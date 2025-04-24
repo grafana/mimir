@@ -71,7 +71,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	bkt, err := bucket.NewClient(ctx, cfg.BucketConfig, "metaconvert", logger, nil)
+	bkt, err := bucket.NewClient(ctx, cfg.BucketConfig, "metaconvert", "", logger, nil)
 	if err != nil {
 		exitWithMessage("Failed to create bucket client: %v", err)
 	}

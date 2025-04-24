@@ -631,7 +631,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			ctx := context.Background()
 
 			// Create TSDB blocks in the storage and get the expected blocks.
-			bucketClient, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+			bucketClient, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", "", logger, nil)
 			require.NoError(t, err)
 			expected := testData.setup(t, bucketClient)
 
@@ -722,7 +722,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 	reg := prometheus.NewPedanticRegistry()
 	ctx := context.Background()
 
-	bucketClient, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+	bucketClient, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", "", logger, nil)
 	require.NoError(t, err)
 
 	// Create a TSDB block in the storage.

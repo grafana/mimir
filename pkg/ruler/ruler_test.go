@@ -1076,7 +1076,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 			// Create a filesystem backed storage.
 			bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
-			bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+			bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", "", logger, nil)
 			require.NoError(t, err)
 
 			store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
@@ -1221,7 +1221,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 
 	// Create a filesystem backed storage.
 	bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
-	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, "", nil)
 	require.NoError(t, err)
 
 	store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
@@ -1370,7 +1370,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// Create a filesystem backed storage.
 	bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
-	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", "", logger, nil)
 	require.NoError(t, err)
 
 	store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
