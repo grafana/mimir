@@ -2101,6 +2101,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway. (default 5m0s)
   -overrides-exporter.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
+  -parquet-converter.disabled-tenants comma-separated-list-of-strings
+    	Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.
+  -parquet-converter.enabled-tenants comma-separated-list-of-strings
+    	Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
