@@ -1,6 +1,6 @@
 /*
  *
- * Copyright 2024 gRPC authors.
+ * Copyright 2022 gRPC authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,17 @@
  *
  */
 
-// Package internal contains functionality internal to the grpclog package.
-package internal
+package grpcsync
 
-// LoggerV2Impl is the logger used for the non-depth log functions.
-var LoggerV2Impl LoggerV2
+import (
+	"sync"
+)
 
-// DepthLoggerV2Impl is the logger used for the depth log functions.
-var DepthLoggerV2Impl DepthLoggerV2
+// OnceFunc returns a function wrapping f which ensures f is only executed
+// once even if the returned function is executed multiple times.
+func OnceFunc(f func()) func() {
+	var once sync.Once
+	return func() {
+		once.Do(f)
+	}
+}

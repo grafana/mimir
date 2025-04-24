@@ -22,7 +22,6 @@ package resolver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -30,7 +29,6 @@ import (
 
 	"google.golang.org/grpc/attributes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/experimental/stats"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/serviceconfig"
 )
@@ -176,8 +174,6 @@ type BuildOptions struct {
 	// Authority is the effective authority of the clientconn for which the
 	// resolver is built.
 	Authority string
-	// MetricsRecorder is the metrics recorder to do recording.
-	MetricsRecorder stats.MetricsRecorder
 }
 
 // An Endpoint is one network endpoint, or server, which may have multiple
@@ -241,8 +237,8 @@ type ClientConn interface {
 	// UpdateState can be omitted.
 	UpdateState(State) error
 	// ReportError notifies the ClientConn that the Resolver encountered an
-	// error. The ClientConn then forwards this error to the load balancing
-	// policy.
+	// error.  The ClientConn will notify the load balancer and begin calling
+	// ResolveNow on the Resolver with exponential backoff.
 	ReportError(error)
 	// NewAddress is called by resolver to notify ClientConn a new list
 	// of resolved addresses.
@@ -333,21 +329,4 @@ type AuthorityOverrider interface {
 	// given target. The implementation must generate it without blocking,
 	// typically in line, and must keep it unchanged.
 	OverrideAuthority(Target) string
-}
-
-// ValidateEndpoints validates endpoints from a petiole policy's perspective.
-// Petiole policies should call this before calling into their children. See
-// [gRPC A61](https://github.com/grpc/proposal/blob/master/A61-IPv4-IPv6-dualstack-backends.md)
-// for details.
-func ValidateEndpoints(endpoints []Endpoint) error {
-	if len(endpoints) == 0 {
-		return errors.New("endpoints list is empty")
-	}
-
-	for _, endpoint := range endpoints {
-		for range endpoint.Addresses {
-			return nil
-		}
-	}
-	return errors.New("endpoints list contains no addresses")
 }
