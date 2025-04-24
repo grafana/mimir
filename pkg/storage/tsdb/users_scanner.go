@@ -75,6 +75,27 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 	return users, markedForDeletion, nil
 }
 
+// ListDeletedUsers returns a list of users found in the storage that are marked for deletion.
+func (s *UsersScanner) ListDeletedUsers(ctx context.Context) (map[string]bool, error) {
+	users, err := ListUsers(ctx, s.bucketClient)
+	if err != nil {
+		return nil, err
+	}
+
+	markedForDeletion := make(map[string]bool)
+	for i := 0; i < len(users); i++ {
+		userID := users[i]
+		deletionMarkExists, err := TenantDeletionMarkExists(ctx, s.bucketClient, userID)
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "unable to check if user is marked for deletion", "user", userID, "err", err)
+		} else if deletionMarkExists {
+			markedForDeletion[userID] = true
+			continue
+		}
+	}
+	return markedForDeletion, nil
+}
+
 // ListUsers returns all user IDs found scanning the root of the bucket.
 func ListUsers(ctx context.Context, bucketClient objstore.Bucket) (users []string, err error) {
 	// Iterate the bucket to find all users in the bucket. Due to how the bucket listing

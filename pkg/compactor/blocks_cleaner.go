@@ -189,14 +189,29 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 
 	c.instrumentStartedCleanupRun(logger)
 
-	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
-	if err != nil {
-		c.instrumentFinishedCleanupRun(err, logger)
-		return
+	var (
+		users     []string
+		isDeleted map[string]bool
+		err       error
+	)
+
+	// Use a single set of tenants while BlocksCleaner is in Starting state. This ensures that a BlockCleaner updates
+	// the bucket-index.json for all tenants discovered on startup. When multiple BlockCleaners come up at once,
+	// tenants can be updated by multiple BlocksCleaners on startup. However, ownership will be delegated to a single
+	// BlocksCleaner instance once the sharding ring is stable.
+	if c.State() == services.Starting && len(c.lastOwnedUsers) > 0 {
+		isDeleted, _ = c.usersScanner.ListDeletedUsers(ctx)
+		users = c.lastOwnedUsers
+	} else {
+		users, isDeleted, err = c.refreshOwnedUsers(ctx)
+		if err != nil {
+			c.instrumentFinishedCleanupRun(err, logger)
+			return
+		}
 	}
 
 	doCleanup := func() {
-		err := c.cleanUsers(ctx, allUsers, isDeleted, logger)
+		err := c.cleanUsers(ctx, users, isDeleted, logger)
 		c.instrumentFinishedCleanupRun(err, logger)
 	}
 
@@ -278,10 +293,14 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 // cleanUsers must be concurrency-safe because some invocations may take longer and overlap with the next periodic invocation.
 func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDeleted map[string]bool, logger log.Logger) error {
 	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
-		own, err := c.ownUser(userID)
-		if err != nil || !own {
-			// This returns error only if err != nil. ForEachUser keeps working for other users.
-			return errors.Wrap(err, "check own user")
+
+		// Use a single set of tenants while BlocksCleaner is in Starting state.
+		if c.State() == services.Starting {
+			own, err := c.ownUser(userID)
+			if err != nil || !own {
+				// This returns error only if err != nil. ForEachUser keeps working for other users.
+				return errors.Wrap(err, "check own user")
+			}
 		}
 
 		userLogger := util_log.WithUserID(userID, logger)
