@@ -90,7 +90,7 @@ func TestNewClient(t *testing.T) {
 			require.NoError(t, err)
 
 			// Instance a new bucket client from the config
-			bucketClient, err := NewClient(context.Background(), cfg, "test", test.NewTestingLogger(t), nil)
+			bucketClient, err := NewClient(context.Background(), cfg, "test", "", test.NewTestingLogger(t), nil)
 			require.Equal(t, testData.expectedErr, err)
 
 			if testData.expectedErr == nil {
@@ -190,7 +190,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 			StoragePrefix: "prefix",
 		}
 
-		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
+		client, err := NewClient(ctx, cfg, "test", "", test.NewTestingLogger(t), nil)
 		require.NoError(t, err)
 
 		err = client.Upload(ctx, "file", strings.NewReader("content"))
@@ -219,7 +219,7 @@ func TestNewPrefixedBucketClient(t *testing.T) {
 			},
 		}
 
-		client, err := NewClient(ctx, cfg, "test", test.NewTestingLogger(t), nil)
+		client, err := NewClient(ctx, cfg, "test", "", test.NewTestingLogger(t), nil)
 		require.NoError(t, err)
 		err = client.Upload(ctx, "file", strings.NewReader("content"))
 		require.NoError(t, err)
