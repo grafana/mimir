@@ -264,10 +264,10 @@ func (q *parquetQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectH
 	// TODO (jesus.vazquez) This is a hack to remove a couple matchers that we are not sure about.
 	newMatchers := make([]*labels.Matcher, 0, 2)
 	for _, m := range matchers {
-		if strings.EqualFold(m.Name, "__aggregation__") {
+		if m.Name == "__aggregation__" {
 			continue
 		}
-		if strings.EqualFold(m.Name, sharding.ShardLabel) {
+		if m.Name == sharding.ShardLabel {
 			continue
 		}
 		newMatchers = append(newMatchers, m)
