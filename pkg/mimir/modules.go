@@ -1071,9 +1071,7 @@ func (t *Mimir) initParquetConverter() (serv services.Service, err error) {
 	// TODO The converter relies on the compactor sharding configuration for now
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	registerer := prometheus.WrapRegistererWith(parquetStorage, t.Registerer)
-
-	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, registerer, t.Overrides)
+	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
 		return
 	}
