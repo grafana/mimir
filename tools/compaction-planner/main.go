@@ -63,7 +63,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", "", logger, nil)
 	if err != nil {
 		log.Fatalln("failed to create bucket:", err)
 	}

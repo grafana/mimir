@@ -104,7 +104,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
+	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", "", logger, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create bucket", "err", err)
 		os.Exit(1)

@@ -35,7 +35,7 @@ func main() {
 	}
 
 	logger := gokitlog.NewNopLogger()
-	bkt, err := bucket.NewClient(context.Background(), cfg.bucket, "bucket", logger, nil)
+	bkt, err := bucket.NewClient(context.Background(), cfg.bucket, "bucket", "", logger, nil)
 	if err != nil {
 		log.Fatalln("failed to create bucket client:", err)
 	}
