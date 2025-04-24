@@ -435,18 +435,29 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) error {
-	templates := make([]string, 0, len(tmpls))
-	for _, tmpl := range tmpls {
-		templates = append(templates, tmpl.Template)
+	cfg := definition.GrafanaToUpstreamConfig(conf)
+
+	emailCfg := alertingReceivers.EmailSenderConfig{
+		AuthPassword:  string(cfg.Global.SMTPAuthPassword),
+		AuthUser:      cfg.Global.SMTPAuthUsername,
+		CertFile:      cfg.Global.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:  []string{"text/html"},
+		EhloIdentity:  cfg.Global.SMTPHello,
+		ExternalURL:   tmplExternalURL.String(),
+		FromAddress:   cfg.Global.SMTPFrom,
+		FromName:      "Grafana",
+		Host:          cfg.Global.SMTPSmarthost.String(),
+		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:    !cfg.Global.SMTPRequireTLS,
+		StaticHeaders: staticHeaders,
+		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 
-	tmpl, err := loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
+	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL)
 	if err != nil {
 		return err
 	}
-	tmpl.ExternalURL = tmplExternalURL
 
-	cfg := definition.GrafanaToUpstreamConfig(conf)
 	am.api.Update(&cfg, func(_ model.LabelSet) {})
 
 	// Ensure inhibitor is set before being called
@@ -469,28 +480,8 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		}
 		return d + waitFunc()
 	}
-
-	integrationsMap, err := am.buildIntegrationsMap(cfg.Global, conf.Receivers, tmpl, templates, staticHeaders)
-	if err != nil {
-		return err
-	}
-
 	am.emailCfgMtx.Lock()
-	am.emailCfg = alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(cfg.Global.SMTPAuthPassword),
-		AuthUser:      cfg.Global.SMTPAuthUsername,
-		CertFile:      cfg.Global.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  cfg.Global.SMTPHello,
-		ExternalURL:   tmpl.ExternalURL.String(),
-		FromAddress:   cfg.Global.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          cfg.Global.SMTPSmarthost.String(),
-		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !cfg.Global.SMTPRequireTLS,
-		StaticHeaders: staticHeaders,
-		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
-	}
+	am.emailCfg = emailCfg
 	am.emailCfgMtx.Unlock()
 
 	timeIntervals := make(map[string][]timeinterval.TimeInterval, len(conf.MuteTimeIntervals)+len(conf.TimeIntervals))
@@ -619,27 +610,18 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*definition.PostableApiReceiver, tmpl *template.Template, tmpls []string, staticHeaders map[string]string) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(gCfg.SMTPAuthPassword),
-		AuthUser:      gCfg.SMTPAuthUsername,
-		CertFile:      gCfg.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  gCfg.SMTPHello,
-		ExternalURL:   tmpl.ExternalURL.String(),
-		FromAddress:   gCfg.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          gCfg.SMTPSmarthost.String(),
-		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !gCfg.SMTPRequireTLS,
-		StaticHeaders: staticHeaders,
-		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
+	// Cached templates.
+	var tmpl *template.Template
+	var gTmpl *template.Template
+	templates := make([]string, 0, len(tmpls))
+	for _, t := range tmpls {
+		templates = append(templates, t.Template)
 	}
 
-	var gTmpl *template.Template
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
@@ -647,14 +629,21 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		if rcv.Type() == definition.GrafanaReceiverType {
 			// Create the Grafana template struct if it has not already been created.
 			if gTmpl == nil {
-				gTmpl, err = alertingTemplates.FromContent(tmpls, WithCustomFunctions(am.cfg.UserID))
+				gTmpl, err = alertingTemplates.FromContent(templates, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
 					return nil, err
 				}
-				gTmpl.ExternalURL = tmpl.ExternalURL
+				gTmpl.ExternalURL = tmplExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier)
 		} else {
+			if tmpl == nil {
+				tmpl, err = loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
+				if err != nil {
+					return nil, err
+				}
+				tmpl.ExternalURL = tmplExternalURL
+			}
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
 		}
 		if err != nil {
@@ -664,7 +653,34 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		integrationsMap[rcv.Name] = integrations
 	}
 
+	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any
+	// templates, we load our best guess as to the appropriate one (Grafana vs Cloud) here to ensure the definitions
+	// are valid.
+	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
+	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
+	if tmpl == nil && gTmpl == nil {
+		_, err := am.loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return integrationsMap, nil
+}
+
+// isGrafanaTenant returns true if the Alertmanager is a Grafana tenant.
+func (am *Alertmanager) isGrafanaTenant() bool {
+	return am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(am.cfg.UserID, am.cfg.GrafanaAlertmanagerTenantSuffix)
+}
+
+// loadTemplates creates a template.Template from several in-memory default template files and user-provided templates.
+// If the AM is a Grafana tenant, it uses the alertingTemplates package to load templates as that includes additional
+// default templates and functions.
+func (am *Alertmanager) loadTemplates(tmpls []string, options ...template.Option) (*template.Template, error) {
+	if am.isGrafanaTenant() {
+		return alertingTemplates.FromContent(tmpls, options...)
+	}
+	return loadTemplates(tmpls, options...)
 }
 
 func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
