@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -332,8 +331,6 @@ func (c *parallelStoragePusher) idealShardsFor(userID string) int {
 	c.numActiveShards += r
 	return r
 }
-
-type labelsHashFunc func(labels.Labels) uint64
 
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
