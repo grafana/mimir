@@ -62,6 +62,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
@@ -132,6 +133,7 @@ type Config struct {
 	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor             compactor.Config                `yaml:"compactor"`
+	ParquetConverter      parquetconverter.Config         `yaml:"parquet_converter"`
 	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
@@ -770,6 +772,7 @@ type Mimir struct {
 	RulerStorage                     rulestore.RuleStore
 	Alertmanager                     *alertmanager.MultitenantAlertmanager
 	Compactor                        *compactor.MultitenantCompactor
+	ParquetConverter                 *parquetconverter.ParquetConverter
 	StoreGateway                     *storegateway.StoreGateway
 	MemberlistKV                     *memberlist.KVInitService
 	ActivityTracker                  *activitytracker.ActivityTracker
