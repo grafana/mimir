@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -297,8 +297,6 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 	if p := c.pushers[userID+"|"+requestSource.String()]; p != nil {
 		return p
 	}
-	// Use the same hashing function that's used for stripes in the TSDB. That way we make use of the low-contention property of stripes.
-	hashLabels := labels.Labels.Hash
 
 	idealShards := c.idealShardsFor(userID)
 	var p PusherCloser
@@ -310,7 +308,7 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 		// So we choose the lower overhead and simpler sequential pusher.
 		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
 	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher, hashLabels)
+		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
 	}
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
@@ -334,16 +332,13 @@ func (c *parallelStoragePusher) idealShardsFor(userID string) int {
 	return r
 }
 
-type labelsHashFunc func(labels.Labels) uint64
-
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
 type parallelStorageShards struct {
 	metrics      *storagePusherMetrics
 	errorHandler *pushErrorHandler
 
-	pusher     Pusher
-	hashLabels labelsHashFunc
+	pusher Pusher
 
 	numShards int
 	batchSize int
@@ -361,12 +356,11 @@ type flushableWriteRequest struct {
 }
 
 // newParallelStorageShards creates a new parallelStorageShards instance.
-func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher, hashLabels labelsHashFunc) *parallelStorageShards {
+func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushErrorHandler, numShards int, batchSize int, capacity int, pusher Pusher) *parallelStorageShards {
 	p := &parallelStorageShards{
 		numShards:    numShards,
 		pusher:       pusher,
 		errorHandler: errorHandler,
-		hashLabels:   hashLabels,
 		capacity:     capacity,
 		metrics:      metrics,
 		batchSize:    batchSize,
@@ -378,18 +372,30 @@ func newParallelStorageShards(metrics *storagePusherMetrics, errorHandler *pushE
 	return p
 }
 
+// Compute a hash from LabelAdapters, avoiding the cost of conversion to Labels.
+// There is no particular benefit to match the hash function used by TSDB;
+// its main stripes are split by unique ID which we don't yet know.
+func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
+	const sep = '\xff'
+	b = b[:0]
+	for _, v := range ls {
+		b = append(b, v.Name...)
+		b = append(b, sep)
+		b = append(b, v.Value...)
+		b = append(b, sep)
+	}
+	return b, xxhash.Sum64(b)
+}
+
 // PushToStorage hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
 // PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorage aborts the request if it encounters an error.
 func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
-	var (
-		builder         labels.ScratchBuilder
-		nonCopiedLabels labels.Labels
-	)
-
+	hashBuf := make([]byte, 0, 1024)
 	for _, ts := range request.Timeseries {
-		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		shard := p.hashLabels(nonCopiedLabels) % uint64(p.numShards)
+		var shard uint64
+		hashBuf, shard = labelAdaptersHash(hashBuf, ts.Labels)
+		shard = shard % uint64(p.numShards)
 
 		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)

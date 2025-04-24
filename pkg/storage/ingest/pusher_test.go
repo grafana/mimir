@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -840,7 +839,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newStoragePusherMetrics(reg)
 			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
-			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
+			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher)
 
 			upstreamPushErrsCount := 0
 			for i, req := range tc.expectedUpstreamPushes {
