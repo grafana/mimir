@@ -90,6 +90,7 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 		return nil, err
 	}
 	indexLoaderConfig := bucketindex.LoaderConfig{
+		MetricsPrefix:         "parquet_converter",
 		CheckInterval:         time.Minute,
 		UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
 		UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,

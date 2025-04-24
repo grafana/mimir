@@ -34,10 +34,10 @@ func BlockToParquetRows(
 	defer b.Close()
 
 	idx, err := b.Index()
-	defer idx.Close()
 	if err != nil {
 		return nil, nil, 0, err
 	}
+	defer idx.Close()
 
 	cReader, err := b.Chunks()
 	if err != nil {
