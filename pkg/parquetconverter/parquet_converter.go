@@ -8,9 +8,12 @@ package parquetconverter
 import (
 	"context"
 	"flag"
+	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -19,6 +22,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
@@ -169,6 +173,21 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-updateIndexTicker.C:
+				users, err := c.discoverUsers(ctx)
+				if err != nil {
+					level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
+					break
+				}
+				for _, u := range users {
+					if c.Cfg.allowedTenants.IsAllowed(u) {
+						if ok, _ := c.ownBlock(u); ok {
+							err := c.updateParquetIndex(ctx, u)
+							if err != nil {
+								level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
+							}
+						}
+					}
+				}
 			}
 		}
 	}()
@@ -181,6 +200,126 @@ func (c *ParquetConverter) run(ctx context.Context) error {
 		case <-t.C:
 		}
 	}
+}
+
+func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) error {
+	level.Info(util_log.Logger).Log("msg", "Updating index", "user", u)
+	uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
+	deleted := map[ulid.ULID]struct{}{}
+	idx, err := c.loader.GetIndex(ctx, u)
+
+	if err != nil {
+		return err
+	}
+
+	for _, b := range idx.BlockDeletionMarks {
+		deleted[b.ID] = struct{}{}
+	}
+
+	pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, util_log.Logger)
+	if err != nil {
+		return errors.Wrap(err, "failed to read parquet index")
+	}
+
+	for _, b := range idx.Blocks {
+		if _, ok := deleted[b.ID]; ok {
+			continue
+		}
+
+		if _, ok := pIdx.Blocks[b.ID]; ok {
+			continue
+		}
+
+		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
+		if err != nil {
+			level.Error(util_log.Logger).Log("msg", "failed to check if file exists", "err", err)
+			continue
+		}
+
+		if marker.Version == CurrentVersion {
+			// m, err := block.DownloadMeta(ctx, util_log.Logger, uBucket, b.ID)
+			// if err != nil {
+			// 	level.Error(util_log.Logger).Log("msg", "failed to download block", "block", b.ID, "err", err)
+			// }
+			extensions := bucketindex.Extensions{}
+			// TODO
+			// _, err = metadata.ConvertExtensions(m.Thanos.Extensions, &extensions)
+			// if err != nil {
+			// 	level.Error(util_log.Logger).Log("msg", "failed to convert extensions", "err", err)
+			// }
+			pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b, Extensions: extensions}
+		}
+	}
+	c.removeDeletedBlocks(idx, pIdx)
+	//// Remove block from bucket index if marker version is outdated.
+	//c.removeOutdatedBlocks(ctx, uBucket, pIdx)
+	return bucketindex.WriteParquetIndex(ctx, uBucket, pIdx)
+}
+
+func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) {
+	blocks := map[ulid.ULID]struct{}{}
+	deleted := map[ulid.ULID]struct{}{}
+
+	for _, b := range idx.BlockDeletionMarks {
+		deleted[b.ID] = struct{}{}
+	}
+
+	for _, b := range idx.Blocks {
+		if _, ok := deleted[b.ID]; !ok {
+			blocks[b.ID] = struct{}{}
+		}
+	}
+
+	for _, b := range pIdx.Blocks {
+		if _, ok := blocks[b.ID]; !ok {
+			delete(pIdx.Blocks, b.ID)
+		}
+	}
+}
+
+// TODO this function sets off the linter as it is not used yet
+//func (c *ParquetConverter) removeOutdatedBlocks(ctx context.Context, uBucket objstore.InstrumentedBucket, pIdx *bucketindex.ParquetIndex) {
+//	for _, b := range pIdx.Blocks {
+//		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
+//		if err != nil {
+//			level.Error(util_log.Logger).Log("msg", "failed to check if file exists", "err", err)
+//			continue
+//		}
+//
+//		if marker.Version < CurrentVersion {
+//			delete(pIdx.Blocks, b.ID)
+//		}
+//	}
+//}
+
+func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
+	var users []string
+
+	err := c.bucket.Iter(ctx, "", func(entry string) error {
+		u := strings.TrimSuffix(entry, "/")
+		users = append(users, u)
+		return nil
+	})
+
+	return users, err
+}
+
+func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
+	// Hash the user ID.
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(userID))
+	userHash := hasher.Sum32()
+
+	rs, err := c.ring.Get(userHash, compactor.RingOp, nil, nil, nil)
+	if err != nil {
+		return false, err
+	}
+
+	if len(rs.Instances) != 1 {
+		return false, fmt.Errorf("unexpected number of parquet-converter in the shard (expected 1, got %d)", len(rs.Instances))
+	}
+
+	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
 }
 
 type Uploader interface {
