@@ -324,7 +324,12 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	}
 
 	// This resolves the start() and end() used with the @ modifier.
-	expr = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	if err != nil {
+		// We are being pessimistic in such cases.
+		level.Warn(logger).Log("msg", "failed to preprocess query, considering @ modifier as not cachable", "query", query, "err", err)
+		return false
+	}
 
 	end := r.GetEnd()
 	cachable := true
