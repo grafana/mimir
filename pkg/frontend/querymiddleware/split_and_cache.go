@@ -31,9 +31,11 @@ import (
 )
 
 const (
-	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
-	notCachableReasonTooNew               = "too-new"
-	notCachableReasonModifiersNotCachable = "has-modifiers"
+	notCachableReasonUnalignedTimeRange                   = "unaligned-time-range"
+	notCachableReasonTooNew                               = "too-new"
+	notCachableReasonModifiersNotCachable                 = "has-modifiers"
+	notCachableReasonModifiersNotCachableFailedParse      = "has-modifiers-failed-parse"
+	notCachableReasonModifiersNotCachableFailedPreprocess = "has-modifiers-failed-preprocess"
 )
 
 var (

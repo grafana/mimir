@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
@@ -279,8 +278,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 		return false, notCachableReasonTooNew
 	}
 
-	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
-		return false, notCachableReasonModifiersNotCachable
+	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
+		return false, reason
 	}
 
 	return true, ""
@@ -303,8 +302,9 @@ var (
 	errNegativeOffset     = errors.New("negative offset")
 )
 
-// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
-func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) bool {
+// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache,
+// false otherwise. The reason for not being safe to cache is returned as a string.
+func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) (bool, string) {
 	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -314,21 +314,19 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	//   3. When query contains a negative offset.
 	query := r.GetQuery()
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
-		return true
+		return true, ""
 	}
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
-		level.Warn(logger).Log("msg", "failed to parse query, considering @ modifier as not cachable", "query", query, "err", err)
-		return false
+		return false, notCachableReasonModifiersNotCachableFailedParse
 	}
 
 	// This resolves the start() and end() used with the @ modifier.
 	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
 	if err != nil {
 		// We are being pessimistic in such cases.
-		level.Warn(logger).Log("msg", "failed to preprocess query, considering @ modifier as not cachable", "query", query, "err", err)
-		return false
+		return false, notCachableReasonModifiersNotCachableFailedPreprocess
 	}
 
 	end := r.GetEnd()
@@ -355,7 +353,10 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 		return nil
 	})
 
-	return cachable
+	if !cachable {
+		return false, notCachableReasonModifiersNotCachable
+	}
+	return true, ""
 }
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
