@@ -1044,7 +1044,14 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, err
 	}
 
-	return &RulesResponse{Groups: groupDescs}, nil
+	resp := &RulesResponse{
+		Groups: groupDescs,
+	}
+	if len(groupDescs) == 0 && r.limits.RulerRecordingRulesEvaluationEnabled(userID) {
+
+	}
+
+	return resp, nil
 }
 
 type StringFilterSet map[string]struct{}
