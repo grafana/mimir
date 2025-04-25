@@ -4329,12 +4329,21 @@ func (v *FetchRequest) AppendTo(dst []byte) []byte {
 						dst = kbin.AppendInt32(dst, v)
 					}
 					if isFlexible {
-						dst = kbin.AppendUvarint(dst, 1+uint32(v.UnknownTags.Len()))
-						{
-							v := v.ReplicaDirectoryID
-							dst = kbin.AppendUvarint(dst, 0)
-							dst = kbin.AppendUvarint(dst, 16)
-							dst = kbin.AppendUuid(dst, v)
+						var toEncode []uint32
+						if v.ReplicaDirectoryID != [16]byte{} {
+							toEncode = append(toEncode, 0)
+						}
+						dst = kbin.AppendUvarint(dst, uint32(len(toEncode)+v.UnknownTags.Len()))
+						for _, tag := range toEncode {
+							switch tag {
+							case 0:
+								{
+									v := v.ReplicaDirectoryID
+									dst = kbin.AppendUvarint(dst, 0)
+									dst = kbin.AppendUvarint(dst, 16)
+									dst = kbin.AppendUuid(dst, v)
+								}
+							}
 						}
 						dst = v.UnknownTags.AppendEach(dst)
 					}
@@ -15707,7 +15716,7 @@ type DescribeGroupsResponseGroup struct {
 	ErrorCode int16
 
 	// ErrorMessage is an optional message with more detail for the error code.
-	ErrorMessage *string
+	ErrorMessage *string // v6+
 
 	// Group is the id of this group.
 	Group string
@@ -15802,7 +15811,7 @@ func (v *DescribeGroupsResponse) AppendTo(dst []byte) []byte {
 				v := v.ErrorCode
 				dst = kbin.AppendInt16(dst, v)
 			}
-			{
+			if version >= 6 {
 				v := v.ErrorMessage
 				if isFlexible {
 					dst = kbin.AppendCompactNullableString(dst, v)
@@ -15966,7 +15975,7 @@ func (v *DescribeGroupsResponse) readFrom(src []byte, unsafe bool) error {
 				v := b.Int16()
 				s.ErrorCode = v
 			}
-			{
+			if version >= 6 {
 				var v *string
 				if isFlexible {
 					if unsafe {
@@ -42175,12 +42184,21 @@ func (v *FetchSnapshotRequest) AppendTo(dst []byte) []byte {
 						dst = kbin.AppendInt64(dst, v)
 					}
 					if isFlexible {
-						dst = kbin.AppendUvarint(dst, 1+uint32(v.UnknownTags.Len()))
-						{
-							v := v.ReplicaDirectoryID
-							dst = kbin.AppendUvarint(dst, 0)
-							dst = kbin.AppendUvarint(dst, 16)
-							dst = kbin.AppendUuid(dst, v)
+						var toEncode []uint32
+						if v.ReplicaDirectoryID != [16]byte{} {
+							toEncode = append(toEncode, 0)
+						}
+						dst = kbin.AppendUvarint(dst, uint32(len(toEncode)+v.UnknownTags.Len()))
+						for _, tag := range toEncode {
+							switch tag {
+							case 0:
+								{
+									v := v.ReplicaDirectoryID
+									dst = kbin.AppendUvarint(dst, 0)
+									dst = kbin.AppendUvarint(dst, 16)
+									dst = kbin.AppendUuid(dst, v)
+								}
+							}
 						}
 						dst = v.UnknownTags.AppendEach(dst)
 					}
@@ -46663,11 +46681,12 @@ type ConsumerGroupHeartbeatRequest struct {
 	UnknownTags Tags
 }
 
-func (*ConsumerGroupHeartbeatRequest) Key() int16                 { return 68 }
-func (*ConsumerGroupHeartbeatRequest) MaxVersion() int16          { return 1 }
-func (v *ConsumerGroupHeartbeatRequest) SetVersion(version int16) { v.Version = version }
-func (v *ConsumerGroupHeartbeatRequest) GetVersion() int16        { return v.Version }
-func (v *ConsumerGroupHeartbeatRequest) IsFlexible() bool         { return v.Version >= 0 }
+func (*ConsumerGroupHeartbeatRequest) Key() int16                   { return 68 }
+func (*ConsumerGroupHeartbeatRequest) MaxVersion() int16            { return 1 }
+func (v *ConsumerGroupHeartbeatRequest) SetVersion(version int16)   { v.Version = version }
+func (v *ConsumerGroupHeartbeatRequest) GetVersion() int16          { return v.Version }
+func (v *ConsumerGroupHeartbeatRequest) IsFlexible() bool           { return v.Version >= 0 }
+func (v *ConsumerGroupHeartbeatRequest) IsGroupCoordinatorRequest() {}
 func (v *ConsumerGroupHeartbeatRequest) ResponseKind() Response {
 	r := &ConsumerGroupHeartbeatResponse{Version: v.Version}
 	r.Default()
