@@ -25,12 +25,16 @@ var encoderOptions = []zstd.EOption{
 	zstd.WithWindowSize(512 * 1024),
 	// The default zstd compression level is 2
 	zstd.WithEncoderLevel(zstd.SpeedDefault),
+	// Enable low memory mode
+	zstd.WithLowerEncoderMem(true),
 }
 var decoderOptions = []zstd.DOption{
 	// If the decoder concurrency level is not 1, we would need to call
 	// Close() to avoid leaking resources when the object is released
 	// from compressor.decoderPool.
 	zstd.WithDecoderConcurrency(1),
+	// Enable low memory mode
+	zstd.WithDecoderLowmem(true),
 }
 
 type compressor struct {
