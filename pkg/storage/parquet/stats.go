@@ -6,6 +6,7 @@
 package parquet
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,7 +45,7 @@ func setToStrings(m map[string]struct{}) string {
 	for k := range m {
 		res = append(res, k)
 	}
-	sort.Strings(res)
+	slices.Sort(res)
 	return strings.Join(res, ",")
 }
 

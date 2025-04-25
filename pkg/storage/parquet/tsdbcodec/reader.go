@@ -22,7 +22,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/parquet"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 func BlockToParquetRowsStream(
@@ -143,7 +142,7 @@ func BlockToParquetRowsStream(
 
 			err = eg.Wait()
 			if err != nil {
-				level.Error(util_log.Logger).Log("msg", "failed to process chunk", "err", err)
+				level.Error(logger).Log("msg", "failed to process chunk", "err", err)
 				return
 			}
 		}
