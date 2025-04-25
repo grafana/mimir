@@ -232,7 +232,7 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logg
 	cfg.RuntimeConfig.Loader = loader.load
 
 	// AlertmanagerURL and Notifier sub-options are moving from a global config to a per-tenant config.
-	// We need to preserve the option in the ruler yaml for two releases.
+	// We need to preserve the option in the ruler yaml for at least two releases (that is, at least Mimir 3.1).
 	// If the ruler config is configured by the user, map it to its new place in the default limits.
 	if cfg.Ruler.DeprecatedAlertmanagerURL != "" {
 		cfg.LimitsConfig.RulerAlertmanagerClientConfig.AlertmanagerURL = cfg.Ruler.DeprecatedAlertmanagerURL
