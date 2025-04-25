@@ -644,6 +644,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 			}
 			if !lastModified.IsZero() {
 				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID, "last modified", lastModified)
+				// TODO: This will log more often...
 				if err := block.MarkForDeletion(ctx, userLogger, userBucket, blockID, "stale partial block", c.partialBlocksMarkedForDeletion); err != nil {
 					level.Warn(userLogger).Log("msg", "failed to mark partial block for deletion", "block", blockID, "err", err)
 				}
