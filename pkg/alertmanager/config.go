@@ -37,6 +37,11 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		if err != nil {
 			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
+
+		// If configured, use the SMTP From address sent by Grafana.
+		if gCfg.SmtpFrom != "" {
+			cfg.Global.SMTPFrom = gCfg.SmtpFrom
+		}
 		amCfg.AlertmanagerConfig.Global = cfg.Global
 	}
 
