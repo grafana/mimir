@@ -84,3 +84,19 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 	}
 	return records, nil
 }
+
+func DeserializeRecordContent(content []byte, wr *mimirpb.WriteRequest, version int) error {
+	switch version {
+	case 0:
+		// V0 is body-comptaible with V1.
+		fallthrough
+	case 1:
+		return deserializeRecordContentV1(content, wr)
+	default:
+		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, LatestRecordVersion)
+	}
+}
+
+func deserializeRecordContentV1(content []byte, wr *mimirpb.WriteRequest) error {
+	return wr.Unmarshal(content)
+}
