@@ -369,6 +369,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 		require.Equal(t, 0, dropped)
 		if convertHistogramsToNHCB {
 			ts := make([]mimirpb.PreallocTimeseries, 0, len(mimirTS))
+			// Filter out target_info series
 			for i := range mimirTS {
 				var metricName string
 				for _, lbl := range mimirTS[i].Labels {
@@ -386,7 +387,9 @@ func TestConvertOTelHistograms(t *testing.T) {
 			require.Len(t, ts[0].Histograms, 1)
 		} else {
 			require.Len(t, mimirTS, 6)
-			require.Len(t, mimirTS[0].Histograms, 0)
+			for i := range mimirTS {
+				require.Len(t, mimirTS[i].Histograms, 0)
+			}
 		}
 	}
 }
