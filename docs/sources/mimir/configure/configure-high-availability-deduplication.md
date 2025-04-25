@@ -36,7 +36,7 @@ For example, with the default scrape period of 15 seconds, use a rate time-inter
 
 ## Distributor high-availability (HA) tracker
 
-The [distributor]({{< relref "../references/architecture/components/distributor" >}}) includes a high-availability (HA) tracker.
+The [distributor](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/) includes a high-availability (HA) tracker.
 
 The HA tracker deduplicates incoming samples based on a cluster and replica label expected on each incoming series.
 The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant.
@@ -151,4 +151,4 @@ distributor:
       [consul | etcd: <config>]
 ```
 
-For more information, see [distributor]({{< relref "./configuration-parameters#distributor" >}}). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.
+For more information, see [distributor](../configuration-parameters/#distributor). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.

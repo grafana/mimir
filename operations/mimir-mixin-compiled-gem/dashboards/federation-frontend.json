@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -129,6 +130,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
                                     "mode": "fixed"
                                  }
                               }
@@ -1096,6 +1112,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -1361,7 +1392,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -1428,16 +1460,17 @@
                "useTags": false
             },
             {
-               "allValue": null,
+               "allValue": ".+",
                "current": {
-                  "text": "prod",
-                  "value": "prod"
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
                },
                "datasource": "$datasource",
                "hide": 2,
                "includeAll": true,
                "label": "remote_cluster",
-               "multi": false,
+               "multi": true,
                "name": "remote_cluster",
                "options": [ ],
                "query": "label_values(cortex_federation_frontend_cluster_remote_latency_seconds, remote_cluster)",
@@ -1482,7 +1515,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Federation-frontend",
+      "title": "GEM / Federation-frontend",
       "uid": "e260295ba339cb717fc5acf22bd92952",
       "version": 0
    }

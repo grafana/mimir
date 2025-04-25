@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go/ext"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -58,7 +57,7 @@ func awaitQueryFrontendServiceRunning(ctx context.Context, service services.Serv
 	defer cancel()
 
 	if err := service.AwaitRunning(ctx); err != nil {
-		ext.Error.Set(spanLog.Span, true)
+		spanLog.SetError()
 
 		if ctx.Err() != nil {
 			level.Warn(spanLog).Log("msg", "frontend not running, timed out waiting for it to be running", "state", service.State(), "timeout", timeout)

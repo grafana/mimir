@@ -35,11 +35,6 @@ const (
 	// kafkaOffsetEnd is a special offset value that means the end of the partition.
 	kafkaOffsetEnd = int64(-1)
 
-	// defaultMinBytesMaxWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
-	// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
-	// Warpstream clamps this between 5s and 30s.
-	defaultMinBytesMaxWaitTime = 5 * time.Second
-
 	// ReaderMetricsPrefix is the reader metrics prefix used by the ingest storage.
 	ReaderMetricsPrefix = "cortex_ingest_storage_reader"
 )
@@ -55,6 +50,7 @@ type record struct {
 	ctx      context.Context
 	tenantID string
 	content  []byte
+	version  int
 }
 
 type recordConsumer interface {
@@ -119,7 +115,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		newConsumer:                           consumer,
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
-		concurrentFetchersMinBytesMaxWaitTime: defaultMinBytesMaxWaitTime,
+		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
 		logger:                                log.With(logger, "partition", partitionID),
 		reg:                                   reg,
 	}
@@ -130,7 +126,12 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 	return r, nil
 }
 
-// Stop implements fetcher
+// Start implements fetcher.
+func (r *PartitionReader) Start(context.Context) {
+	// Given the partition reader has no concurrency it doesn't support starting anything.
+}
+
+// Stop implements fetcher.
 func (r *PartitionReader) Stop() {
 	// Given the partition reader has no concurrency it doesn't support stopping anything.
 }
@@ -250,6 +251,8 @@ func (r *PartitionReader) start(ctx context.Context) (returnErr error) {
 		if err != nil {
 			return errors.Wrap(err, "creating concurrent fetchers during startup")
 		}
+		f.Start(ctx)
+
 		r.setFetcher(f)
 	} else {
 		// When concurrent fetch is disabled we read records directly from the Kafka client, so we want it
@@ -550,6 +553,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 			ctx:      rec.Context,
 			tenantID: string(rec.Key),
 			content:  rec.Value,
+			version:  ParseRecordVersion(rec),
 		})
 	})
 
@@ -774,7 +778,7 @@ func (r *PartitionReader) waitReadConsistency(ctx context.Context, withOffset bo
 
 		// Ensure the service is running. Some subservices used below are created when starting
 		// so they're not available before that.
-		if state := r.Service.State(); state != services.Running {
+		if state := r.State(); state != services.Running {
 			return struct{}{}, fmt.Errorf("partition reader service is not running (state: %s)", state.String())
 		}
 
@@ -954,6 +958,7 @@ type readerMetrics struct {
 	fetchesErrors                    prometheus.Counter
 	fetchesTotal                     prometheus.Counter
 	fetchWaitDuration                prometheus.Histogram
+	fetchMaxBytes                    prometheus.Histogram
 	fetchedDiscardedRecordBytes      prometheus.Counter
 	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
 	lastConsumedOffset               prometheus.Gauge
@@ -1022,6 +1027,11 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		fetchWaitDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_records_batch_wait_duration_seconds",
 			Help:                        "How long a consumer spent waiting for a batch of records from the Kafka client. If fetching is faster than processing, then this will be close to 0.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		fetchMaxBytes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_records_batch_fetch_max_bytes",
+			Help:                        "The distribution of MaxBytes specified in the Fetch requests sent to Kafka.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		fetchedDiscardedRecordBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{

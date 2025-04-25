@@ -220,6 +220,15 @@
     // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
     alert_job_prefix: '.*/',
 
+    alert_cluster_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    alert_instance_variable: '{{ $labels.%s }}' % $._config.per_instance_label,
+
+    alert_node_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
+    alert_product: $._config.product,
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
@@ -233,6 +242,7 @@
 
     // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
     gateway_enabled: $._config.gem_enabled,
+    gateway_per_tenant_metrics_enabled: false,
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
@@ -291,18 +301,28 @@
         actual_replicas_count:
           |||
             # Convenience rule to get the number of replicas for both a deployment and a statefulset.
-            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            #
+            # Notes:
+            # - Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            # - To avoid "vector cannot contain metrics with the same labelset" errors we need to add an additional
+            #   label "deployment_without_zone" first, then run the aggregation, and finally rename "deployment_without_zone"
+            #   to "deployment".
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
-                kube_deployment_spec_replicas,
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
+                  label_replace(
+                    kube_deployment_spec_replicas,
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
+                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  )
+                )
+                or
+                sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                ),
+                "deployment", "$1", "deployment_without_zone", "(.*)"
               )
-            )
-            or
-            sum by (%(alert_aggregation_labels)s, deployment) (
-              label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
             )
           |||,
         cpu_usage_seconds_total:

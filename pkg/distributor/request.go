@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -22,11 +23,16 @@ type Request struct {
 
 	request *mimirpb.WriteRequest
 	err     error
+
+	// artificialDelay is the artificial delay for the request.
+	// Negative values are treated as "not set".
+	artificialDelay time.Duration
 }
 
 func newRequest(p supplierFunc) *Request {
 	r := &Request{
-		getRequest: p,
+		getRequest:      p,
+		artificialDelay: -1,
 	}
 	r.cleanups = r.cleanupsArr[:0]
 	return r

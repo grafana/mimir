@@ -640,6 +640,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
 				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
 				"spinOffSubqueriesMiddleware",           // This middleware is only for instant queries.
+				"queryLimiterMiddleware",                // This middleware is only for instant queries.
 			},
 		},
 	}
@@ -673,6 +674,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	var allNames []string
 	for _, middlewares := range middlewaresByRequestType {
 		allNames = append(allNames, getMiddlewareNames(middlewares.instances)...)
+		allNames = append(allNames, middlewares.exceptions...)
 	}
 	slices.Sort(allNames)
 	allNames = slices.Compact(allNames)

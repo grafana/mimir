@@ -29,7 +29,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -1779,7 +1779,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		clientCfg := grpcclient.Config{}
 		flagext.DefaultValues(&clientCfg)
 
-		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}))
+		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}), util.NewRequestInvalidClusterValidationLabelsTotalCounter(nil, "store-gateway", util.GRPCProtocol), log.NewNopLogger())
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, client.Close())

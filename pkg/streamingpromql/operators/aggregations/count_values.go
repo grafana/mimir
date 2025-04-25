@@ -149,7 +149,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
 	if !model.LabelName(c.resolvedLabelName).IsValid() {
-		return fmt.Errorf("invalid label name %q for count_values", c.resolvedLabelName)
+		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 
 	return nil
@@ -245,4 +245,10 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 func (c *CountValues) Close() {
 	c.Inner.Close()
 	c.LabelName.Close()
+
+	for _, d := range c.series {
+		types.FPointSlicePool.Put(d, c.MemoryConsumptionTracker)
+	}
+
+	c.series = nil
 }

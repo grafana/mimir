@@ -29,14 +29,12 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	dstest "github.com/grafana/dskit/test"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -326,9 +324,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 				gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 				limits.StoreGatewayTenantShardSize = testData.tenantShardSize
 
-				overrides, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
-
+				overrides := validation.NewOverrides(limits, nil)
 				reg := prometheus.NewPedanticRegistry()
 				g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
 				require.NoError(t, err)
@@ -418,9 +414,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		gatewayCfg.ShardingRing.WaitStabilityMinDuration = waitStabilityMin
 		gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 
-		overrides, err := validation.NewOverrides(limits, nil)
-		require.NoError(t, err)
-
+		overrides := validation.NewOverrides(limits, nil)
 		reg := prometheus.NewPedanticRegistry()
 		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, log.NewNopLogger(), reg, nil)
 		require.NoError(t, err)
@@ -1084,9 +1078,9 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				// so the same sample is returned twice because in this test we query two identical blocks.
 				samples, err := readSamplesFromChunks(actual.Chunks)
 				require.NoError(t, err)
-				assert.Equal(t, []sample{
-					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
-					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
+				assert.Equal(t, []test.Sample{
+					{TS: minT + (step * int64(seriesID)), Val: float64(seriesID)},
+					{TS: minT + (step * int64(seriesID)), Val: float64(seriesID)},
 				}, samples)
 			}
 		})
@@ -1450,8 +1444,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					// Customise the limits.
 					limits := defaultLimitsConfig()
 					limits.MaxChunksPerQuery = testData.limit
-					overrides, err := validation.NewOverrides(limits, nil)
-					require.NoError(t, err)
+					overrides := validation.NewOverrides(limits, nil)
 
 					// Create a store-gateway used to query back the series from the blocks.
 					gatewayCfg := mockGatewayConfig()
@@ -1607,8 +1600,8 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	return tokens
 }
 
-func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
-	var samples []sample
+func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]test.Sample, error) {
+	var samples []test.Sample
 
 	for _, rawChunk := range rawChunks {
 		c, err := chunkenc.FromData(chunkenc.EncXOR, rawChunk.Raw.Data)
@@ -1623,9 +1616,9 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 			}
 
 			ts, v := it.At()
-			samples = append(samples, sample{
-				t: ts,
-				v: v,
+			samples = append(samples, test.Sample{
+				TS:  ts,
+				Val: v,
 			})
 		}
 
@@ -1637,62 +1630,14 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 	return samples, nil
 }
 
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func (s sample) T() int64 {
-	return s.t
-}
-
-func (s sample) F() float64 {
-	return s.v
-}
-
-func (s sample) H() *histogram.Histogram {
-	return s.h
-}
-
-func (s sample) FH() *histogram.FloatHistogram {
-	return s.fh
-}
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	c := sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
-	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
-	}
-	return c
-}
-
 func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
 }
 
-func defaultLimitsOverrides(t *testing.T) *validation.Overrides {
-	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-	require.NoError(t, err)
-
-	return overrides
+func defaultLimitsOverrides(_ *testing.T) *validation.Overrides {
+	return validation.NewOverrides(defaultLimitsConfig(), nil)
 }
 
 type mockShardingStrategy struct {

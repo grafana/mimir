@@ -25,7 +25,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -115,16 +115,14 @@ type blocksStoreQueryableMetrics struct {
 func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
 	return &blocksStoreQueryableMetrics{
 		storesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "querier_storegateway_instances_hit_per_query",
-			Help:      "Number of store-gateway instances hit for a single query.",
-			Buckets:   []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			Name:    "cortex_querier_storegateway_instances_hit_per_query",
+			Help:    "Number of store-gateway instances hit for a single query.",
+			Buckets: []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		}),
 		refetches: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "querier_storegateway_refetches_per_query",
-			Help:      "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
-			Buckets:   []float64{0, 1, 2},
+			Name:    "cortex_querier_storegateway_refetches_per_query",
+			Help:    "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
+			Buckets: []float64{0, 1, 2},
 		}),
 
 		blocksFound: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -344,7 +342,7 @@ func (q *blocksStoreQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -389,7 +387,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 
 func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -437,7 +435,7 @@ func (q *blocksStoreQuerier) Close() error {
 
 func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.SelectHints, tenantID string, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.selectSorted")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	minT, maxT := sp.Start, sp.End
 
@@ -759,8 +757,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	for c, blockIDs := range clients {
 		g.Go(func() error {
 			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
-			defer log.Span.Finish()
-			log.Span.SetTag("store_gateway_address", c.RemoteAddress())
+			defer log.Finish()
+			log.SetTag("store_gateway_address", c.RemoteAddress())
 
 			// See: https://github.com/prometheus/prometheus/pull/8050
 			// TODO(goutham): we should ideally be passing the hints down to the storage layer

@@ -254,12 +254,12 @@ std.manifestYamlDoc({
   },
   redpanda_console:: {
     redpanda_console: {
-      image: 'docker.redpanda.com/redpandadata/console:v2.7.0',
+      image: 'docker.redpanda.com/redpandadata/console:latest',
       environment: [
         'KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092',
       ],
       ports: [
-        '9080:8080',
+        '8090:8080',
       ],
     },
   },

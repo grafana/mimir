@@ -16,6 +16,7 @@ import (
 type TestOperator struct {
 	Series []labels.Labels
 	Data   []types.InstantVectorSeriesData
+	Closed bool
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
@@ -40,5 +41,6 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 }
 
 func (t *TestOperator) Close() {
-	panic("Close() not supported")
+	// Note that we do not return any unused series data here: this is the responsibility of the test, if needed.
+	t.Closed = true
 }

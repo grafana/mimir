@@ -197,7 +197,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
 					# TYPE cortex_distributor_requests_in_total counter
-					cortex_distributor_requests_in_total{user="user"} 1
+					cortex_distributor_requests_in_total{user="user",version="1.0"} 1
 
 					# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected and deduped requests.
 					# TYPE cortex_distributor_received_requests_total counter
@@ -262,8 +262,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	limits := prepareDefaultLimits()
 	limits.MaxLabelValueLength = hugeLabelValueLength
 
-	overrides, err := validation.NewOverrides(*limits, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(*limits, nil)
 
 	testConfig := prepConfig{
 		numDistributors:         1,

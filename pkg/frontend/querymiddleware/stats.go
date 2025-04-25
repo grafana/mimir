@@ -155,6 +155,9 @@ type QueryDetails struct {
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
+	// SamplesProcessedFromCache represents the total number of samples processed by queriers to produce the result
+	// that has been stored in the query-frontend cache and then fetched to produce the current full query result.
+	SamplesProcessedFromCache uint64
 }
 
 type contextKey int

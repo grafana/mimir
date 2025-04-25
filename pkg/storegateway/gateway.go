@@ -191,7 +191,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, logger)
 
-	allowedTenants := util.NewAllowedTenants(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
+	allowedTenants := util.NewAllowList(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
 	if len(gatewayCfg.EnabledTenants) > 0 {
 		level.Info(logger).Log("msg", "store-gateway using enabled users", "enabled", gatewayCfg.EnabledTenants)
 	}

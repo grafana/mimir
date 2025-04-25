@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -1964,6 +1965,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -2137,7 +2153,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -2235,7 +2252,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Compactor",
+      "title": "GEM / Compactor",
       "uid": "1b3443aea86db629e6efdb7d05c53823",
       "version": 0
    }

@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/tools/mimir-continuous-test/
-description:
-  Use mimir-continuous-test to continuously run smoke tests on live Grafana
-  Mimir clusters.
+description: Use mimir-continuous-test to continuously run smoke tests on live Grafana Mimir clusters.
 menuTitle: Mimir-continuous-test
 title: Grafana mimir-continuous-test
 weight: 30
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana mimir-continuous-test
 
@@ -23,8 +23,8 @@ Two operating modes are supported:
 - Using Docker:
 
 ```bash
-docker pull "grafana/mimir-continuous-test:latest"
-docker run grafana/mimir-continuous-test
+docker pull "grafana/mimir:latest"
+docker run --rm -ti grafana/mimir -target=continuous-test
 ```
 
 - Using a local binary:
@@ -40,7 +40,9 @@ mimir -target=continuous-test
 ```
 
 {{< admonition type="note" >}}
-The standalone [mimir-continuous-test binary](https://github.com/grafana/mimir/releases/tag/mimir-2.12.0) is deprecated.
+In [Grafana Mimir 2.13](../../../release-notes/v2.13/) the mimir-continuous-test became a part of Mimir as its own target.
+
+The standalone `grafana/mimir-continuous-test` Docker image and mimir-continuous-test binary are now deprecated but available for backwards compatibility.
 {{< /admonition >}}
 
 ## Configure mimir-continuous-test
@@ -62,7 +64,7 @@ You can run `mimir -help` to list all available configuration options. All confi
 ## How it works
 
 Mimir-continuous-test periodically runs a suite of tests, writes data to Mimir, queries that data back, and checks if the query results match what is expected.
-The tool exposes metrics that you can use to alert on test failures, and the tool logs the details about the failed tests.
+The tool exposes metrics that you can use to alert on test failures. The tool logs the details about the failed tests.
 
 ### Exported metrics
 
@@ -80,15 +82,7 @@ mimir_continuous_test_writes_failed_total{test="<name>",status_code="<code>"}
 
 # HELP mimir_continuous_test_writes_request_duration_seconds Duration of the requests
 # TYPE mimir_continuous_test_writes_request_duration_seconds histogram
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.001"}
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.004"}
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.016"}
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.064"}
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.256"}
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="1.024"}
-mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="+Inf"}
-mimir_continuous_test_writes_request_duration_seconds_sum{test="<name>"}
-mimir_continuous_test_writes_request_duration_seconds_count{test="<name>"}
+mimir_continuous_test_writes_request_duration_seconds{test="<name>"}
 
 # HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 # TYPE mimir_continuous_test_queries_total counter
@@ -108,27 +102,16 @@ mimir_continuous_test_query_result_checks_failed_total{test="<name>"}
 
 # HELP mimir_continuous_test_queries_request_duration_seconds Duration of the requests
 # TYPE mimir_continuous_test_queries_request_duration_seconds histogram
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.001"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.004"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.016"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.064"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.256"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="1.024"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="+Inf"}
-mimir_continuous_test_queries_request_duration_seconds_sum{results_cache="false",test="<name>"}
-mimir_continuous_test_queries_request_duration_seconds_count{results_cache="false",test="<name>"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.001"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.004"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.016"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.064"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.256"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="1.024"}
-mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="+Inf"}
-mimir_continuous_test_queries_request_duration_seconds_sum{results_cache="true",test="<name>"}
-mimir_continuous_test_queries_request_duration_seconds_count{results_cache="true",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds{results_cache="false",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds{results_cache="true",test="<name>"}
 ```
+
+{{< admonition type="note" >}}
+The metrics `mimir_continuous_test_writes_request_duration_seconds` and `mimir_continuous_test_queries_request_duration_seconds`
+are exposed as [native histograms](../../../send/native-histograms/) and don’t have proper textual presentation on the `/metrics` endpoint.
+{{< /admonition >}}
 
 ### Alerts
 
-[Grafana Mimir alerts]({{< relref "../monitor-grafana-mimir/installing-dashboards-and-alerts" >}}) include checks on failures that mimir-continuous-test tracks.
+[Grafana Mimir alerts](../../monitor-grafana-mimir/installing-dashboards-and-alerts/) include checks on failures that mimir-continuous-test tracks.
 When running mimir-continuous-test, use the provided alerts.

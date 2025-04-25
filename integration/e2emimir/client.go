@@ -159,7 +159,14 @@ func (c *Client) SetTimeout(t time.Duration) {
 // Push the input timeseries to the remote endpoint
 func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	// Create write request
-	data, err := proto.Marshal(&prompb.WriteRequest{Timeseries: timeseries})
+	wreq := &prompb.WriteRequest{
+		Timeseries: timeseries,
+	}
+	return c.PushRW1(wreq)
+}
+
+func (c *Client) PushRW1(wreq *prompb.WriteRequest) (*http.Response, error) {
+	data, err := proto.Marshal(wreq)
 	if err != nil {
 		return nil, err
 	}
@@ -268,12 +275,16 @@ func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.Met
 		return nil, err
 	}
 
+	return c.PushOTLPPayload(data, "application/x-protobuf")
+}
+
+func (c *Client) PushOTLPPayload(payload []byte, contentType string) (*http.Response, error) {
 	// Create HTTP request
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(data))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -707,8 +718,12 @@ func (c *Client) ActiveNativeHistogramMetrics(selector string, options ...Active
 }
 
 // GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
-func (c *Client) GetPrometheusMetadata() (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), nil)
+func (c *Client) GetPrometheusMetadata(metric string) (*http.Response, error) {
+	metricParam := ""
+	if metric != "" {
+		metricParam = fmt.Sprintf("?metric=%s", metric)
+	}
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata%s", c.querierAddress, metricParam), nil)
 
 	if err != nil {
 		return nil, err

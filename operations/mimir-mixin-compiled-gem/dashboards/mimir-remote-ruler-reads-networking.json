@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -950,7 +951,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -1046,7 +1048,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Remote ruler reads networking",
+      "title": "GEM / Remote ruler reads networking",
       "uid": "9e8cfff65f91632f8a25981c6fe44bc9",
       "version": 0
    }

@@ -17,10 +17,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
 const (
@@ -379,12 +380,12 @@ func (cfg *TSDBConfig) Validate(activeSeriesCfg activeseries.Config) error {
 	return nil
 }
 
-func (cfg *TSDBConfig) WALCompressionType() wlog.CompressionType {
+func (cfg *TSDBConfig) WALCompressionType() compression.Type {
 	if cfg.WALCompressionEnabled {
-		return wlog.CompressionSnappy
+		return compression.Snappy
 	}
 
-	return wlog.CompressionNone
+	return compression.None
 }
 
 // BlocksDir returns the directory path where TSDB blocks and wal should be

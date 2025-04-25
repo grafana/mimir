@@ -22,7 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -37,6 +37,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -114,7 +115,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			fmt.Println("create", m.ULID)
 			var buf bytes.Buffer
 			require.NoError(t, json.NewEncoder(&buf).Encode(&m))
-			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), &buf))
+			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), bytes.NewReader(buf.Bytes())))
 		}
 
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -240,7 +241,10 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, 0, 0, logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics)
+		cfg := indexheader.Config{VerifyOnLoad: true}
+		bComp, err := NewBucketCompactor(
+			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics, true, 32, cfg, 8,
+		)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -252,6 +256,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blockUploadsStarted))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -341,6 +346,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
+		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.blockUploadsStarted))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -371,6 +377,21 @@ func TestGroupCompactE2E(t *testing.T) {
 			}
 
 			others[defaultGroupKey(meta.Thanos.Downsample.Resolution, labels.FromMap(meta.Thanos.Labels))] = meta
+			return nil
+		}))
+
+		// expect the blocks that are compacted to have sparse-index-headers in object storage.
+		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
+
+			if _, ok := others[id.String()]; ok {
+				p := path.Join(id.String(), block.SparseIndexHeaderFilename)
+				exists, _ := bkt.Exists(ctx, p)
+				assert.True(t, exists, "expected sparse index headers not found %s", p)
+			}
 			return nil
 		}))
 
@@ -491,7 +512,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 			fmt.Println("create", m.ULID)
 			var buf bytes.Buffer
 			require.NoError(t, json.NewEncoder(&buf).Encode(&m))
-			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), &buf))
+			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), bytes.NewReader(buf.Bytes())))
 		}
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})

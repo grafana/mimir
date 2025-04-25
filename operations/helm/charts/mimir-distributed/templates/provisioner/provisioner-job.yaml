@@ -1,0 +1,118 @@
+{{- if and .Values.provisioner.enabled .Values.enterprise.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "provisioner") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "provisioner") | nindent 4 }}
+    {{- with .Values.provisioner.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.provisioner.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    "helm.sh/hook": {{ .Values.provisioner.hookType | quote }}
+    "helm.sh/hook-weight": "20"
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  backoffLimit: 6
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "provisioner") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "provisioner") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ include "mimir.resourceName" (dict "ctx" . "component" "provisioner") }}
+      {{- if .Values.provisioner.priorityClassName }}
+      priorityClassName: {{ .Values.provisioner.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "provisioner") | nindent 8 }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      initContainers:
+        {{- range $index, $tenant := .Values.provisioner.additionalTenants }}
+        - name: provisioner-{{ $tenant.name }}
+          image: "{{ $.Values.provisioner.image.registry }}/{{ $.Values.provisioner.image.repository }}:{{ $.Values.provisioner.image.tag }}"
+          imagePullPolicy: {{ $.Values.provisioner.image.pullPolicy }}
+          command:
+            - /usr/bin/provisioner
+          args:
+            - -bootstrap-path=/bootstrap
+            - -cluster-name={{ include "mimir.clusterName" $ }}
+            - -api-url={{ tpl $.Values.provisioner.apiUrl $ }}
+            - -tenant={{ $tenant.name }}
+            - -access-policy=write-{{ $tenant.name }}:{{ $tenant.name }}:metrics:write
+            - -access-policy=read-{{ $tenant.name }}:{{ $tenant.name }}:metrics:read
+            - -token=write-{{ $tenant.name }}
+            - -token=read-{{ $tenant.name }}
+          volumeMounts:
+            {{- if $.Values.provisioner.extraVolumeMounts }}
+              {{ toYaml $.Values.provisioner.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+            {{- if $.Values.global.extraVolumeMounts }}
+              {{ toYaml $.Values.global.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+            - name: bootstrap
+              mountPath: /bootstrap
+            - name: admin-token
+              mountPath: /bootstrap/token
+              subPath: token
+          {{- with $.Values.provisioner.env }}
+          env:
+            {{ toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      containers:
+        - name: create-secret
+          image: {{ include "mimir.kubectlImage" . }}
+          imagePullPolicy: {{ .Values.kubectlImage.pullPolicy | default "IfNotPresent" }}
+          command:
+            - /bin/bash
+            - -exuc
+            - |
+              # In case, the admin resources have already been created, the provisioner job
+              # does not write the token files to the bootstrap mount.
+              # Therefore, secrets are only created if the respective token files exist.
+              # Note: the following bash commands should always return a success status code. 
+              # Therefore, in case the token file does not exist, the first clause of the 
+              # or-operation is successful.
+              {{- range .Values.provisioner.additionalTenants }}
+              ! test -s /bootstrap/token-write-{{ .name }} || \
+                kubectl --namespace "{{ .secretNamespace }}" create secret generic "{{ tpl $.Values.provisioner.provisionedSecretPrefix $ }}-{{ .name }}" \
+                  --from-literal=token-write="$(cat /bootstrap/token-write-{{ .name }})" \
+                  --from-literal=token-read="$(cat /bootstrap/token-read-{{ .name }})"
+              {{- end }}
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+      {{- with .Values.provisioner.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.provisioner.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.provisioner.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      restartPolicy: OnFailure
+      volumes:
+        - name: admin-token
+          secret:
+            secretName: {{ .Values.tokengenJob.adminTokenSecret }}
+        - name: bootstrap
+          emptyDir: {}
+{{- end -}} 

@@ -546,7 +546,7 @@ func (l *BasicLifecycler) changeReadOnlyState(ctx context.Context, readOnly bool
 			i.ReadOnlyUpdatedTimestamp = time.Now().Unix()
 		} else {
 			i.ReadOnly = false
-			i.ReadOnlyUpdatedTimestamp = 0
+			i.ReadOnlyUpdatedTimestamp = time.Now().Unix()
 		}
 		return true
 	})

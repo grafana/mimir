@@ -9,6 +9,8 @@ title: Grafana Mimir Writes dashboard
 weight: 180
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Writes dashboard
 
 The Writes dashboard shows health metrics for the write path and object storage metrics for operations triggered by the write path.

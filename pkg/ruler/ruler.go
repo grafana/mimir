@@ -282,7 +282,7 @@ type MultiTenantManager interface {
 	Stop()
 
 	// ValidateRuleGroup validates a rulegroup
-	ValidateRuleGroup(rulefmt.RuleGroup) []error
+	ValidateRuleGroup(rulefmt.RuleGroup, rulefmt.RuleGroupNode) []error
 
 	// Start evaluating rules.
 	Start()
@@ -342,7 +342,7 @@ type Ruler struct {
 	// This queue is also used to de-amplify the inbound notifications.
 	inboundSyncQueue *rulerSyncQueue
 
-	allowedTenants *util.AllowedTenants
+	allowedTenants *util.AllowList
 
 	registry prometheus.Registerer
 	logger   log.Logger
@@ -364,7 +364,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		clientsPool:       clientPool,
 		outboundSyncQueue: newRulerSyncQueue(cfg.OutboundSyncQueuePollInterval),
 		inboundSyncQueue:  newRulerSyncQueue(cfg.InboundSyncQueuePollInterval),
-		allowedTenants:    util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
+		allowedTenants:    util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants),
 		metrics:           newRulerMetrics(reg),
 	}
 

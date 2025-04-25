@@ -80,7 +80,7 @@ func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData 
 
 		data.Floats = append(data.Floats, promql.FPoint{
 			T: histogram.T,
-			F: histogramFraction(lowerVal, upperVal, histogram.H),
+			F: promql.HistogramFraction(lowerVal, upperVal, histogram.H),
 		})
 	}
 

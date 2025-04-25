@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -129,7 +130,9 @@ func newWithSchedulerClient(
 func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc.ClientConn, error) {
 	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
-		nil)
+		nil,
+		util.NewInvalidClusterValidationReporter(b.cfg.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label, b.blockBuilderMetrics.invalidClusterValidation, b.logger),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -225,20 +228,16 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 }
 
 // consumeJob performs block consumption from Kafka into object storage based on the given job spec.
-func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, spec schedulerpb.JobSpec) (PartitionState, error) {
-	state := PartitionState{
-		Commit: kadm.Offset{
-			Topic:     spec.Topic,
-			Partition: spec.Partition,
-			At:        spec.StartOffset,
-		},
-		CommitRecordTimestamp: spec.CommitRecTs,
-		LastSeenOffset:        spec.LastSeenOffset,
-		LastBlockEnd:          spec.LastBlockEndTs,
-	}
+func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, spec schedulerpb.JobSpec) (lastOffset int64, err error) {
+	sp, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BlockBuilder.consumeJob")
+	defer sp.Finish()
 
-	logger := log.With(b.logger, "job_id", key.Id, "job_epoch", key.Epoch)
-	return b.consumePartition(ctx, spec.Partition, state, spec.CycleEndTs, spec.CycleEndOffset, logger)
+	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
+
+	builder := NewTSDBBuilder(logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
+	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
+
+	return b.consumePartitionSectionPullMode(ctx, logger, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
 
 func (b *BlockBuilder) stoppingStandaloneMode(_ error) error {
@@ -254,7 +253,7 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	// Examples for interval=1h, buffer=15m:
 	//   (1) current time is 14:12, cycle end is 13:15
 	//   (2) current time is 14:17, cycle end is 14:15
-	cycleEndTime := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	cycleEndTime := cycleEndBefore(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	var waitDur time.Duration
 	for {
 		select {
@@ -277,11 +276,20 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	}
 }
 
-// cycleEndAtStartup returns the timestamp of the last cycleEnd that is <=t.
-func cycleEndAtStartup(t time.Time, interval, buffer time.Duration) time.Time {
+// cycleEndBefore returns the timestamp of the last cycleEnd that is <=t.
+func cycleEndBefore(t time.Time, interval, buffer time.Duration) time.Time {
 	cycleEnd := t.Truncate(interval).Add(buffer)
 	if cycleEnd.After(t) {
 		cycleEnd = cycleEnd.Add(-interval)
+	}
+	return cycleEnd
+}
+
+// cycleEndAfter returns the timestamp of the first cycleEnd that is >=t.
+func cycleEndAfter(t time.Time, interval, buffer time.Duration) time.Time {
+	cycleEnd := t.Truncate(interval).Add(buffer)
+	if cycleEnd.Before(t) {
+		cycleEnd = cycleEnd.Add(interval)
 	}
 	return cycleEnd
 }
@@ -451,12 +459,37 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 		logger := log.With(logger, "section_end", sectionEndTime, "offset", state.Commit.At)
 		state, err = b.consumePartitionSection(ctx, logger, builder, partition, state, sectionEndTime, cycleEndOffset)
 		if err != nil {
-			return PartitionState{}, fmt.Errorf("consume partition %d: %w", partition, err)
+			var recInFutureErr *errFirstRecordInFuture
+			if !errors.As(err, &recInFutureErr) {
+				return PartitionState{}, fmt.Errorf("consume partition %d: %w", partition, err)
+			}
+			// The first record in the partition has a timestamp greater than the section end time.
+			// It is possible this was an idle partition that suddenly became active. Instead of trying every interval since
+			// the last commit, we shortcut to the first record time. If it happens to be after the cycleEndTime, the loop
+			// condition will take care of exiting it properly.
+			err = nil
+			sectionEndTime = cycleEndAfter(recInFutureErr.recordTs, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+		} else {
+			sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
 		}
-		sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
 	}
 
 	return state, nil
+}
+
+// errFirstRecordInFuture is returned when the first record in the partition has a timestamp greater than the section end time.
+// It contains the timestamp of the first record.
+type errFirstRecordInFuture struct {
+	recordTs time.Time
+}
+
+func (e errFirstRecordInFuture) Error() string {
+	return fmt.Sprintf("first record in the partition has a timestamp greater than the section end time: %s", e.recordTs.UTC().String())
+}
+
+func (e errFirstRecordInFuture) Is(err error) bool {
+	_, ok := err.(*errFirstRecordInFuture)
+	return ok
 }
 
 func (b *BlockBuilder) consumePartitionSection(
@@ -489,7 +522,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		dur := time.Since(t)
 
-		if retErr != nil {
+		if retErr != nil && !errors.Is(retErr, &errFirstRecordInFuture{}) {
 			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur)
 			return
 		}
@@ -592,7 +625,7 @@ consumerLoop:
 	// No records were processed for this cycle.
 	if lastRec == nil {
 		level.Info(logger).Log("msg", "nothing to commit due to first record has a timestamp greater than this section end", "first_rec_offset", firstRec.Offset, "first_rec_ts", firstRec.Timestamp)
-		return state, nil
+		return state, &errFirstRecordInFuture{recordTs: firstRec.Timestamp}
 	}
 
 	// All samples in all records were processed. We can commit the last record's offset.
@@ -637,6 +670,122 @@ consumerLoop:
 	}
 
 	return newState, nil
+}
+
+// consumePartitionSectionPullMode is for the use of scheduler based architecture.
+// startOffset is inclusive, endOffset is exclusive, and must be valid offsets and not something in the future (endOffset can be technically 1 offset in the future).
+// All the records and samples between these offsets will be consumed and put into a block.
+// The returned lastConsumedOffset is the offset of the last record consumed. It is the caller's responsibility to commit this offset.
+func (b *BlockBuilder) consumePartitionSectionPullMode(
+	ctx context.Context,
+	logger log.Logger,
+	builder *TSDBBuilder,
+	partition int32,
+	startOffset, endOffset int64,
+) (lastConsumedOffset int64, retErr error) {
+	lastConsumedOffset = startOffset
+	if startOffset >= endOffset {
+		level.Info(logger).Log("msg", "nothing to consume")
+		return
+	}
+
+	var blockMetas []tsdb.BlockMeta
+	defer func(t time.Time) {
+		// No need to log or track time of the unfinished section. Just bail out.
+		if errors.Is(retErr, context.Canceled) {
+			return
+		}
+
+		dur := time.Since(t)
+
+		if retErr != nil {
+			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur)
+			return
+		}
+
+		b.blockBuilderMetrics.processPartitionDuration.WithLabelValues(fmt.Sprintf("%d", partition)).Observe(dur.Seconds())
+		level.Info(logger).Log("msg", "done consuming", "duration", dur, "partition", partition,
+			"start_offset", startOffset, "end_offset", endOffset,
+			"last_consumed_offset", lastConsumedOffset, "num_blocks", len(blockMetas))
+	}(time.Now())
+
+	b.kafkaClient.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		b.cfg.Kafka.Topic: {
+			partition: kgo.NewOffset().At(startOffset),
+		},
+	})
+	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
+
+	level.Info(logger).Log("msg", "start consuming", "partition", partition, "start_offset", startOffset, "end_offset", endOffset)
+
+	var (
+		firstRec *kgo.Record
+		lastRec  *kgo.Record
+	)
+
+consumerLoop:
+	for recOffset := int64(-1); recOffset < endOffset-1; {
+		if err := context.Cause(ctx); err != nil {
+			return 0, err
+		}
+
+		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
+		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
+		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
+		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
+		fetches := b.kafkaClient.PollFetches(ctx)
+		fetches.EachError(func(_ string, _ int32, err error) {
+			if !errors.Is(err, context.Canceled) {
+				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
+				b.blockBuilderMetrics.fetchErrors.WithLabelValues(fmt.Sprintf("%d", partition)).Inc()
+			}
+		})
+
+		for recIter := fetches.RecordIter(); !recIter.Done(); {
+			rec := recIter.Next()
+			recOffset = rec.Offset
+
+			if firstRec == nil {
+				firstRec = rec
+			}
+
+			// Stop consuming after we touched the endOffset.
+			if recOffset >= endOffset {
+				break consumerLoop
+			}
+
+			// Process everything in this record.
+			_, err := builder.Process(ctx, rec, 0, 0, false, true)
+			if err != nil {
+				// All "non-terminal" errors are handled by the TSDBBuilder.
+				return 0, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
+			}
+			lastRec = rec
+		}
+	}
+
+	// Nothing was consumed from Kafka at all.
+	if firstRec == nil {
+		level.Info(logger).Log("msg", "no records were consumed")
+		return
+	}
+
+	// No records were processed for this cycle.
+	if lastRec == nil {
+		level.Info(logger).Log("msg", "nothing to commit due to first record has a timestamp greater than this section end", "first_rec_offset", firstRec.Offset, "first_rec_ts", firstRec.Timestamp)
+		// TODO: scheduler should be able to understand this state and catch up quickly.
+		return startOffset, nil
+	}
+
+	var err error
+	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
+	if err != nil {
+		return 0, err
+	}
+
+	// TODO: figure out a way to track the blockCounts metrics if possible.
+
+	return lastRec.Offset, nil
 }
 
 func getBlockCategoryCount(sectionEndTime time.Time, blockMetas []tsdb.BlockMeta) (prev, curr, next int) {
@@ -717,6 +866,9 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 
 		if meta.Compaction.FromOutOfOrder() && b.limits.OutOfOrderBlocksExternalLabelEnabled(tenantID) {
 			// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
+			if meta.Thanos.Labels == nil {
+				meta.Thanos.Labels = map[string]string{}
+			}
 			meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
 		}
 

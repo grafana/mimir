@@ -238,9 +238,7 @@ func TestGetSeriesCountAndMinLocalLimit(t *testing.T) {
 
 func TestRecomputeOwnedSeries(t *testing.T) {
 	limits := validation.Limits{MaxGlobalSeriesPerUser: 0}
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
+	overrides := validation.NewOverrides(limits, nil)
 	limiter := NewLimiter(overrides, newIngesterRingLimiterStrategy(nil, 3, true, "zone", overrides.IngestionTenantShardSize))
 
 	t.Run("happy path", func(t *testing.T) {

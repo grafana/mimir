@@ -378,14 +378,19 @@ func (d *Dispatcher) processAlert(dispatchLink trace.Link, alert *types.Alert, r
 		)
 		defer span.End()
 
-		_, _, err := d.stage.Exec(ctx, d.logger, alerts...)
+		pipelineTime, _ := notify.Now(ctx)
+		l := log.With(d.logger, "pipeline_time", pipelineTime)
+
+		_, _, err := d.stage.Exec(ctx, l, alerts...)
 		if err != nil {
-			lvl := level.Error(d.logger)
+			lvl := level.Error(l)
 			if errors.Is(ctx.Err(), context.Canceled) {
 				// It is expected for the context to be canceled on
 				// configuration reload or shutdown. In this case, the
 				// message should only be logged at the debug level.
-				lvl = level.Debug(d.logger)
+				lvl = level.Debug(l)
+			} else {
+				lvl = log.With(lvl, "aggrGroup", ag, "alerts", fmt.Sprintf("%v", alerts))
 			}
 			lvl.Log("msg", "Notify for alerts failed", "num_alerts", len(alerts), "err", err)
 
@@ -494,9 +499,7 @@ func (ag *aggrGroup) run(nf notifyFunc) {
 			ag.hasFlushed = true
 			ag.mtx.Unlock()
 
-			ag.flush(func(alerts ...*types.Alert) bool {
-				return nf(ctx, alerts...)
-			})
+			ag.flush(ctx, nf)
 
 			cancel()
 
@@ -533,44 +536,41 @@ func (ag *aggrGroup) empty() bool {
 }
 
 // flush sends notifications for all new alerts.
-func (ag *aggrGroup) flush(notify func(...*types.Alert) bool) {
+func (ag *aggrGroup) flush(ctx context.Context, nf notifyFunc) {
 	if ag.empty() {
 		return
 	}
 
 	var (
-		alerts      = ag.alerts.List()
-		alertsSlice = make(types.AlertSlice, 0, len(alerts))
-		now         = time.Now()
+		alerts        = ag.alerts.List()
+		alertsSlice   = make(types.AlertSlice, 0, len(alerts))
+		resolvedSlice = make(types.AlertSlice, 0, len(alerts))
+		now           = time.Now()
 	)
 	for _, alert := range alerts {
 		a := *alert
 		// Ensure that alerts don't resolve as time move forwards.
-		if !a.ResolvedAt(now) {
+		if a.ResolvedAt(now) {
+			resolvedSlice = append(resolvedSlice, &a)
+		} else {
 			a.EndsAt = time.Time{}
 		}
 		alertsSlice = append(alertsSlice, &a)
 	}
 	sort.Stable(alertsSlice)
 
-	level.Debug(ag.logger).Log("msg", "flushing", "alerts", fmt.Sprintf("%v", alertsSlice))
+	pipelineTime, _ := notify.Now(ctx)
+	l := log.With(ag.logger, "pipeline_time", pipelineTime)
 
-	if notify(alertsSlice...) {
-		for _, a := range alertsSlice {
-			// Only delete if the fingerprint has not been inserted
-			// again since we notified about it.
-			fp := a.Fingerprint()
-			got, err := ag.alerts.Get(fp)
-			if err != nil {
-				// This should never happen.
-				level.Error(ag.logger).Log("msg", "failed to get alert", "err", err, "alert", a.String())
-				continue
-			}
-			if a.Resolved() && got.UpdatedAt == a.UpdatedAt {
-				if err := ag.alerts.Delete(fp); err != nil {
-					level.Error(ag.logger).Log("msg", "error on delete alert", "err", err, "alert", a.String())
-				}
-			}
+	level.Debug(l).Log("msg", "flushing", "alerts", fmt.Sprintf("%v", alertsSlice))
+
+	if nf(ctx, alertsSlice...) {
+		// Delete all resolved alerts as we just sent a notification for them,
+		// and we don't want to send another one. However, we need to make sure
+		// that each resolved alert has not fired again during the flush as then
+		// we would delete an active alert thinking it was resolved.
+		if err := ag.alerts.DeleteIfNotModified(resolvedSlice); err != nil {
+			level.Error(l).Log("msg", "error on delete alerts", "err", err)
 		}
 	}
 }

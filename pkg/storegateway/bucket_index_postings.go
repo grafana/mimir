@@ -17,10 +17,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
@@ -420,7 +420,7 @@ func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (sel
 func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 	var minGroupSize int64
 	for _, g := range groups {
-		if !g.isSubtract && !(len(g.keys) == 1 && g.keys[0] == allPostingsKey) {
+		if !g.isSubtract && (len(g.keys) != 1 || g.keys[0] != allPostingsKey) {
 			// The size of each posting list contains 4 bytes with the number of entries.
 			// We shouldn't count these as series.
 			groupSize := g.totalSize - int64(len(g.keys)*4)

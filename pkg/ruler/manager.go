@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/user"
 	ot "github.com/opentracing/opentracing-go"
@@ -60,9 +59,9 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
+	ncfg, err := buildNotifierConfig(cfg.AlertmanagerURL, cfg.Notifier, dnsResolver, cfg.NotificationTimeout, cfg.AlertmanagerRefreshInterval, refreshMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -81,24 +80,20 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		userManagers:       map[string]RulesManager{},
 		userManagerMetrics: userManagerMetrics,
 		managersTotal: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Namespace: "cortex",
-			Name:      "ruler_managers_total",
-			Help:      "Total number of managers registered and running in the ruler",
+			Name: "cortex_ruler_managers_total",
+			Help: "Total number of managers registered and running in the ruler",
 		}),
 		lastReloadSuccessful: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "cortex",
-			Name:      "ruler_config_last_reload_successful",
-			Help:      "Boolean set to 1 whenever the last configuration reload attempt was successful.",
+			Name: "cortex_ruler_config_last_reload_successful",
+			Help: "Boolean set to 1 whenever the last configuration reload attempt was successful.",
 		}, []string{"user"}),
 		lastReloadSuccessfulTimestamp: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "cortex",
-			Name:      "ruler_config_last_reload_successful_seconds",
-			Help:      "Timestamp of the last successful configuration reload.",
+			Name: "cortex_ruler_config_last_reload_successful_seconds",
+			Help: "Timestamp of the last successful configuration reload.",
 		}, []string{"user"}),
 		configUpdatesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "ruler_config_updates_total",
-			Help:      "Total number of config updates triggered by a user",
+			Name: "cortex_ruler_config_updates_total",
+			Help: "Total number of config updates triggered by a user",
 		}, []string{"user"}),
 		registry: reg,
 		logger:   logger,
@@ -208,7 +203,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	}
 
 	// We need to update the manager only if it was just created or rules on disk have changed.
-	if !(created || update) {
+	if !created && !update {
 		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
 		return
 	}
@@ -413,7 +408,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 
 	if g.Name == "" {
@@ -437,12 +432,12 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []err
 	}
 
 	for i, r := range g.Rules {
-		for _, err := range r.Validate() {
+		for _, err := range r.Validate(node.Rules[i]) {
 			var ruleName string
-			if r.Alert.Value != "" {
-				ruleName = r.Alert.Value
+			if r.Alert != "" {
+				ruleName = r.Alert
 			} else {
-				ruleName = r.Record.Value
+				ruleName = r.Record
 			}
 			errs = append(errs, &rulefmt.Error{
 				Group:    g.Name,

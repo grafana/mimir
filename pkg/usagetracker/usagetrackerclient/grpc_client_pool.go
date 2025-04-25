@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName string, clientConfig Config, logger log.Logger, registerer prometheus.Registerer) *client.Pool {
@@ -48,13 +49,13 @@ func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName
 	if clientConfig.ClientFactory != nil {
 		factory = clientConfig.ClientFactory
 	} else {
-		factory = newUsageTrackerClientFactory(clientName, clientCfg, registerer)
+		factory = newUsageTrackerClientFactory(clientName, clientCfg, registerer, logger)
 	}
 
 	return client.NewPool("usage-tracker", poolCfg, discovery, factory, clientsCount, logger)
 }
 
-func newUsageTrackerClientFactory(clientName string, clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
+func newUsageTrackerClientFactory(clientName string, clientCfg grpcclient.Config, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:        "cortex_usage_tracker_client_request_duration_seconds",
 		Help:        "Time spent executing  a single request to a usage-tracker instance.",
@@ -62,13 +63,16 @@ func newUsageTrackerClientFactory(clientName string, clientCfg grpcclient.Config
 		ConstLabels: prometheus.Labels{"client": clientName},
 	}, []string{"operation", "status_code"})
 
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "usage-tracker", util.GRPCProtocol)
+
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialUsageTracker(clientCfg, inst, requestDuration)
+		return dialUsageTracker(clientCfg, inst, requestDuration, invalidClusterValidation, logger)
 	})
 }
 
-func dialUsageTracker(clientCfg grpcclient.Config, instance ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*usageTrackerClient, error) {
-	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
+func dialUsageTracker(clientCfg grpcclient.Config, instance ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*usageTrackerClient, error) {
+	unary, stream := grpcclient.Instrument(requestDuration)
+	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}

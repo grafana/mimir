@@ -75,6 +75,28 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	firstPoint := hHead[0]
 	hHead = hHead[1:]
 
+	if firstPoint.H.CounterResetHint == histogram.GaugeType {
+		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+	}
+
+	var secondPoint promql.HPoint
+	if len(hHead) > 0 {
+		secondPoint = hHead[0]
+	} else {
+		secondPoint = hTail[0]
+	}
+
+	// Ignore the first point if there is a counter reset between the first and second point.
+	// This means we'll ignore any incompatibility between the layout of the first and second point,
+	// which doesn't matter because we're not going to use the first point any way.
+	// See https://github.com/prometheus/prometheus/pull/15902 for more explanation.
+	if secondPoint.H.DetectReset(firstPoint.H) {
+		firstPoint.H = &histogram.FloatHistogram{
+			Schema:       secondPoint.H.Schema,
+			CustomValues: secondPoint.H.CustomValues,
+		}
+	}
+
 	var lastPoint promql.HPoint
 	if len(hTail) > 0 {
 		lastPoint = hTail[len(hTail)-1]
@@ -82,7 +104,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		lastPoint = hHead[len(hHead)-1]
 	}
 
-	if firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType {
+	if lastPoint.H.CounterResetHint == histogram.GaugeType {
 		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
 	}
 

@@ -80,9 +80,9 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelNameLength = 25
 	cfg.maxLabelNamesPerSeries = 3
 	cfg.maxLabelNamesPerInfoSeries = 4
-	limits, _ := catestutils.NewMockCostAttributionLimits(0, userID, "team")
+	limits := catestutils.NewMockCostAttributionLimits(0, userID, "team")
 	careg := prometheus.NewRegistry()
-	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, careg)
+	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg, careg)
 	require.NoError(t, err)
 	cast := manager.SampleTracker(userID)
 
@@ -663,6 +663,10 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 			schema:        3,
 			expectedError: nil,
 		},
+		"custom bucket schema causes no error": {
+			schema:        -53,
+			expectedError: nil,
+		},
 		"a schema lower than the minimum causes an error": {
 			schema:        -5,
 			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: -5 (err-mimir-invalid-native-histogram-schema)"),
@@ -691,6 +695,81 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{group="group-1",reason="invalid_native_histogram_schema",user="user-1"} 2
 	`), "cortex_discarded_samples_total"))
+}
+
+func TestNativeHistogramDownScaling(t *testing.T) {
+	testCases := map[string]struct {
+		cfg            sampleValidationCfg
+		schema         int32
+		offset         int32
+		deltas         []int64 // We're just using consecutive positive deltas.
+		expectedError  error
+		expectedDeltas []int64
+		expectedUpdate bool
+	}{
+		"valid exponential schema": {
+			schema:         3,
+			deltas:         []int64{1, 2, 3},
+			expectedError:  nil,
+			expectedDeltas: []int64{1, 2, 3},
+		},
+		"downscaling not allowed": {
+			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2},
+			schema:        3,
+			deltas:        []int64{1, 2, 3},
+			expectedError: fmt.Errorf("received a native histogram sample with too many buckets"),
+		},
+		"downscaling allowed": {
+			cfg:            sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			schema:         3,
+			offset:         1,
+			deltas:         []int64{1, 2, 10},
+			expectedError:  nil,
+			expectedDeltas: []int64{17},
+			expectedUpdate: true,
+		},
+		"downscaling allowed but impossible": {
+			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			schema:        3,
+			offset:        0, // This means we would have to join bucket around the boundary of 1.0, but that will never happen.
+			deltas:        []int64{1, 2, 10},
+			expectedError: fmt.Errorf("received a native histogram sample with too many buckets and cannot reduce"),
+		},
+		"valid nhcb": {
+			schema:         -53,
+			deltas:         []int64{1, 2, 3},
+			expectedError:  nil,
+			expectedDeltas: []int64{1, 2, 3},
+		},
+		"downscaling not possible for nhcb": {
+			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			schema:        -53,
+			offset:        1,
+			deltas:        []int64{1, 2, 3},
+			expectedError: fmt.Errorf("received a native histogram sample with more custom buckets than the limit"),
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			metrics := newSampleValidationMetrics(registry)
+			labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "h"}, {Name: "a", Value: "a"}}
+			hist := &mimirpb.Histogram{
+				Schema:         tc.schema,
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: tc.offset, Length: uint32(len(tc.deltas))}},
+				PositiveDeltas: tc.deltas,
+			}
+			updated, err := validateSampleHistogram(metrics, model.Now(), tc.cfg, "user-1", "group-1", labels, hist, nil)
+			if tc.expectedError != nil {
+				require.Error(t, err)
+				require.ErrorContains(t, err, tc.expectedError.Error())
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedUpdate, updated)
+			require.Equal(t, tc.expectedDeltas, hist.PositiveDeltas)
+		})
+	}
 }
 
 func tooManyLabelsArgs(series []mimirpb.LabelAdapter, limit int) []any {

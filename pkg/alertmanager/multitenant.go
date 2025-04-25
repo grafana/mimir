@@ -201,21 +201,18 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 	m := &multitenantAlertmanagerMetrics{}
 
 	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_grafana_state_size_bytes",
-		Help:      "Size of the grafana alertmanager state.",
+		Name: "cortex_alertmanager_grafana_state_size_bytes",
+		Help: "Size of the grafana alertmanager state.",
 	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_config_last_reload_successful",
-		Help:      "Boolean set to 1 whenever the last configuration reload attempt was successful.",
+		Name: "cortex_alertmanager_config_last_reload_successful",
+		Help: "Boolean set to 1 whenever the last configuration reload attempt was successful.",
 	}, []string{"user"})
 
 	m.lastReloadSuccessfulTimestamp = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_config_last_reload_successful_seconds",
-		Help:      "Timestamp of the last successful configuration reload.",
+		Name: "cortex_alertmanager_config_last_reload_successful_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
 	}, []string{"user"})
 
 	return m
@@ -690,8 +687,10 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.syncStates(ctx, cfg); err != nil {
-			level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
+		if am.cfg.GrafanaAlertmanagerCompatibilityEnabled {
+			if err := am.syncStates(ctx, cfg); err != nil {
+				level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
+			}
 		}
 
 		if err := am.setConfig(cfg); err != nil {
@@ -814,7 +813,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 		}
 	}
 
-	if err := userAM.mergeFullExternalState(s.State); err != nil {
+	if err := userAM.mergeFullGrafanaState(s.State); err != nil {
 		return err
 	}
 	userAM.usingGrafanaState.Store(true)

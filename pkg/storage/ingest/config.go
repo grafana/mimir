@@ -35,6 +35,8 @@ var (
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
 	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
+	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
+	ErrInvalidRecordVersion              = errors.New("invalid record format version")
 
 	consumeFromPositionOptions = []string{consumeFromLastOffset, consumeFromStart, consumeFromEnd, consumeFromTimestamp}
 
@@ -103,12 +105,15 @@ type KafkaConfig struct {
 
 	WaitStrongReadConsistencyTimeout time.Duration `yaml:"wait_strong_read_consistency_timeout"`
 
+	ProducerRecordVersion int `yaml:"producer_record_version" category:"experimental"`
+
 	// Used when logging unsampled client errors. Set from ingester's ErrorSampleRate.
 	FallbackClientErrorSampleRate int64 `yaml:"-"`
 
-	FetchConcurrencyMax               int  `yaml:"fetch_concurrency_max"`
-	UseCompressedBytesAsFetchMaxBytes bool `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
-	MaxBufferedBytes                  int  `yaml:"max_buffered_bytes"`
+	FetchMaxWait                      time.Duration `yaml:"fetch_max_wait"`
+	FetchConcurrencyMax               int           `yaml:"fetch_concurrency_max"`
+	UseCompressedBytesAsFetchMaxBytes bool          `yaml:"use_compressed_bytes_as_fetch_max_bytes"`
+	MaxBufferedBytes                  int           `yaml:"max_buffered_bytes"`
 
 	IngestionConcurrencyMax       int `yaml:"ingestion_concurrency_max"`
 	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
@@ -174,6 +179,9 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.WaitStrongReadConsistencyTimeout, prefix+"wait-strong-read-consistency-timeout", 20*time.Second, "The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout.")
 
+	f.IntVar(&cfg.ProducerRecordVersion, prefix+"producer-record-version", 0, "The record version that this producer sends.")
+
+	f.DurationVar(&cfg.FetchMaxWait, prefix+"fetch-max-wait", 5*time.Second, "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.")
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+"use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 	f.IntVar(&cfg.MaxBufferedBytes, prefix+"max-buffered-bytes", 100_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
@@ -216,6 +224,14 @@ func (cfg *KafkaConfig) Validate() error {
 	}
 	if cfg.MaxConsumerLagAtStartup < cfg.TargetConsumerLagAtStartup {
 		return ErrInvalidMaxConsumerLagAtStartup
+	}
+
+	if err := ValidateRecordVersion(cfg.ProducerRecordVersion); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRecordVersion, err)
+	}
+
+	if cfg.FetchMaxWait < 5*time.Second || cfg.FetchMaxWait > 30*time.Second {
+		return ErrInvalidFetchMaxWait
 	}
 
 	if cfg.FetchConcurrencyMax < 0 {

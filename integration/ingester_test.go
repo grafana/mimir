@@ -849,19 +849,13 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			baseFlags := map[string]string{
 				"-distributor.ingestion-tenant-shard-size": "0",
 				"-ingester.ring.heartbeat-period":          "1s",
+				"-common.client-cluster-validation.label":  testCase.distributorClusterLabel,
 			}
 
 			flags := mergeFlags(
 				BlocksStorageFlags(),
 				BlocksStorageS3Flags(),
 				baseFlags,
-			)
-
-			distributorFlags := mergeFlags(
-				flags,
-				map[string]string{
-					"-server.cluster-validation.label": testCase.distributorClusterLabel,
-				},
 			)
 
 			ingesterFlags := mergeFlags(
@@ -879,7 +873,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
@@ -922,7 +916,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 
 			if testCase.expectedClusterValidationFailures > 0 {
 				// We expect that the cluster validation error is tracked by ingester client's metrics.
-				sums, err = distributor.SumMetrics([]string{"cortex_client_request_invalid_cluster_validation_labels_total"},
+				sums, err = distributor.SumMetrics([]string{"cortex_client_invalid_cluster_validation_label_requests_total"},
 					e2e.WithLabelMatchers(
 						labels.MustNewMatcher(labels.MatchEqual, "method", "/cortex.Ingester/Push"),
 						labels.MustNewMatcher(labels.MatchEqual, "client", "ingester"),
