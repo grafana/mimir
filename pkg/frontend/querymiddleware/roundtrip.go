@@ -237,6 +237,9 @@ func newQueryTripperware(
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
 	parser.EnableExperimentalFunctions = true
 
+	// Enable arithmetic operations in durations in PromQL parser for all.
+	parser.ExperimentalDurationExpr = true
+
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error

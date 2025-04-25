@@ -167,6 +167,9 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
 	parser.EnableExperimentalFunctions = true
 
+	// Enable arithmetic operations in durations in PromQL parser for all.
+	parser.ExperimentalDurationExpr = true
+
 	var eng promql.QueryEngine
 
 	switch cfg.QueryEngine {
