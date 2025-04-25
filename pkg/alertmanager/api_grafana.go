@@ -9,11 +9,16 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingNotify "github.com/grafana/alerting/notify"
+	alertingReceivers "github.com/grafana/alerting/receivers"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
@@ -386,6 +391,12 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 	}
 
 	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.StaticHeaders)
+	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
+		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errValidatingConfig, err.Error())})
+		return
+	}
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())
@@ -418,4 +429,63 @@ func (am *MultitenantAlertmanager) DeleteUserGrafanaConfig(w http.ResponseWriter
 
 	w.WriteHeader(http.StatusOK)
 	util.WriteJSONResponse(w, successResult{Status: statusSuccess})
+}
+
+// ValidateUserGrafanaConfig validates the Grafana Alertmanager configuration.
+func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
+	// We don't have a valid use case for empty configurations. If a tenant does not have a
+	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
+	// config and b) start an Alertmanager instance for them if a fallback
+	// configuration is provisioned.
+	if cfg.RawConfig == "" {
+		return fmt.Errorf("configuration provided is empty, if you'd like to remove your configuration please use the delete configuration endpoint")
+	}
+
+	// Perform a similar flow of transformations that would happen in the Alertmanager on Sync & Apply.
+	grafanaConfig, err := createUsableGrafanaConfig(logger, cfg, "")
+	if err != nil {
+		return err
+	}
+
+	userAmConfig, err := definition.LoadCompat([]byte(grafanaConfig.RawConfig))
+	if err != nil {
+		return fmt.Errorf("error unmarshalling Grafana configuration: %w", err)
+	}
+
+	if l := limits.AlertmanagerMaxTemplatesCount(user); l > 0 && len(grafanaConfig.Templates) > l {
+		// Permissive limit to first verify impact on existing users.
+		// TODO: Make this strict.
+		level.Warn(logger).Log("msg", "too many templates in configuration", "user", user, "templates", len(grafanaConfig.Templates), "limit", l)
+	}
+
+	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
+		// Permissive limit to first verify impact on existing users.
+		// TODO: Make this strict.
+		for name, tmpl := range grafanaConfig.Templates {
+			if size := len(tmpl.Body); size > maxSize {
+				level.Warn(logger).Log("msg", "template too big", "user", user, "template", name, "size", size, "limit", maxSize)
+			}
+		}
+	}
+
+	// Validate template files.
+	tmpls := make([]string, 0, len(grafanaConfig.Templates))
+	for _, tmpl := range grafanaConfig.Templates {
+		tmpls = append(tmpls, tmpl.Body)
+	}
+
+	tmpl, err := alertingTemplates.FromContent(tmpls, WithCustomFunctions(user))
+	if err != nil {
+		return err
+	}
+
+	noopWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier { return notifier }
+	for _, rcv := range userAmConfig.Receivers {
+		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), tmpl, logger, noopWrapper)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
