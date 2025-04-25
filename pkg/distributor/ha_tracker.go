@@ -354,11 +354,14 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Request callbacks from KVStore when data changes.
 	// The KVStore config we gave when creating h should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass an empty string here.
+	level.Info(h.logger).Log("msg", "starting WatchPrefix for HA tracker")
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
+			level.Error(h.logger).Log("msg", "received non-ReplicaDesc value from WatchPrefix", "key", key, "type", fmt.Sprintf("%T", value))
 			return false
 		}
+		level.Debug(h.logger).Log("msg", "received KV store update from WatchPrefix", "key", key, "replica", replica.Replica, "deleted_at", replica.DeletedAt > 0)
 		h.processKVStoreEntry(key, replica)
 		return true
 	})
@@ -379,6 +382,7 @@ func (h *defaultHaTracker) processKVStoreEntry(key string, replica *ReplicaDesc)
 	cluster := segments[1]
 
 	if replica.DeletedAt > 0 {
+		level.Info(h.logger).Log("msg", "received KV store update for deleted replica", "user", user, "cluster", cluster, "replica", replica.Replica, "deleted_at", timestamp.Time(replica.DeletedAt))
 		h.cleanupDeletedReplica(user, cluster)
 		return
 	}
@@ -391,6 +395,8 @@ func (h *defaultHaTracker) processKVStoreEntry(key string, replica *ReplicaDesc)
 }
 
 func (h *defaultHaTracker) cleanupDeletedReplica(user string, cluster string) {
+	level.Info(h.logger).Log("msg", "cleaning up deleted replica from cache", "user", user, "cluster", cluster)
+
 	h.electedReplicaStatus.DeletePartialMatch(prometheus.Labels{"user": user, "cluster": cluster})
 	h.electedReplicaChanges.DeleteLabelValues(user, cluster)
 	h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
@@ -405,6 +411,9 @@ func (h *defaultHaTracker) cleanupDeletedReplica(user string, cluster string) {
 		if len(userClusters) == 0 {
 			delete(h.clusters, user)
 		}
+		level.Info(h.logger).Log("msg", "deleted replica from cache", "user", user, "cluster", cluster)
+	} else {
+		level.Info(h.logger).Log("msg", "no clusters found for user when cleaning up deleted replica", "user", user)
 	}
 }
 
@@ -616,6 +625,8 @@ func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc
 			// clear electedLastSeenTimestamp since we don't know when we have seen this replica.
 			entry.electedLastSeenTimestamp = 0
 		}
+	} else {
+		level.Info(h.logger).Log("msg", "replica in cache is up to date", "user", userID, "cluster", cluster, "replica", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 	}
 	entry.elected = *desc
 	h.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))

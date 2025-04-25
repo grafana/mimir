@@ -86,13 +86,34 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTra
 }
 
 func waitForHaTrackerCacheEntryRemoval(t require.TestingT, tracker *defaultHaTracker, user string, cluster string, duration time.Duration, tick time.Duration) bool {
+	// Add this logging before the assert.Eventually call
+	tt, ok := t.(*testing.T)
+	if ok {
+		tt.Logf("Starting to wait for replica removal from cache for user=%s, cluster=%s", user, cluster)
+	}
+
+	var lastSeenInfo *haClusterInfo
+
 	condition := assert.Eventually(t, func() bool {
 		tracker.electedLock.RLock()
 		defer tracker.electedLock.RUnlock()
 
 		info := tracker.clusters[user][cluster]
+
+		// Capture the info for logging
+		if info != nil {
+			lastSeenInfo = info
+		}
+
 		return info == nil
 	}, duration, tick)
+
+	// If test is failing, log more details
+	if !condition && lastSeenInfo != nil && ok {
+		tt.Logf("Cache entry not removed after waiting. Last seen: user=%s, cluster=%s, replica=%s, deletedAt=%v",
+			user, cluster, lastSeenInfo.elected.Replica, timestamp.Time(lastSeenInfo.elected.DeletedAt))
+	}
+
 	return condition
 }
 
@@ -383,20 +404,27 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 	assert.NoError(t, err)
 
 	key := fmt.Sprintf("%s/%s", tenant, cluster)
+	time.Sleep(time.Second)
 
 	// Mark the ReplicaDesc as deleted in the KVStore, which will also remove it from the tracker cache.
 	err = tracker.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
 		d, ok := in.(*ReplicaDesc)
 		if !ok || d == nil {
+			logger.Log("msg", "CAS operation failed - replica is not a ReplicaDesc or is nil")
 			return nil, false, nil
 		}
-		d.DeletedAt = timestamp.FromTime(time.Now())
+		deletionTime := time.Now().Add(time.Second)
+		logger.Log("msg", "Marking replica for deletion in KVStore", "key", key, "replica", d.Replica, "deletion_time", deletionTime)
+		d.DeletedAt = timestamp.FromTime(deletionTime)
 		return d, true, nil
 	})
 	require.NoError(t, err)
 
+	logger.Log("msg", "Successfully marked replica for deletion in KVStore", "key", key, "now waiting for cache removal")
+
+	// Wait for the cache entry to be removed
 	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, tenant, cluster, 10*time.Second, 50*time.Millisecond)
-	require.True(t, condition)
+	require.True(t, condition, "Expected the replica to be removed from cache but it wasn't")
 
 	now = now.Add(failoverTimeoutPlus100ms)
 	// check replica2
