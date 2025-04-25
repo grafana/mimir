@@ -45,7 +45,8 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	// If configured, use the SMTP From address sent by Grafana.
 	if gCfg.SmtpFrom != "" {
 		if amCfg.AlertmanagerConfig.Global == nil {
-			amCfg.AlertmanagerConfig.Global = &config.GlobalConfig{}
+			defaultGlobals := config.DefaultGlobalConfig()
+			amCfg.AlertmanagerConfig.Global = &defaultGlobals
 		}
 		amCfg.AlertmanagerConfig.Global.SMTPFrom = gCfg.SmtpFrom
 	}
