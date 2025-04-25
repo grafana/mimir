@@ -1,20 +1,22 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/26344c3ec7409713fcf52a9c41cd0dce537b3100/pkg/querier/parquet_blocks_finder_bucket_index.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package querier
 
 import (
 	"context"
 	"time"
 
-	"github.com/grafana/dskit/services"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/objstore"
-
-	"github.com/cespare/xxhash/v2"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -128,8 +130,9 @@ func (f *ParquetBucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID s
 	return blocks, matchingDeletionMarks, nil
 }
 
-func hash(s string) uint64 {
-	h := xxhash.New()
-	_, _ = h.Write([]byte(s))
-	return h.Sum64()
-}
+// TODO this function sets off the linter as it is not used yet
+//func hash(s string) uint64 {
+//	h := xxhash.New()
+//	_, _ = h.Write([]byte(s))
+//	return h.Sum64()
+//}

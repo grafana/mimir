@@ -47,7 +47,6 @@ func NewParquetWriter(w io.Writer, rowsPerRowGroup int64, indexSizeLimit, numDat
 		skipPageBounds = append(skipPageBounds, c)
 		schemaGroup[c] = parquet.Compressed(parquet.Encoded(parquet.Leaf(parquet.ByteArrayType), &parquet.DeltaByteArray), &parquet.Zstd)
 	}
-	skipPageBounds = append(skipPageBounds)
 
 	for _, n := range columns {
 		if _, ok := schemaGroup[n]; !ok {

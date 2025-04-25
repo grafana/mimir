@@ -103,8 +103,8 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 
-	// Tombstones should increase by four for each server that leaves (once for distributor, ingester, compactor and store-gateway ring)
-	tombstonesPerRemovedInstance := 4.0
+	// Tombstones should increase by five for each server that leaves (once for distributor, ingester, compactor, parquet-converter, and store-gateway ring)
+	tombstonesPerRemovedInstance := 5.0
 	require.NoError(t, s.Stop(mimir1))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2*tokensPerInstance), "cortex_ring_tokens_total"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
@@ -235,7 +235,7 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// These values are multiplied by three to account for the fact that ingester
 	// distributor, compactor, store-gateway components use a ring.
 	expectedRingMembers := float64(minMimir) * 5 // One extra, because store-gateway-client uses ring too. But it's the same ring as store-gateway.
-	expectedTombstones := float64(maxMimir-minMimir) * 4
+	expectedTombstones := float64(maxMimir-minMimir) * 5
 
 	require.Eventually(t, func() bool {
 		ok := true

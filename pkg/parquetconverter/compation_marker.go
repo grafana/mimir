@@ -27,7 +27,8 @@ type CompactionMark struct {
 	Version int `json:"version"`
 }
 
-func (m *CompactionMark) markerFilename() string { return ParquetCompactionMakerFileName }
+// TODO this function sets off the linter as it is not used yet
+//func (m *CompactionMark) markerFilename() string { return ParquetCompactionMakerFileName }
 
 func ReadCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket, logger log.Logger) (*CompactionMark, error) {
 	markerPath := path.Join(id.String(), ParquetCompactionMakerFileName)
