@@ -6,14 +6,28 @@
 package tsdbcodec
 
 import (
+	"context"
+	"math"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/oklog/ulid/v2"
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -123,4 +137,114 @@ func equalChunkIters(iter1, iter2 chunkenc.Iterator) bool {
 			return false
 		}
 	}
+}
+
+func CreateTSDBBlock(
+	ctx context.Context,
+	series []storage.Series,
+	dir string,
+) (id ulid.ULID, err error) {
+	headOpts := tsdb.DefaultHeadOptions()
+	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
+	headOpts.ChunkRange = math.MaxInt64
+	headOpts.EnableNativeHistograms.Store(true)
+	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
+	if err != nil {
+		return id, errors.Wrap(err, "create head block")
+	}
+	defer func() {
+		runutil.CloseWithErrCapture(&err, h, "TSDB Head")
+		if e := os.RemoveAll(headOpts.ChunkDirRoot); e != nil {
+			err = errors.Wrap(e, "delete chunks dir")
+		}
+	}()
+
+	var g errgroup.Group
+	var batchSize = len(series) / runtime.GOMAXPROCS(0)
+	batchOffset := 0
+	mint := int64(math.MaxInt64)
+	maxt := int64(math.MinInt64)
+	mtx := &sync.Mutex{}
+	for len(series) > 0 {
+		l := batchSize
+		if len(series) < 1000 {
+			l = len(series)
+		}
+		batch := series[:l]
+		batchOffset += batchSize
+		series = series[l:]
+		g.Go(func() error {
+			lmint := int64(math.MaxInt64)
+			lmaxt := int64(math.MinInt64)
+
+			for _, s := range batch {
+				app := h.Appender(ctx)
+				lbls := s.Labels()
+				iter := s.Iterator(nil)
+				var err error
+			LOOP:
+				for {
+					switch iter.Next() {
+					case chunkenc.ValNone:
+						break LOOP
+					case chunkenc.ValFloat:
+						t, v := iter.At()
+						_, err = app.Append(0, lbls, t, v)
+					case chunkenc.ValHistogram:
+						t, h := iter.AtHistogram(nil)
+						_, err = app.AppendHistogram(0, lbls, t, h, nil)
+					case chunkenc.ValFloatHistogram:
+						t, fh := iter.AtFloatHistogram(nil)
+						_, err = app.AppendHistogram(0, lbls, t, nil, fh)
+					}
+					if err != nil {
+						return errors.Wrap(err, "append")
+					}
+					lmint = min(lmint, iter.AtT())
+					lmaxt = max(lmaxt, iter.AtT())
+				}
+				if err := app.Commit(); err != nil {
+					return errors.Wrap(err, "commit")
+				}
+			}
+			mtx.Lock()
+			mint = min(mint, lmint)
+			maxt = max(maxt, lmaxt)
+			mtx.Unlock()
+			return nil
+		})
+
+	}
+	if err := g.Wait(); err != nil {
+		return id, err
+	}
+	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
+	if err != nil {
+		return id, errors.Wrap(err, "create compactor")
+	}
+
+	blocks, err := c.Write(dir, h, mint, maxt, nil)
+	if err != nil {
+		return id, errors.Wrap(err, "write block")
+	}
+
+	if len(blocks) != 1 {
+		return id, errors.Errorf("expected one block, got %d", len(blocks))
+	}
+
+	id = blocks[0]
+	blockDir := filepath.Join(dir, id.String())
+
+	if _, err = block.InjectThanosMeta(log.NewNopLogger(), blockDir, block.ThanosMeta{
+		Labels: nil,
+		Source: block.TestSource,
+		Files:  []block.File{},
+	}, nil); err != nil {
+		return id, errors.Wrap(err, "finalize block")
+	}
+
+	if err = os.Remove(filepath.Join(dir, id.String(), "tombstones")); err != nil {
+		return id, errors.Wrap(err, "remove tombstones")
+	}
+	return id, nil
 }
