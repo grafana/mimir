@@ -435,7 +435,7 @@ func (am *MultitenantAlertmanager) DeleteUserGrafanaConfig(w http.ResponseWriter
 func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
-	// config and b) immediately start an Alertmanager instance for them if a fallback
+	// config and b) start an Alertmanager instance for them if a fallback
 	// configuration is provisioned.
 	if cfg.RawConfig == "" {
 		return fmt.Errorf("configuration provided is empty, if you'd like to remove your configuration please use the delete configuration endpoint")
