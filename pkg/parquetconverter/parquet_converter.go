@@ -149,7 +149,9 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 			c.ringSubservicesWatcher = services.NewFailureWatcher()
 			c.ringSubservicesWatcher.WatchManager(c.ringSubservices)
 
-			err = services.StartManagerAndAwaitHealthy(ctx, c.ringSubservices)
+			if err := services.StartManagerAndAwaitHealthy(context.Background(), c.ringSubservices); err != nil {
+				return errors.Wrap(err, "unable to start parquet-converter subservices")
+			}
 		}
 	}
 
@@ -343,19 +345,20 @@ func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *buc
 	}
 }
 
-func (c *ParquetConverter) removeOutdatedBlocks(ctx context.Context, uBucket objstore.InstrumentedBucket, pIdx *bucketindex.ParquetIndex) {
-	for _, b := range pIdx.Blocks {
-		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
-		if err != nil {
-			level.Error(util_log.Logger).Log("msg", "failed to check if file exists", "err", err)
-			continue
-		}
-
-		if marker.Version < CurrentVersion {
-			delete(pIdx.Blocks, b.ID)
-		}
-	}
-}
+// TODO this function sets off the linter as it is not used yet
+//func (c *ParquetConverter) removeOutdatedBlocks(ctx context.Context, uBucket objstore.InstrumentedBucket, pIdx *bucketindex.ParquetIndex) {
+//	for _, b := range pIdx.Blocks {
+//		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
+//		if err != nil {
+//			level.Error(util_log.Logger).Log("msg", "failed to check if file exists", "err", err)
+//			continue
+//		}
+//
+//		if marker.Version < CurrentVersion {
+//			delete(pIdx.Blocks, b.ID)
+//		}
+//	}
+//}
 
 func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
 	deleted := map[ulid.ULID]struct{}{}
@@ -503,7 +506,10 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 			err = ctx.Err()
 		}
 		fmt.Printf("Writing Metrics [%v] [%v]\n", 100*(float64(total)/float64(totalMetrics)), rows[0].Columns[labels.MetricName])
-		writer.WriteRows(rows)
+		err := writer.WriteRows(rows)
+		if err != nil {
+			return err
+		}
 		total += len(rows)
 	}
 

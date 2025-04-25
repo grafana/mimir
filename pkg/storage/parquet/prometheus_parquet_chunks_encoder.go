@@ -128,6 +128,9 @@ func (e *PrometheusParquetChunksDecoder) Decode(data [][]byte, mint, maxt int64)
 		}
 		cData := b.Bytes()[:size]
 		chk, err := e.Pool.Get(chunkenc.Encoding(chkEnc), cData)
+		if err != nil {
+			return nil, err
+		}
 		c.Chunk = chk
 		if int64(minTime) > maxt {
 			continue

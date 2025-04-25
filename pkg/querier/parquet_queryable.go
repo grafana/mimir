@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/dedup"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -139,8 +139,11 @@ func NewParquetStoreQueryable(
 	bucketIndexBlocksFinder := BucketIndexBlocksFinderConfig{
 		IndexLoader: indexLoaderConfig,
 	}
-	finder := NewParquetBucketIndexBlocksFinder(bucketIndexBlocksFinder, bucketClient, limits, util_log.Logger, prometheus.DefaultRegisterer)
+	finder := NewParquetBucketIndexBlocksFinder(bucketIndexBlocksFinder, bucketClient, limits, logger, reg)
 	manager, err := services.NewManager(finder)
+	if err != nil {
+		return nil, errors.Wrap(err, "parquet store queryable subservices")
+	}
 
 	q := &ParquetQueryable{
 		bucket:              bucketClient,
@@ -328,13 +331,15 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		spanLog.Error(err)
+		level.Error(q.logger).Log("msg", "error getting tenant id", "err", err)
+		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
 
 	if len(matchers) == 0 {
 		err := errors.New("no matchers")
-		spanLog.Error(err)
+		level.Error(q.logger).Log("msg", "invalid matchers", "err", err)
+		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
 
@@ -378,7 +383,8 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 	spanLog.SetTag("blocks", len(blocks))
 
 	if err != nil {
-		spanLog.Error(err)
+		level.Error(q.logger).Log("msg", "error finding blocks", "err", err)
+		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
 	if len(blocks) == 0 {
@@ -386,10 +392,11 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 	}
 	prs, err := q.blocksToParquetReader(ctx, userID, blocks, sts)
 	if err != nil {
-		spanLog.Error(err)
+		level.Error(q.logger).Log("msg", "error converting blocks to parquet reader", "err", err)
+		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
-	spanLog.Log("msg", "parquet readers created", "numReaders", len(prs))
+	level.Info(q.logger).Log("msg", "parquet readers created", "numReaders", len(prs))
 
 	defer func() {
 		sts.AddRequestDuration(time.Since(requestStart).Milliseconds())
@@ -428,22 +435,21 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 			rows, err := q.searchWithMatchers(ctx, reader, sts, matchers...)
 			if err != nil {
 				level.Error(q.logger).Log("msg", "error querying series", "err", err, "block", b.ID)
-				err = errors.Wrapf(err, "block id %s", b.ID)
-				spanLog.Error(err)
+				spanLog.SetError()
 				return err
 			}
 			dataColsIdx := q.getDataColsIdx(skipChunks, reader.DataColsSize(), b)
 			prs, err := reader.Materialize(ctx, rows, dataColsIdx, grouping, by, sts)
 			if err != nil {
 				level.Error(q.logger).Log("msg", "error materializing series", "err", err, "block", b.ID)
-				err = errors.Wrapf(err, "block id %s", b.ID)
-				spanLog.Error(err)
+				spanLog.SetError()
 				return err
 			}
 			sts.AddRowsFetched(len(prs))
 			ss, err := newParquetRowsSeriesSet(true, prs, q.minT, q.maxT, skipChunks, q.chunkDecoder, projectionPushdown && by, queryLimiter, reqStats, sts)
 			if err != nil {
-				spanLog.Error(err)
+				level.Error(q.logger).Log("msg", "error converting rows to series set", "err", err, "block", b.ID)
+				spanLog.SetError()
 				return err
 			}
 			resultMtx.Lock()
@@ -685,7 +691,7 @@ func (b *bReadAt) ReadAt(p []byte, off int64) (n int, err error) {
 	}
 	defer rc.Close()
 	n, err = io.ReadFull(rc, p)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
 	return
@@ -732,16 +738,16 @@ func (q *parquetQuerier) blocksToParquetReader(ctx context.Context, uname string
 				if q.bucket.IsObjNotFoundErr(err) {
 					return nil
 				}
-				spanLog.Log("msg", "error getting parquet file attributes", "err", err, "path", name)
+				level.Error(q.logger).Log("msg", "error getting parquet file attributes", "err", err, "path", name)
 				spanLog.SetError()
 				return err
 			}
-			spanLog.Log("msg", "parquet file attributes", "path", name, "size", attr.Size, "lastModified", attr.LastModified)
+			level.Info(q.logger).Log("msg", "parquet file attributes", "path", name, "size", attr.Size, "lastModified", attr.LastModified)
 			t := time.Now()
 			r := &bReadAt{path: name, obj: q.bucket, m: q.metrics}
 			pr, err := mimir_storage.NewParquetReader(r.CreateReadAtWithContext, attr.Size, q.asyncRead, q.cacheMetrics, q.dictionaryCacheSize, q.metrics.pagesSkippedPageIndex, q.metrics.projectionPushdown)
 			if err != nil {
-				spanLog.Log("msg", "error creating parquet reader", "err", err, "path", name)
+				level.Error(q.logger).Log("msg", "error creating parquet file reader", "err", err, "path", name)
 				spanLog.SetError()
 				return err
 			}
@@ -768,7 +774,7 @@ func parquetValuesToStrings(values []parquet.Value) []string {
 	for k := range s {
 		result = append(result, k)
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result
 }
 
@@ -777,9 +783,10 @@ type RemoveHashLabelSeriesSet struct {
 	builder *labels.Builder
 }
 
-func newRemoveHashLabelSeriesSet(s storage.SeriesSet) *RemoveHashLabelSeriesSet {
-	return &RemoveHashLabelSeriesSet{s: s, builder: labels.NewBuilder(labels.EmptyLabels())}
-}
+// TODO this function sets off the linter as it is not used yet
+//func newRemoveHashLabelSeriesSet(s storage.SeriesSet) *RemoveHashLabelSeriesSet {
+//	return &RemoveHashLabelSeriesSet{s: s, builder: labels.NewBuilder(labels.EmptyLabels())}
+//}
 
 func (ss *RemoveHashLabelSeriesSet) Next() bool {
 	return ss.s.Next()
