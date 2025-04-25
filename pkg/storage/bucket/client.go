@@ -56,6 +56,7 @@ var (
 
 	ErrUnsupportedStorageBackend        = errors.New("unsupported storage backend")
 	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain digits and English alphabet letters")
+	ErrCustomerManagedKeyAccessDenied   = errors.New("access denied: customer key")
 )
 
 type StorageBackendConfig struct {
@@ -126,6 +127,8 @@ type Config struct {
 
 	StoragePrefix string `yaml:"storage_prefix"`
 
+	ExtraMetricsPrefix string
+
 	// Not used internally, meant to allow callers to wrap Buckets
 	// created using this config
 	Middlewares []func(objstore.InstrumentedBucket) (objstore.InstrumentedBucket, error) `yaml:"-"`
@@ -186,7 +189,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, cfg.ExtraMetricsPrefix, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
@@ -199,14 +202,14 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 	return instrumentedClient, nil
 }
 
-func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus.Registerer) objstore.Bucket {
+func bucketWithMetrics(bucketClient objstore.Bucket, name string, extraMetricsPrefix string, reg prometheus.Registerer) objstore.Bucket {
 	if reg == nil {
 		return bucketClient
 	}
 
 	// Thanos objstore no longer includes a "thanos_" prefix but all our dashboards
 	// rely on object storage related metrics including a "thanos_" prefix.
-	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
+	reg = prometheus.WrapRegistererWithPrefix(fmt.Sprintf("thanos_%s", extraMetricsPrefix), reg)
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
 
 	return objstore.WrapWithMetrics(

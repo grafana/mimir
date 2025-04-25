@@ -36,6 +36,8 @@ type gapBasedPartitioner struct {
 	extendedRanges  prometheus.Counter
 }
 
+var NewGapBasedPartitioner = newGapBasedPartitioner
+
 func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapBasedPartitioner {
 	return &gapBasedPartitioner{
 		maxGapBytes: maxGapBytes,

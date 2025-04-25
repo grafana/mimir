@@ -201,6 +201,21 @@ api:
 # The compactor block configures the compactor component.
 [compactor: <compactor>]
 
+parquet_converter:
+  # (advanced) Comma separated list of tenants that can have their TSDB blocks
+  # converted into parquet. If specified, only these tenants will be converted
+  # by the parquet-converter, otherwise all tenants can be compacted. Subject to
+  # sharding.
+  # CLI flag: -parquet-converter.enabled-tenants
+  [enabled_tenants: <string> | default = ""]
+
+  # (advanced) Comma separated list of tenants that cannot have their TSDB
+  # blocks converted into parquet. If specified, and the parquet-converter would
+  # normally pick a given tenant to convert the blocks to parquet (via
+  # -parquet-converter.enabled-tenants or sharding), it will be ignored instead.
+  # CLI flag: -parquet-converter.disabled-tenants
+  [disabled_tenants: <string> | default = ""]
+
 # The store_gateway block configures the store-gateway component.
 [store_gateway: <store_gateway>]
 
@@ -2277,6 +2292,8 @@ The `ruler_storage` block configures the ruler storage backend.
 # CLI flag: -ruler-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
 
+[extrametricsprefix: <string> | default = ""]
+
 local:
   # Directory to scan for rules
   # CLI flag: -ruler-storage.local.directory
@@ -2670,6 +2687,8 @@ The `alertmanager_storage` block configures the alertmanager storage backend.
 # only contain digits and English alphabet letters.
 # CLI flag: -alertmanager-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
+
+[extrametricsprefix: <string> | default = ""]
 
 local:
   # Path at which alertmanager configurations are stored.
@@ -4261,6 +4280,8 @@ The `blocks_storage` block configures the blocks storage.
 # only contain digits and English alphabet letters.
 # CLI flag: -blocks-storage.storage-prefix
 [storage_prefix: <string> | default = ""]
+
+[extrametricsprefix: <string> | default = ""]
 
 # This configures how the querier and store-gateway discover and synchronize
 # blocks stored in the bucket.

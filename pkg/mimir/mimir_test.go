@@ -82,7 +82,7 @@ func TestMimir(t *testing.T) {
 					Store: "inmemory",
 				},
 				ReplicationFactor:      3,
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
@@ -133,7 +133,7 @@ func TestMimir(t *testing.T) {
 			ShardingRing: alertmanager.RingConfig{
 				Common: util.CommonRingConfig{
 					KVStore:                kv.Config{Store: "memberlist"},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 				},
 				ReplicationFactor: 1,
 			},
@@ -154,14 +154,14 @@ func TestMimir(t *testing.T) {
 					KVStore: kv.Config{
 						Store: "inmemory",
 					},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 				},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
 			KVStore:                kv.Config{Store: "memberlist"},
 			ReplicationFactor:      1,
-			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo", "docker0"},
 		}},
 		Querier: querier.Config{
 			QueryEngine: "prometheus",
@@ -181,7 +181,7 @@ func TestMimir(t *testing.T) {
 			target: []string{All, AlertManager},
 			expectedEnabledModules: []string{
 				// Check random modules that we expect to be configured when using Target=All.
-				Server, IngesterService, IngesterRing, DistributorService, Compactor,
+				Server, IngesterService, IngesterRing, DistributorService, Compactor, ParquetConverter,
 
 				// Check that Alertmanager is configured which is not part of Target=All.
 				AlertManager,
@@ -190,16 +190,16 @@ func TestMimir(t *testing.T) {
 		"-target=write": {
 			target:                  []string{Write},
 			expectedEnabledModules:  []string{DistributorService, IngesterService},
-			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 		},
 		"-target=read": {
 			target:                  []string{Read},
 			expectedEnabledModules:  []string{QueryFrontend, Querier},
-			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 		},
 		"-target=backend": {
 			target:                  []string{Backend},
-			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, ParquetConverter},
 			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
 		},
 	}

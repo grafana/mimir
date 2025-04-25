@@ -8703,6 +8703,15 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "extrametricsprefix",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
+        },
+        {
           "kind": "block",
           "name": "bucket_store",
           "required": false,
@@ -11858,6 +11867,38 @@
           "fieldFlag": "compactor.upload-sparse-index-headers",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "parquet_converter",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled_tenants",
+          "required": false,
+          "desc": "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "parquet-converter.enabled-tenants",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "disabled_tenants",
+          "required": false,
+          "desc": "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "parquet-converter.disabled-tenants",
+          "fieldType": "string",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -15255,6 +15296,15 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "extrametricsprefix",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
+        },
+        {
           "kind": "block",
           "name": "local",
           "required": false,
@@ -17806,6 +17856,15 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "alertmanager-storage.storage-prefix",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "extrametricsprefix",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
           "fieldType": "string"
         },
         {
