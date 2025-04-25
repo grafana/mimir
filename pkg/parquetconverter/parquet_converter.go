@@ -39,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -105,7 +104,7 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 		IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
 	}
 
-	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, util_log.Logger, registerer)
+	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, logger, registerer)
 
 	manager, err := services.NewManager(loader)
 	if err != nil {
@@ -236,7 +235,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		case <-updateIndexTicker.C:
 			users, err := c.discoverUsers(ctx)
 			if err != nil {
-				level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
+				level.Error(c.logger).Log("msg", "Error scanning users", "err", err)
 				break
 			}
 			for _, u := range users {
@@ -244,7 +243,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					if ok, _ := c.ownBlock(u); ok {
 						err := c.updateParquetIndex(ctx, u)
 						if err != nil {
-							level.Error(util_log.Logger).Log("msg", "Error updating index", "err", err)
+							level.Error(c.logger).Log("msg", "Error updating index", "err", err)
 						}
 					}
 				}
@@ -253,7 +252,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		case <-convertBlocksTicker.C:
 			u, err := c.discoverUsers(ctx)
 			if err != nil {
-				level.Error(util_log.Logger).Log("msg", "Error scanning users", "err", err)
+				level.Error(c.logger).Log("msg", "Error scanning users", "err", err)
 				return err
 			}
 
@@ -263,9 +262,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 				}
 				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 
-				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, util_log.Logger)
+				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, c.logger)
 				if err != nil {
-					level.Error(util_log.Logger).Log("msg", "Error loading index", "err", err)
+					level.Error(c.logger).Log("msg", "Error loading index", "err", err)
 					break
 				}
 
@@ -274,38 +273,38 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						return ctx.Err()
 					}
 
-					level.Info(util_log.Logger).Log("msg", "Scanning User", "user", u)
+					level.Info(c.logger).Log("msg", "Scanning User", "user", u)
 
 					idx, err := c.loader.GetIndex(ctx, u)
 					if err != nil {
-						level.Error(util_log.Logger).Log("msg", "Error loading index", "err", err)
+						level.Error(c.logger).Log("msg", "Error loading index", "err", err)
 						break
 					}
 
-					level.Info(util_log.Logger).Log("msg", "Loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
+					level.Info(c.logger).Log("msg", "Loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
 
-					level.Info(util_log.Logger).Log("msg", "Loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
+					level.Info(c.logger).Log("msg", "Loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
 
 					ownedBlocks, totalBlocks := c.findNextBlockToCompact(ctx, uBucket, idx, pIdx)
 					if len(ownedBlocks) == 0 {
-						level.Info(util_log.Logger).Log("msg", "No owned blocks to compact", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
+						level.Info(c.logger).Log("msg", "No owned blocks to compact", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
 						break
 					}
 
 					b := ownedBlocks[0]
 
 					if err := os.RemoveAll(c.compactRootDir()); err != nil {
-						level.Error(util_log.Logger).Log("msg", "failed to remove compaction work directory", "path", c.compactRootDir(), "err", err)
+						level.Error(c.logger).Log("msg", "failed to remove compaction work directory", "path", c.compactRootDir(), "err", err)
 					}
 					bdir := filepath.Join(c.compactDirForUser(u), b.ID.String())
-					level.Info(util_log.Logger).Log("msg", "Downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
-					if err := block.Download(ctx, util_log.Logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
-						level.Error(util_log.Logger).Log("msg", "Error downloading block", "err", err)
+					level.Info(c.logger).Log("msg", "Downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
+					if err := block.Download(ctx, c.logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
+						level.Error(c.logger).Log("msg", "Error downloading block", "err", err)
 						continue
 					}
 					err = TSDBBlockToParquet(ctx, b.ID, uBucket, bdir, c.logger)
 					if err != nil {
-						level.Error(util_log.Logger).Log("msg", "failed to import block", "block", b.String(), "err", err)
+						level.Error(c.logger).Log("msg", "failed to import block", "block", b.String(), "err", err)
 					}
 					// Add the blocks
 					pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b}
@@ -326,7 +325,7 @@ func (c *ParquetConverter) stopping(_ error) error {
 }
 
 func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) error {
-	level.Info(util_log.Logger).Log("msg", "Updating index", "user", u)
+	level.Info(c.logger).Log("msg", "Updating index", "user", u)
 	uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 	deleted := map[ulid.ULID]struct{}{}
 	idx, err := c.loader.GetIndex(ctx, u)
@@ -339,7 +338,7 @@ func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) err
 		deleted[b.ID] = struct{}{}
 	}
 
-	pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, util_log.Logger)
+	pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to read parquet index")
 	}
@@ -355,20 +354,20 @@ func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) err
 
 		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
 		if err != nil {
-			level.Error(util_log.Logger).Log("msg", "failed to check if file exists", "err", err)
+			level.Error(c.logger).Log("msg", "failed to check if file exists", "err", err)
 			continue
 		}
 
 		if marker.Version == CurrentVersion {
-			// m, err := block.DownloadMeta(ctx, util_log.Logger, uBucket, b.ID)
+			// m, err := block.DownloadMeta(ctx, c.logger, uBucket, b.ID)
 			// if err != nil {
-			// 	level.Error(util_log.Logger).Log("msg", "failed to download block", "block", b.ID, "err", err)
+			// 	level.Error(c.logger).Log("msg", "failed to download block", "block", b.ID, "err", err)
 			// }
 			extensions := bucketindex.Extensions{}
 			// TODO
 			// _, err = metadata.ConvertExtensions(m.Thanos.Extensions, &extensions)
 			// if err != nil {
-			// 	level.Error(util_log.Logger).Log("msg", "failed to convert extensions", "err", err)
+			// 	level.Error(c.logger).Log("msg", "failed to convert extensions", "err", err)
 			// }
 			pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b, Extensions: extensions}
 		}
@@ -405,7 +404,7 @@ func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *buc
 //	for _, b := range pIdx.Blocks {
 //		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
 //		if err != nil {
-//			level.Error(util_log.Logger).Log("msg", "failed to check if file exists", "err", err)
+//			level.Error(c.logger).Log("msg", "failed to check if file exists", "err", err)
 //			continue
 //		}
 //
@@ -536,7 +535,7 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 		defer r.Close()
 		err = uploader.Upload(context.Background(), path.Join(id.String(), parquetFileName), r)
 		if err != nil {
-			level.Error(util_log.Logger).Log("msg", "failed to upload file", "err", err)
+			level.Error(logger).Log("msg", "failed to upload file", "err", err)
 		}
 		if err == nil {
 			err = WriteCompactMark(ctx, id, uploader)

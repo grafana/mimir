@@ -331,14 +331,14 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		level.Error(q.logger).Log("msg", "error getting tenant id", "err", err)
+		level.Error(spanLog).Log("msg", "error getting tenant id", "err", err)
 		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
 
 	if len(matchers) == 0 {
 		err := errors.New("no matchers")
-		level.Error(q.logger).Log("msg", "invalid matchers", "err", err)
+		level.Error(spanLog).Log("msg", "invalid matchers", "err", err)
 		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
@@ -383,7 +383,7 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 	spanLog.SetTag("blocks", len(blocks))
 
 	if err != nil {
-		level.Error(q.logger).Log("msg", "error finding blocks", "err", err)
+		level.Error(spanLog).Log("msg", "error finding blocks", "err", err)
 		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
@@ -392,11 +392,11 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 	}
 	prs, err := q.blocksToParquetReader(ctx, userID, blocks, sts)
 	if err != nil {
-		level.Error(q.logger).Log("msg", "error converting blocks to parquet reader", "err", err)
+		level.Error(spanLog).Log("msg", "error converting blocks to parquet reader", "err", err)
 		spanLog.SetError()
 		return storage.ErrSeriesSet(err)
 	}
-	level.Info(q.logger).Log("msg", "parquet readers created", "numReaders", len(prs))
+	level.Info(spanLog).Log("msg", "parquet readers created", "numReaders", len(prs))
 
 	defer func() {
 		sts.AddRequestDuration(time.Since(requestStart).Milliseconds())
@@ -434,21 +434,21 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 			}()
 			rows, err := q.searchWithMatchers(ctx, reader, sts, matchers...)
 			if err != nil {
-				level.Error(q.logger).Log("msg", "error querying series", "err", err, "block", b.ID)
+				level.Error(spanLog).Log("msg", "error querying series", "err", err, "block", b.ID)
 				spanLog.SetError()
 				return err
 			}
 			dataColsIdx := q.getDataColsIdx(skipChunks, reader.DataColsSize(), b)
 			prs, err := reader.Materialize(ctx, rows, dataColsIdx, grouping, by, sts)
 			if err != nil {
-				level.Error(q.logger).Log("msg", "error materializing series", "err", err, "block", b.ID)
+				level.Error(spanLog).Log("msg", "error materializing series", "err", err, "block", b.ID)
 				spanLog.SetError()
 				return err
 			}
 			sts.AddRowsFetched(len(prs))
 			ss, err := newParquetRowsSeriesSet(true, prs, q.minT, q.maxT, skipChunks, q.chunkDecoder, projectionPushdown && by, queryLimiter, reqStats, sts)
 			if err != nil {
-				level.Error(q.logger).Log("msg", "error converting rows to series set", "err", err, "block", b.ID)
+				level.Error(spanLog).Log("msg", "error converting rows to series set", "err", err, "block", b.ID)
 				spanLog.SetError()
 				return err
 			}
@@ -738,16 +738,16 @@ func (q *parquetQuerier) blocksToParquetReader(ctx context.Context, uname string
 				if q.bucket.IsObjNotFoundErr(err) {
 					return nil
 				}
-				level.Error(q.logger).Log("msg", "error getting parquet file attributes", "err", err, "path", name)
+				level.Error(spanLog).Log("msg", "error getting parquet file attributes", "err", err, "path", name)
 				spanLog.SetError()
 				return err
 			}
-			level.Info(q.logger).Log("msg", "parquet file attributes", "path", name, "size", attr.Size, "lastModified", attr.LastModified)
+			level.Info(spanLog).Log("msg", "parquet file attributes", "path", name, "size", attr.Size, "lastModified", attr.LastModified)
 			t := time.Now()
 			r := &bReadAt{path: name, obj: q.bucket, m: q.metrics}
 			pr, err := mimir_storage.NewParquetReader(r.CreateReadAtWithContext, attr.Size, q.asyncRead, q.cacheMetrics, q.dictionaryCacheSize, q.metrics.pagesSkippedPageIndex, q.metrics.projectionPushdown)
 			if err != nil {
-				level.Error(q.logger).Log("msg", "error creating parquet file reader", "err", err, "path", name)
+				level.Error(spanLog).Log("msg", "error creating parquet file reader", "err", err, "path", name)
 				spanLog.SetError()
 				return err
 			}
