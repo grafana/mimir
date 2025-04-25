@@ -831,19 +831,19 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 					mockPreallocTimeseriesWithSample("series_c", 1, 2),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseriesWithSample("series_a", 2, 3),
 					mockPreallocTimeseriesWithSample("series_b", 2, 3),
+					mockPreallocTimeseriesWithSample("series_a", 2, 3),
 					mockPreallocTimeseriesWithSample("series_c", 2, 3),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseriesWithSample("series_a", 3, 4),
 					mockPreallocTimeseriesWithSample("series_b", 3, 4),
 					mockPreallocTimeseriesWithSample("series_c", 3, 4),
+					mockPreallocTimeseriesWithSample("series_a", 3, 4),
 				}},
 				{Timeseries: []mimirpb.PreallocTimeseries{
-					mockPreallocTimeseriesWithSample("series_a", 4, 5),
-					mockPreallocTimeseriesWithSample("series_b", 4, 5),
 					mockPreallocTimeseriesWithSample("series_c", 4, 5),
+					mockPreallocTimeseriesWithSample("series_b", 4, 5),
+					mockPreallocTimeseriesWithSample("series_a", 4, 5),
 				}},
 			},
 			// We expect no errors during the push calls themselves as flushing happens on Close.
