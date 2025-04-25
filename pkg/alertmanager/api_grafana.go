@@ -332,6 +332,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Default:                   cfg.Default,
 			Promoted:                  cfg.Promoted,
 			ExternalURL:               cfg.ExternalUrl,
+			SmtpFrom:                  cfg.SmtpFrom,
 			StaticHeaders:             cfg.StaticHeaders,
 		},
 	})

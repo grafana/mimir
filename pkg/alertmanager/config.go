@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
@@ -38,11 +39,15 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
 
-		// If configured, use the SMTP From address sent by Grafana.
-		if gCfg.SmtpFrom != "" {
-			cfg.Global.SMTPFrom = gCfg.SmtpFrom
-		}
 		amCfg.AlertmanagerConfig.Global = cfg.Global
+	}
+
+	// If configured, use the SMTP From address sent by Grafana.
+	if gCfg.SmtpFrom != "" {
+		if amCfg.AlertmanagerConfig.Global == nil {
+			amCfg.AlertmanagerConfig.Global = &config.GlobalConfig{}
+		}
+		amCfg.AlertmanagerConfig.Global.SMTPFrom = gCfg.SmtpFrom
 	}
 
 	// We want to:

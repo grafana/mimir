@@ -200,6 +200,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	}
 
 	externalURL := "http://test.grafana.com"
+	smtpFrom := "test@grafana.com"
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          testGrafanaConfig,
@@ -208,6 +209,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        externalURL,
+		SmtpFrom:           smtpFrom,
 		StaticHeaders:      map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
 	}))
 
@@ -238,6 +240,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "default": false,
 				 "promoted": true,
 				 "external_url": %q,
+				 "smtp_from": %q,
 				 "static_headers": {
 					"Header-1": "Value-1",
 					"Header-2": "Value-2"
@@ -245,7 +248,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 			},
 			"status": "success"
 		}
-		`, testGrafanaConfig, now, externalURL)
+		`, testGrafanaConfig, now, externalURL, smtpFrom)
 
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
