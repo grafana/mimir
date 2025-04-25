@@ -34,7 +34,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
@@ -432,7 +431,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 
 func updateOwnershipFunc(c *BlocksCleaner, ownFunc func(user string) (bool, error)) {
 	c.ownUser = ownFunc
-	c.usersScanner = mimir_tsdb.NewUsersScanner(c.bucketClient, ownFunc, c.logger)
+	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, c.logger)
 }
 
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
