@@ -295,7 +295,7 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
 
 		// Use a single set of tenants while BlocksCleaner is in Starting state.
-		if c.State() == services.Starting {
+		if c.State() != services.Starting {
 			own, err := c.ownUser(userID)
 			if err != nil || !own {
 				// This returns error only if err != nil. ForEachUser keeps working for other users.
