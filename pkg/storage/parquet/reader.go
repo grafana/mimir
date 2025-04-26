@@ -245,9 +245,14 @@ func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool
 	span, _ := opentracing.StartSpanFromContext(ctx, "ParquetReader.ScanRows")
 	defer span.Finish()
 
-	ci, ok := pr.columnIndexMap[m.Name]
-	if !ok {
-		if m.Matches("") {
+	ci, validColumn := pr.columnIndexMap[m.Name]
+	if !validColumn {
+		// If the column does not exist we can ignore the matcher under certain conditions.
+		// * `!=` and `!~` matchers can always be ignored.
+		// * `=` matcher can be ignored if the value is empty.
+		if m.Type == labels.MatchNotEqual ||
+			m.Type == labels.MatchNotRegexp ||
+			m.Type == labels.MatchEqual && m.Matches("") {
 			return rows, nil
 		}
 		return make([][]int64, len(pr.f.RowGroups())), nil
