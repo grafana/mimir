@@ -5,7 +5,6 @@ syntax = "proto3";
 package schedulerpb;
 
 import "gogoproto/gogo.proto";
-import "google/protobuf/timestamp.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -20,11 +19,6 @@ message JobSpec {
     int32 partition = 2;
     int64 start_offset = 3;
     int64 end_offset = 4;
-    google.protobuf.Timestamp commit_rec_ts = 5  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-	int64 last_seen_offset = 6;
-    google.protobuf.Timestamp last_block_end_ts = 7  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-    int64 cycle_end_offset = 8;
-    google.protobuf.Timestamp cycle_end_ts = 9  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
 }
 
 service BlockBuilderScheduler {
