@@ -43,6 +43,7 @@ type response struct {
 	Data      interface{}  `json:"data"`
 	ErrorType v1.ErrorType `json:"errorType"`
 	Error     string       `json:"error"`
+	Warnings  []string     `json:"warnings,omitempty"`
 }
 
 // AlertDiscovery has info for all active alerts.
@@ -219,15 +220,14 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, token, err := a.ruler.GetRules(ctx, rulesReq)
-
+	rulesResp, token, err := a.ruler.GetRules(ctx, rulesReq)
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return
 	}
 
-	groups := make([]*RuleGroup, 0, len(rgs))
-	for _, g := range rgs {
+	groups := make([]*RuleGroup, 0, len(rulesResp.Groups))
+	for _, g := range rulesResp.Groups {
 		grp := RuleGroup{
 			Name:           g.Group.Name,
 			File:           g.Group.Namespace,
@@ -279,10 +279,14 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		groups = append(groups, &grp)
 	}
 
-	b, err := json.Marshal(&response{
+	resp := &response{
 		Status: "success",
 		Data:   &RuleDiscovery{RuleGroups: groups, NextToken: token},
-	})
+	}
+	if len(rulesResp.Warnings) != 0 {
+		resp.Warnings = rulesResp.Warnings
+	}
+	b, err := json.Marshal(resp)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
 		respondServerError(logger, w, "unable to marshal the requested data")
@@ -321,16 +325,14 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
-
+	rulesResp, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return
 	}
 
-	alerts := []*Alert{}
-
-	for _, g := range rgs {
+	alerts := make([]*Alert, 0, len(rulesResp.Groups))
+	for _, g := range rulesResp.Groups {
 		for _, rl := range g.ActiveRules {
 			if rl.Rule.Alert != "" {
 				for _, a := range rl.Alerts {
@@ -340,10 +342,14 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	b, err := json.Marshal(&response{
+	resp := &response{
 		Status: "success",
 		Data:   &AlertDiscovery{Alerts: alerts},
-	})
+	}
+	if len(rulesResp.Warnings) != 0 {
+		resp.Warnings = rulesResp.Warnings
+	}
+	b, err := json.Marshal(resp)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
 		respondServerError(logger, w, "unable to marshal the requested data")

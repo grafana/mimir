@@ -562,7 +562,7 @@ func TestGetRules(t *testing.T) {
 				for _, r := range rulerAddrMap {
 					rules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
 					require.NoError(t, err)
-					require.Equal(t, len(allRulesByUser[u]), len(rules))
+					require.Equal(t, len(allRulesByUser[u]), len(rules.Groups))
 
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 					if tc.shuffleShardSize > 0 {
@@ -1143,9 +1143,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the per-tenant rules manager gets started asynchronously.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
-						return len(actualRuleGroups)
+						return len(list.Groups)
 					})
 				}
 			})
@@ -1166,9 +1166,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// We use test.Poll() because the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups-1, func() interface{} {
-						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
-						return len(actualRuleGroups)
+						return len(list.Groups)
 					})
 				}
 			})
@@ -1189,9 +1189,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, 0, func() interface{} {
-						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
-						return len(actualRuleGroups)
+						return len(list.Groups)
 					})
 				}
 			})
@@ -1288,9 +1288,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the per-tenant rules manager gets started asynchronously.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
-			return len(actualRuleGroups)
+			return len(list.Groups)
 		})
 	}
 
@@ -1327,9 +1327,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the rule syncing is asynchronous in each ruler.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
-			return len(actualRuleGroups)
+			return len(list.Groups)
 		})
 	}
 
@@ -1438,9 +1438,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// GetRules() should return no configured rule groups, because no re-sync happened.
 	for _, ruler := range rulers {
-		actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+		list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
-		require.Empty(t, actualRuleGroups)
+		require.Empty(t, list.Groups)
 	}
 }
 
@@ -1583,7 +1583,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 			list, _, err := r.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 
-			return len(list) == 0
+			return len(list.Groups) == 0
 		})
 	})
 }
