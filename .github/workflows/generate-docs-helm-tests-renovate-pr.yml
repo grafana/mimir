@@ -10,7 +10,6 @@ on:
 # These permissions are needed to assume roles from Github's OIDC.
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -37,6 +36,11 @@ jobs:
       - prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
+    permissions:
+      contents: read
+      # The "id-token: write" permission is required by "get-vault-secrets" action. We request it here
+      # instead of the whole workflow, in order to reduce the scope of the permission.
+      id-token: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
