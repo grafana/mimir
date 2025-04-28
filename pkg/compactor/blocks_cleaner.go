@@ -175,7 +175,7 @@ func (c *BlocksCleaner) starting(ctx context.Context) error {
 	c.instrumentStartedCleanupRun(logger)
 
 	// Use a stable set of tenants for each BlocksCleaner run. BlockCleaner will always
-	// update bucket-index.json for a tenant discovered in the refreshOwnedUsers.
+	// update bucket-index.json for a tenant discovered in the initial refreshOwnedUsers call.
 	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
