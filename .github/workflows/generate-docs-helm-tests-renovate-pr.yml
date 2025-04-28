@@ -70,7 +70,7 @@ jobs:
           git config --global user.name "${{ github.event.pull_request.user.login }}"
 
       - name: Install the gh cli
-        uses: ksivamuthu/actions-setup-gh-cli@v2
+        uses: ksivamuthu/actions-setup-gh-cli@52a7c6659db375e08e92b1bd0ff31be356f574f8 # v2
 
       - name: Checkout Pull Request Branch
         run: gh pr checkout ${{ github.event.pull_request.number }}
