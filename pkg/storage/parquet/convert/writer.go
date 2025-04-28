@@ -21,11 +21,12 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
-	"github.com/prometheus-community/parquet-common/schema"
-	"github.com/prometheus-community/parquet-common/util"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/storage/parquet/schema"
+	"github.com/grafana/mimir/pkg/storage/parquet/util"
 )
 
 type ShardedWriter struct {

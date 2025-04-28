@@ -26,13 +26,14 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
-	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/parquet/schema"
 )
 
 var DefaultConvertOpts = convertOpts{

@@ -22,14 +22,15 @@ import (
 	"time"
 
 	"github.com/parquet-go/parquet-go"
-	"github.com/prometheus-community/parquet-common/schema"
-	"github.com/prometheus-community/parquet-common/util"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+
+	"github.com/grafana/mimir/pkg/storage/parquet/schema"
+	"github.com/grafana/mimir/pkg/storage/parquet/util"
 )
 
 func TestParquetWriter(t *testing.T) {
