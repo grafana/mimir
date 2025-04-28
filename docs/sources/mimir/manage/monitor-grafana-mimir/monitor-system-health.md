@@ -15,9 +15,7 @@ You can monitor Grafana Mimir or Grafana Enterprise Metrics by collecting metric
 As part of _metamonitoring_, you can create dashboards and receive alerts about the metrics and logs collected from Mimir. To set up these dashboards and alerts,
 refer to [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/).
 
-## Configure the Grafana Agent operator through the Helm chart
-
-{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+## Monitor Grafana Mimir when setting up with the Helm chart
 
 In the Helm chart, you can configure where to send metrics and logs.
 You can send metrics to a Prometheus-compatible server
@@ -33,6 +31,8 @@ prefixed with `node` in [Grafana Cloud: Self-hosted Grafana Mimir integration](h
 You can configure your collection of metrics and logs
 by using the [Grafana Agent operator](https://grafana.com/docs/agent/latest/operator/).
 The Helm chart can install and use the Grafana Agent operator.
+
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
 
 > **Note:** Before the Helm chart can use the operator,
 > you need to manually install all of the Kubernetes [Custom Resource Definitions (CRDs)](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/) from the [Grafana Agent operator YAML files](https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds).
@@ -142,7 +142,7 @@ metaMonitoring:
           passwordSecretKey: metamonitoring
 ```
 
-## Install Grafana Mimir without the Helm chart
+## Monitor Grafana Mimir when setting up without the Helm chart
 
 You can still use the dashboards and rules in the monitoring-mixin,
 even if you're not deploying Mimir or GEM through the Helm chart.
@@ -161,8 +161,6 @@ logs to ones that are strictly related to the Grafana Mimir deployment. If you a
 Set up Grafana Alloy to collect logs and metrics from Mimir or GEM. To get started with Grafana Alloy,
 refer to [Get started with Grafana Alloy](https://grafana.com/docs/alloy/<ALLOY_VERSION>/get-started). After deploying Alloy, refer to [Collect and forward Prometheus metrics](https://grafana.com/docs/alloy/<ALLOY_VERSION>/collect/prometheus-metrics/) for instructions on how to configure your Alloy instance to scrape Mimir or GEM.
 
-### Monitor without the Helm chart
-
-To monitor the health of your system without using the Helm chart, see [Collect metrics and logs without the Helm chart](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-without-the-helm-chart).
+### Monitor through Grafana Cloud
 
 You can also use the self-hosted Grafana Cloud integration to monitor your Mimir system. Refer to [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/) for more information.
