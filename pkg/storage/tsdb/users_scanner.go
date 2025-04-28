@@ -50,6 +50,7 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 	// We do these checks after listing all users, to improve cacheability of Iter (result is only cached at the end of Iter call).
 	for ix := 0; ix < len(users); {
 		userID := users[ix]
+
 		// Check if it's owned by this instance.
 		owned, err := s.isOwned(userID)
 		if err != nil {

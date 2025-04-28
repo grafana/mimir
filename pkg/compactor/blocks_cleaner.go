@@ -59,7 +59,6 @@ type BlocksCleaner struct {
 	logger       log.Logger
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
-	ownUser      func(userID string) (bool, error)
 	singleFlight *concurrency.LimitedConcurrencySingleFlight
 
 	// Keep track of the last owned users.
@@ -87,7 +86,6 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		cfg:          cfg,
 		bucketClient: bucketClient,
 		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
-		ownUser:      ownUser,
 		cfgProvider:  cfgProvider,
 		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:       log.With(logger, "component", "cleaner"),
@@ -176,8 +174,8 @@ func (c *BlocksCleaner) starting(ctx context.Context) error {
 	logger := log.With(c.logger, "task", cleanUsersServiceStarting)
 	c.instrumentStartedCleanupRun(logger)
 
-	// Use a stable set of tenants for each BlocksCleaner.runCleanup execution. This ensures that a BlockCleaner
-	// updates the bucket-index.json for all tenants discovered in refreshOwnedUsers.
+	// Use a stable set of tenants for each BlocksCleaner run. BlockCleaner will always
+	// update bucket-index.json for a tenant discovered in the refreshOwnedUsers.
 	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)

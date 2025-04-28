@@ -430,7 +430,6 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 }
 
 func updateOwnershipFunc(c *BlocksCleaner, ownFunc func(user string) (bool, error)) {
-	c.ownUser = ownFunc
 	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, c.logger)
 }
 
