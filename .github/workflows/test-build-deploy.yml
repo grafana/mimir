@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -37,6 +39,8 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Get Go Version
@@ -54,6 +58,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -114,6 +120,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -144,6 +152,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -175,6 +185,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
@@ -208,6 +220,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -273,6 +287,8 @@ jobs:
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -339,6 +355,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
