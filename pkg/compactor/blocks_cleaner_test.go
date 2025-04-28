@@ -1615,7 +1615,10 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 	idx := bucketindex.Index{UpdatedAt: 1}
 	require.NoError(t, bucketindex.WriteIndex(ctx, bucketClient, "user-1", cfgProvider, &idx))
 
-	cleaner.instrumentBucketIndexUpdate(ctx)
+	users, err := cleaner.refreshOwnedUsers(ctx)
+	require.NoError(t, err)
+
+	cleaner.instrumentBucketIndexUpdate(ctx, users)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.
@@ -1805,10 +1808,10 @@ func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {
 }
 
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {
-	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
+	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		return err
 	}
 
-	return c.cleanUsers(ctx, allUsers, isDeleted, log.NewNopLogger())
+	return c.cleanUsers(ctx, users, log.NewNopLogger())
 }

@@ -164,22 +164,39 @@ func (c *BlocksCleaner) stopping(error) error {
 	return nil
 }
 
+type ownedUsers struct {
+	all     []string
+	deleted map[string]bool
+}
+
 func (c *BlocksCleaner) starting(ctx context.Context) error {
-	c.instrumentBucketIndexUpdate(ctx)
+
+	// Use a stable set of tenants for each execution. This ensures that a BlockCleaner updates the bucket-index.json
+	// for all tenants discovered on startup.
+	users, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return err
+	}
+
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
-	c.runCleanup(ctx, false)
-
+	c.instrumentBucketIndexUpdate(ctx, users)
+	c.runCleanup(ctx, users, false)
 	return nil
 }
 
 func (c *BlocksCleaner) ticker(ctx context.Context) error {
-	c.runCleanup(ctx, true)
-
+	users, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return err
+	}
+	c.runCleanup(ctx, users, true)
 	return nil
 }
 
-func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
+func (c *BlocksCleaner) runCleanup(ctx context.Context, users *ownedUsers, async bool) {
 	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
 	// at least differentiate the logs in this function for each run.
 	logger := log.With(c.logger,
@@ -188,30 +205,8 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	)
 
 	c.instrumentStartedCleanupRun(logger)
-
-	var (
-		users     []string
-		isDeleted map[string]bool
-		err       error
-	)
-
-	// Use a single set of tenants while BlocksCleaner is in Starting state. This ensures that a BlockCleaner updates
-	// the bucket-index.json for all tenants discovered on startup. When multiple BlockCleaners come up at once,
-	// tenants can be updated by multiple BlocksCleaners on startup. However, ownership will be delegated to a single
-	// BlocksCleaner instance once the sharding ring is stable.
-	if c.State() == services.Starting && len(c.lastOwnedUsers) > 0 {
-		isDeleted, _ = c.usersScanner.ListDeletedUsers(ctx)
-		users = c.lastOwnedUsers
-	} else {
-		users, isDeleted, err = c.refreshOwnedUsers(ctx)
-		if err != nil {
-			c.instrumentFinishedCleanupRun(err, logger)
-			return
-		}
-	}
-
 	doCleanup := func() {
-		err := c.cleanUsers(ctx, users, isDeleted, logger)
+		err := c.cleanUsers(ctx, users, logger)
 		c.instrumentFinishedCleanupRun(err, logger)
 	}
 
@@ -222,13 +217,8 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	}
 }
 
-func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
-	allUsers, _, err := c.refreshOwnedUsers(ctx)
-	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
-		return
-	}
-	for _, userID := range allUsers {
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context, users *ownedUsers) {
+	for _, userID := range users.all {
 		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
 		if err != nil {
 			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
@@ -259,10 +249,10 @@ func (c *BlocksCleaner) instrumentFinishedCleanupRun(err error, logger log.Logge
 
 // refreshOwnedUsers is not required to be concurrency safe, but a single instance of this function
 // could run concurrently with the cleanup job for any tenant.
-func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[string]bool, error) {
+func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) (*ownedUsers, error) {
 	users, deleted, err := c.usersScanner.ScanUsers(ctx)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to discover users from bucket")
+		return nil, errors.Wrap(err, "failed to discover users from bucket")
 	}
 
 	rand.Shuffle(len(users), func(i, j int) {
@@ -287,24 +277,14 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 		}
 	}
 	c.lastOwnedUsers = allUsers
-	return allUsers, isDeleted, nil
+	return &ownedUsers{all: allUsers, deleted: isDeleted}, nil
 }
 
 // cleanUsers must be concurrency-safe because some invocations may take longer and overlap with the next periodic invocation.
-func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDeleted map[string]bool, logger log.Logger) error {
-	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
-
-		// Use a single set of tenants while BlocksCleaner is in Starting state.
-		if c.State() != services.Starting {
-			own, err := c.ownUser(userID)
-			if err != nil || !own {
-				// This returns error only if err != nil. ForEachUser keeps working for other users.
-				return errors.Wrap(err, "check own user")
-			}
-		}
-
+func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logger log.Logger) error {
+	return c.singleFlight.ForEachNotInFlight(ctx, users.all, func(ctx context.Context, userID string) error {
 		userLogger := util_log.WithUserID(userID, logger)
-		if isDeleted[userID] {
+		if users.deleted[userID] {
 			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID, userLogger), "failed to delete user marked for deletion: %s", userID)
 		}
 		return errors.Wrapf(c.cleanUser(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
