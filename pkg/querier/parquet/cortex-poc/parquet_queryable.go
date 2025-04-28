@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package querier
+package cortex_poc
 
 import (
 	"context"
@@ -35,6 +35,7 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_storage "github.com/grafana/mimir/pkg/storage/parquet"
@@ -60,7 +61,7 @@ type ParquetQueryable struct {
 	logger               log.Logger
 	queryStoreAfter      time.Duration
 	queryIngestersWithin time.Duration
-	limits               BlocksStoreLimits
+	limits               querier.BlocksStoreLimits
 	bucket               objstore.InstrumentedBucket
 	chunkDecoder         *mimir_storage.PrometheusParquetChunksDecoder
 	asyncRead            bool
@@ -113,8 +114,8 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 }
 
 func NewParquetStoreQueryable(
-	limits BlocksStoreLimits,
-	config Config,
+	limits querier.BlocksStoreLimits,
+	config querier.Config,
 	storageCfg mimir_tsdb.BlocksStorageConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
@@ -136,7 +137,7 @@ func NewParquetStoreQueryable(
 		UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
 		IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
 	}
-	bucketIndexBlocksFinder := BucketIndexBlocksFinderConfig{
+	bucketIndexBlocksFinder := querier.BucketIndexBlocksFinderConfig{
 		IndexLoader: indexLoaderConfig,
 	}
 	finder := NewParquetBucketIndexBlocksFinder(bucketIndexBlocksFinder, bucketClient, limits, logger, reg)
@@ -216,7 +217,7 @@ func (q *ParquetQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 type parquetQuerier struct {
 	minT, maxT int64
 	finder     *ParquetBucketIndexBlocksFinder
-	limits     BlocksStoreLimits
+	limits     querier.BlocksStoreLimits
 	logger     log.Logger
 	bucket     objstore.InstrumentedBucket
 
