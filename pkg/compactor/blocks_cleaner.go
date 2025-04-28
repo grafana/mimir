@@ -36,6 +36,8 @@ import (
 const (
 	defaultDeleteBlocksConcurrency       = 16
 	defaultGetDeletionMarkersConcurrency = 16
+	cleanUsersServiceStarting            = "clean_up_users_starting"
+	cleanUsersServiceTick                = "clean_up_users"
 )
 
 type BlocksCleanerConfig struct {
@@ -171,40 +173,43 @@ type ownedUsers struct {
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
 
-	// Use a stable set of tenants for each execution. This ensures that a BlockCleaner updates the bucket-index.json
-	// for all tenants discovered on startup.
+	logger := log.With(c.logger, "task", cleanUsersServiceStarting)
+	c.instrumentStartedCleanupRun(logger)
+
+	// Use a stable set of tenants for each BlocksCleaner.runCleanup execution. This ensures that a BlockCleaner
+	// updates the bucket-index.json for all tenants discovered in refreshOwnedUsers.
 	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
-		return err
+		c.instrumentFinishedCleanupRun(err, logger)
+		return nil
 	}
 
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
-	c.instrumentBucketIndexUpdate(ctx, users)
-	c.runCleanup(ctx, users, false)
+	c.instrumentBucketIndexUpdate(ctx, users.all)
+	c.runCleanup(ctx, users, logger, false)
 	return nil
 }
 
 func (c *BlocksCleaner) ticker(ctx context.Context) error {
+
+	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
+	// at least differentiate the logs in this function for each run.
+	logger := log.With(c.logger, "run_id", strconv.FormatInt(time.Now().Unix(), 10), "task", cleanUsersServiceTick)
+	c.instrumentStartedCleanupRun(logger)
+
 	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
-		return err
+		c.instrumentFinishedCleanupRun(err, logger)
+		return nil
 	}
-	c.runCleanup(ctx, users, true)
+	c.runCleanup(ctx, users, logger, true)
 	return nil
 }
 
-func (c *BlocksCleaner) runCleanup(ctx context.Context, users *ownedUsers, async bool) {
-	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
-	// at least differentiate the logs in this function for each run.
-	logger := log.With(c.logger,
-		"run_id", strconv.FormatInt(time.Now().Unix(), 10),
-		"task", "clean_up_users",
-	)
-
-	c.instrumentStartedCleanupRun(logger)
+func (c *BlocksCleaner) runCleanup(ctx context.Context, users *ownedUsers, logger log.Logger, async bool) {
 	doCleanup := func() {
 		err := c.cleanUsers(ctx, users, logger)
 		c.instrumentFinishedCleanupRun(err, logger)
@@ -217,8 +222,8 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, users *ownedUsers, async
 	}
 }
 
-func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context, users *ownedUsers) {
-	for _, userID := range users.all {
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context, users []string) {
+	for _, userID := range users {
 		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
 		if err != nil {
 			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)

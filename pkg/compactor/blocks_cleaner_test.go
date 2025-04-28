@@ -1618,7 +1618,7 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 	users, err := cleaner.refreshOwnedUsers(ctx)
 	require.NoError(t, err)
 
-	cleaner.instrumentBucketIndexUpdate(ctx, users)
+	cleaner.instrumentBucketIndexUpdate(ctx, users.all)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.
