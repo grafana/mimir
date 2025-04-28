@@ -1018,7 +1018,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 	if len(warnings) > 0 {
 		// Remove duplicate warnings.
 		warningsSet := make(map[string]struct{}, len(warnings))
-		slices.DeleteFunc(warnings, func(s string) bool {
+		warnings = slices.DeleteFunc(warnings, func(s string) bool {
 			if _, ok := warningsSet[s]; ok {
 				return true
 			}
