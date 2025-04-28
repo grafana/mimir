@@ -130,6 +130,7 @@ type Limits struct {
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
+	ReadConsistencyLevel                        string              `yaml:"read_consistency_level" json:"read_consistency_level" category:"advanced"`
 
 	IngestionArtificialDelay                                         model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 	IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
@@ -283,6 +284,7 @@ type Limits struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
+	f.StringVar(&l.ReadConsistencyLevel, "distributor.read-consistency-level", "", "The tenant's read consistency level to use for the distributor. Possible values are: quorum, one, all.")
 	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
 	f.Float64Var(&l.IngestionRate, IngestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
@@ -903,6 +905,11 @@ func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
 func (o *Overrides) IngestionTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionTenantShardSize
+}
+
+// ReadConsistencyLevel returns the read consistency level for a given user.
+func (o *Overrides) ReadConsistencyLevel(userID string) string {
+	return o.getOverridesForUser(userID).ReadConsistencyLevel
 }
 
 // CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.

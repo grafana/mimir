@@ -40,6 +40,7 @@ type RingConfig struct {
 	HeartbeatTimeout     time.Duration          `yaml:"heartbeat_timeout" category:"advanced"`
 	ReplicationFactor    int                    `yaml:"replication_factor"`
 	ZoneAwarenessEnabled bool                   `yaml:"zone_awareness_enabled"`
+	ReadConsistencyLevel string                 `yaml:"read_consistency_level" category:"advanced"`
 	ExcludedZones        flagext.StringSliceCSV `yaml:"excluded_zones" category:"advanced"`
 
 	// Tokens
@@ -115,6 +116,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
 	f.IntVar(&cfg.ReplicationFactor, prefix+"replication-factor", 3, "Number of ingesters that each time series is replicated to."+sharedOptionWithRingClient)
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones."+sharedOptionWithRingClient)
+	f.StringVar(&cfg.ReadConsistencyLevel, prefix+"read-consistency-level", "quorum", "Specifies the consistency level used to read from ingester. Supported values are: quorum, any, relaxed_quorum.")
 	f.Var(&cfg.ExcludedZones, prefix+"excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring."+sharedOptionWithRingClient)
 
 	f.StringVar(&cfg.TokensFilePath, prefix+flagTokensFilePath, "", fmt.Sprintf("File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -%s is set to %q.", prefix+flagTokenGenerationStrategy, tokenGenerationSpreadMinimizing))
