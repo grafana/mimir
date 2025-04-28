@@ -15,6 +15,9 @@ weight: 20
 
 The Alertmanager resources dashboard shows CPU, memory, disk and networking metrics for the Alertmanager.
 
+Use this dashboard for the following use cases:
+
+
 This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
