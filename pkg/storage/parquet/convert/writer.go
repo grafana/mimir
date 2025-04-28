@@ -327,7 +327,7 @@ func (b *bufferedReader) readRows() {
 				b.c <- rows[:n]
 			}
 			if err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					close(b.c)
 					return
 				}
