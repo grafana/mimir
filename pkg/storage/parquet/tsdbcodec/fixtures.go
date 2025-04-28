@@ -11,7 +11,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -82,45 +81,46 @@ func GenerateTestStorageSeriesFromLabelSets(
 	return series
 }
 
-func equalChunkIters(iter1, iter2 chunkenc.Iterator) bool {
-	for {
-		nextValType1 := iter1.Next()
-		nextValType2 := iter2.Next()
-
-		// if one iterator ends (returns ValNone) before the other, they are not equal
-		if nextValType1 != nextValType2 {
-			return false
-		}
-
-		// nextVals are same type;
-		// if both iterators are ValNone and we did not fail previously,
-		// then both are done and the series are equal
-		if nextValType1 == chunkenc.ValNone {
-			return true
-		}
-
-		switch nextValType1 {
-		case chunkenc.ValFloat:
-			t1, v1 := iter1.At()
-			t2, v2 := iter2.At()
-			if t1 != t2 || v1 != v2 {
-				return false
-			}
-		case chunkenc.ValHistogram:
-			t1, h1 := iter1.AtHistogram(nil)
-			t2, h2 := iter2.AtHistogram(nil)
-			if t1 != t2 || h1 != h2 {
-				return false
-			}
-		case chunkenc.ValFloatHistogram:
-			t1, fh1 := iter1.AtFloatHistogram(nil)
-			t2, fh2 := iter2.AtFloatHistogram(nil)
-			if t1 != t2 || fh1 != fh2 {
-				return false
-			}
-		default:
-			// unknown sample type
-			return false
-		}
-	}
-}
+// TODO unused func sets off linter
+//func equalChunkIters(iter1, iter2 chunkenc.Iterator) bool {
+//	for {
+//		nextValType1 := iter1.Next()
+//		nextValType2 := iter2.Next()
+//
+//		// if one iterator ends (returns ValNone) before the other, they are not equal
+//		if nextValType1 != nextValType2 {
+//			return false
+//		}
+//
+//		// nextVals are same type;
+//		// if both iterators are ValNone and we did not fail previously,
+//		// then both are done and the series are equal
+//		if nextValType1 == chunkenc.ValNone {
+//			return true
+//		}
+//
+//		switch nextValType1 {
+//		case chunkenc.ValFloat:
+//			t1, v1 := iter1.At()
+//			t2, v2 := iter2.At()
+//			if t1 != t2 || v1 != v2 {
+//				return false
+//			}
+//		case chunkenc.ValHistogram:
+//			t1, h1 := iter1.AtHistogram(nil)
+//			t2, h2 := iter2.AtHistogram(nil)
+//			if t1 != t2 || h1 != h2 {
+//				return false
+//			}
+//		case chunkenc.ValFloatHistogram:
+//			t1, fh1 := iter1.AtFloatHistogram(nil)
+//			t2, fh2 := iter2.AtFloatHistogram(nil)
+//			if t1 != t2 || fh1 != fh2 {
+//				return false
+//			}
+//		default:
+//			// unknown sample type
+//			return false
+//		}
+//	}
+//}
