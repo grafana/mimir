@@ -170,6 +170,9 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
+	// Enable arithmetic operations in durations in PromQL parser for the test cases.
+	parser.ExperimentalDurationExpr = true
+
 	optsWithoutQueryPlanner := NewTestEngineOpts()
 	engineWithoutQueryPlanner, err := NewEngine(optsWithoutQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
 	require.NoError(t, err)
