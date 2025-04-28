@@ -121,13 +121,14 @@ jobs:
           else
             echo "Build Image Version is not up to date"
             sed -i "s/$MAIN_TAG/${{ steps.compute_hash.outputs.tag }}/g" Makefile
-            git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
-            git config --global user.name "${{ github.event.pull_request.user.login }}"
+            git config --global user.email "${GITHUB_LOGIN}@users.noreply.github.com"
+            git config --global user.name "${GITHUB_LOGIN}"
             git add Makefile
             git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
             git push origin HEAD
           fi
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_LOGIN: ${{ github.event.pull_request.user.login }}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}

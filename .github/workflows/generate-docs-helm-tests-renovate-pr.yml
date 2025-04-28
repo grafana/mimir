@@ -69,10 +69,12 @@ jobs:
           persist-credentials: false
 
       - name: Run Git Config
+        env:
+          GITHUB_LOGIN: ${{ github.event.pull_request.user.login }}
         run: |
           git config --global --add safe.directory '*'
-          git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
-          git config --global user.name "${{ github.event.pull_request.user.login }}"
+          git config --global user.email "${GITHUB_LOGIN}@users.noreply.github.com"
+          git config --global user.name "${GITHUB_LOGIN}"
 
       - name: Install the gh cli
         uses: ksivamuthu/actions-setup-gh-cli@v2
