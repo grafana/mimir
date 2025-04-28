@@ -223,10 +223,10 @@
           // Alert if the bucket index has not been updated for a given user. The default update interval is 900 seconds
           // so we alert if we've missed two updates plus a 300 second buffer to avoid false-positives. It's important
           // that this alert fire before queriers start to return errors because the bucket index is too old (3600 seconds
-          // by default).
+          // by default). Allow a 15m lookback (the default compactor.cleanup-interval) to include compactors that may have recently updated the index and then been terminated.
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
-            min by(%(alert_aggregation_labels)s, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
+            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m])) > 2100)
           ||| % $._config,
           labels: {
             severity: 'critical',

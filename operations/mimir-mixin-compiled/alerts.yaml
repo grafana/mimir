@@ -935,7 +935,7 @@ groups:
             message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirbucketindexnotupdated
           expr: |
-            min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 2100
+            min by(cluster, namespace, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m])) > 2100)
           labels:
             severity: critical
     - name: mimir_compactor_alerts
