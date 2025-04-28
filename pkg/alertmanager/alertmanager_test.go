@@ -628,8 +628,9 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		emailNotificationRateLimit: rate.Inf,
 	}
 
+	suffix := "-grafana"
 	am, err := New(&Config{
-		UserID:            "test",
+		UserID:            "test" + suffix,
 		Logger:            log.NewNopLogger(),
 		Limits:            &limits,
 		Features:          featurecontrol.NoopFlags{},
@@ -640,7 +641,9 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig: PersisterConfig{Interval: time.Hour},
+		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
+		GrafanaAlertmanagerCompatibility: true,
+		GrafanaAlertmanagerTenantSuffix:  suffix,
 	}, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -684,10 +687,10 @@ func TestGrafanaAlertmanager(t *testing.T) {
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	expMessage := "This is a test template"
+	expMessage := `{"field":"value"}`
 	testTemplate := alertingTemplates.TemplateDefinition{
 		Name:     "test",
-		Template: fmt.Sprintf(`{{ define "test" -}} %s {{- end }}`, expMessage),
+		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
 	}
 
 	expectedImageURL := "http://example.com/image.png"
@@ -719,4 +722,28 @@ func TestGrafanaAlertmanager(t *testing.T) {
 			return false
 		}
 	}, 5*time.Second, 100*time.Millisecond)
+
+	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no receivers.
+	cfgRaw = `{
+            "route": {
+                "receiver": "empty_receiver",
+                "group_by": ["alertname"]
+            },
+            "receivers": [{
+                "name": "empty_receiver"
+            }],
+        }`
+
+	cfg, err = definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+
+	// Sanity check, if this fails, the test is broken.
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{}, cfgRaw, &url.URL{}, nil))
+
+	// Test that the template is validated.
+	testTemplate = alertingTemplates.TemplateDefinition{
+		Name:     "test",
+		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
+	}
+	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
 }

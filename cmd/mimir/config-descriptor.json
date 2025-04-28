@@ -7528,6 +7528,17 @@
             },
             {
               "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "fetch_max_wait",
               "required": false,
               "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",

@@ -102,6 +102,36 @@
       - "29094:29094"
   "memcached":
     "image": "memcached:1.6.19-alpine"
+  "mimir-backend-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=backend -activity-tracker.filepath=/activity/mimir-backend-0"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=backend"
+    "hostname": "mimir-backend-0"
+    "image": "mimir"
+    "ports":
+      - "8006:8080"
+      - "11006:11006"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "mimir-backend-1":
     "build":
       "context": "."
@@ -127,49 +157,19 @@
     "hostname": "mimir-backend-1"
     "image": "mimir"
     "ports":
-      - "8006:8080"
-      - "11006:11006"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-  "mimir-backend-2":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=backend -activity-tracker.filepath=/activity/mimir-backend-2"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=backend"
-    "hostname": "mimir-backend-2"
-    "image": "mimir"
-    "ports":
       - "8007:8080"
       - "11007:11007"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "mimir-block-builder-1":
+  "mimir-block-builder-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/mimir-block-builder-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/mimir-block-builder-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -184,7 +184,7 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=block-builder"
-    "hostname": "mimir-block-builder-1"
+    "hostname": "mimir-block-builder-0"
     "image": "mimir"
     "ports":
       - "8008:8080"
@@ -192,14 +192,14 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "mimir-block-builder-scheduler-1":
+  "mimir-block-builder-scheduler-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/mimir-block-builder-scheduler-1"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/mimir-block-builder-scheduler-0"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -214,11 +214,41 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=block-builder-scheduler"
-    "hostname": "mimir-block-builder-scheduler-1"
+    "hostname": "mimir-block-builder-scheduler-0"
     "image": "mimir"
     "ports":
       - "8019:8080"
       - "11019:11019"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-read-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=read -activity-tracker.filepath=/activity/mimir-read-0"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=read"
+    "hostname": "mimir-read-0"
+    "image": "mimir"
+    "ports":
+      - "8004:8080"
+      - "11004:11004"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -247,19 +277,19 @@
     "hostname": "mimir-read-1"
     "image": "mimir"
     "ports":
-      - "8004:8080"
-      - "11004:11004"
+      - "8005:8080"
+      - "11005:11005"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "mimir-read-2":
+  "mimir-write-zone-a-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=read -activity-tracker.filepath=/activity/mimir-read-2"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=write -activity-tracker.filepath=/activity/mimir-write-zone-a-0 -ingester.ring.instance-availability-zone=zone-a"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -273,15 +303,16 @@
       - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=read"
-    "hostname": "mimir-read-2"
+      - "JAEGER_TAGS=app=write"
+    "hostname": "mimir-write-zone-a-0"
     "image": "mimir"
     "ports":
-      - "8005:8080"
-      - "11005:11005"
+      - "8001:8080"
+      - "11001:11001"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+      - ".data-mimir-write-zone-a-0:/data:delegated"
   "mimir-write-zone-a-1":
     "build":
       "context": "."
@@ -307,8 +338,8 @@
     "hostname": "mimir-write-zone-a-1"
     "image": "mimir"
     "ports":
-      - "8001:8080"
-      - "11001:11001"
+      - "8002:8080"
+      - "11002:11002"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -338,43 +369,12 @@
     "hostname": "mimir-write-zone-a-2"
     "image": "mimir"
     "ports":
-      - "8002:8080"
-      - "11002:11002"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
-      - ".data-mimir-write-zone-a-2:/data:delegated"
-  "mimir-write-zone-a-3":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=write -activity-tracker.filepath=/activity/mimir-write-zone-a-3 -ingester.ring.instance-availability-zone=zone-a"
-    "depends_on":
-      "kafka_1":
-        "condition": "service_healthy"
-      "kafka_2":
-        "condition": "service_healthy"
-      "minio":
-        "condition": "service_started"
-    "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=write"
-    "hostname": "mimir-write-zone-a-3"
-    "image": "mimir"
-    "ports":
       - "8003:8080"
       - "11003:11003"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-      - ".data-mimir-write-zone-a-3:/data:delegated"
+      - ".data-mimir-write-zone-a-2:/data:delegated"
   "mimir-write-zone-c-61":
     "build":
       "context": "."

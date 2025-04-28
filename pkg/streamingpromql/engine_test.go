@@ -356,13 +356,6 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"floats: 0 length range": {
-			expr: "some_metric[0]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: &promql.Result{
-				Value: promql.Matrix{},
-			},
-		},
 		"histograms: matches series with points in range": {
 			expr: "incr_histogram[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
@@ -548,13 +541,6 @@ func TestRangeVectorSelectors(t *testing.T) {
 						},
 					},
 				},
-			},
-		},
-		"histograms: 0 length range": {
-			expr: "incr_histogram[0]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: &promql.Result{
-				Value: promql.Matrix{},
 			},
 		},
 		"mixed series with histograms and floats": {
@@ -1002,13 +988,6 @@ func TestSubqueries(t *testing.T) {
 				},
 			},
 			Start: time.Unix(35, 0),
-		},
-		{
-			Query: "metric[0:5s]",
-			Result: promql.Result{
-				Value: promql.Matrix{},
-			},
-			Start: time.Unix(10, 0),
 		},
 		{ // Normal selector.
 			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
