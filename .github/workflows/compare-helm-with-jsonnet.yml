@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -28,6 +30,8 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Get Go Version
@@ -42,6 +46,8 @@ jobs:
     needs: goversion
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ needs.goversion.outputs.version }}

@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: grafana/writers-toolkit/publish-technical-documentation@39cdc38767184996e25d611923f8ce697e33bc70 # publish-technical-documentation/v1.2.0
         with:
           source_directory: docs/sources/mimir
