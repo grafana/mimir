@@ -290,7 +290,7 @@ type FetchBatchMetrics struct {
 	CompressionType uint8
 }
 
-// HookFetchBatchRead is called whenever a batch if read within the client.
+// HookFetchBatchRead is called whenever a batch is read within the client.
 //
 // Note that this hook is called when processing, but a batch may be internally
 // discarded after processing in some uncommon specific circumstances.

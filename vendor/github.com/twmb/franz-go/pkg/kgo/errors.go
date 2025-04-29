@@ -277,15 +277,20 @@ type ErrDataLoss struct {
 	// ConsumedTo is what the client had consumed to for this partition before
 	// data loss was detected.
 	ConsumedTo int64
+	// ConsumedToEpoch is the epoch for the offset the client was currently
+	// consuming.
+	ConsumedToEpoch int32
 	// ResetTo is what the client reset the partition to; everything from
 	// ResetTo to ConsumedTo was lost.
 	ResetTo int64
+	// ResetToEpoch is the epoch the client was reset to.
+	ResetToEpoch int32
 }
 
 func (e *ErrDataLoss) Error() string {
 	return fmt.Sprintf("topic %s partition %d lost records;"+
-		" the client consumed to offset %d but was reset to offset %d",
-		e.Topic, e.Partition, e.ConsumedTo, e.ResetTo)
+		" the client consumed to offset %d epoch %d but was reset to offset %d epoch %d",
+		e.Topic, e.Partition, e.ConsumedTo, e.ConsumedToEpoch, e.ResetTo, e.ResetToEpoch)
 }
 
 type errUnknownController struct {

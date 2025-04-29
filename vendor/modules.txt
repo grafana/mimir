@@ -1251,7 +1251,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.6.1
 ## explicit; go 1.13
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.18.2-0.20250416232150-07cc0584a381
+# github.com/twmb/franz-go v1.18.2-0.20250428225424-f2ead607417d
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
