@@ -708,8 +708,8 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			rightData.Floats = append(rightData.Floats, promql.FPoint{T: timestamp.FromTime(step1), F: 5})
 			rightData.Floats = append(rightData.Floats, promql.FPoint{T: timestamp.FromTime(step2), F: 7})
 
-			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}}
-			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}}
+			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: false}
 			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
@@ -718,6 +718,7 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			metadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
+			types.SeriesMetadataSlicePool.Put(metadata, memoryConsumptionTracker)
 
 			// Read the first series.
 			d, err := o.NextSeries(ctx)
