@@ -87,6 +87,7 @@
 
 * [ENHANCEMENT] `kafkatool`: Add `offsets` command for querying various partition offsets. #11115
 * [ENHANCEMENT] `listblocks`: Output can now also be JSON or YAML for easier parsing. #11184
+* [ENHANCEMENT] `mark-blocks`: Allow specifying blocks from multiple tenants. #11343
 
 ## 2.16.0
 
