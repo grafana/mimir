@@ -1044,24 +1044,6 @@ How to **investigate**:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
 
-### EtcdAllocatingTooMuchMemory
-
-This can be triggered if there are too many HA dedupe keys in etcd. We saw this when one of our clusters hit 20K tenants that were using HA dedupe config. Raise the etcd limits via:
-
-```
-  etcd+: {
-    spec+: {
-      pod+: {
-        resources+: {
-          limits: {
-            memory: '2Gi',
-          },
-        },
-      },
-    },
-  },
-```
-
 Note that you may need to recreate each etcd pod in order for this change to take effect, as etcd-operator does not automatically recreate pods in response to changes like these.
 First, check that all etcd pods are running and healthy. Then delete one pod at a time and wait for it to be recreated and become healthy before repeating for the next pod until all pods have been recreated.
 
