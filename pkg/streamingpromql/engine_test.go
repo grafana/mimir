@@ -1475,7 +1475,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			//  - and the next series with SeriesMetadata from the selector.
+			//  - the next series from the selector
+			//  - the labels for the output series
 			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
 			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
 
