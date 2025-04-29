@@ -227,5 +227,4 @@ To add a data source, refer to [Add a data source](/docs/grafana/latest/administ
 
 ## Verify success
 
-After you have completed the tasks in this _Get started_ guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/)
-as well as create dashboard panels using your newly configured Grafana Mimir data source.
+After you have completed the tasks in this _Get started_ guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/) and create dashboard panels using your newly configured Grafana Mimir data source.
