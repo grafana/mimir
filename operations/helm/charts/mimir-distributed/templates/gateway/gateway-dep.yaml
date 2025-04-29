@@ -112,7 +112,7 @@ spec:
               containerPort: {{ include "mimir.serverHttpListenPort" $ }}
               protocol: TCP
           readinessProbe:
-            {{- toYaml .readinessProbe | nindent 12 }}
+            {{- tpl (toYaml $.Values.gateway.readinessProbe) $ | nindent 12 }}
           resources:
             {{- toYaml .resources | nindent 12 }}
           securityContext:

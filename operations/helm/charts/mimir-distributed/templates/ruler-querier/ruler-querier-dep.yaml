@@ -97,9 +97,9 @@ spec:
               containerPort: {{ include "mimir.memberlistBindPort" . }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.ruler_querier.livenessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.ruler_querier.livenessProbe) . | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.ruler_querier.readinessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.ruler_querier.readinessProbe) . | nindent 12 }}
           resources:
             {{- toYaml .Values.ruler_querier.resources | nindent 12 }}
           securityContext:

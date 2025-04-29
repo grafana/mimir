@@ -767,6 +767,7 @@ alertmanager:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for alermeneger pods
@@ -995,6 +996,7 @@ distributor:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for distributor pods
@@ -1150,6 +1152,7 @@ ingester:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 60
 
   # -- SecurityContext override for ingester pods
@@ -1338,11 +1341,13 @@ overrides_exporter:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
   readinessProbe:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   resources:
@@ -1457,6 +1462,7 @@ ruler:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for ruler pods
@@ -1586,6 +1592,7 @@ ruler_querier:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for ruler-querier pods
@@ -1703,6 +1710,7 @@ ruler_query_frontend:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for query-fronted pods
@@ -1797,6 +1805,7 @@ ruler_query_scheduler:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for ruler-query-scheduler pods
@@ -1935,6 +1944,7 @@ querier:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for querier pods
@@ -2054,6 +2064,7 @@ query_frontend:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for query-fronted pods
@@ -2149,6 +2160,7 @@ query_scheduler:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for query-scheduler pods
@@ -2304,6 +2316,7 @@ store_gateway:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 60
 
   # -- SecurityContext override for store-gateway pods
@@ -2520,6 +2533,7 @@ compactor:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 60
 
   # -- SecurityContext override for compactor pods
@@ -3228,6 +3242,7 @@ nginx:
     httpGet:
       path: /
       port: http-metric
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 15
     timeoutSeconds: 1
 
@@ -3630,6 +3645,7 @@ gateway:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 15
     timeoutSeconds: 1
 
@@ -4338,6 +4354,7 @@ admin_api:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   resources:
@@ -4497,11 +4514,13 @@ graphite:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
     readinessProbe:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
 
     annotations: {}
@@ -4580,11 +4599,13 @@ graphite:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
     readinessProbe:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
 
     annotations: {}
@@ -4836,6 +4857,7 @@ federation_frontend:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
   # -- Service configuration
   service:
