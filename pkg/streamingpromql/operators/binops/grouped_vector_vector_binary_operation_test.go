@@ -583,8 +583,8 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 				rightData[i] = createTestData(float64(i))
 			}
 
-			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData}
-			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData}
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"env"}, Card: parser.CardManyToOne}
 			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
@@ -593,6 +593,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			// Read the first series.
 			d, err := o.NextSeries(ctx)
