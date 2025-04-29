@@ -1,13 +1,22 @@
 {{/*
 TLS configuration template for internal Mimir components
 */}}
-{{- define "mimir.tlsConfig" -}}
+{{- define "mimir.serverTlsConfig" -}}
+{{- if .Values.tls.enabled }}
+cert_file: {{ .Values.tls.cert.file }}
+key_file: {{ .Values.tls.cert.key }}
+client_auth_type: {{ .Values.tls.clientAuthType }}
+client_ca_file: {{ .Values.tls.cert.ca }}
+{{- end }}
+{{- end }}
+
+{{- define "mimir.clientTlsConfig" -}}
 tls_enabled: {{ .Values.tls.enabled }}
 {{- if .Values.tls.enabled }}
 tls_cert_path: {{ .Values.tls.cert.file }}
 tls_key_path: {{ .Values.tls.cert.key }}
 tls_ca_path: {{ .Values.tls.cert.ca }}
-tls_insecure_skip_verify: {{ .Values.tls.clientAuth.insecureSkipVerify }}
+tls_insecure_skip_verify: {{ .Values.tls.insecureSkipVerify }}
 {{- end }}
 {{- end }}
 
