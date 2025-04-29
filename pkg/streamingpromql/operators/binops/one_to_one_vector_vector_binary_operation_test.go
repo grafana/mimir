@@ -635,6 +635,7 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -670,7 +671,6 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 		})
 	}

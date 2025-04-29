@@ -79,6 +79,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 								// Range queries will return all input series, but those with histograms will return no data from NextSeries() below.
 								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(inputSeries), series)
 							}
+							types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
 
 							if readSeries {
 								seriesData, err := o.NextSeries(ctx)
@@ -93,7 +94,6 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 							// Close the operator and confirm all memory has been released.
 							o.Close()
-							types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
 							require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
 						})
 					}

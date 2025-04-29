@@ -32,11 +32,12 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+
 	querier storage.Querier
 	series  *seriesList
 
-	seriesIdx                int
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	seriesIdx int
 }
 
 func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
