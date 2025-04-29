@@ -184,7 +184,7 @@ func removeMarksFunc(bkt objstore.Bucket, blocks []inputBlock, mpf metaPresence,
 			return err
 		}
 		if skip {
-			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s", blockID))
+			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s/%s", tenantID, blockID))
 			return nil
 		}
 
@@ -232,7 +232,7 @@ func addMarksFunc(
 			return err
 		}
 		if skip {
-			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s", blockStr))
+			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s/%s", tenantID, blockStr))
 			return nil
 		}
 
