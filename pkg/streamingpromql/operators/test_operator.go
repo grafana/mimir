@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -28,14 +27,19 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	series := testutils.LabelsToSeriesMetadata(t.Series)
-	seriesPool, err := types.SeriesMetadataSlicePool.Get(len(series), t.MemoryConsumptionTracker)
+	if len(t.Series) == 0 {
+		return nil, nil
+	}
+
+	seriesPool, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	seriesPool = seriesPool[:len(series)]
-	copy(seriesPool, series)
+	seriesPool = seriesPool[:len(t.Series)]
+	for i, l := range t.Series {
+		seriesPool[i].Labels = l
+	}
 	return seriesPool, nil
 }
 
