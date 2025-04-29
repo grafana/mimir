@@ -652,36 +652,6 @@ groups:
           for: 5m
           labels:
             severity: critical
-    - name: etcd_alerts
-      rules:
-        - alert: EtcdAllocatingTooMuchMemory
-          annotations:
-            message: |
-                Too much memory being used by {{ $labels.namespace }}/{{ $labels.instance }} - bump memory limit.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#etcdallocatingtoomuchmemory
-          expr: |
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.65
-          for: 15m
-          labels:
-            severity: warning
-        - alert: EtcdAllocatingTooMuchMemory
-          annotations:
-            message: |
-                Too much memory being used by {{ $labels.namespace }}/{{ $labels.instance }} - bump memory limit.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#etcdallocatingtoomuchmemory
-          expr: |
-            (
-              container_memory_rss{container="etcd"}
-                /
-              ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
-            ) > 0.8
-          for: 15m
-          labels:
-            severity: critical
     - name: alertmanager_alerts
       rules:
         - alert: MimirAlertmanagerSyncConfigsFailing

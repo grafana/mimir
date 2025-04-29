@@ -928,7 +928,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       ],
-    }
+    },
   ],
 
   groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),
