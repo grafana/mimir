@@ -22,6 +22,7 @@ Each supported object storage service also has an additional set of flags (see e
 For convenience, this tool supports two input formats controlled by the `--tenant` flag.
 
 If `--tenant` is empty (the default), then a tenant must be specified for each block provided in either `--blocks` or `--blocks-file`. For example, an input file could be of the form:
+
 ```
 tenant1/01GDY90HMVFPSJHXZRQH8KRAME
 tenant1/01GE0SV77NX8ASC7JN0ZQMN0WM
@@ -29,6 +30,7 @@ tenant2/01GZDNKM6SQ9S7W5YQBDF0DK49
 ```
 
 If `--tenant` is provided, then that tenant is assumed to be the owner of each block and only blockIDs are expected. For example, an input file could be of the form:
+
 ```
 01GDY90HMVFPSJHXZRQH8KRAME
 01GE0SV77NX8ASC7JN0ZQMN0WM
