@@ -1109,6 +1109,18 @@ func (c *consumer) assignPartitions(assignments map[string]map[int32]Offset, how
 
 	c.cl.cfg.logger.Log(LogLevelDebug, "assign requires loading offsets")
 
+	// We could have a prior handleListOrEpochResults finishing concurrent
+	// with a new assignment. We need to guard below, because list/epoch
+	// results can set offsets for loaded cursors.
+	//
+	// Example: I was just cooperatively assigned p1o10e3, and I issued an
+	// epoch request to validate data loss. I was then assigned p2o4e-1:
+	// there is no epoch to validate, so we immediately begin consuming
+	// at the offset. The epoch request returns and tries also using the
+	// cursor concurrently. We need to guard it.
+	session.listOrEpochMu.Lock()
+	defer session.listOrEpochMu.Unlock()
+
 	topics := tps.load()
 	for topic, partitions := range assignments {
 		topicPartitions := topics.loadTopic(topic) // should be non-nil
@@ -1486,6 +1498,9 @@ type consumerSession struct {
 	workersCond *sync.Cond
 	workers     int
 
+	// listOrEpochMu largely guards the below. It is a sub-mutex of the
+	// consumer mutex to guard one concurrent data access (see below in
+	// assignPartitions).
 	listOrEpochMu           sync.Mutex
 	listOrEpochLoadsWaiting listOrEpochLoads
 	listOrEpochMetaCh       chan struct{} // non-nil if Loads is non-nil, signalled on meta update
@@ -2298,7 +2313,7 @@ func (*Client) loadEpochsForBrokerLoad(ctx context.Context, broker *broker, load
 			offset := loadPart.at
 			var err error
 			if rPartition.EndOffset < offset {
-				err = &ErrDataLoss{topic, partition, offset, rPartition.EndOffset}
+				err = &ErrDataLoss{topic, partition, offset, loadPart.epoch, rPartition.EndOffset, rPartition.LeaderEpoch}
 				offset = rPartition.EndOffset
 			}
 
