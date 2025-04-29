@@ -31,8 +31,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
-var errNoValidOrgIDFound = errors.New("no valid org id found")
+var (
+	// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
+	errNoValidOrgIDFound = errors.New("no valid org id found")
+	// errTenantRuleEvaluationDisabled is returned when all rule evaluation types are disabled for the tenant.
+	errTenantRuleEvaluationDisabled = errors.New("all rule evaluation is disabled for user")
+)
 
 // In order to reimplement the prometheus rules API, a large amount of code was copied over
 // This is required because the prometheus api implementation does not allow us to return errors
@@ -135,6 +139,10 @@ func respondInvalidRequest(logger log.Logger, w http.ResponseWriter, msg string)
 	respondError(logger, w, http.StatusBadRequest, v1.ErrBadData, msg)
 }
 
+func respondUnprocessableRequest(logger log.Logger, w http.ResponseWriter, msg string) {
+	respondError(logger, w, http.StatusUnprocessableEntity, v1.ErrExec, msg)
+}
+
 func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
 	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
@@ -221,6 +229,10 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	rulesResp, token, err := a.ruler.GetRules(ctx, rulesReq)
+	if errors.Is(err, errTenantRuleEvaluationDisabled) {
+		respondUnprocessableRequest(logger, w, err.Error())
+		return
+	}
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return
@@ -326,6 +338,10 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	rulesResp, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
+	if errors.Is(err, errTenantRuleEvaluationDisabled) {
+		respondUnprocessableRequest(logger, w, err.Error())
+		return
+	}
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return

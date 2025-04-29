@@ -560,8 +560,9 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
 			}),
-			expectedRules:    []*RuleGroup{},
-			expectedWarnings: []string{errRulesEvaluationDisabled, errAlertingRulesEvaluationDisabled},
+			expectedStatusCode: http.StatusUnprocessableEntity,
+			expectedErrorType:  v1.ErrExec,
+			expectedRules:      []*RuleGroup{},
 		},
 		"should load and evaluate the configured rules with special characters": {
 			configuredRules: rulespb.RuleGroupList{
@@ -1186,11 +1187,14 @@ func TestRuler_PrometheusRules(t *testing.T) {
 
 			r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrAutomaticMapping(), withLimits(tc.limits), withStart())
 
-			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
-			// has been synched.
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups has been synched.
 			test.Poll(t, 5*time.Second, tc.expectedConfigured, func() interface{} {
 				ctx := user.InjectOrgID(context.Background(), userID)
-				rls, _ := r.Rules(ctx, &RulesRequest{})
+				rls, err := r.Rules(ctx, &RulesRequest{})
+				if err != nil {
+					// The test checks for the actual error below.
+					return 0
+				}
 				return len(rls.Groups)
 			})
 

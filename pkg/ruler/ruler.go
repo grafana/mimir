@@ -1056,6 +1056,12 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
+	// Return an error rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
+	// to tell if a tenant doesn't have any rules loaded, or the tenant is blocked from evaluating the rules.
+	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
+		return nil, errTenantRuleEvaluationDisabled
+	}
+
 	groupDescs, err := r.getLocalRules(ctx, userID, *in)
 	if err != nil {
 		return nil, err
@@ -1064,7 +1070,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 	resp := &RulesResponse{
 		Groups: groupDescs,
 	}
-	// Return a corresponding warning if tenant's rule evaluation is disabled in this ruler.
+	// Return a corresponding warning if tenant's rule evaluation is *partially* disabled.
 	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) {
 		resp.Warnings = append(resp.Warnings, errRulesEvaluationDisabled)
 	}
