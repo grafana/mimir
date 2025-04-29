@@ -205,6 +205,7 @@ The following features are currently experimental:
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
+  - Enable experimental arithmetic operations in durations in PromQL parser
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -215,6 +216,7 @@ The following features are currently experimental:
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
   - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
+  - Enable experimental arithmetic operations in durations in PromQL parser
   - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Query-scheduler
