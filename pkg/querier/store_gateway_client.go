@@ -24,8 +24,7 @@ import (
 
 func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace:   "cortex",
-		Name:        "storegateway_client_request_duration_seconds",
+		Name:        "cortex_storegateway_client_request_duration_seconds",
 		Help:        "Time spent executing requests to the store-gateway.",
 		Buckets:     prometheus.ExponentialBuckets(0.008, 4, 7),
 		ConstLabels: prometheus.Labels{"client": "querier"},
@@ -84,8 +83,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace:   "cortex",
-		Name:        "storegateway_clients",
+		Name:        "cortex_storegateway_clients",
 		Help:        "The current number of store-gateway clients in the pool.",
 		ConstLabels: map[string]string{"client": "querier"},
 	})

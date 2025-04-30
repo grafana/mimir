@@ -48,7 +48,7 @@ func BenchmarkQuery(b *testing.B) {
 
 	optsWithQueryPlanner := streamingpromql.NewTestEngineOpts()
 	optsWithQueryPlanner.UseQueryPlanning = true
-	mimirEngineWithQueryPlanner, err := streamingpromql.NewEngine(optsWithQueryPlanner, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	mimirEngineWithQueryPlanner, err := streamingpromql.NewEngine(optsWithQueryPlanner, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
 	require.NoError(b, err)
 
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.

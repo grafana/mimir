@@ -100,7 +100,10 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 		return nil, err
 	}
 
-	expr = promql.PreprocessExpr(expr, start, end)
+	expr, err = promql.PreprocessExpr(expr, start, end)
+	if err != nil {
+		return nil, err
+	}
 	var timeRange types.QueryTimeRange
 
 	if start.Equal(end) && interval == 0 {
@@ -187,7 +190,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 
-				ExpressionPosition: e.PositionRange(),
+				ExpressionPosition:       e.PositionRange(),
+				MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			},
 			Stats: q.stats,
 		}, nil
@@ -345,12 +349,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 }
 
 func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
-	// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
-	// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
-	if _, found := slices.BinarySearch(q.engine.features.DisabledFunctions, e.Func.Name); found {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-	}
-
 	switch e.Func.Name {
 	case "absent":
 		inner, err := q.convertToInstantVectorOperator(e.Args[0], timeRange)
@@ -407,7 +405,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			Range:     e.Range,
 			Matchers:  vectorSelector.LabelMatchers,
 
-			ExpressionPosition: e.PositionRange(),
+			ExpressionPosition:       e.PositionRange(),
+			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
@@ -573,14 +572,12 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer cancel(errQueryFinished)
 
-	if q.engine.activeQueryTracker != nil {
-		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
-		if err != nil {
-			return &promql.Result{Err: err}
-		}
-
-		defer q.engine.activeQueryTracker.Delete(queryID)
+	queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
+	if err != nil {
+		return &promql.Result{Err: err}
 	}
+
+	defer q.engine.activeQueryTracker.Delete(queryID)
 
 	defer func() {
 		logger := spanlogger.FromContext(ctx, q.engine.logger)
@@ -616,7 +613,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -629,7 +626,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)

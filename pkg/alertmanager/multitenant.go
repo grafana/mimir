@@ -201,21 +201,18 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 	m := &multitenantAlertmanagerMetrics{}
 
 	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_grafana_state_size_bytes",
-		Help:      "Size of the grafana alertmanager state.",
+		Name: "cortex_alertmanager_grafana_state_size_bytes",
+		Help: "Size of the grafana alertmanager state.",
 	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_config_last_reload_successful",
-		Help:      "Boolean set to 1 whenever the last configuration reload attempt was successful.",
+		Name: "cortex_alertmanager_config_last_reload_successful",
+		Help: "Boolean set to 1 whenever the last configuration reload attempt was successful.",
 	}, []string{"user"})
 
 	m.lastReloadSuccessfulTimestamp = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_config_last_reload_successful_seconds",
-		Help:      "Timestamp of the last successful configuration reload.",
+		Name: "cortex_alertmanager_config_last_reload_successful_seconds",
+		Help: "Timestamp of the last successful configuration reload.",
 	}, []string{"user"})
 
 	return m
@@ -748,7 +745,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If the Mimir configuration is either default or empty, use the Grafana configuration.
 	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
-		cfg, err := am.createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
+		cfg, err := createUsableGrafanaConfig(am.logger, cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
 	}
 

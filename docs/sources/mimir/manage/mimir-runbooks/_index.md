@@ -10,6 +10,8 @@ title: Grafana Mimir runbooks
 weight: 110
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir runbooks
 
 This document contains runbooks, or at least a checklist of what to look for, for alerts in the mimir-mixin and logs from Mimir. This document assumes that you are running a Mimir cluster:
@@ -171,6 +173,9 @@ This is a symptom of setting GOMEMLIMIT too low, so GC is triggered too frequent
 How to **fix** it:
 
 1. Ensure that distributor horizontal pod auto-scaling works properly, so that distributors are scaled out horizontally in response to CPU pressure.
+1. Aggregate the alert query by pod to see if the alert is being triggered by outlier pods. As distrbutors are stateless, we expect each pod to have roughly
+   equal GC-related CPU usage. If there are pods using far more GC CPU than others, examine the nodes housing those pods, and if they're over-taxed, CPU-wise,
+   you can attempt to move these pods to different nodes by deleting them.
 
 ### MimirDistributorReachingInflightPushRequestLimit
 
@@ -1784,6 +1789,34 @@ How to **investigate**:
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
+### MimirServerInvalidClusterValidationLabelRequests
+
+This alert fires when Mimir components receive requests with a different cluster validation label than the Mimir components themselves are configured with.
+
+How it **works**:
+
+When Mimir components are configured to validate cluster validation labels on the server side, they will increase the `cortex_server_invalid_cluster_validation_label_requests_total` counter metric every time they receive an HTTP or gRPC request with the wrong cluster validation label.
+Whenever this occurs, it's cause for concern because unless the client in question is simply configured with the wrong label, mislabeled requests are coming from a different Mimir cluster.
+
+How to **investigate**:
+
+Unless Mimir is configured with soft validation of cluster validation labels on the server side, it should be rejecting the corresponding requests and the clients sending the requests should be increasing the corresponding client side metric `cortex_client_invalid_cluster_validation_label_requests_total`.
+By querying for the latter, you should be able to determine which clients are sending the mislabeled requests.
+
+### MimirClientInvalidClusterValidationLabelRequests
+
+This alert fires when requests between Mimir components are rejected due to having different cluster validation labels than the components receiving the requests are configured with.
+
+How it **works**:
+
+When Mimir components are configured with hard validation of cluster validation labels on the server side, they will reject HTTP and gRPC requests with the wrong cluster validation labels.
+Mimir components increase the `cortex_client_invalid_cluster_validation_label_requests_total` counter metric, when requests they've sent are rejected due to being mislabeled.
+Whenever this occurs, it's cause for concern because unless Mimir components are simply mis-configured with regards to cluster validation labels, rejected requests are sent to the wrong Mimir cluster.
+
+How to **investigate**:
+
+Query for the client side metric `cortex_client_invalid_cluster_validation_label_requests_total`, to determine which clients are sending the mislabeled requests.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -2655,7 +2688,20 @@ How it **works**:
 
 How to **fix** it:
 
-This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
+This error only occurs when an administrator has explicitly defined a blocked list for a given tenant. After assessing the reason for blocking one or multiple queries, you can update the tenant's limits and remove the pattern.
+
+### err-mimir-query-limited
+
+This error occurs when a query-frontend blocks a read request because the query matches at least one of the rules defined in the limits and the query is being run too frequently.
+
+How it **works**:
+
+- The query-frontend implements a middleware responsible for assessing whether the query should be limited and whether it has been run within the last allowed frequency.
+- To configure the limit, set the block `limited_queries` in the `limits`.
+
+How to **fix** it:
+
+Consider running this query less frequently. This error only occurs when an administrator has explicitly defined a limited queries list for a given tenant. After assessing the reason for limiting one or multiple queries, you can update the tenant's limits and remove the pattern.
 
 ### err-mimir-request-blocked
 

@@ -21,6 +21,9 @@ type BlockingLimiter interface {
 	// CanAcquirePermit returns whether it's currently possible to acquire a permit, based on the number of requests
 	// inflight, the current queue size, and current rejection threshold.
 	CanAcquirePermit() bool
+
+	// Reset resets the limiter to its initial limit.
+	Reset()
 }
 
 // blockingLimiter wraps an adaptiveLimiter and blocks some portion of requests when the adaptiveLimiter is at its

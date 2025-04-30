@@ -913,6 +913,7 @@ spec:
         - -ruler-storage.cache.memcached.connect-timeout=1s
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.cache.memcached.tls-ca-path=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem
         - -ruler-storage.cache.memcached.tls-cert-path=/var/secrets/memcached-client-cert/memcached-client-cert.pem
         - -ruler-storage.cache.memcached.tls-enabled=true

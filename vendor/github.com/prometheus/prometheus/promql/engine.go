@@ -489,9 +489,9 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*pExpr = PreprocessExpr(expr, ts, ts)
+	*pExpr, err = PreprocessExpr(expr, ts, ts)
 
-	return qry, nil
+	return qry, err
 }
 
 // NewRangeQuery returns an evaluation query for the given time range and with
@@ -513,9 +513,9 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	*pExpr = PreprocessExpr(expr, start, end)
+	*pExpr, err = PreprocessExpr(expr, start, end)
 
-	return qry, nil
+	return qry, err
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
@@ -1583,6 +1583,11 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
 		ev.error(err)
 	}
+
+	if ev.endTimestamp < ev.startTimestamp {
+		return Matrix{}, nil
+	}
+
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
 	// Create a new span to help investigate inner evaluation performances.
@@ -3592,15 +3597,20 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 }
 
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
-// StepInvariantExpr. It also resolves the preprocessors.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+// StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
+// into their numeric values.
+func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
+
+	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+		return nil, err
+	}
 
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {
-		return newStepInvariantExpr(expr)
+		return newStepInvariantExpr(expr), nil
 	}
-	return expr
+	return expr, nil
 }
 
 // preprocessExprHelper wraps the child nodes of the expression

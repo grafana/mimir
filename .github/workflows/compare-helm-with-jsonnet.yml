@@ -2,6 +2,9 @@ name: compare-helm-with-jsonnet
 
 on: pull_request
 
+permissions:
+  contents: read
+
 concurrency:
   # Cancel any running workflow for the same branch when new commits are pushed.
   # We group both by ref_name (available when CI is triggered by a push to a branch/tag)
@@ -15,6 +18,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -28,6 +33,8 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Get Go Version
@@ -42,12 +49,14 @@ jobs:
     needs: goversion
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ needs.goversion.outputs.version }}
-    - uses: helm/kind-action@v1.12.0
+    - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
     - name: Download yq
-      uses: dsaltares/fetch-gh-release-asset@1.1.2
+      uses: dsaltares/fetch-gh-release-asset@aa2ab1243d6e0d5b405b973c89fa4d06a2d0fff7 # 1.1.2
       with:
         repo: 'mikefarah/yq'
         version: 'tags/v4.30.6'
@@ -55,7 +64,7 @@ jobs:
         target: 'bin/yq'
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Download tk
-      uses: dsaltares/fetch-gh-release-asset@1.1.2
+      uses: dsaltares/fetch-gh-release-asset@aa2ab1243d6e0d5b405b973c89fa4d06a2d0fff7 # 1.1.2
       with:
         repo: 'grafana/tanka'
         version: 'tags/v0.22.1'
@@ -63,7 +72,7 @@ jobs:
         target: 'bin/tk'
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Download jb
-      uses: dsaltares/fetch-gh-release-asset@1.1.2
+      uses: dsaltares/fetch-gh-release-asset@aa2ab1243d6e0d5b405b973c89fa4d06a2d0fff7 # 1.1.2
       with:
         repo: 'jsonnet-bundler/jsonnet-bundler'
         version: 'tags/v0.5.1'

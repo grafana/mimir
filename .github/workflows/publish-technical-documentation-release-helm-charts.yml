@@ -26,7 +26,8 @@ jobs:
         with:
           # Full fetch depth is required to fetch tags. The publishing workflow uses tags to prevent publishing a release branch before it has been formally released, as determined by the presence of a matching tag for the release branch.
           fetch-depth: 0
-      - uses: grafana/writers-toolkit/publish-technical-documentation-release@publish-technical-documentation-release/v1
+          persist-credentials: false
+      - uses: grafana/writers-toolkit/publish-technical-documentation-release@d83ba5389fb8de1458b12bcc35ad4a4059883029 # publish-technical-documentation/v1.2.0
         with:
           release_tag_regexp: "^mimir-distributed-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
           release_branch_regexp: "^mimir-distributed-release-(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"

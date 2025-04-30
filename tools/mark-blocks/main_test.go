@@ -17,54 +17,55 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-func generateBlocks(t *testing.T) []ulid.ULID {
-	blocks := make([]ulid.ULID, 0, 5)
-	for i := 0; i < 5; i++ {
-		id, err := ulid.New(ulid.Now(), nil)
+func generateBlocks(t *testing.T, tenantID string) []inputBlock {
+	blocks := make([]inputBlock, 0, 5)
+	for range 5 {
+		blockID, err := ulid.New(ulid.Now(), nil)
 		require.NoError(t, err)
-		blocks = append(blocks, id)
+		blocks = append(blocks, inputBlock{
+			tenantID,
+			blockID,
+		})
 	}
 	return blocks
 }
 
 func TestAddAndRemoveMarks(t *testing.T) {
-	cfg := config{
-		tenantID: "tenant",
-	}
 	bkt := objstore.NewInMemBucket()
-	blocks := generateBlocks(t)
+	tenantID := "tenant"
+	blocks := generateBlocks(t, tenantID)
 	logger := log.NewNopLogger()
 	ctx := context.Background()
-	mvf, err := metaPresenceFunc("", nil, "none")
+	mvf, err := metaPresenceFunc(nil, "none")
 	require.NoError(t, err)
 
 	for _, markType := range []string{"no-compact", "deletion"} {
 		mbf, suffix, err := markerBytesFunc(markType, "")
 		require.NoError(t, err)
-		addF := addMarksFunc(cfg, bkt, blocks, mvf, mbf, suffix, logger)
-		removeF := removeMarksFunc(cfg, bkt, blocks, mvf, suffix, logger)
-		for i := 0; i < len(blocks); i++ {
+		addF := addMarksFunc(bkt, blocks, mvf, mbf, suffix, logger, false)
+		removeF := removeMarksFunc(bkt, blocks, mvf, suffix, logger, false)
+		for i := range blocks {
 			err := addF(ctx, i)
 			require.NoError(t, err)
 
-			exists, err := bkt.Exists(ctx, localMarkPath("tenant", blocks[i].String(), suffix))
+			exists, err := bkt.Exists(ctx, localMarkPath(tenantID, blocks[i].blockID.String(), suffix))
 			require.NoError(t, err)
 			require.True(t, exists)
 
-			exists, err = bkt.Exists(ctx, globalMarkPath("tenant", blocks[i].String(), suffix))
+			exists, err = bkt.Exists(ctx, globalMarkPath(tenantID, blocks[i].blockID.String(), suffix))
 			require.NoError(t, err)
 			require.True(t, exists)
 		}
 
-		for i := 0; i < len(blocks); i++ {
+		for i := range blocks {
 			err := removeF(ctx, i)
 			require.NoError(t, err)
 
-			exists, err := bkt.Exists(ctx, localMarkPath("tenant", blocks[i].String(), suffix))
+			exists, err := bkt.Exists(ctx, localMarkPath(tenantID, blocks[i].blockID.String(), suffix))
 			require.NoError(t, err)
 			require.False(t, exists)
 
-			exists, err = bkt.Exists(ctx, globalMarkPath("tenant", blocks[i].String(), suffix))
+			exists, err = bkt.Exists(ctx, globalMarkPath(tenantID, blocks[i].blockID.String(), suffix))
 			require.NoError(t, err)
 			require.False(t, exists)
 		}
@@ -79,7 +80,7 @@ func TestAddAndRemoveMarks(t *testing.T) {
 	require.Empty(t, names)
 }
 
-func TestMetaValidationPolicy(t *testing.T) {
+func TestMetaPresencePolicy(t *testing.T) {
 	tenantID := "tenant"
 
 	id, err := ulid.New(ulid.Now(), nil)
@@ -113,11 +114,11 @@ func TestMetaValidationPolicy(t *testing.T) {
 			ctx := context.Background()
 			bkt := objstore.NewInMemBucket()
 
-			mvf, err := metaPresenceFunc(tenantID, bkt, name)
+			mpf, err := metaPresenceFunc(bkt, name)
 			require.NoError(t, err)
 
 			// Block meta.json is not present
-			skip, err := mvf(ctx, blockID)
+			skip, err := mpf(ctx, tenantID, blockID)
 			if tc.missingError {
 				require.Error(t, err)
 			} else {
@@ -129,7 +130,7 @@ func TestMetaValidationPolicy(t *testing.T) {
 			require.NoError(t, err)
 
 			// Block meta.json is present
-			skip, err = mvf(ctx, blockID)
+			skip, err = mpf(ctx, tenantID, blockID)
 			require.NoError(t, err)
 			require.Equal(t, tc.presentSkip, skip)
 		})
@@ -137,15 +138,41 @@ func TestMetaValidationPolicy(t *testing.T) {
 }
 
 func TestReadBlocks(t *testing.T) {
-	blocks := generateBlocks(t)
+	blocks := generateBlocks(t, "tenant")
 	blockStrings := make([]string, 0, len(blocks))
 	for _, block := range blocks {
-		blockStrings = append(blockStrings, block.String())
+		blockStrings = append(blockStrings, block.blockID.String())
 	}
-	r := strings.NewReader(strings.Join(blockStrings, "\n"))
-	readBlocks, err := readBlocks(r)
+	lines := strings.Join(blockStrings, "\n")
+
+	// Only blockIDs
+	result, err := readBlocks(strings.NewReader(lines), "tenant")
 	require.NoError(t, err)
-	require.Equal(t, blocks, readBlocks)
+	require.Equal(t, blocks, result)
+
+	// Only blockIDs, but no tenant provided (unexpected)
+	result, err = readBlocks(strings.NewReader(lines), "")
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	blocks = append(blocks, generateBlocks(t, "tenant2")...)
+	blockStrings = make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		blockStrings = append(blockStrings, block.tenantID+"/"+block.blockID.String())
+	}
+	blockStrings[len(blockStrings)-1] += "/" // test support for an optional trailing slash
+
+	lines = strings.Join(blockStrings, "\n")
+
+	// tenantID/blockID format
+	result, err = readBlocks(strings.NewReader(lines), "")
+	require.NoError(t, err)
+	require.Equal(t, blocks, result)
+
+	// tenantID/blockID format, but tenant provided (not expected)
+	result, err = readBlocks(strings.NewReader(lines), "tenant")
+	require.Error(t, err)
+	require.Nil(t, result)
 }
 
 func TestForEachJobSuccessUntil(t *testing.T) {
@@ -166,16 +193,16 @@ func TestForEachJobSuccessUntil(t *testing.T) {
 }
 
 func TestGetBlocks(t *testing.T) {
-	blockIDs := generateBlocks(t)
-	blockStrings := make([]string, 0, len(blockIDs))
-	for _, blockID := range blockIDs {
-		blockStrings = append(blockStrings, blockID.String())
+	blocks := generateBlocks(t, "tenant")
+	blockStrings := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		blockStrings = append(blockStrings, block.blockID.String())
 	}
 
 	// Comma separated blocks take precedence
-	commaBlocks, err := getBlocks(blockStrings, "-")
+	commaBlocks, err := getBlocks(blockStrings, "-", "tenant")
 	require.NoError(t, err)
-	require.Equal(t, blockIDs, commaBlocks)
+	require.Equal(t, blocks, commaBlocks)
 
 	// Write a file with a block per line
 	tmp := t.TempDir()
@@ -185,12 +212,12 @@ func TestGetBlocks(t *testing.T) {
 	err = os.WriteFile(filePath, data, os.ModePerm)
 	require.NoError(t, err)
 
-	fileBlocks, err := getBlocks(nil, filePath)
+	fileBlocks, err := getBlocks(nil, filePath, "tenant")
 	require.NoError(t, err)
-	require.Equal(t, blockIDs, fileBlocks)
+	require.Equal(t, blocks, fileBlocks)
 
 	// Missing file
-	missingBlocks, err := getBlocks(nil, path.Join(tmp, "missing"))
+	missingBlocks, err := getBlocks(nil, path.Join(tmp, "missing"), "tenant")
 	require.Error(t, err)
 	require.Empty(t, missingBlocks)
 }

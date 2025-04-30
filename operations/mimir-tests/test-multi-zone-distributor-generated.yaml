@@ -1184,7 +1184,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.23.0
+        image: grafana/rollout-operator:v0.26.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1250,6 +1250,7 @@ spec:
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
         - -ruler.max-rule-groups-per-tenant=85

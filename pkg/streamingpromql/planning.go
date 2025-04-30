@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"slices"
 	"strconv"
 	"time"
 
@@ -34,7 +33,7 @@ import (
 var timeSince = time.Since
 
 type QueryPlanner struct {
-	features                 Features
+	activeQueryTracker       promql.QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
@@ -42,8 +41,13 @@ type QueryPlanner struct {
 }
 
 func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
+	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	if activeQueryTracker == nil {
+		activeQueryTracker = &NoopQueryTracker{}
+	}
+
 	return &QueryPlanner{
-		features:                 opts.Features,
+		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
@@ -75,6 +79,13 @@ type PlanningObserver interface {
 }
 
 func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
+	queryID, err := p.activeQueryTracker.Insert(ctx, qs+" # (planning)")
+	if err != nil {
+		return nil, err
+	}
+
+	defer p.activeQueryTracker.Delete(queryID)
+
 	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
@@ -87,7 +98,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT)), nil
+		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT))
 	})
 
 	if err != nil {
@@ -262,12 +273,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.Call:
-		// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
-		// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
-		if _, found := slices.BinarySearch(p.features.DisabledFunctions, expr.Func.Name); found {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
-		}
-
 		if !isKnownFunction(expr.Func.Name) {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
@@ -389,6 +394,13 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
+
+	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
+	if err != nil {
+		return nil, err
+	}
+
+	defer e.activeQueryTracker.Delete(queryID)
 
 	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange)
 	if err != nil {

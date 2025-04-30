@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
@@ -112,10 +113,12 @@ func TestHistogramQuantileFunction_ReturnsGroupsFinishedFirstEarliest(t *testing
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			hOp := &HistogramQuantileFunction{
-				phArg:                  &testScalarOperator{},
-				inner:                  &operators.TestOperator{Series: testCase.inputSeries},
-				innerSeriesMetricNames: &operators.MetricNames{},
+				phArg:                    &testScalarOperator{},
+				inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
+				innerSeriesMetricNames:   &operators.MetricNames{},
+				memoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			outputSeries, err := hOp.SeriesMetadata(context.Background())

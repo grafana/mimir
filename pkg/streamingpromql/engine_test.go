@@ -50,8 +50,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	parser.Functions["sort_by_label"].Experimental = false
 	parser.Functions["sort_by_label_desc"].Experimental = false
 
-	features := EnableAllFeatures
-
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
@@ -62,45 +60,23 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			requireQueryIsUnsupported(t, features, expression, expectedError)
+			requireQueryIsUnsupported(t, expression, expectedError)
 		})
 	}
 }
 
-func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
-	t.Run("function disabled by name", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
-
-		requireQueryIsSupported(t, features, "abs(metric{})")
-		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function")
-		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function")
-	})
-}
-
-func requireQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	t.Run("range query", func(t *testing.T) {
-		requireRangeQueryIsUnsupported(t, features, expression, expectedError)
+		requireRangeQueryIsUnsupported(t, expression, expectedError)
 	})
 
 	t.Run("instant query", func(t *testing.T) {
-		requireInstantQueryIsUnsupported(t, features, expression, expectedError)
+		requireInstantQueryIsUnsupported(t, expression, expectedError)
 	})
 }
 
-func requireQueryIsSupported(t *testing.T, features Features, expression string) {
-	t.Run("range query", func(t *testing.T) {
-		requireRangeQueryIsSupported(t, features, expression)
-	})
-
-	t.Run("instant query", func(t *testing.T) {
-		requireInstantQueryIsSupported(t, features, expression)
-	})
-}
-
-func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.Features = features
 
 	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
 		qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
@@ -110,9 +86,8 @@ func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression 
 	})
 }
 
-func requireInstantQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.Features = features
 
 	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
 		qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
@@ -120,26 +95,6 @@ func requireInstantQueryIsUnsupported(t *testing.T, features Features, expressio
 		require.ErrorIs(t, err, compat.NotSupportedError{})
 		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
 		require.Nil(t, qry)
-	})
-}
-
-func requireRangeQueryIsSupported(t *testing.T, features Features, expression string) {
-	opts := NewTestEngineOpts()
-	opts.Features = features
-
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		_, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-		require.NoError(t, err)
-	})
-}
-
-func requireInstantQueryIsSupported(t *testing.T, features Features, expression string) {
-	opts := NewTestEngineOpts()
-	opts.Features = features
-
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		_, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-		require.NoError(t, err)
 	})
 }
 
@@ -401,13 +356,6 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"floats: 0 length range": {
-			expr: "some_metric[0]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: &promql.Result{
-				Value: promql.Matrix{},
-			},
-		},
 		"histograms: matches series with points in range": {
 			expr: "incr_histogram[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
@@ -593,13 +541,6 @@ func TestRangeVectorSelectors(t *testing.T) {
 						},
 					},
 				},
-			},
-		},
-		"histograms: 0 length range": {
-			expr: "incr_histogram[0]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: &promql.Result{
-				Value: promql.Matrix{},
 			},
 		},
 		"mixed series with histograms and floats": {
@@ -1048,13 +989,6 @@ func TestSubqueries(t *testing.T) {
 			},
 			Start: time.Unix(35, 0),
 		},
-		{
-			Query: "metric[0:5s]",
-			Result: promql.Result{
-				Value: promql.Matrix{},
-			},
-			Start: time.Unix(10, 0),
-		},
 		{ // Normal selector.
 			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
 			Result: promql.Result{
@@ -1499,27 +1433,28 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "some_metric",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5 * 8 * types.FPointSize,
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool,
+			// and we have five series and each of the series has SeriesMetadata.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
-			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*types.VectorSampleSize,
+			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
 			expr:          "some_metric",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5 * 8 * types.FPointSize,
-			rangeQueryLimit:        1000,
+			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
-			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*types.VectorSampleSize,
-			instantQueryLimit:        1000,
+			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1540,17 +1475,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			//  - and the next series from the selector.
-			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
+			//  - the next series from the selector
+			//  - the labels for the output series
+			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (two floats and a bool),
-			//  - the next series from the selector,
-			//  - and the output sample.
-			instantQueryExpectedPeak: 2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize,
-			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize,
+			// At peak we'll hold in memory 9 SeriesMetadata.
+			instantQueryExpectedPeak: 9 * types.SeriesMetadataSize,
+			instantQueryLimit:        9 * types.SeriesMetadataSize,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1559,19 +1492,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory:
 			// - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			// - and the next series from the selector.
+			// - and the next series with SeriesMetadata from the selector.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*2*types.Float64Size + 8*types.FPointSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize - 1,
+			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize + types.BoolSize - 1,
 
-			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			// - the running total for the sum() (two floats and a bool),
-			// - the next series from the selector,
-			// - and the output sample.
-			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: 2*types.Float64Size + types.FPointSize + types.VectorSampleSize,
-			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize - 1,
+			// At peak we'll hold in memory 9 SeriesMetadata.
+			// To make the memory limit fail, we set limit at 8 SeriesMetadata, hence no any small allocation is possible.
+			instantQueryExpectedPeak: 8 * types.SeriesMetadataSize,
+			instantQueryLimit:        8 * types.SeriesMetadataSize,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
@@ -1581,15 +1510,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
 			//  - and the next series from the selector.
-			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize,
+			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer),
 			//  - the next series from the selector,
 			//  - and the output sample.
-			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize,
-			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize,
+			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 		},
 		"histogram: limit enabled, and query exceeds limit": {
 			expr:          "sum(some_histogram)",
@@ -1600,16 +1529,16 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
 			//  - and the next series from the selector.
 			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8 * types.HPointSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize - 1,
+			rangeQueryExpectedPeak: 8*types.HPointSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize - 1,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer),
 			//  - the next series from the selector,
 			//  - and the output sample.
 			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize,
-			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize - 1,
+			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize + types.HistogramPointerSize - 1,
 		},
 	}
 
@@ -1720,7 +1649,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 3 * 8 * types.FPointSize // Allow up to three series with five points (which will be rounded up to 8, the nearest power of 2)
+	limit := 3*8*types.FPointSize + 8*types.SeriesMetadataSize // Allow up to three series and its SeriesMetadatawith five points (which will be rounded up to 8, the nearest power of 2)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -1787,67 +1716,117 @@ func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Hist
 	return m[0].Histogram
 }
 
-func TestActiveQueryTracker(t *testing.T) {
-	for _, shouldSucceed := range []bool{true, false} {
-		t.Run(fmt.Sprintf("successful query = %v", shouldSucceed), func(t *testing.T) {
-			opts := NewTestEngineOpts()
-			tracker := &testQueryTracker{}
-			opts.CommonOpts.ActiveQueryTracker = tracker
-			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+func TestActiveQueryTracker_SuccessfulQuery_WithoutQueryPlanner(t *testing.T) {
+	opts := NewTestEngineOpts()
+	tracker := &testQueryTracker{}
+	opts.CommonOpts.ActiveQueryTracker = tracker
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	testActiveQueryTracker(t, engine, tracker)
+}
+
+func TestActiveQueryTracker_SuccessfulQuery_WithQueryPlanner(t *testing.T) {
+	opts := NewTestEngineOpts()
+
+	tracker := &testQueryTracker{}
+	opts.CommonOpts.ActiveQueryTracker = tracker
+
+	opts.UseQueryPlanning = true
+	planner := NewQueryPlanner(opts)
+
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, log.NewNopLogger())
+	require.NoError(t, err)
+
+	testActiveQueryTracker(
+		t, engine, tracker,
+		trackedQuery{expr: "test_query # (planning)", deleted: true},
+		trackedQuery{expr: "test_query # (materialization)", deleted: true},
+	)
+}
+
+func testActiveQueryTracker(t *testing.T, engine *Engine, tracker *testQueryTracker, expectedCreationActivities ...trackedQuery) {
+	innerStorage := promqltest.LoadedStorage(t, "")
+	t.Cleanup(func() { require.NoError(t, innerStorage.Close()) })
+
+	// Use a fake queryable as a way to check that the query is recorded as active while the query is in progress.
+	queryTrackingTestingQueryable := &activeQueryTrackerQueryable{
+		innerStorage: innerStorage,
+		tracker:      tracker,
+	}
+
+	queryTypes := map[string]func(expr string) (promql.Query, error){
+		"range": func(expr string) (promql.Query, error) {
+			return engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
+		},
+		"instant": func(expr string) (promql.Query, error) {
+			return engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
+		},
+	}
+
+	for queryType, createQuery := range queryTypes {
+		t.Run(queryType+" query", func(t *testing.T) {
+			expr := "test_query"
+			queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
+			tracker.Clear()
+
+			q, err := createQuery(expr)
 			require.NoError(t, err)
+			defer q.Close()
 
-			innerStorage := promqltest.LoadedStorage(t, "")
-			t.Cleanup(func() { require.NoError(t, innerStorage.Close()) })
+			require.Equal(t, expectedCreationActivities, tracker.queries)
 
-			// Use a fake queryable as a way to check that the query is recorded as active while the query is in progress.
-			queryTrackingTestingQueryable := &activeQueryTrackerQueryable{
-				innerStorage: innerStorage,
-				tracker:      tracker,
-			}
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
 
-			if !shouldSucceed {
-				queryTrackingTestingQueryable.err = errors.New("something went wrong inside the query")
-			}
+			// Check that the query was active in the query tracker while the query was executing.
+			require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
+			require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
 
-			queryTypes := map[string]func(expr string) (promql.Query, error){
-				"range": func(expr string) (promql.Query, error) {
-					return engine.NewRangeQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0), timestamp.Time(0).Add(time.Hour), time.Minute)
-				},
-				"instant": func(expr string) (promql.Query, error) {
-					return engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
-				},
-			}
-
-			for queryType, createQuery := range queryTypes {
-				t.Run(queryType+" query", func(t *testing.T) {
-					expr := "test_" + queryType + "_query"
-					queryTrackingTestingQueryable.activeQueryAtQueryTime = trackedQuery{}
-
-					q, err := createQuery(expr)
-					require.NoError(t, err)
-					defer q.Close()
-
-					res := q.Exec(context.Background())
-
-					if shouldSucceed {
-						require.NoError(t, res.Err)
-					} else {
-						require.EqualError(t, res.Err, "something went wrong inside the query")
-					}
-
-					// Check that the query was active in the query tracker while the query was executing.
-					require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
-					require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
-
-					// Check that the query has now been marked as deleted in the query tracker.
-					require.NotEmpty(t, tracker.queries)
-					trackedQuery := tracker.queries[len(tracker.queries)-1]
-					require.Equal(t, expr, trackedQuery.expr)
-					require.Equal(t, true, trackedQuery.deleted)
-				})
-			}
+			// Check that the query has now been marked as deleted in the query tracker.
+			require.NotEmpty(t, tracker.queries)
+			trackedQuery := tracker.queries[len(tracker.queries)-1]
+			require.Equal(t, expr, trackedQuery.expr)
+			require.Equal(t, true, trackedQuery.deleted)
 		})
 	}
+}
+
+func TestActiveQueryTracker_FailedQuery(t *testing.T) {
+	opts := NewTestEngineOpts()
+	tracker := &testQueryTracker{}
+	opts.CommonOpts.ActiveQueryTracker = tracker
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	innerStorage := promqltest.LoadedStorage(t, "")
+	t.Cleanup(func() { require.NoError(t, innerStorage.Close()) })
+
+	// Use a fake queryable as a way to check that the query is recorded as active while the query is in progress,
+	// and to inject an error that causes the query to fail.
+	queryTrackingTestingQueryable := &activeQueryTrackerQueryable{
+		innerStorage: innerStorage,
+		tracker:      tracker,
+		err:          errors.New("something went wrong inside the query"),
+	}
+
+	expr := "test_metric"
+	q, err := engine.NewInstantQuery(context.Background(), queryTrackingTestingQueryable, nil, expr, timestamp.Time(0))
+	require.NoError(t, err)
+	defer q.Close()
+
+	res := q.Exec(context.Background())
+	require.EqualError(t, res.Err, "something went wrong inside the query")
+
+	// Check that the query was active in the query tracker while the query was executing.
+	require.Equal(t, expr, queryTrackingTestingQueryable.activeQueryAtQueryTime.expr)
+	require.False(t, queryTrackingTestingQueryable.activeQueryAtQueryTime.deleted)
+
+	// Check that the query has now been marked as deleted in the query tracker.
+	require.NotEmpty(t, tracker.queries)
+	trackedQuery := tracker.queries[len(tracker.queries)-1]
+	require.Equal(t, expr, trackedQuery.expr)
+	require.Equal(t, true, trackedQuery.deleted)
 }
 
 type testQueryTracker struct {
@@ -1878,6 +1857,10 @@ func (qt *testQueryTracker) Delete(insertIndex int) {
 
 func (qt *testQueryTracker) Close() error {
 	return nil
+}
+
+func (qt *testQueryTracker) Clear() {
+	qt.queries = nil
 }
 
 type activeQueryTrackerQueryable struct {

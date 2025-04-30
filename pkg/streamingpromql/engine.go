@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
+	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -51,19 +51,20 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
-	// We must sort DisabledFunctions as we use a binary search on it later.
-	slices.Sort(opts.Features.DisabledFunctions)
-
 	if opts.UseQueryPlanning && planner == nil {
 		return nil, errors.New("query planning enabled but no planner provided")
+	}
+
+	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
+	if activeQueryTracker == nil {
+		activeQueryTracker = &NoopQueryTracker{}
 	}
 
 	return &Engine{
 		lookbackDelta:            lookbackDelta,
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
-		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
-		features:                 opts.Features,
+		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
@@ -85,7 +86,6 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
-	features           Features
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -162,4 +162,24 @@ type staticQueryLimitsProvider struct {
 
 func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
 	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+type NoopQueryTracker struct{}
+
+func (n *NoopQueryTracker) GetMaxConcurrent() int {
+	return math.MaxInt
+}
+
+func (n *NoopQueryTracker) Insert(_ context.Context, _ string) (int, error) {
+	// Nothing to do.
+	return 0, nil
+}
+
+func (n *NoopQueryTracker) Delete(_ int) {
+	// Nothing to do.
+}
+
+func (n *NoopQueryTracker) Close() error {
+	// Nothing to do.
+	return nil
 }

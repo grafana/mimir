@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
 
@@ -20,7 +21,7 @@ import (
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The SMTP and HTTP settings in this section can be used to configure Grafana receivers.
-func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
+func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
 		return amConfig{}, err
@@ -39,20 +40,23 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 		amCfg.AlertmanagerConfig.Global = cfg.Global
 	}
 
-	// Check for duplicate receiver names.
-	nameToReceiver := make(map[string]*definition.PostableApiReceiver, len(amCfg.AlertmanagerConfig.Receivers))
-	for _, receiver := range amCfg.AlertmanagerConfig.Receivers {
-		if existing, ok := nameToReceiver[receiver.Name]; ok {
-			itypes := make([]string, 0, len(existing.GrafanaManagedReceivers))
-			for _, i := range existing.GrafanaManagedReceivers {
-				itypes = append(itypes, i.Type)
-			}
-			level.Debug(am.logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", receiver.Name, "overwritten_integrations", strings.Join(itypes, ","))
-		}
-		nameToReceiver[receiver.Name] = receiver
+	// We want to:
+	// 1. Remove duplicate receivers and keep the last receiver occurrence if there are conflicts. This is based on the upstream implementation.
+	// 2. Maintain a consistent ordering and preferably original ordering. Otherwise, change detection will be impacted.
+	lastIndex := make(map[string]int, len(amCfg.AlertmanagerConfig.Receivers))
+	for i, receiver := range amCfg.AlertmanagerConfig.Receivers {
+		lastIndex[receiver.Name] = i
 	}
-	rcvs := make([]*definition.PostableApiReceiver, 0, len(nameToReceiver))
-	for _, rcv := range nameToReceiver {
+	rcvs := make([]*definition.PostableApiReceiver, 0, len(lastIndex))
+	for i, rcv := range amCfg.AlertmanagerConfig.Receivers {
+		if i != lastIndex[rcv.Name] {
+			itypes := make([]string, 0, len(rcv.GrafanaManagedReceivers))
+			for _, integration := range rcv.GrafanaManagedReceivers {
+				itypes = append(itypes, integration.Type)
+			}
+			level.Debug(logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", rcv.Name, "overwritten_integrations", strings.Join(itypes, ","))
+			continue
+		}
 		rcvs = append(rcvs, rcv)
 	}
 	amCfg.AlertmanagerConfig.Receivers = rcvs

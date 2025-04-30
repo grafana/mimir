@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/architecture/binary-index-header/
-description:
-  The binary index-header contains information that the store-gateway uses
-  at query time.
+description: The binary index-header contains information that the store-gateway uses at query time.
 menuTitle: Binary index-header
 title: Grafana Mimir binary index-header
 weight: 40
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir binary index-header
 

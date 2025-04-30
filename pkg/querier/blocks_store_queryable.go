@@ -115,16 +115,14 @@ type blocksStoreQueryableMetrics struct {
 func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
 	return &blocksStoreQueryableMetrics{
 		storesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "querier_storegateway_instances_hit_per_query",
-			Help:      "Number of store-gateway instances hit for a single query.",
-			Buckets:   []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			Name:    "cortex_querier_storegateway_instances_hit_per_query",
+			Help:    "Number of store-gateway instances hit for a single query.",
+			Buckets: []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		}),
 		refetches: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "querier_storegateway_refetches_per_query",
-			Help:      "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
-			Buckets:   []float64{0, 1, 2},
+			Name:    "cortex_querier_storegateway_refetches_per_query",
+			Help:    "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
+			Buckets: []float64{0, 1, 2},
 		}),
 
 		blocksFound: promauto.With(reg).NewCounter(prometheus.CounterOpts{

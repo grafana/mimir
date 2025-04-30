@@ -100,15 +100,13 @@ func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames, reg p
 
 func (c *LoadgenCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
 	c.writeRequestDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "loadgen",
-		Name:      "write_request_duration_seconds",
-		Buckets:   defBuckets,
+		Name:    "loadgen_write_request_duration_seconds",
+		Buckets: defBuckets,
 	}, []string{"success"})
 
 	c.queryRequestDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "loadgen",
-		Name:      "query_request_duration_seconds",
-		Buckets:   defBuckets,
+		Name:    "loadgen_query_request_duration_seconds",
+		Buckets: defBuckets,
 	}, []string{"success"})
 
 	return nil
