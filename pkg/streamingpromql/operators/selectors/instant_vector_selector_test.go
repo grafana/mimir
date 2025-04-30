@@ -186,6 +186,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			startTime := time.Unix(0, 0)
 			endTime := startTime.Add(time.Duration(testCase.stepCount-1) * time.Minute)
 
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -193,9 +194,10 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					Matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_metric"),
 					},
-					LookbackDelta: 5 * time.Minute,
+					LookbackDelta:            5 * time.Minute,
+					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
-				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 				Stats:                    &types.QueryStats{},
 			}
 
@@ -230,6 +232,7 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			startTime := timeZero.Add(time.Duration(startT) * time.Minute)
 			endTime := timeZero.Add(7 * time.Minute)
 
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -237,9 +240,10 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 					Matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
 					},
-					LookbackDelta: 5 * time.Minute,
+					LookbackDelta:            5 * time.Minute,
+					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
-				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 				Stats:                    &types.QueryStats{},
 			}
 

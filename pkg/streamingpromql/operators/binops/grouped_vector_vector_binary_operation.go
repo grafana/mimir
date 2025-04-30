@@ -214,7 +214,7 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	}
 
 	if len(allMetadata) == 0 {
-		types.PutSeriesMetadataSlice(allMetadata)
+		types.SeriesMetadataSlicePool.Put(allMetadata, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(oneSideSeriesUsed, g.MemoryConsumptionTracker)
 		types.BoolSlicePool.Put(manySideSeriesUsed, g.MemoryConsumptionTracker)
 		g.Close()
@@ -403,7 +403,11 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	}
 
 	// Finally, construct the list of series that this operator will return.
-	outputMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(outputSeriesMap), g.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, nil, nil, -1, nil, -1, err
+	}
+
 	outputSeries := make([]*groupedBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, o := range outputSeriesMap {
@@ -756,10 +760,10 @@ func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Right.Close()
 	// We don't need to close g.oneSide or g.manySide, as these are either g.Left or g.Right and so have been closed above.
 
-	types.PutSeriesMetadataSlice(g.oneSideMetadata)
+	types.SeriesMetadataSlicePool.Put(g.oneSideMetadata, g.MemoryConsumptionTracker)
 	g.oneSideMetadata = nil
 
-	types.PutSeriesMetadataSlice(g.manySideMetadata)
+	types.SeriesMetadataSlicePool.Put(g.manySideMetadata, g.MemoryConsumptionTracker)
 	g.manySideMetadata = nil
 
 	if g.oneSideBuffer != nil {

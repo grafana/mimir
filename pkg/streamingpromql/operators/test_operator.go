@@ -9,15 +9,15 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // TestOperator is an InstantVectorOperator used only in tests.
 type TestOperator struct {
-	Series []labels.Labels
-	Data   []types.InstantVectorSeriesData
-	Closed bool
+	Series                   []labels.Labels
+	Data                     []types.InstantVectorSeriesData
+	Closed                   bool
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
@@ -27,7 +27,20 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	return testutils.LabelsToSeriesMetadata(t.Series), nil
+	if len(t.Series) == 0 {
+		return nil, nil
+	}
+
+	seriesPool, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	seriesPool = seriesPool[:len(t.Series)]
+	for i, l := range t.Series {
+		seriesPool[i].Labels = l
+	}
+	return seriesPool, nil
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
