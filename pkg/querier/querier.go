@@ -167,6 +167,9 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
 	parser.EnableExperimentalFunctions = true
 
+	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
+	parser.ExperimentalDurationExpr = true
+
 	var eng promql.QueryEngine
 
 	switch cfg.QueryEngine {

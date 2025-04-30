@@ -19,6 +19,7 @@ type AnalyzeCommand struct{}
 func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.")
 	analyzeCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
+	analyzeCmd.Flag("enable-experimental-duration-expressions", "If set, enables parsing experimental duration expressions.").BoolVar(&parser.ExperimentalDurationExpr)
 
 	paCmd := &PrometheusAnalyzeCommand{}
 	prometheusAnalyzeCmd := analyzeCmd.Command("prometheus", "Take the metrics being used in Grafana and get the cardinality from a Prometheus.").Action(paCmd.run)
