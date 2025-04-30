@@ -1,5 +1,7 @@
 name: publish-technical-documentation-next
 
+permissions: {}
+
 on:
   push:
     branches:
@@ -8,8 +10,11 @@ on:
       - "docs/sources/helm-charts/**"
       - "docs/sources/mimir/**"
   workflow_dispatch:
+
 jobs:
   test:
+    permissions:
+      contents: read
     uses: ./.github/workflows/test-docs.yml
 
   sync:
