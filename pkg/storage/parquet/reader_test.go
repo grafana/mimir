@@ -13,6 +13,12 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/go-kit/log"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
+
+	"github.com/prometheus/prometheus/tsdb"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -201,4 +207,101 @@ func countResults(r [][]int64) int {
 		count += len(row)
 	}
 	return count
+}
+
+func TestScanRowsFromBlock(t *testing.T) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	tmpDir := t.TempDir()
+
+	var (
+		// parquet reader parameters
+		// all copied from pkg/parquetconverter/parquet_converter.go for now
+		maxParquetIndexSizeLimit = 100 // TODO what & why is this restriction?
+		batchSize                = 50000
+		batchStreamBufferSize    = 10
+	)
+
+	var (
+		// test data parameters
+		mint               = 0
+		sampleCount        = 100
+		labelCardinalities = []int{1, 2}
+	)
+
+	// create labelsets and series input data
+	labelSets := GenerateTestLabelSets(labelCardinalities, 100)
+	storageSeries := GenerateTestStorageSeriesFromLabelSets(labelSets, labelCardinalities, mint, sampleCount)
+
+	// write block to file in test temp dir
+	blockDir, err := tsdb.CreateBlock(storageSeries, tmpDir, 0, util_log.SlogFromGoKit(logger))
+	require.NoError(t, err)
+
+	batchedRowsStream, ln, totalMetrics, err := BlockToParquetRowsStream(
+		ctx, blockDir, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
+	)
+	require.NoError(t, err)
+
+	buffer := bytes.NewBuffer(nil)
+	writer := NewParquetWriter(
+		buffer,
+		1e6,
+		maxParquetIndexSizeLimit,
+		ChunkColumnsPerDay,
+		ln,
+		labels.MetricName,
+	)
+
+	total := 0
+	for rows := range batchedRowsStream {
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+		fmt.Printf("Writing Metrics [%v] [%v]\n", 100*(float64(total)/float64(totalMetrics)), rows[0].Columns[labels.MetricName])
+		err := writer.WriteRows(rows)
+		require.NoError(t, err)
+		total += len(rows)
+	}
+	require.NoError(t, writer.Close())
+
+	schema := writer.w.Schema()
+	fmt.Println(schema)
+	//readBackRows, err := parquet.Read[ParquetRow](BufferReadAt{buffer: buffer}, int64(buffer.Len()), schema)
+	//require.NoError(t, err)
+	//fmt.Println(readBackRows)
+	r, err := NewParquetReader(
+		BufferReadAt{buffer: buffer}.CreateReadAtWithContext,
+		int64(buffer.Len()),
+		false,
+		NewCacheMetrics(prometheus.NewPedanticRegistry()),
+		10,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	sts := NewStats()
+
+	var foundRows [][]int64
+
+	foundRows, err = r.SearchRows(
+		context.Background(),
+		labels.MetricName,
+		"a_1",
+		sts,
+	)
+
+	foundRows, err = r.ScanRows(
+		context.Background(),
+		foundRows,
+		false,
+		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "a_1"),
+		sts,
+	)
+	require.NoError(t, err)
+	result, err := r.Materialize(context.Background(), foundRows, []int{0, 1, 2}, nil, false, sts)
+	require.NoError(t, err)
+
+	fmt.Println(result)
+
 }

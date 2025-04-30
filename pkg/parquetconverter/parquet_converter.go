@@ -34,7 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/parquet"
-	"github.com/grafana/mimir/pkg/storage/parquet/tsdbcodec"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -542,7 +541,7 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 		}
 	}()
 
-	batchedRowsStream, ln, totalMetrics, err := tsdbcodec.BlockToParquetRowsStream(
+	batchedRowsStream, ln, totalMetrics, err := parquet.BlockToParquetRowsStream(
 		ctx, bDir, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
 	)
 	if err != nil {

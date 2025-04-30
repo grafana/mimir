@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package tsdbcodec
+package parquet
 
 import (
 	"bytes"
@@ -20,8 +20,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/mimir/pkg/storage/parquet"
 )
 
 func BlockToParquetRowsStream(
@@ -31,7 +29,7 @@ func BlockToParquetRowsStream(
 	rowsPerBatch int,
 	batchStreamBufferSize int,
 	logger log.Logger,
-) (chan []parquet.ParquetRow, []string, int, error) {
+) (chan []ParquetRow, []string, int, error) {
 	// TODO
 	b, err := tsdb.OpenBlock( /*logutil.GoKitLogToSlog(logger)*/ slog.New(slog.DiscardHandler), path, nil, tsdb.DefaultPostingsDecoderFactory)
 	if err != nil {
@@ -73,15 +71,15 @@ func BlockToParquetRowsStream(
 			truncateByteArray([]byte(b), maxParquetIndexSizeLimit),
 		)
 	})
-	rc := make(chan []parquet.ParquetRow, batchStreamBufferSize)
-	chunksEncoder := parquet.NewPrometheusParquetChunksEncoder()
+	rc := make(chan []ParquetRow, batchStreamBufferSize)
+	chunksEncoder := NewPrometheusParquetChunksEncoder()
 
 	go func() {
 		defer b.Close()
 		defer cReader.Close()
 		defer idx.Close()
 		defer close(rc)
-		batch := make([]parquet.ParquetRow, 0, rowsPerBatch)
+		batch := make([]ParquetRow, 0, rowsPerBatch)
 		batchMutex := &sync.Mutex{}
 		for _, metricName := range metricNames {
 			if ctx.Err() != nil {
@@ -123,7 +121,7 @@ func BlockToParquetRowsStream(
 						lbsls[l.Name] = l.Value
 					})
 
-					row := parquet.ParquetRow{
+					row := ParquetRow{
 						Hash:    promLbls.Hash(),
 						Columns: lbsls,
 						Data:    data,
@@ -133,7 +131,7 @@ func BlockToParquetRowsStream(
 					batch = append(batch, row)
 					if len(batch) >= rowsPerBatch {
 						rc <- batch
-						batch = make([]parquet.ParquetRow, 0, rowsPerBatch)
+						batch = make([]ParquetRow, 0, rowsPerBatch)
 					}
 					batchMutex.Unlock()
 					return nil
