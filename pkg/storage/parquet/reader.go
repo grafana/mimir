@@ -153,7 +153,7 @@ func (pr *ParquetReader) ColumnNames() []string {
 }
 
 func (pr *ParquetReader) SearchRows(ctx context.Context, colName, colValue string, sts *Stats) ([][]int64, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "ParquetReader.SearchRows")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ParquetReader.SearchRows")
 	defer span.Finish()
 	if colName != pr.sortedColumn {
 		return nil, fmt.Errorf("cannot search column %v as its not sorted. Sorted column %v", colName, pr.sortedColumn)
@@ -242,7 +242,7 @@ func (pr *ParquetReader) DataColsSize() int {
 }
 
 func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool, m *labels.Matcher, sts *Stats) ([][]int64, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "ParquetReader.ScanRows")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ParquetReader.ScanRows")
 	defer span.Finish()
 
 	ci, ok := pr.columnIndexMap[m.Name]
@@ -460,7 +460,7 @@ func (pr *ParquetReader) Materialize(ctx context.Context, rows [][]int64, dataCo
 	defer func() {
 		sts.AddMaterializeWallTime(time.Since(start).Milliseconds())
 	}()
-	span, _ := opentracing.StartSpanFromContext(ctx, "ParquetReader.Materialize")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ParquetReader.Materialize")
 	defer span.Finish()
 
 	if by {
