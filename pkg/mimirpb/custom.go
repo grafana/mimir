@@ -143,13 +143,15 @@ func (c *codecV2) Name() string {
 	return c.codec.Name()
 }
 
+// MessageWithBufferRef is an unmarshalling buffer retaining protobuf message.
 type MessageWithBufferRef interface {
+	// SetBuffer sets the unmarshalling buffer.
 	SetBuffer(mem.Buffer)
+	// FreeBuffer drops the unmarshalling buffer reference.
 	FreeBuffer()
 }
 
 // BufferHolder is a base type for protobuf messages that keep unsafe references to the unmarshalling buffer.
-// Implementations of this interface should keep a reference to said buffer.
 type BufferHolder struct {
 	buffer mem.Buffer
 }
@@ -164,6 +166,8 @@ func (m *BufferHolder) FreeBuffer() {
 		m.buffer = nil
 	}
 }
+
+var _ MessageWithBufferRef = &BufferHolder{}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
@@ -408,12 +412,12 @@ func (t UnsafeByteSlice) Equal(other UnsafeByteSlice) bool {
 
 // SizedMarshaler supports marshaling a protobuf message to a sized buffer.
 type SizedMarshaler interface {
-	// MarshalToSizedBuffer appends the wire-format encoding of m to b.
+	// MarshalToSizedBuffer writes the wire-format encoding of m to b.
 	MarshalToSizedBuffer(b []byte) (int, error)
 }
 
 // MarshalerWithSize supports marshaling a protobuf message with a predetermined buffer size.
 type MarshalerWithSize interface {
-	// MarshalToSizedBuffer returns a wire format byte slice of the given size.
+	// MarshalWithSize returns a wire format byte slice of the given size.
 	MarshalWithSize(size int) ([]byte, error)
 }
