@@ -1044,7 +1044,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
-	t.Skip()
 	const userID = "user-1"
 
 	now := time.Now().UnixMilli()
@@ -1335,7 +1334,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedResponse := mkAPIResponse(testData.req.GetStart(), testData.req.GetEnd(), testData.req.GetStep())
-			assert.Equal(t, expectedResponse, actualRes)
+			requireEqualPrometheusResponse(t, expectedResponse, actualRes)
 
 			// Check the updated cached extents.
 			actualExtents := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{userID}, []string{cacheKey})
