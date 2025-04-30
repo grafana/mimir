@@ -173,6 +173,8 @@ func TestCodecV2_Unmarshal(t *testing.T) {
 	var req WriteRequest
 	require.NoError(t, c.Unmarshal(data, &req))
 
+	require.True(t, origReq.Equal(req))
+
 	require.NotNil(t, req.buffer)
 	req.FreeBuffer()
 }

@@ -55,9 +55,7 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 	var data mem.BufferSlice
 	// MarshalWithSize should be the most optimized method.
 	if marshaler, ok := v.(MarshalerWithSize); ok {
-		var buf []byte
-		var err error
-		buf, err = marshaler.MarshalWithSize(size)
+		buf, err := marshaler.MarshalWithSize(size)
 		if err != nil {
 			return nil, err
 		}
