@@ -121,8 +121,14 @@ func createRejectedMetric() (*prometheus.Registry, prometheus.Counter) {
 }
 
 func BenchmarkMemoryConsumptionTracker(b *testing.B) {
+	// Set to a very high limit since we don't want to benchmark actually hitting the
+	// limit since this should be rare. Instead, we want to benchmark having to check the
+	// limit.
+	const memoryLimit = 1024 * 1024 * 1024
+
 	b.Run("no limits single threaded", func(b *testing.B) {
 		l := NewMemoryConsumptionTracker(0, nil)
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = l.IncreaseMemoryConsumption(uint64(b.N))
 			l.DecreaseMemoryConsumption(uint64(b.N))
@@ -132,7 +138,12 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("with limits single threaded", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(1024*1024, nil)
+		counter := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_test_rejections_total",
+		})
+
+		l := NewMemoryConsumptionTracker(memoryLimit, counter)
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if err := l.IncreaseMemoryConsumption(uint64(b.N)); err == nil {
 				l.DecreaseMemoryConsumption(uint64(b.N))
@@ -157,6 +168,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 			}
 		}()
 
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = l.IncreaseMemoryConsumption(uint64(b.N))
 			l.DecreaseMemoryConsumption(uint64(b.N))
@@ -169,7 +181,11 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("with limits multiple threads", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(1024*1024, nil)
+		counter := prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_test_rejections_total",
+		})
+
+		l := NewMemoryConsumptionTracker(memoryLimit, counter)
 		wg := sync.WaitGroup{}
 		run := atomic.NewBool(true)
 
@@ -184,6 +200,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 			}
 		}()
 
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if err := l.IncreaseMemoryConsumption(uint64(b.N)); err == nil {
 				l.DecreaseMemoryConsumption(uint64(b.N))
