@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -1280,10 +1279,8 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	// after Next() will be called again.
 	res := newSeriesChunkRefsSet(len(entry.Series), true)
 	for _, lset := range entry.Series {
-		ls := mimirpb.FromLabelAdaptersToLabels(lset.Labels)
-		ls.InternStrings(strings.Clone)
 		res.series = append(res.series, seriesChunkRefs{
-			lset: ls,
+			lset: mimirpb.FromLabelAdaptersToLabelsWithCopy(lset.Labels),
 		})
 	}
 	return res, true
