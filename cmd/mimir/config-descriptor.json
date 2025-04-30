@@ -13293,10 +13293,11 @@
           "kind": "field",
           "name": "alertmanager_url",
           "required": false,
-          "desc": "",
+          "desc": "Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldType": "string"
+          "fieldType": "string",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",

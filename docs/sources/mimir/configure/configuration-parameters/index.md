@@ -1944,6 +1944,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.rule-path
 [rule_path: <string> | default = "./data-ruler/"]
 
+# (deprecated) Deprecated, use
+# limits.ruler_alertmanager_client_config.alertmanager_url instead.
 [alertmanager_url: <string> | default = ""]
 
 # (advanced) How long to wait between refreshing DNS resolutions of Alertmanager
@@ -1961,6 +1963,7 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.notification-timeout
 [notification_timeout: <duration> | default = 10s]
 
+# Deprecated, use limits.ruler_alertmanager_client_config instead.
 alertmanager_client:
   # (advanced)
   [tls_enabled: <boolean> | default = ]

@@ -109,7 +109,7 @@ type Config struct {
 	RulePath string `yaml:"rule_path"`
 
 	// URL of the Alertmanager to send notifications to.
-	DeprecatedAlertmanagerURL string `yaml:"alertmanager_url"`
+	DeprecatedAlertmanagerURL string `yaml:"alertmanager_url" category:"deprecated" doc:"description=Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead."`
 	// How long to wait between refreshing the list of Alertmanager based on DNS service discovery.
 	AlertmanagerRefreshInterval time.Duration `yaml:"alertmanager_refresh_interval" category:"advanced"`
 	// Capacity of the queue for notifications to be sent to the Alertmanager.
@@ -117,7 +117,7 @@ type Config struct {
 	// HTTP timeout duration when sending notifications to the Alertmanager.
 	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
 	// Client configs for interacting with the Alertmanager
-	DeprecatedNotifier notifier.Config `yaml:"alertmanager_client"`
+	DeprecatedNotifier notifier.Config `yaml:"alertmanager_client" category:"deprecated" doc:"description=Deprecated, use limits.ruler_alertmanager_client_config instead."`
 
 	// Max time to tolerate outage for restoring "for" state of alert.
 	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
