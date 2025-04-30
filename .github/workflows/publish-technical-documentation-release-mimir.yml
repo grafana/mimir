@@ -1,5 +1,7 @@
 name: publish-technical-documentation-release-mimir
 
+permissions: {}
+
 on:
   push:
     branches:
@@ -9,9 +11,13 @@ on:
     paths:
       - "docs/sources/mimir/**"
   workflow_dispatch:
+
 jobs:
   test:
+    permissions:
+      contents: read
     uses: ./.github/workflows/test-docs.yml
+
   sync:
     if: github.repository == 'grafana/mimir'
     needs: test
