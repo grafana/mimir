@@ -138,7 +138,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("with limits single threaded", func(b *testing.B) {
-		counter := prometheus.NewCounter(prometheus.CounterOpts{
+		counter := promauto.With(nil).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_test_rejections_total",
 		})
 
@@ -181,7 +181,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("with limits multiple threads", func(b *testing.B) {
-		counter := prometheus.NewCounter(prometheus.CounterOpts{
+		counter := promauto.With(nil).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_test_rejections_total",
 		})
 
