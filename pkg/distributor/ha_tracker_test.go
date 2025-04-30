@@ -8,6 +8,7 @@ package distributor
 import (
 	"context"
 	"fmt"
+	"github.com/go-kit/log/level"
 	"os"
 	"strings"
 	"testing"
@@ -399,10 +400,13 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 			err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now)
 			assert.NoError(t, err)
 
+			time.Sleep(time.Second)
+
 			key := fmt.Sprintf("%s/%s", tenant, cluster)
 
 			// Mark the ReplicaDesc as deleted in the KVStore, which will also remove it from the tracker cache.
 			err = tracker.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+				level.Info(tracker.logger).Log("msg", "Send CAS delete operation")
 				d, ok := in.(*ReplicaDesc)
 				if !ok || d == nil {
 					return nil, false, nil
