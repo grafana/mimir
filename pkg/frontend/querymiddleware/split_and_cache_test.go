@@ -1753,9 +1753,8 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO Check if it's safe to close the response here. I suspect EncodeMetricsQueryResponse does not do a deep copy and thus it is not yet safe.
-	// We'll likely need to wrap the encoded response with a closer
-	defer response.Close()
+	// EncodeMetricsQueryResponse returns an http.Response with a prometheusReadCloser body for the consumer to close the query.
+	// So we do not need to close the response ourselves here.
 
 	return q.codec.EncodeMetricsQueryResponse(r.Context(), r, response)
 }

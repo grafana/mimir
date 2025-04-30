@@ -90,9 +90,8 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			return storage.ErrSeriesSet(err)
 		}
 
-		// FIXME: newSeriesSetFromEmbeddedQueriesResults copies samples, but does not do a deep copy of histogram spans.
-		// We either need to do a deep copy of the histogram spans or somehow wrap the SeriesSets with a closer.
-		// Labels also need closer inspection as they appear to be pointers too.
+		// newSeriesSetFromEmbeddedQueriesResults copies the values, so it is safe to close the query after it is done.
+		// (It does not copy labels, but MQE does not reuse labels so it is still safe).
 		defer resp.Close()
 
 		promRes, ok := resp.GetPrometheusResponse()
@@ -185,9 +184,8 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			if err != nil {
 				return storage.ErrSeriesSet(fmt.Errorf("error running subquery: %w", err))
 			}
-			// FIXME: newSeriesSetFromEmbeddedQueriesResults copies samples, but does not do a deep copy of histogram spans.
-			// We either need to do a deep copy of the histogram spans or somehow wrap the SeriesSets with a closer.
-			// Labels also need closer inspection as they appear to be pointers too.
+			// newSeriesSetFromEmbeddedQueriesResults copies the values, so it is safe to close the query after it is done.
+			// (It does not copy labels, but MQE does not reuse labels so it is still safe).
 			defer resp.Close()
 
 			promRes, ok := resp.GetPrometheusResponse()

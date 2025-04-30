@@ -230,6 +230,9 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 // The passed hints (if any) is used to inject stale markers at the beginning of each gap in the embedded query
 // results.
 //
+// Values (including histograms) are copied, so the supplying queries can be closed.
+// Labels *are not* copied.
+//
 // The returned storage.SeriesSet series is sorted.
 func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints) storage.SeriesSet {
 	totalLen := 0
@@ -309,7 +312,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 					})
 				}
 
-				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel()))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel().Copy()))
 			}
 
 			if len(histograms) > 0 && step > 0 {

@@ -145,6 +145,8 @@ type Extractor interface {
 type PrometheusResponseExtractor struct{}
 
 // Extract extracts response for specific a range from a response.
+// The from Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
 	promRes, ok := from.GetPrometheusResponse()
 	if !ok {
@@ -168,6 +170,8 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 
 // ResponseWithoutHeaders is useful in caching data without headers since
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
+// The supplied Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
 	promRes, ok := resp.GetPrometheusResponse()
 	if !ok {
