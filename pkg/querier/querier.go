@@ -173,7 +173,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	case prometheusEngine:
 		eng = promql.NewEngine(opts)
 	case mimirEngine:
-		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
+		limitsProvider := &TenantQueryLimitsProvider{Limits: limits}
 		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner, logger)
 		if err != nil {
 			return nil, nil, nil, err
@@ -720,11 +720,11 @@ func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, mi
 	)
 }
 
-type tenantQueryLimitsProvider struct {
-	limits *validation.Overrides
+type TenantQueryLimitsProvider struct {
+	Limits *validation.Overrides
 }
 
-func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
+func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return 0, err
@@ -733,7 +733,7 @@ func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	totalLimit := uint64(0)
 
 	for _, tenantID := range tenantIDs {
-		tenantLimit := p.limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
+		tenantLimit := p.Limits.MaxEstimatedMemoryConsumptionPerQuery(tenantID)
 
 		if tenantLimit == 0 {
 			// If any tenant is unlimited, then treat whole query as unlimited.

@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -89,6 +90,7 @@ func TestTripperware_RangeQuery(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		streamingpromql.NewTestEngineOpts(),
 		nil,
 		nil,
 	)
@@ -141,6 +143,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		streamingpromql.NewTestEngineOpts(),
 		nil,
 		nil,
 	)
@@ -472,6 +475,7 @@ func TestTripperware_Metrics(t *testing.T) {
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
+				streamingpromql.NewTestEngineOpts(),
 				nil,
 				reg,
 			)
@@ -537,6 +541,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		streamingpromql.NewTestEngineOpts(),
 		nil,
 		nil,
 	)
@@ -829,6 +834,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
+				streamingpromql.NewTestEngineOpts(),
 				nil,
 				reg,
 			)
@@ -963,6 +969,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		streamingpromql.NewTestEngineOpts(),
 		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
 		nil,
 	)

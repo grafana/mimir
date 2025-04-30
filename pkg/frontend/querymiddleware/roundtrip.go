@@ -24,7 +24,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -206,10 +209,11 @@ func NewTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
+	mqeOpts streamingpromql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, mqeOpts, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -226,12 +230,36 @@ func newQueryTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
+	mqeOpts streamingpromql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
 	engineOpts.ActiveQueryTracker = nil
-	engine := promql.NewEngine(engineOpts)
+
+	var eng promql.QueryEngine
+
+	//switch cfg.QueryEngine {
+	//case prometheusEngine:
+	//	eng = promql.NewEngine(engineOpts)
+	//case mimirEngine:
+	// limitsProvider := &querier.TenantQueryLimitsProvider{Limits: limits.(*validation.Overrides)}
+	streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log)
+
+	if err != nil {
+		return nil, err
+	}
+
+	//if cfg.EnableQueryEngineFallback {
+	if true {
+		prometheusEngine := promql.NewEngine(engineOpts)
+		eng = compat.NewEngineWithFallback(streamingEngine, prometheusEngine, registerer, log)
+	} else {
+		eng = streamingEngine
+	}
+	//default:
+	//	panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
+	//}
 
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
@@ -261,7 +289,7 @@ func newQueryTripperware(
 		c,
 		cacheKeyGenerator,
 		cacheExtractor,
-		engine,
+		eng,
 		engineOpts.NoStepSubqueryIntervalFn,
 		registerer,
 	)
@@ -358,7 +386,7 @@ func newQueryMiddlewares(
 	cacheClient cache.Cache,
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	defaultStepFunc func(rangeMillis int64) int64,
 	registerer prometheus.Registerer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {

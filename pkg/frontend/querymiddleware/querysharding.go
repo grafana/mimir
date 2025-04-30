@@ -39,7 +39,7 @@ const shardingTimeout = 10 * time.Second
 type querySharding struct {
 	limit Limits
 
-	engine            *promql.Engine
+	engine            promql.QueryEngine
 	next              MetricsQueryHandler
 	logger            log.Logger
 	maxSeriesPerShard uint64
@@ -62,7 +62,7 @@ type queryShardingMetrics struct {
 // Finally we can translate the embedded vector selector back into subqueries in the Queryable and send them in parallel to downstream.
 func newQueryShardingMiddleware(
 	logger log.Logger,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	limit Limits,
 	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
@@ -157,7 +157,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
 }
 
-func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
+func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
 	qry, err := newQuery(ctx, r, engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -205,7 +205,7 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 	}, nil
 }
 
-func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEngine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
