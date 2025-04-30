@@ -119,7 +119,7 @@ func NewParquetStoreQueryable(
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*ParquetQueryable, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, ModuleName, logger, reg)
+	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, ModuleName, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier-parquet"}, reg))
 	if err != nil {
 		return nil, err
 	}
