@@ -188,8 +188,8 @@ type GrafanaAlertConfigDesc struct {
 	Default            bool              `protobuf:"varint,7,opt,name=default,proto3" json:"default,omitempty"`
 	Promoted           bool              `protobuf:"varint,8,opt,name=promoted,proto3" json:"promoted,omitempty"`
 	ExternalUrl        string            `protobuf:"bytes,9,opt,name=external_url,json=externalUrl,proto3" json:"external_url,omitempty"`
-	SmtpFrom           string            `protobuf:"bytes,11,opt,name=smtp_from,json=smtpFrom,proto3" json:"smtp_from,omitempty"`
 	StaticHeaders      map[string]string `protobuf:"bytes,10,rep,name=static_headers,json=staticHeaders,proto3" json:"static_headers,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	SmtpFrom           string            `protobuf:"bytes,11,opt,name=smtp_from,json=smtpFrom,proto3" json:"smtp_from,omitempty"`
 }
 
 func (m *GrafanaAlertConfigDesc) Reset()      { *m = GrafanaAlertConfigDesc{} }
