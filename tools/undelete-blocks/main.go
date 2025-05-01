@@ -553,7 +553,7 @@ func restore(ctx context.Context, bkt objtools.Bucket, restoreInfo restoreInfo, 
 
 	for _, deleteMarker := range restoreInfo.shadowingDeleteMarkers {
 		if dryRun {
-			logger.Info("dry run: would remove delete marker", "object", deleteMarker.objectName, "version", deleteMarker.info.VersionID)
+			logger.Info("dry run: would remove S3 delete marker", "object", deleteMarker.objectName, "version", deleteMarker.info.VersionID)
 			continue
 		}
 
@@ -561,9 +561,9 @@ func restore(ctx context.Context, bkt objtools.Bucket, restoreInfo restoreInfo, 
 			VersionID: deleteMarker.info.VersionID,
 		})
 		if err != nil {
-			return errors.Wrapf(err, "failed to remove a delete marker from object %s with version %s", deleteMarker.objectName, deleteMarker.info.VersionID)
+			return errors.Wrapf(err, "failed to remove an S3 delete marker from object %s with version %s", deleteMarker.objectName, deleteMarker.info.VersionID)
 		}
-		logger.Info("removed delete marker", "object", deleteMarker.objectName, "version", deleteMarker.info.VersionID)
+		logger.Info("removed S3 delete marker", "object", deleteMarker.objectName, "version", deleteMarker.info.VersionID)
 	}
 
 	return nil
