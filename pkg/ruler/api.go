@@ -292,11 +292,9 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	resp := &response{
-		Status: "success",
-		Data:   &RuleDiscovery{RuleGroups: groups, NextToken: token},
-	}
-	if len(rulesResp.Warnings) != 0 {
-		resp.Warnings = rulesResp.Warnings
+		Status:   "success",
+		Data:     &RuleDiscovery{RuleGroups: groups, NextToken: token},
+		Warnings: rulesResp.Warnings,
 	}
 	b, err := json.Marshal(resp)
 	if err != nil {
@@ -359,11 +357,9 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	}
 
 	resp := &response{
-		Status: "success",
-		Data:   &AlertDiscovery{Alerts: alerts},
-	}
-	if len(rulesResp.Warnings) != 0 {
-		resp.Warnings = rulesResp.Warnings
+		Status:   "success",
+		Data:     &AlertDiscovery{Alerts: alerts},
+		Warnings: rulesResp.Warnings,
 	}
 	b, err := json.Marshal(resp)
 	if err != nil {
