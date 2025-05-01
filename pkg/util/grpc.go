@@ -39,6 +39,7 @@ func CloseAndExhaust[T any](stream Stream[T]) error {
 			}
 
 			// If the message has a buffer reference, free it.
+			// If the stream returned an error above, there's no message, so there's nothing to free.
 			if buffer, ok := any(msg).(mimirpb.MessageWithBufferRef); ok {
 				buffer.FreeBuffer()
 			}
