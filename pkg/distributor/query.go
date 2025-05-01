@@ -11,7 +11,6 @@ import (
 	"context"
 	"io"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -201,18 +200,8 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 
 	result := make([]mimirpb.TimeSeries, len(exemplarResults))
 	for i, k := range keys {
-		ts := exemplarResults[k]
-		for i, l := range ts.Labels {
-			ts.Labels[i].Name = strings.Clone(l.Name)
-			ts.Labels[i].Value = strings.Clone(l.Value)
-		}
-		for i, e := range ts.Exemplars {
-			for j, l := range e.Labels {
-				ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
-				ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
-			}
-		}
-		result[i] = ts
+		result[i] = exemplarResults[k]
+		result[i].CloneUnsafe()
 	}
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
@@ -412,17 +401,8 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 			}
 		}
 
-		for i, ts := range resp.Timeseries {
-			for j, l := range ts.Labels {
-				resp.Timeseries[i].Labels[j].Name = strings.Clone(l.Name)
-				resp.Timeseries[i].Labels[j].Value = strings.Clone(l.Value)
-			}
-			for j, e := range ts.Exemplars {
-				for k, l := range e.Labels {
-					resp.Timeseries[i].Exemplars[j].Labels[k].Name = strings.Clone(l.Name)
-					resp.Timeseries[i].Exemplars[j].Labels[k].Value = strings.Clone(l.Value)
-				}
-			}
+		for i := range resp.Timeseries {
+			resp.Timeseries[i].CloneUnsafe()
 		}
 		result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
 	} else if len(resp.Chunkseries) > 0 {
@@ -445,14 +425,8 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 			return 0, nil, false, err
 		}
 
-		for i, s := range resp.Chunkseries {
-			for j, l := range s.Labels {
-				resp.Chunkseries[i].Labels[j].Name = strings.Clone(l.Name)
-				resp.Chunkseries[i].Labels[j].Value = strings.Clone(l.Value)
-			}
-			for j, c := range s.Chunks {
-				resp.Chunkseries[i].Chunks[j].Data = slices.Clone(c.Data)
-			}
+		for i := range resp.Chunkseries {
+			resp.Chunkseries[i].CloneUnsafe()
 		}
 		result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
 	} else if len(resp.StreamingSeries) > 0 {
