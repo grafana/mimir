@@ -3681,6 +3681,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
 
+# (experimental) List of queries to limit and duration to limit them for.
+# Example:
+#   The following configuration limits the query "rate(metric_counter[5m])" to
+#   running, at most, every minute.
+#   limited_queries:
+#       - allowed_frequency: 1m
+#         query: rate(metric_counter[5m])
+[limited_queries: <list of query (string) and allowed_frequency (duration)> | default = ]
+
 # (experimental) List of http requests to block.
 [blocked_requests: <blocked_requests_config...> | default = ]
 
@@ -4006,6 +4015,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.otel-keep-identifying-resource-attributes
 [otel_keep_identifying_resource_attributes: <boolean> | default = false]
 
+# (experimental) Whether to convert OTel explicit histograms into native
+# histograms with custom buckets.
+# CLI flag: -distributor.otel-convert-histograms-to-nhcb
+[otel_convert_histograms_to_nhcb: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
@@ -4146,6 +4160,10 @@ kafka:
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+  # (experimental) The record version that this producer sends.
+  # CLI flag: -ingest-storage.kafka.producer-record-version
+  [producer_record_version: <int> | default = 0]
 
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.

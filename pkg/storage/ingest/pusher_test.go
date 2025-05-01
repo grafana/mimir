@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -113,6 +112,35 @@ func TestPusherConsumer(t *testing.T) {
 			expErr:      "",
 			expectedLogLines: []string{
 				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: proto: WriteRequest: illegal tag 0 (wire type 0)\"",
+			},
+		},
+		"mixed record versions": {
+			records: []record{
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID, version: 0},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 1},
+				{ctx: ctx, content: wrBytes[2], tenantID: tenantID, version: 1},
+			},
+			responses: []response{
+				okResponse,
+				okResponse,
+				okResponse,
+			},
+			expectedWRs: writeReqs[0:3],
+		},
+		"unsupported record version": {
+			records: []record{
+				{ctx: ctx, content: wrBytes[0], tenantID: tenantID},
+				{ctx: ctx, content: wrBytes[1], tenantID: tenantID, version: 1},
+				{ctx: ctx, content: wrBytes[2], tenantID: tenantID, version: 101},
+			},
+			responses: []response{
+				okResponse,
+				okResponse,
+			},
+			expectedWRs: writeReqs[0:2],
+			expErr:      "",
+			expectedLogLines: []string{
+				"level=error msg=\"failed to parse write request; skipping\" err=\"received a record with an unsupported version: 101, max supported version: 1\"",
 			},
 		},
 		"failed processing of record": {
@@ -840,7 +868,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			metrics := newStoragePusherMetrics(reg)
 			errorHandler := newPushErrorHandler(metrics, nil, log.NewNopLogger())
-			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher, labels.StableHash)
+			shardingP := newParallelStorageShards(metrics, errorHandler, tc.shardCount, tc.batchSize, buffer, pusher)
 
 			upstreamPushErrsCount := 0
 			for i, req := range tc.expectedUpstreamPushes {

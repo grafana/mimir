@@ -91,7 +91,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(innerMetadata)
+	defer types.SeriesMetadataSlicePool.Put(innerMetadata, c.MemoryConsumptionTracker)
 
 	c.labelsBuilder = labels.NewBuilder(labels.EmptyLabels())
 	c.labelsBytesBuffer = make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
@@ -125,7 +125,11 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		types.PutInstantVectorSeriesData(data, c.MemoryConsumptionTracker)
 	}
 
-	outputMetadata := types.GetSeriesMetadataSlice(len(accumulator))
+	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(accumulator), c.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	c.series = make([][]promql.FPoint, 0, len(accumulator))
 
 	for _, s := range accumulator {

@@ -383,7 +383,7 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 			})
 
 			o := New(
-				&operators.TestOperator{Series: testCase.inputSeries, Data: data},
+				&operators.TestOperator{Series: testCase.inputSeries, Data: data, MemoryConsumptionTracker: memoryConsumptionTracker},
 				&scalars.ScalarConstant{Value: 2, TimeRange: timeRange, MemoryConsumptionTracker: memoryConsumptionTracker},
 				timeRange,
 				testCase.grouping,

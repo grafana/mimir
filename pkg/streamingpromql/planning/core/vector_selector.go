@@ -64,13 +64,14 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	o := &selectors.InstantVectorSelector{
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Selector: &selectors.Selector{
-			Queryable:          params.Queryable,
-			TimeRange:          timeRange,
-			Timestamp:          TimestampFromTime(v.Timestamp),
-			Offset:             v.Offset.Milliseconds(),
-			LookbackDelta:      params.LookbackDelta,
-			Matchers:           matchers,
-			ExpressionPosition: v.ExpressionPosition.ToPrometheusType(),
+			Queryable:                params.Queryable,
+			TimeRange:                timeRange,
+			Timestamp:                TimestampFromTime(v.Timestamp),
+			Offset:                   v.Offset.Milliseconds(),
+			LookbackDelta:            params.LookbackDelta,
+			Matchers:                 matchers,
+			ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
+			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		},
 		Stats: params.Stats,
 	}

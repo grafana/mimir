@@ -253,7 +253,18 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, engineOpts.NoStepSubqueryIntervalFn, registerer)
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
+		cfg,
+		log,
+		limits,
+		codec,
+		c,
+		cacheKeyGenerator,
+		cacheExtractor,
+		engine,
+		engineOpts.NoStepSubqueryIntervalFn,
+		registerer,
+	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
@@ -353,7 +364,13 @@ func newQueryMiddlewares(
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
-	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
+	blockedQueriesCounter := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_frontend_rejected_queries_total",
+		Help: "Number of queries that were rejected by the cluster administrator.",
+	}, []string{"user", "reason"})
+
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, blockedQueriesCounter)
+	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
 	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
@@ -370,17 +387,46 @@ func newQueryMiddlewares(
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+		queryLimiterMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
+	queryInstantMiddleware = append(queryInstantMiddleware,
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
+		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
+		queryBlockerMiddleware,
+		queryLimiterMiddleware,
+		newInstrumentMiddleware("prom2_compat", metrics),
+		prom2CompatMiddleware,
+	)
+
+	// Inject the extra middlewares provided by the user before the caching, query pruning, and
+	// query sharding middlewares.
+	// This is important because these extra middlewares can potentially mutate the incoming
+	// query.
+	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
+		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
+	}
+	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
+		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
+	}
+
 	if cfg.CacheResults && cfg.CacheErrors {
+		errorCachingMiddleware := newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, cacheKeyGenerator, log, registerer)
+
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			newInstrumentMiddleware("error_caching", metrics),
-			newErrorCachingMiddleware(cacheClient, limits, resultsCacheEnabledByOption, cacheKeyGenerator, log, registerer),
+			errorCachingMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("error_caching", metrics),
+			errorCachingMiddleware,
 		)
 	}
 
@@ -404,29 +450,11 @@ func newQueryMiddlewares(
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)
 	}
 
-	queryInstantMiddleware = append(queryInstantMiddleware,
-		queryStatsMiddleware,
-		newLimitsMiddleware(limits, log),
-		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
-		queryBlockerMiddleware,
-		newInstrumentMiddleware("prom2_compat", metrics),
-		prom2CompatMiddleware,
-	)
-
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newInstrumentMiddleware("spin_off_subqueries", metrics),
 		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
 	)
-
-	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
-	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
-		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
-	}
-	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
-	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
-	}
 
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and

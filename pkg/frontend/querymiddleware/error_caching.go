@@ -161,7 +161,6 @@ func (e *errorCachingHandler) loadErrorFromCache(ctx context.Context, key, hashe
 	}
 
 	return apierror.New(apierror.Type(cachedError.ErrorType), cachedError.ErrorMessage)
-
 }
 
 func (e *errorCachingHandler) storeErrorToCache(key, hashedKey string, ttl time.Duration, apiErr *apierror.APIError, spanLog *spanlogger.SpanLogger) {
@@ -187,11 +186,12 @@ func (e *errorCachingHandler) storeErrorToCache(key, hashedKey string, ttl time.
 }
 
 func (e *errorCachingHandler) isCacheable(apiErr *apierror.APIError) (bool, string) {
-	if apiErr.Type != apierror.TypeBadData && apiErr.Type != apierror.TypeExec && apiErr.Type != apierror.TypeTooLargeEntry {
+	switch apiErr.Type {
+	case apierror.TypeBadData, apierror.TypeExec, apierror.TypeTooLargeEntry:
+		return true, ""
+	default:
 		return false, reasonNotCacheableError
 	}
-
-	return true, ""
 }
 
 func addWithExemplar(ctx context.Context, counter prometheus.Counter, val float64) {

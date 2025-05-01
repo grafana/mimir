@@ -9,6 +9,9 @@ on:
       - mimir-[0-9]+.[0-9]+.[0-9]+**
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   # Cancel any running workflow for the same branch when new commits are pushed.
   # We group both by ref_name (available when CI is triggered by a push to a branch/tag)
@@ -22,6 +25,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -37,6 +42,8 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Get Go Version
@@ -54,6 +61,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -62,32 +71,6 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Get golangci-lint cache path
-        id: golangcilintcache
-        run: |
-          echo "path=$(golangci-lint cache status | grep 'Dir: ' | cut -d ' ' -f2)" >> "$GITHUB_OUTPUT"
-      - name: Cache golangci-lint cache
-        uses: actions/cache@v4
-        with:
-          key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
-          path: ${{ steps.golangcilintcache.outputs.path }}
-      - name: Get Go cache paths
-        id: goenv
-        run: |
-          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-      - name: Cache Go build cache
-        uses: actions/cache@v4
-        with:
-          key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.goenv.outputs.gocache }}
-      # Although we use vendoring, this linting job downloads all modules to verify that what is vendored is correct,
-      # so it'll use GOMODCACHE. Other jobs don't need this.
-      - name: Cache Go module cache
-        uses: actions/cache@v4
-        with:
-          key: lint-go-mod-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.goenv.outputs.gomodcache }}
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
@@ -114,6 +97,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -144,6 +129,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -153,7 +140,7 @@ jobs:
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
           version: v3.17.2
       - name: Check Helm Tests
@@ -175,22 +162,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Get Go build cache path
-        id: gocache
-        run: |
-          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - name: Cache Go build cache
-        uses: actions/cache@v4
-        with:
-          # Cache is shared between test groups.
-          key: test-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.gocache.outputs.path }}
       - name: Run Tests
         run: |
           echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
@@ -208,28 +187,21 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Get Go build cache path
-        id: gocache
-        run: |
-          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - name: Cache Go build cache
-        uses: actions/cache@v4
-        with:
-          key: build-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.gocache.outputs.path }}
       - name: Build Multiarch Docker Images Locally
         # Ignore mimir-build-image and mimir-rules-action.
         run: |
@@ -273,6 +245,8 @@ jobs:
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -281,16 +255,6 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Get Go build cache path
-        id: gocache
-        run: |
-          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-      - name: Cache Go build cache
-        uses: actions/cache@v4
-        with:
-          # Cache is shared between test groups.
-          key: integration-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
@@ -339,6 +303,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client

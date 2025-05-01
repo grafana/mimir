@@ -32,6 +32,7 @@ const (
 	Int64Size            = uint64(unsafe.Sizeof(int64(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
+	SeriesMetadataSize   = uint64(unsafe.Sizeof(SeriesMetadata{}))
 )
 
 var (
@@ -112,6 +113,15 @@ var (
 		HistogramPointerSize,
 		true,
 		mangleHistogram,
+	)
+
+	SeriesMetadataSlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(MaxExpectedSeriesPerResult, func(size int) []SeriesMetadata {
+			return make([]SeriesMetadata, 0, size)
+		}),
+		SeriesMetadataSize,
+		true,
+		nil,
 	)
 )
 

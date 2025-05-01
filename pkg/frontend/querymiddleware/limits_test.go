@@ -676,6 +676,10 @@ func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.Block
 	return m.byTenant[userID].blockedQueries
 }
 
+func (m multiTenantMockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+	return m.byTenant[userID].limitedQueries
+}
+
 func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.byTenant[userID].creationGracePeriod
 }
@@ -729,6 +733,7 @@ type mockLimits struct {
 	enabledPromQLExperimentalFunctions   []string
 	prom2RangeCompat                     bool
 	blockedQueries                       []*validation.BlockedQuery
+	limitedQueries                       []*validation.LimitedQuery
 	blockedRequests                      []*validation.BlockedRequest
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
@@ -808,6 +813,10 @@ func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 
 func (m mockLimits) BlockedQueries(string) []*validation.BlockedQuery {
 	return m.blockedQueries
+}
+
+func (m mockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+	return m.limitedQueries
 }
 
 func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {

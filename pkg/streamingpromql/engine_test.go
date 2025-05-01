@@ -356,13 +356,6 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"floats: 0 length range": {
-			expr: "some_metric[0]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: &promql.Result{
-				Value: promql.Matrix{},
-			},
-		},
 		"histograms: matches series with points in range": {
 			expr: "incr_histogram[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
@@ -548,13 +541,6 @@ func TestRangeVectorSelectors(t *testing.T) {
 						},
 					},
 				},
-			},
-		},
-		"histograms: 0 length range": {
-			expr: "incr_histogram[0]",
-			ts:   baseT.Add(2 * time.Minute),
-			expected: &promql.Result{
-				Value: promql.Matrix{},
 			},
 		},
 		"mixed series with histograms and floats": {
@@ -1003,13 +989,6 @@ func TestSubqueries(t *testing.T) {
 			},
 			Start: time.Unix(35, 0),
 		},
-		{
-			Query: "metric[0:5s]",
-			Result: promql.Result{
-				Value: promql.Matrix{},
-			},
-			Start: time.Unix(10, 0),
-		},
 		{ // Normal selector.
 			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
 			Result: promql.Result{
@@ -1454,27 +1433,28 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "some_metric",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5 * 8 * types.FPointSize,
+			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool,
+			// and we have five series and each of the series has SeriesMetadata.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
-			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*types.VectorSampleSize,
+			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
 			expr:          "some_metric",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5 * 8 * types.FPointSize,
-			rangeQueryLimit:        1000,
+			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
-			// The output contains five samples, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*types.VectorSampleSize,
-			instantQueryLimit:        1000,
+			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1495,17 +1475,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			//  - and the next series from the selector.
-			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize,
+			//  - the next series from the selector
+			//  - the labels for the output series
+			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
 
 			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (two floats and a bool),
-			//  - the next series from the selector,
-			//  - and the output sample.
-			instantQueryExpectedPeak: 2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize,
-			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize,
+			// At peak we'll hold in memory 9 SeriesMetadata.
+			instantQueryExpectedPeak: 9 * types.SeriesMetadataSize,
+			instantQueryLimit:        9 * types.SeriesMetadataSize,
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1514,19 +1492,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
 			// At peak we'll hold in memory:
 			// - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			// - and the next series from the selector.
+			// - and the next series with SeriesMetadata from the selector.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*2*types.Float64Size + 8*types.FPointSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize - 1,
+			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize + types.BoolSize - 1,
 
-			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			// - the running total for the sum() (two floats and a bool),
-			// - the next series from the selector,
-			// - and the output sample.
-			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: 2*types.Float64Size + types.FPointSize + types.VectorSampleSize,
-			instantQueryLimit:        2*types.Float64Size + types.BoolSize + types.FPointSize + types.VectorSampleSize - 1,
+			// At peak we'll hold in memory 9 SeriesMetadata.
+			// To make the memory limit fail, we set limit at 8 SeriesMetadata, hence no any small allocation is possible.
+			instantQueryExpectedPeak: 8 * types.SeriesMetadataSize,
+			instantQueryLimit:        8 * types.SeriesMetadataSize,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
@@ -1536,15 +1510,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
 			//  - and the next series from the selector.
-			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize,
+			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer),
 			//  - the next series from the selector,
 			//  - and the output sample.
-			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize,
-			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize,
+			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 		},
 		"histogram: limit enabled, and query exceeds limit": {
 			expr:          "sum(some_histogram)",
@@ -1555,16 +1529,16 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
 			//  - and the next series from the selector.
 			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8 * types.HPointSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize - 1,
+			rangeQueryExpectedPeak: 8*types.HPointSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*types.HPointSize + types.SeriesMetadataSize + 8*types.HistogramPointerSize - 1,
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory:
 			//  - the running total for the sum() (a histogram pointer),
 			//  - the next series from the selector,
 			//  - and the output sample.
 			// The last thing to be allocated is the HistogramPointerSize slice for the running total, so that won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize,
-			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize - 1,
+			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
+			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize + types.HistogramPointerSize - 1,
 		},
 	}
 
@@ -1675,7 +1649,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 3 * 8 * types.FPointSize // Allow up to three series with five points (which will be rounded up to 8, the nearest power of 2)
+	limit := 3*8*types.FPointSize + 8*types.SeriesMetadataSize // Allow up to three series and its SeriesMetadatawith five points (which will be rounded up to 8, the nearest power of 2)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), nil, log.NewNopLogger())
 	require.NoError(t, err)
 

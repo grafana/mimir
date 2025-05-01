@@ -71,8 +71,8 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
 	defer func() {
 		if b.nextIndexToRead > b.lastSeriesIndexUsed {
-			// If we're not going to read any more series, we can free all resources held by this buffer.
-			b.Close()
+			// If we're not going to read any more series, we can close the inner operator.
+			b.source.Close()
 		}
 	}()
 
@@ -110,6 +110,12 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 // It is safe to call Close multiple times.
 func (b *InstantVectorOperatorBuffer) Close() {
 	b.source.Close()
+
+	for _, d := range b.buffer {
+		types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
+	}
+	b.buffer = nil
+	b.output = nil
 
 	types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
 	b.seriesUsed = nil

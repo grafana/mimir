@@ -301,18 +301,28 @@
         actual_replicas_count:
           |||
             # Convenience rule to get the number of replicas for both a deployment and a statefulset.
-            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            #
+            # Notes:
+            # - Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            # - To avoid "vector cannot contain metrics with the same labelset" errors we need to add an additional
+            #   label "deployment_without_zone" first, then run the aggregation, and finally rename "deployment_without_zone"
+            #   to "deployment".
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
-                kube_deployment_spec_replicas,
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
+                  label_replace(
+                    kube_deployment_spec_replicas,
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
+                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  )
+                )
+                or
+                sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                ),
+                "deployment", "$1", "deployment_without_zone", "(.*)"
               )
-            )
-            or
-            sum by (%(alert_aggregation_labels)s, deployment) (
-              label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
             )
           |||,
         cpu_usage_seconds_total:

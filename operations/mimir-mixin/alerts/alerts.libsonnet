@@ -10,7 +10,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     'sum without(deployment) (label_replace(%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % metricName,
 
   local groupStatefulSetByRolloutGroup(metricName) =
-    'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
+    'sum by (%s, rollout_group) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+      $._config.alert_aggregation_labels,
+      metricName,
+    ],
+
+  local groupStatefulSetByRolloutGroupAndRevision(metricName) =
+    'sum by (%s, rollout_group, revision) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % [
+      $._config.alert_aggregation_labels,
+      metricName,
+    ],
 
   local request_metric = 'cortex_request_duration_seconds',
 
@@ -393,6 +402,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
           },
         },
+        {
+          // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
+          alert: $.alertName('ServerInvalidClusterValidationLabelRequests'),
+          expr: |||
+            (sum by (%(alert_aggregation_labels)s) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            # Alert only for namespaces with Mimir clusters.
+            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s servers in %(alert_aggregation_variables)s are receiving requests with invalid cluster validation labels.' % $._config,
+          },
+        },
+        {
+          // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
+          alert: $.alertName('ClientInvalidClusterValidationLabelRequests'),
+          expr: |||
+            (sum by (%(alert_aggregation_labels)s) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            # Alert only for namespaces with Mimir clusters.
+            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s clients in %(alert_aggregation_variables)s are having requests rejected due to invalid cluster validation labels.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
@@ -549,11 +592,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
         alert: $.alertName('RolloutStuck'),
         expr: |||
           (
-            max without (revision) (
+            # Query for rollout groups in certain namespaces that are being updated, dropping the revision label.
+            max by (%(aggregation_labels)s, rollout_group) (
               %(kube_statefulset_status_current_revision)s
                 unless
               %(kube_statefulset_status_update_revision)s
             )
+              # Multiply by replicas in corresponding rollout groups not fully updated to the current revision.
               *
             (
               %(kube_statefulset_replicas)s
@@ -561,15 +606,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
               %(kube_statefulset_status_replicas_updated)s
             )
           ) and (
+            # Pick only those which are unchanging for the interval.
             changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
               ==
             0
           )
+          # Include only Mimir namespaces.
           * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
         ||| % {
           aggregation_labels: $._config.alert_aggregation_labels,
-          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_current_revision'),
-          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
+          // Indicates the revision of the StatefulSet used to generate current replicas.
+          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_current_revision'),
+          // Indicates the revision of the StatefulSet used to generate replicas being updated.
+          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroupAndRevision('kube_statefulset_status_update_revision'),
           kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
           kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
           range_interval: '15m:' + $.alertRangeInterval(1),

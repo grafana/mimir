@@ -4878,6 +4878,16 @@
         },
         {
           "kind": "field",
+          "name": "limited_queries",
+          "required": false,
+          "desc": "List of queries to limit and duration to limit them for.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldType": "list of query (string) and allowed_frequency (duration)",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "blocked_requests",
           "required": false,
           "desc": "List of http requests to block.",
@@ -5479,6 +5489,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-keep-identifying-resource-attributes",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_convert_histograms_to_nhcb",
+          "required": false,
+          "desc": "Whether to convert OTel explicit histograms into native histograms with custom buckets.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-convert-histograms-to-nhcb",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -7515,6 +7536,17 @@
               "fieldDefaultValue": 20000000000,
               "fieldFlag": "ingest-storage.kafka.wait-strong-read-consistency-timeout",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
