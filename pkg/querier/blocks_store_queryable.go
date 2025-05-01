@@ -1030,12 +1030,11 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 
 			namesResp, err := c.LabelNames(gCtx, req)
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return err
+				if shouldRetry(err) {
+					level.Warn(spanLog).Log("msg", "failed to fetch label names; error is retriable", "remote", c.RemoteAddress(), "err", err)
+					return nil
 				}
-
-				level.Warn(spanLog).Log("msg", "failed to fetch label names", "remote", c.RemoteAddress(), "err", err)
-				return nil
+				return fmt.Errorf("non-retriable error while fetching label names from store: %w", err)
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
@@ -1110,11 +1109,11 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 
 			valuesResp, err := c.LabelValues(gCtx, req)
 			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return err
+				if shouldRetry(err) {
+					level.Warn(spanLog).Log("msg", "failed to fetch label values; error is retriable", "remote", c.RemoteAddress(), "err", err)
+					return nil
 				}
-				level.Warn(spanLog).Log("msg", "failed to fetch label values", "remote", c.RemoteAddress(), "err", err)
-				return nil
+				return fmt.Errorf("non-retriable error while fetching label values from store: %w", err)
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
