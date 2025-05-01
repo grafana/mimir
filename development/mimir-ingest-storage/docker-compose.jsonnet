@@ -20,26 +20,26 @@ std.manifestYamlDoc({
 
   write:: {
     // Zone-a.
+    'mimir-write-zone-a-0': mimirService({
+      name: 'mimir-write-zone-a-0',
+      target: 'write',
+      publishedHttpPort: 8001,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-0:/data:delegated'],
+    }),
     'mimir-write-zone-a-1': mimirService({
       name: 'mimir-write-zone-a-1',
       target: 'write',
-      publishedHttpPort: 8001,
+      publishedHttpPort: 8002,
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
       extraVolumes: ['.data-mimir-write-zone-a-1:/data:delegated'],
     }),
     'mimir-write-zone-a-2': mimirService({
       name: 'mimir-write-zone-a-2',
       target: 'write',
-      publishedHttpPort: 8002,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
-    }),
-    'mimir-write-zone-a-3': mimirService({
-      name: 'mimir-write-zone-a-3',
-      target: 'write',
       publishedHttpPort: 8003,
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
+      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
     }),
     // mimir-write-zone-c-61 is an instance that's not connected to the rest of the cluster.
     // The idea is that it can be used to test replay speed on a kafka partition without affecting the
@@ -66,42 +66,42 @@ std.manifestYamlDoc({
   },
 
   read:: {
-    'mimir-read-1': mimirService({
-      name: 'mimir-read-1',
+    'mimir-read-0': mimirService({
+      name: 'mimir-read-0',
       target: 'read',
       publishedHttpPort: 8004,
     }),
-    'mimir-read-2': mimirService({
-      name: 'mimir-read-2',
+    'mimir-read-1': mimirService({
+      name: 'mimir-read-1',
       target: 'read',
       publishedHttpPort: 8005,
     }),
   },
 
   backend:: {
-    'mimir-backend-1': mimirService({
-      name: 'mimir-backend-1',
+    'mimir-backend-0': mimirService({
+      name: 'mimir-backend-0',
       target: 'backend',
       publishedHttpPort: 8006,
     }),
-    'mimir-backend-2': mimirService({
-      name: 'mimir-backend-2',
+    'mimir-backend-1': mimirService({
+      name: 'mimir-backend-1',
       target: 'backend',
       publishedHttpPort: 8007,
     }),
   },
 
   blockbuilder:: {
-    'mimir-block-builder-1': mimirService({
-      name: 'mimir-block-builder-1',
+    'mimir-block-builder-0': mimirService({
+      name: 'mimir-block-builder-0',
       target: 'block-builder',
       publishedHttpPort: 8008,
     }),
   },
 
   blockbuilderscheduler:: {
-    'mimir-block-builder-scheduler-1': mimirService({
-      name: 'mimir-block-builder-scheduler-1',
+    'mimir-block-builder-scheduler-0': mimirService({
+      name: 'mimir-block-builder-scheduler-0',
       target: 'block-builder-scheduler',
       publishedHttpPort: 8019,
     }),

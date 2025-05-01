@@ -109,6 +109,9 @@ type Limits interface {
 	// BlockedRequests returns the blocked http requests.
 	BlockedRequests(userID string) []*validation.BlockedRequest
 
+	// LimitedQueries returns the limited queries.
+	LimitedQueries(userID string) []*validation.LimitedQuery
+
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
 
@@ -266,6 +269,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
+	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 

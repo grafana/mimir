@@ -7,7 +7,21 @@ import (
 	"io"
 	"net"
 	"os"
+
+	"github.com/twmb/franz-go/pkg/kerr"
 )
+
+// IsRetryableBrokerErr returns whether the client considers an error from a
+// broker retrayble. This returns true specifically if the client thinks it can
+// retry whatever it was just trying to do with a broker. It returns false in
+// all other cases.
+//
+// This can used external to the library to help filter errors if use kgo
+// hooks: errors may be sent to hooks before the client retries whatever it was
+// just attempting.
+func IsRetryableBrokerErr(err error) bool {
+	return isRetryableBrokerErr(err)
+}
 
 func isRetryableBrokerErr(err error) bool {
 	// The error could be nil if we are evaluating multiple errors at once,
@@ -263,15 +277,20 @@ type ErrDataLoss struct {
 	// ConsumedTo is what the client had consumed to for this partition before
 	// data loss was detected.
 	ConsumedTo int64
+	// ConsumedToEpoch is the epoch for the offset the client was currently
+	// consuming.
+	ConsumedToEpoch int32
 	// ResetTo is what the client reset the partition to; everything from
 	// ResetTo to ConsumedTo was lost.
 	ResetTo int64
+	// ResetToEpoch is the epoch the client was reset to.
+	ResetToEpoch int32
 }
 
 func (e *ErrDataLoss) Error() string {
 	return fmt.Sprintf("topic %s partition %d lost records;"+
-		" the client consumed to offset %d but was reset to offset %d",
-		e.Topic, e.Partition, e.ConsumedTo, e.ResetTo)
+		" the client consumed to offset %d epoch %d but was reset to offset %d epoch %d",
+		e.Topic, e.Partition, e.ConsumedTo, e.ConsumedToEpoch, e.ResetTo, e.ResetToEpoch)
 }
 
 type errUnknownController struct {
@@ -311,11 +330,36 @@ func (e *errUnknownCoordinator) Error() string {
 // consumer group member was kicked from the group or was never able to join
 // the group.
 type ErrGroupSession struct {
-	err error
+	Err error
 }
 
 func (e *ErrGroupSession) Error() string {
-	return fmt.Sprintf("unable to join group session: %v", e.err)
+	return fmt.Sprintf("unable to join group session: %v", e.Err)
 }
 
-func (e *ErrGroupSession) Unwrap() error { return e.err }
+func (e *ErrGroupSession) Unwrap() error { return e.Err }
+
+type errDecompress struct {
+	err error
+}
+
+func (e *errDecompress) Error() string {
+	return fmt.Sprintf("unable to decompress batch: %v", e.err)
+}
+
+func (e *errDecompress) Unwrap() error { return e.err }
+
+func isDecompressErr(err error) bool {
+	var ed *errDecompress
+	return errors.As(err, &ed)
+}
+
+func errCodeMessage(code int16, errMessage *string) error {
+	if err := kerr.ErrorForCode(code); err != nil {
+		if errMessage != nil {
+			return fmt.Errorf("%s: %w", *errMessage, err)
+		}
+		return err
+	}
+	return nil
+}

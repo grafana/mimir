@@ -10,7 +10,6 @@ on:
 # These permissions are needed to assume roles from Github's OIDC.
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -23,6 +22,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -35,14 +36,21 @@ jobs:
       - prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
+    permissions:
+      contents: read
+      # The "id-token: write" permission is required by "get-vault-secrets" action. We request it here
+      # instead of the whole workflow, in order to reduce the scope of the permission.
+      id-token: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       # Retrieve GitHub App Credentials from Vault
       - name: Retrieve GitHub App Credentials from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
         with:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
@@ -62,15 +70,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
 
       - name: Run Git Config
+        env:
+          GITHUB_LOGIN: ${{ github.event.pull_request.user.login }}
         run: |
           git config --global --add safe.directory '*'
-          git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
-          git config --global user.name "${{ github.event.pull_request.user.login }}"
+          git config --global user.email "${GITHUB_LOGIN}@users.noreply.github.com"
+          git config --global user.name "${GITHUB_LOGIN}"
 
       - name: Install the gh cli
-        uses: ksivamuthu/actions-setup-gh-cli@v2
+        uses: ksivamuthu/actions-setup-gh-cli@52a7c6659db375e08e92b1bd0ff31be356f574f8 # v2
 
       - name: Checkout Pull Request Branch
         run: gh pr checkout ${{ github.event.pull_request.number }}

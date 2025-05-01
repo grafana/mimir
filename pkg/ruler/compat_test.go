@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/value"
@@ -67,103 +66,86 @@ func TestPusherAppendable(t *testing.T) {
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"}),
 	)
 
-	type sample struct {
-		series         string
-		value          float64
-		histogram      *histogram.Histogram
-		floatHistogram *histogram.FloatHistogram
-		ts             int64
-	}
-
 	for _, tc := range []struct {
 		name         string
 		hasNanSample bool // If true, it will be a single float sample with NaN.
-		samples      []sample
+		series       []test.Series
 	}{
 		{
 			name: "tenant without delay, normal value",
-			samples: []sample{
+			series: []test.Series{
 				{
-					series: "foo_bar",
-					value:  1.234,
-					ts:     120_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
 		},
+
 		{
 			name:         "tenant without delay, stale nan value",
 			hasNanSample: true,
-			samples: []sample{
+			series: []test.Series{
 				{
-					series: "foo_bar",
-					value:  math.Float64frombits(value.StaleNaN),
-					ts:     120_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
 		},
 		{
 			name: "ALERTS, normal value",
-			samples: []sample{
+			series: []test.Series{
 				{
-					series: `ALERTS{alertname="boop"}`,
-					value:  1.234,
-					ts:     120_000,
+					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
+					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
 		},
 		{
 			name:         "ALERTS, stale nan value",
 			hasNanSample: true,
-			samples: []sample{
+			series: []test.Series{
 				{
-					series: `ALERTS{alertname="boop"}`,
-					value:  math.Float64frombits(value.StaleNaN),
-					ts:     120_000,
+					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
+					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
 		},
 		{
 			name: "tenant without delay, histogram value",
-			samples: []sample{
+			series: []test.Series{
 				{
-					series:    "foo_bar",
-					histogram: test.GenerateTestHistogram(10),
-					ts:        200_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Samples: []test.Sample{{TS: 200_000, Hist: test.GenerateTestHistogram(10)}},
 				},
 			},
 		},
 		{
 			name: "tenant without delay, float histogram value",
-			samples: []sample{
+			series: []test.Series{
 				{
-					series:         "foo_bar",
-					floatHistogram: test.GenerateTestFloatHistogram(10),
-					ts:             230_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 			},
 		},
 		{
 			name: "mix of float and float histogram",
-			samples: []sample{
+			series: []test.Series{
 				{
-					series: "foo_bar1",
-					value:  999,
-					ts:     230_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar1"),
+					Samples: []test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
-					series: "foo_bar3",
-					value:  888,
-					ts:     230_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar3"),
+					Samples: []test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
-					series:         "foo_bar2",
-					floatHistogram: test.GenerateTestFloatHistogram(10),
-					ts:             230_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar2"),
+					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 				{
-					series:         "foo_bar4",
-					floatHistogram: test.GenerateTestFloatHistogram(99),
-					ts:             230_000,
+					Labels:  labels.FromStrings(labels.MetricName, "foo_bar4"),
+					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(99)}},
 				},
 			},
 		},
@@ -175,9 +157,10 @@ func TestPusherAppendable(t *testing.T) {
 
 			pusher.response = &mimirpb.WriteResponse{}
 			a := pa.Appender(ctx)
-			for _, sm := range tc.samples {
-				lbls, err := parser.ParseMetric(sm.series)
-				require.NoError(t, err)
+			for _, tcSeries := range tc.series {
+				var err error
+				lbls := tcSeries.Labels
+				sample := tcSeries.Samples[0] // each input tcSeries only has one sample
 				timeseries := mimirpb.PreallocTimeseries{
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels:    mimirpb.FromLabelsToLabelAdapters(lbls),
@@ -187,18 +170,18 @@ func TestPusherAppendable(t *testing.T) {
 				}
 				expReq = append(expReq, timeseries)
 
-				if sm.histogram != nil || sm.floatHistogram != nil {
-					_, err = a.AppendHistogram(0, lbls, sm.ts, sm.histogram, sm.floatHistogram)
-					if sm.histogram != nil {
-						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sm.ts, sm.histogram))
+				if sample.H() != nil || sample.FH() != nil {
+					_, err = a.AppendHistogram(0, lbls, sample.T(), sample.H(), sample.FH())
+					if sample.H() != nil {
+						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sample.T(), sample.H()))
 					} else {
-						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sm.ts, sm.floatHistogram))
+						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sample.T(), sample.FH()))
 					}
 				} else {
-					_, err = a.Append(0, lbls, sm.ts, sm.value)
+					_, err = a.Append(0, lbls, sample.T(), sample.F())
 					timeseries.Samples = append(timeseries.Samples, mimirpb.Sample{
-						TimestampMs: sm.ts,
-						Value:       sm.value,
+						TimestampMs: sample.T(),
+						Value:       sample.F(),
 					})
 				}
 				require.NoError(t, err)
@@ -213,10 +196,9 @@ func TestPusherAppendable(t *testing.T) {
 			// For NaN, we cannot use require.Equal.
 			require.Len(t, pusher.request.Timeseries, 1)
 			require.Len(t, pusher.request.Timeseries[0].Samples, 1)
-			lbls, err := parser.ParseMetric(tc.samples[0].series)
-			require.NoError(t, err)
+			lbls := tc.series[0].Labels
 			require.Equal(t, 0, labels.Compare(mimirpb.FromLabelAdaptersToLabels(pusher.request.Timeseries[0].Labels), lbls))
-			require.Equal(t, tc.samples[0].ts, pusher.request.Timeseries[0].Samples[0].TimestampMs)
+			require.Equal(t, tc.series[0].Samples[0].T(), pusher.request.Timeseries[0].Samples[0].TimestampMs)
 			require.True(t, math.IsNaN(pusher.request.Timeseries[0].Samples[0].Value))
 		})
 	}

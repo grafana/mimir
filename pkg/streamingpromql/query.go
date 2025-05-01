@@ -100,7 +100,10 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 		return nil, err
 	}
 
-	expr = promql.PreprocessExpr(expr, start, end)
+	expr, err = promql.PreprocessExpr(expr, start, end)
+	if err != nil {
+		return nil, err
+	}
 	var timeRange types.QueryTimeRange
 
 	if start.Equal(end) && interval == 0 {
@@ -187,7 +190,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 
-				ExpressionPosition: e.PositionRange(),
+				ExpressionPosition:       e.PositionRange(),
+				MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			},
 			Stats: q.stats,
 		}, nil
@@ -401,7 +405,8 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			Range:     e.Range,
 			Matchers:  vectorSelector.LabelMatchers,
 
-			ExpressionPosition: e.PositionRange(),
+			ExpressionPosition:       e.PositionRange(),
+			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
@@ -580,7 +585,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 		msg = append(msg,
 			"msg", "query stats",
-			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes,
+			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(),
 			"expr", q.originalExpression,
 		)
 
@@ -599,7 +604,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		}
 
 		level.Info(logger).Log(msg...)
-		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
 	switch root := q.root.(type) {
@@ -608,7 +613,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -621,7 +626,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
@@ -853,7 +858,7 @@ func (q *Query) Close() {
 	}
 
 	if q.engine.pedantic && q.result.Err == nil {
-		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes > 0 {
+		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
 			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
 		}
 	}

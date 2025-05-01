@@ -2,6 +2,9 @@ name: helm-ci
 
 on: pull_request
 
+permissions:
+  contents: read
+
 jobs:
   call-lint:
     uses: grafana/helm-charts/.github/workflows/linter.yml@main
@@ -22,6 +25,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
@@ -37,6 +42,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run Git Config
         run: git config --global --add safe.directory '*'

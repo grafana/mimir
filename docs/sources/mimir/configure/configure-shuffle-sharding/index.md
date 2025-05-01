@@ -178,7 +178,7 @@ You must set this flag on the store-gateway, querier, and ruler.
 
 You can override the store-gateway shard size on a per-tenant basis by setting `store_gateway_tenant_shard_size` in the overrides section of the runtime configuration.
 
-For more information about the store-gateway, refer to [store-gateway](../../references/architecture/components/store-gateway/).
+For more information about the store-gateway, refer to [store-gateway](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/store-gateway/).
 
 ### Ruler shuffle sharding
 

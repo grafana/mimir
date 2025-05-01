@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
@@ -146,8 +145,13 @@ type Extractor interface {
 type PrometheusResponseExtractor struct{}
 
 // Extract extracts response for specific a range from a response.
+// The from Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
-	promRes := from.(*PrometheusResponse)
+	promRes, ok := from.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -166,8 +170,13 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 
 // ResponseWithoutHeaders is useful in caching data without headers since
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
+// The supplied Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
-	promRes := resp.(*PrometheusResponse)
+	promRes, ok := resp.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -194,6 +203,9 @@ type CacheKeyGenerator interface {
 
 	// QueryRequestError should generate a cache key based on errors for the tenant ID and MetricsQueryRequest.
 	QueryRequestError(ctx context.Context, tenantID string, r MetricsQueryRequest) string
+
+	// QueryRequestLimiter should generate a cache key based on the tenant ID and MetricsQueryRequest.
+	QueryRequestLimiter(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
@@ -246,6 +258,10 @@ func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID 
 	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), start, end, r.GetStep())
 }
 
+func (g DefaultCacheKeyGenerator) QueryRequestLimiter(_ context.Context, tenantID string, r MetricsQueryRequest) string {
+	return fmt.Sprintf("QL:%s:%s", tenantID, r.GetQuery())
+}
+
 // shouldCacheFn checks whether the current request should go to cache
 // or not. If not, just send the request to next handler.
 type shouldCacheFn func(r MetricsQueryRequest) bool
@@ -272,8 +288,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 		return false, notCachableReasonTooNew
 	}
 
-	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
-		return false, notCachableReasonModifiersNotCachable
+	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
+		return false, reason
 	}
 
 	return true, ""
@@ -296,8 +312,9 @@ var (
 	errNegativeOffset     = errors.New("negative offset")
 )
 
-// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
-func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) bool {
+// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache,
+// false otherwise. The reason for not being safe to cache is returned as a string.
+func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) (bool, string) {
 	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -307,17 +324,20 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	//   3. When query contains a negative offset.
 	query := r.GetQuery()
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
-		return true
+		return true, ""
 	}
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
-		level.Warn(logger).Log("msg", "failed to parse query, considering @ modifier as not cachable", "query", query, "err", err)
-		return false
+		return false, notCachableReasonModifiersNotCachableFailedParse
 	}
 
 	// This resolves the start() and end() used with the @ modifier.
-	expr = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	if err != nil {
+		// We are being pessimistic in such cases.
+		return false, notCachableReasonModifiersNotCachableFailedPreprocess
+	}
 
 	end := r.GetEnd()
 	cachable := true
@@ -343,7 +363,10 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 		return nil
 	})
 
-	return cachable
+	if !cachable {
+		return false, notCachableReasonModifiersNotCachable
+	}
+	return true, ""
 }
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
@@ -423,7 +446,12 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	marshalled, err := types.MarshalAny(acc.Response)
+	promRes, ok := acc.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse or PrometheusResponseWithFinalizer")
+	}
+	marshalled, err := types.MarshalAny(promRes)
+
 	if err != nil {
 		return nil, err
 	}

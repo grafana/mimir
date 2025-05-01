@@ -4,6 +4,7 @@ package binops
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -617,10 +619,10 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
-			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
-			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
@@ -633,6 +635,7 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -668,7 +671,69 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
-			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	for _, closeAfterFirstSeries := range []bool{true, false} {
+		t.Run(fmt.Sprintf("close after first series=%v", closeAfterFirstSeries), func(t *testing.T) {
+			leftSeries := []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			}
+
+			rightSeries := []labels.Labels{
+				labels.FromStrings("group", "1"),
+			}
+
+			step1 := timestamp.Time(0)
+			step2 := step1.Add(time.Minute)
+			timeRange := types.NewRangeQueryTimeRange(step1, step2, time.Minute)
+
+			var err error
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+
+			left1Data := types.InstantVectorSeriesData{}
+			left1Data.Floats, err = types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			left1Data.Floats = append(left1Data.Floats, promql.FPoint{T: timestamp.FromTime(step1), F: 10})
+
+			left2Data := types.InstantVectorSeriesData{} // This series doesn't need any data.
+
+			rightData := types.InstantVectorSeriesData{}
+			rightData.Floats, err = types.FPointSlicePool.Get(2, memoryConsumptionTracker)
+			require.NoError(t, err)
+			rightData.Floats = append(rightData.Floats, promql.FPoint{T: timestamp.FromTime(step1), F: 5})
+			rightData.Floats = append(rightData.Floats, promql.FPoint{T: timestamp.FromTime(step2), F: 7})
+
+			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}, MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: false}
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			metadata, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
+			types.SeriesMetadataSlicePool.Put(metadata, memoryConsumptionTracker)
+
+			// Read the first series.
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+			if !closeAfterFirstSeries {
+				d, err = o.NextSeries(ctx)
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			}
+
+			// Close the operator and verify that the intermediate state is released.
+			o.Close()
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 		})
 	}
 }

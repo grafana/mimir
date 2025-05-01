@@ -1408,7 +1408,7 @@ func TestMergeAPIResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := codec.MergeResponse(tc.input...)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, output)
+			requireEqualPrometheusResponse(t, tc.expected, output)
 		})
 	}
 
@@ -1453,6 +1453,14 @@ func TestMergeAPIResponses(t *testing.T) {
 		_, err := codec.MergeResponse(matrixResponse, vectorResponse)
 		require.Error(t, err)
 	})
+}
+
+func requireEqualPrometheusResponse(t *testing.T, expected, actual Response) {
+	prometheusResponse, ok := expected.GetPrometheusResponse()
+	require.True(t, ok)
+	prometheusResponseActual, ok := actual.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, prometheusResponse, prometheusResponseActual)
 }
 
 func mustParse(t *testing.T, response string) Response {
@@ -1577,6 +1585,71 @@ func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapte
 				},
 			},
 		},
+	}
+}
+
+func TestDecodeRangeQueryTimeParams(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		input         *url.Values
+		expectedStart int64
+		expectedEnd   int64
+		expectedStep  int64
+		expectedErr   error
+	}{
+		{
+			name: "success",
+			input: &url.Values{
+				"start": []string{"1997-08-29T12:00:00Z"},
+				"end":   []string{"1997-08-29T18:00:00Z"},
+				"step":  []string{"5m"},
+			},
+			expectedStart: 872856000000,
+			expectedEnd:   872877600000,
+			expectedStep:  300000,
+			expectedErr:   nil,
+		},
+		{
+			name: "missing start",
+			input: &url.Values{
+				"end":  []string{"1997-08-29T18:00:00Z"},
+				"step": []string{"5m"},
+			},
+			expectedStart: 0,
+			expectedEnd:   0,
+			expectedStep:  0,
+			expectedErr:   apierror.New(apierror.TypeBadData, "missing required parameter \"start\""),
+		},
+		{
+			name: "missing end",
+			input: &url.Values{
+				"start": []string{"1997-08-29T12:00:00Z"},
+				"step":  []string{"5m"},
+			},
+			expectedStart: 0,
+			expectedEnd:   0,
+			expectedStep:  0,
+			expectedErr:   apierror.New(apierror.TypeBadData, "missing required parameter \"end\""),
+		},
+		{
+			name: "missing step",
+			input: &url.Values{
+				"start": []string{"1997-08-29T12:00:00Z"},
+				"end":   []string{"1997-08-29T18:00:00Z"},
+			},
+			expectedStart: 0,
+			expectedEnd:   0,
+			expectedStep:  0,
+			expectedErr:   apierror.New(apierror.TypeBadData, "missing required parameter \"step\""),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			actualStart, actualEnd, actualStep, err := DecodeRangeQueryTimeParams(tt.input)
+			assert.Equal(t, tt.expectedStart, actualStart)
+			assert.Equal(t, tt.expectedEnd, actualEnd)
+			assert.Equal(t, tt.expectedStep, actualStep)
+			assert.Equal(t, tt.expectedErr, err)
+		})
 	}
 }
 

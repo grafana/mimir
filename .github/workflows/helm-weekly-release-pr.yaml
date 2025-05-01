@@ -16,15 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: imjasonh/setup-crane@v0.4
-
+        with:
+          persist-credentials: false
+      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
       - name: Update/regenerate files
         id: update
         run: bash .github/workflows/scripts/helm-weekly-release.sh
 
       - name: Retrieve GitHub App Credentials from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
         with:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
@@ -40,7 +41,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5.0.3
         with:
           token: ${{ steps.app-token.outputs.token }}
           title: Release mimir-distributed Helm chart ${{ steps.update.outputs.new_chart_version }}

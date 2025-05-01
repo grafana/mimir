@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -294,8 +296,9 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			left := &operators.TestOperator{Series: testCase.leftSeries}
-			right := &operators.TestOperator{Series: testCase.rightSeries}
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 
 			o, err := NewGroupedVectorVectorBinaryOperation(
 				left,
@@ -303,7 +306,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 				testCase.matching,
 				testCase.op,
 				testCase.returnBool,
-				limiting.NewMemoryConsumptionTracker(0, nil),
+				memoryConsumptionTracker,
 				nil,
 				posrange.PositionRange{},
 				types.QueryTimeRange{},
@@ -463,10 +466,10 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries))}
-			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries))}
-			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
 			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
@@ -479,6 +482,7 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -514,7 +518,95 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
-			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedOutputSeries []labels.Labels
+	}{
+		"multiple series from 'one' side match to a single 'many' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+			},
+		},
+		"multiple series from 'many' side match to a single 'one' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			ts := int64(0)
+			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(ts))
+
+			createTestData := func(val float64) types.InstantVectorSeriesData {
+				floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+				require.NoError(t, err)
+				floats = append(floats, promql.FPoint{T: ts, F: val})
+				return types.InstantVectorSeriesData{Floats: floats}
+			}
+
+			leftData := make([]types.InstantVectorSeriesData, len(testCase.leftSeries))
+			for i := range testCase.leftSeries {
+				leftData[i] = createTestData(float64(i))
+			}
+
+			rightData := make([]types.InstantVectorSeriesData, len(testCase.rightSeries))
+			for i := range testCase.rightSeries {
+				rightData[i] = createTestData(float64(i))
+			}
+
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: leftData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: rightData, MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Include: []string{"env"}, Card: parser.CardManyToOne}
+			o, err := NewGroupedVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			outputSeries, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
+
+			// Read the first series.
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+			// Return any unread data to the pool and update the current memory consumption estimate to match.
+			left.ReleaseUnreadData(memoryConsumptionTracker)
+			right.ReleaseUnreadData(memoryConsumptionTracker)
+
+			// Close the operator and verify that the intermediate state is released.
+			o.Close()
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 		})
 	}
 }

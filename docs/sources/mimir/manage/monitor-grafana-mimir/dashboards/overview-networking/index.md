@@ -7,6 +7,8 @@ title: Grafana Mimir Overview networking dashboard
 weight: 7
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Overview networking dashboard
 
 The Overview networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections.

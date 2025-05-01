@@ -101,6 +101,83 @@ func (cl *Client) BufferedProduceBytes() int64 {
 	return cl.producer.bufferedBytes + cl.producer.blockedBytes
 }
 
+// EnsureProduceConnectionIsOpen attempts to open a produce connection to all
+// specified brokers, or all brokers if `brokers` is empty or contains -1.
+//
+// This can be used in an attempt to reduce the latency when producing if your
+// application produces infrequently: you can force open a produce connection a
+// bit earlier than you intend to produce, rather than at the moment you
+// produce. In rare circumstances, it is possible that a connection that was
+// ensured to be open may close before you produce.
+//
+// This returns an errors.Join'd error that merges a message for all brokers
+// that failed to be opened as well as why.
+func (cl *Client) EnsureProduceConnectionIsOpen(ctx context.Context, brokers ...int32) error {
+	var (
+		keep = brokers[:0]
+		all  bool
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
+	)
+	for _, b := range brokers {
+		switch {
+		case b < -1:
+		case b == -1:
+			all = true
+		case b > -1:
+			keep = append(keep, b)
+		}
+	}
+	var toOpen []*broker
+	if all || len(brokers) == 0 {
+		cl.brokersMu.RLock()
+		toOpen = cl.brokers
+		if len(toOpen) == 0 {
+			cl.brokersMu.RUnlock()
+			if err := cl.fetchBrokerMetadata(ctx); err != nil {
+				return err
+			}
+			cl.brokersMu.RLock()
+			toOpen = cl.brokers
+		}
+		cl.brokersMu.RUnlock()
+	} else {
+		for _, b := range brokers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				br, err := cl.brokerOrErr(ctx, b, errUnknownBroker)
+
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil {
+					errs = append(errs, fmt.Errorf("%d: %w", b, err))
+					return
+				}
+				toOpen = append(toOpen, br)
+			}()
+		}
+		wg.Wait()
+	}
+
+	for _, br := range toOpen {
+		wg.Add(1)
+		br.do(ctx, &forceOpenReq{new(kmsg.ProduceRequest)}, func(_ kmsg.Response, err error) {
+			defer wg.Done()
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("%d: %w", br.meta.NodeID, err))
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+
+	return errors.Join(errs...)
+}
+
 type unknownTopicProduces struct {
 	buffered []promisedRec
 	wait     chan error // retryable errors
@@ -394,7 +471,7 @@ func (cl *Client) produce(
 	if promise == nil {
 		promise = noPromise
 	}
-	if r.Topic == "" {
+	if r.Topic == "" || cl.cfg.defaultProduceTopicAlways {
 		r.Topic = cl.cfg.defaultProduceTopic
 	}
 
@@ -480,12 +557,24 @@ func (cl *Client) produce(
 		}()
 
 		drainBuffered := func(err error) {
-			p.mu.Lock()
-			quit = true
+			// The expected case here is that a context was
+			// canceled while we waiting for space, so we are
+			// exiting and need to kill the goro above.
+			//
+			// However, it is possible that the goro above has
+			// already exited AND the context was canceled, and
+			// `select` chose the context-canceled case.
+			//
+			// So, to avoid a deadlock, we need to wakeup the
+			// goro above in another goroutine.
+			go func() {
+				p.mu.Lock()
+				quit = true
+				p.mu.Unlock()
+				p.c.Broadcast()
+			}()
+			<-wait // we wait for the goroutine to exit, then unlock again (since the goroutine leaves the mutex locked)
 			p.mu.Unlock()
-			p.c.Broadcast() // wake the goroutine above
-			<-wait
-			p.mu.Unlock() // we wait for the goroutine to exit, then unlock again (since the goroutine leaves the mutex locked)
 			p.promiseRecordBeforeBuf(promisedRec{ctx, promise, r}, err)
 		}
 
@@ -537,16 +626,29 @@ func (p *producer) promiseRecordBeforeBuf(pr promisedRec, err error) {
 func (p *producer) finishPromises(b batchPromise) {
 	cl := p.cl
 	var more bool
+	var broadcast bool
+	defer func() {
+		if broadcast {
+			p.c.Broadcast()
+		}
+	}()
 start:
 	p.promisesMu.Lock()
 	for i, pr := range b.recs {
 		pr.LeaderEpoch = 0
-		pr.Offset = b.baseOffset + int64(i)
+		if b.baseOffset == -1 {
+			// if the base offset is invalid/unknown (-1), all record offsets should
+			// be treated as unknown
+			pr.Offset = -1
+		} else {
+			pr.Offset = b.baseOffset + int64(i)
+		}
 		pr.Partition = b.partition
 		pr.ProducerID = b.pid
 		pr.ProducerEpoch = b.epoch
 		pr.Attrs = b.attrs
-		cl.finishRecordPromise(pr, b.err, b.beforeBuf)
+		recBroadcast := cl.finishRecordPromise(pr, b.err, b.beforeBuf)
+		broadcast = broadcast || recBroadcast
 		b.recs[i] = promisedRec{}
 	}
 	p.promisesMu.Unlock()
@@ -560,7 +662,7 @@ start:
 	}
 }
 
-func (cl *Client) finishRecordPromise(pr promisedRec, err error, beforeBuffering bool) {
+func (cl *Client) finishRecordPromise(pr promisedRec, err error, beforeBuffering bool) (broadcast bool) {
 	p := &cl.producer
 
 	if p.hooks != nil && len(p.hooks.unbuffered) > 0 {
@@ -587,12 +689,10 @@ func (cl *Client) finishRecordPromise(pr promisedRec, err error, beforeBuffering
 	p.mu.Lock()
 	p.bufferedBytes -= userSize
 	p.bufferedRecords--
-	broadcast := p.blocked.Load() > 0 || p.bufferedRecords == 0 && p.flushing.Load() > 0
+	broadcast = p.blocked.Load() > 0 || p.bufferedRecords == 0 && p.flushing.Load() > 0
 	p.mu.Unlock()
 
-	if broadcast {
-		p.c.Broadcast()
-	}
+	return broadcast
 }
 
 // partitionRecord loads the partitions for a topic and produce to them. If
@@ -840,7 +940,15 @@ func (cl *Client) doInitProducerID(ctxFn func() context.Context, lastID int64, l
 	}
 
 	ctx := ctxFn()
-	resp, err := req.RequestWith(ctx, cl)
+	var resp *kmsg.InitProducerIDResponse
+	err := cl.doWithConcurrentTransactions(ctx, "InitProducerID", func() error {
+		var err error
+		resp, err = req.RequestWith(ctx, cl)
+		if err != nil {
+			return err
+		}
+		return nil // resp.ErrorCode handled below
+	})
 	if err != nil {
 		if errors.Is(err, errUnknownRequestKey) || errors.Is(err, errBrokerTooOld) {
 			cl.cfg.logger.Log(LogLevelInfo, "unable to initialize a producer id because the broker is too old or the client is pinned to an old version, continuing without a producer id")
@@ -945,7 +1053,7 @@ func (cl *Client) addUnknownTopicRecord(pr promisedRec) {
 	}
 	unknown.buffered = append(unknown.buffered, pr)
 	if len(unknown.buffered) == 1 {
-		go cl.waitUnknownTopic(pr.ctx, pr.Record.Context, pr.Topic, unknown)
+		go cl.waitUnknownTopic(pr.ctx, pr.Context, pr.Topic, unknown)
 	}
 }
 
@@ -996,7 +1104,7 @@ func (cl *Client) waitUnknownTopic(
 			}
 			cl.cfg.logger.Log(LogLevelInfo, "new topic metadata wait failed, retrying wait", "topic", topic, "err", retryableErr)
 			tries++
-			if int64(tries) >= cl.cfg.recordRetries {
+			if int64(tries) > cl.cfg.recordRetries {
 				err = fmt.Errorf("no partitions available after attempting to refresh metadata %d times, last err: %w", tries, retryableErr)
 			}
 			if cl.cfg.maxUnknownFailures >= 0 && errors.Is(retryableErr, kerr.UnknownTopicOrPartition) {

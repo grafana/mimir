@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/overrides-exporter/
-description:
-  The overrides-exporter exports Prometheus metrics containing the configured
-  per-tenant limits.
+description: The overrides-exporter exports Prometheus metrics containing the configured per-tenant limits.
 menuTitle: (Optional) Overrides-exporter
 title: (Optional) Grafana Mimir overrides-exporter
 weight: 110
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # (Optional) Grafana Mimir overrides-exporter
 
