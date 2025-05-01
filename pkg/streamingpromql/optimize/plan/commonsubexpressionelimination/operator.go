@@ -5,7 +5,6 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"math"
-	"slices"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -69,8 +68,13 @@ func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 	}
 
 	// Return a copy of the original series metadata.
-	// slices.Clone does a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
-	return slices.Clone(b.seriesMetadata), nil
+	// This is a shallow copy, which is sufficient while we're using stringlabels for labels.Labels given these are immutable.
+	metadata, err := types.SeriesMetadataSlicePool.Get(len(b.seriesMetadata), b.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	return append(metadata, b.seriesMetadata...), nil
 }
 
 func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
@@ -164,7 +168,7 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 }
 
 func (b *DuplicationBuffer) close() {
-	types.PutSeriesMetadataSlice(b.seriesMetadata)
+	types.SeriesMetadataSlicePool.Put(b.seriesMetadata, b.MemoryConsumptionTracker)
 	b.seriesMetadata = nil
 
 	for b.buffer.Size() > 0 {
