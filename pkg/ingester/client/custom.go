@@ -7,7 +7,7 @@ package client
 
 import (
 	"slices"
-	strings "strings"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -70,7 +70,7 @@ func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 }
 
 // CloneUnsafe converts all of c's unsafe references to safe copies.
-func (c *TimeSeriesChunk) CloneUnsafe() {
+func (c *TimeSeriesChunk) CloneUnsafe() *TimeSeriesChunk {
 	for i, l := range c.Labels {
 		c.Labels[i].Name = strings.Clone(l.Name)
 		c.Labels[i].Value = strings.Clone(l.Value)
@@ -78,4 +78,6 @@ func (c *TimeSeriesChunk) CloneUnsafe() {
 	for i, cc := range c.Chunks {
 		c.Chunks[i].Data = slices.Clone(cc.Data)
 	}
+
+	return c
 }
