@@ -27,8 +27,8 @@ func TestReader(t *testing.T) {
 		// parquet reader parameters
 		// all copied from pkg/parquetconverter/parquet_converter.go for now
 		maxParquetIndexSizeLimit = 100 // TODO what & why is this restriction?
-		batchSize                = 50000
-		//batchStreamBufferSize    = 10
+		rowsPerBatch             = 50000
+		batchesInBuffer          = 10
 	)
 
 	var (
@@ -47,14 +47,14 @@ func TestReader(t *testing.T) {
 	require.NoError(t, err)
 
 	// read block file and convert to parquet rows
-	parquetRowsStream, _, numRows, err := BlockToParquetRows(
-		ctx, blockFilePath, maxParquetIndexSizeLimit, batchSize, logger,
+	parquetRowsStream, _, numRows, err := BlockToParquetRowsStream(
+		ctx, blockFilePath, maxParquetIndexSizeLimit, rowsPerBatch, batchesInBuffer, logger,
 	)
 	require.NoError(t, err)
 
 	// collect rows; not bothering with batching over channel to avoid reading all into memory for now
 	rows := make([]parquet.ParquetRow, 0)
-	for _, rowBatch := range parquetRowsStream {
+	for rowBatch := range parquetRowsStream {
 		rows = append(rows, rowBatch...)
 	}
 
