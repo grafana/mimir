@@ -212,7 +212,7 @@ func TestFromFromLabelAdaptersOverwriteLabelsSafe(t *testing.T) {
 		lb     labels.ScratchBuilder
 		actual labels.Labels
 	)
-	FromLabelAdaptersOverwriteLabelsSafe(&lb, input, &actual)
+	actual = FromLabelAdaptersOverwriteLabelsSafe(&lb, input, &actual)
 
 	// Modify the referenced byte slices, to verify they're not retained.
 	labelNameBytes[len(labelNameBytes)-1] = 'x'

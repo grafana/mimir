@@ -1283,7 +1283,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 		ls            labels.Labels
 	)
 	for _, lset := range entry.Series {
-		mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, lset.Labels, &ls)
+		ls = mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, lset.Labels, &ls)
 		res.series = append(res.series, seriesChunkRefs{
 			lset: ls,
 		})

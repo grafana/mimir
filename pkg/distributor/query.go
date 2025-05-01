@@ -438,7 +438,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 			l             labels.Labels
 		)
 		for _, s := range resp.StreamingSeries {
-			mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &l)
+			l = mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &l)
 
 			if err := queryLimiter.AddSeries(l); err != nil {
 				return nil, false, err

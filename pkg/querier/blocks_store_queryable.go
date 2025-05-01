@@ -958,7 +958,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 	// Response may either contain series, streaming series, warning or hints.
 	if s := resp.GetSeries(); s != nil {
-		mySeries = append(mySeries, s.CloneUnsafe())
+		mySeries = append(mySeries, s.CloneRefs())
 
 		// Add series fingerprint to query limiter; will return error if we are over the limit
 		if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
@@ -1008,7 +1008,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 			ls            labels.Labels
 		)
 		for _, s := range ss.Series {
-			mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &ls)
+			ls = mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &ls)
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
 			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
