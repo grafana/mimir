@@ -1003,15 +1003,19 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 	if ss := resp.GetStreamingSeries(); ss != nil {
 		myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
 
+		var (
+			labelsBuilder labels.ScratchBuilder
+			ls            labels.Labels
+		)
 		for _, s := range ss.Series {
-			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &ls)
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
-			if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
+			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
 				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
 
-			myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
+			myStreamingSeriesLabels = append(myStreamingSeriesLabels, ls)
 		}
 
 		if ss.IsEndOfSeriesStream {
