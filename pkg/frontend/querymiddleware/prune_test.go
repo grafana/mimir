@@ -31,7 +31,7 @@ func TestQueryPruning(t *testing.T) {
 
 	const step = 20 * time.Second
 
-	engine := newEngine()
+	engine := newEngine(t)
 	pruningware := newPruneMiddleware(
 		log.NewNopLogger(),
 	)

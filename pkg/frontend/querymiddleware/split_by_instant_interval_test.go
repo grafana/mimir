@@ -514,7 +514,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					for _, req := range reqs {
 						t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
-							engine := newEngine()
+							engine := newEngine(t)
 							downstream := &downstreamHandler{
 								engine:                                  engine,
 								queryable:                               queryable,
@@ -629,7 +629,7 @@ func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
 			}
 
 			// Split by interval middleware with a limit configuration of split instant query interval of 1m
-			splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), newEngine(), nil)
+			splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), newEngine(t), nil)
 
 			downstream := &mockHandler{}
 			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{

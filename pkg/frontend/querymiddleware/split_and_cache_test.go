@@ -961,7 +961,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	// Create a downstream handler serving range queries based on the provided queryable.
 	downstream := &downstreamHandler{
-		engine:    newEngine(),
+		engine:    newEngine(t),
 		queryable: queryable,
 	}
 

@@ -207,11 +207,12 @@ func NewTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
+	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -227,14 +228,11 @@ func newQueryTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
+	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	// Disable concurrency limits for sharded queries.
-	engineOpts.ActiveQueryTracker = nil
-	engine := promql.NewEngine(engineOpts)
-
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
 	parser.EnableExperimentalFunctions = true
@@ -269,7 +267,7 @@ func newQueryTripperware(
 		cacheKeyGenerator,
 		cacheExtractor,
 		engine,
-		engineOpts.NoStepSubqueryIntervalFn,
+		engineOpts,
 		registerer,
 		retryMetrics,
 	)
@@ -373,8 +371,8 @@ func newQueryMiddlewares(
 	cacheClient cache.Cache,
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
-	engine *promql.Engine,
-	defaultStepFunc func(rangeMillis int64) int64,
+	engine promql.QueryEngine,
+	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
 	retryMetrics prometheus.Observer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
@@ -468,7 +466,7 @@ func newQueryMiddlewares(
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newInstrumentMiddleware("spin_off_subqueries", metrics),
-		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
+		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn),
 	)
 
 	if cfg.ShardedQueries {

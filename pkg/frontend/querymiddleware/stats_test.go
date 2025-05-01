@@ -210,7 +210,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			mw := newQueryStatsMiddleware(reg, newEngine())
+			mw := newQueryStatsMiddleware(reg, newEngine(t))
 			ctx := context.Background()
 			if tt.args.ctx != nil {
 				ctx = tt.args.ctx
