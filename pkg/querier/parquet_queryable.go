@@ -49,7 +49,7 @@ import (
 
 const (
 	parquetFileName = "block.parquet"
-	ModuleName      = "parquet-queryable"
+	ModuleName      = "querier-parquet"
 	seriesHash      = "__series_hash__"
 )
 
