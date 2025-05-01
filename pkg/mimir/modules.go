@@ -415,12 +415,12 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader
 	}
 
+	// End mappings for per-tenant config migrations.
+
 	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}
-
-	// End mappings for per-tenant config migrations.
 
 	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
