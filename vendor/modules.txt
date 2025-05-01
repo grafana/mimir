@@ -364,8 +364,6 @@ github.com/efficientgo/core/testutil
 github.com/efficientgo/core/testutil/internal
 # github.com/efficientgo/e2e v0.13.1-0.20220923082810-8fa9daa8af8a
 ## explicit; go 1.18
-# github.com/envoyproxy/go-control-plane/envoy v1.32.3
-## explicit; go 1.22
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
