@@ -37,70 +37,74 @@
     ingest_storage_replica_template_label_selector: 'name=ingester-zone-a',
 
     // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
-    ingest_storage_ingester_autoscaling_triggers: [] + (if $._config.ingest_storage_ingester_autoscaling_use_average_active_series_trigger then [
-      {
-        // Target ingesters in primary zone, ignoring read-write mode ingesters.
-        local sum_series_from_ready_pods = |||
-          sum(
-              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
-              and
-              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
-          )
-        |||,
+    ingest_storage_ingester_autoscaling_triggers: [] + (
+      if $._config.ingest_storage_ingester_autoscaling_use_average_active_series_trigger then [
+        {
+          // Target ingesters in primary zone, ignoring read-write mode ingesters.
+          local sum_series_from_ready_pods = |||
+            sum(
+                sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
+                and
+                sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
+            )
+          |||,
 
-        local ratio_of_ready_pods_vs_all_replicas = |||
-          (
-              sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
-              /
-              scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
-          )
-        |||,
+          local ratio_of_ready_pods_vs_all_replicas = |||
+            (
+                sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
+                /
+                scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
+            )
+          |||,
 
-        query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
-                + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
-          cluster: $._config.cluster,
-          namespace: $._config.namespace,
-          primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
+          query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
+                  + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
+            cluster: $._config.cluster,
+            namespace: $._config.namespace,
+            primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
+          },
+          threshold: std.toString($._config.ingest_storage_ingester_autoscaling_active_series_threshold),
+          metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
         },
-        threshold: std.toString($._config.ingest_storage_ingester_autoscaling_active_series_threshold),
-        metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
-      },
-    ] else []) + (if $._config.ingest_storage_ingester_autoscaling_use_max_owned_series_trigger then [
-      {
-        // We want to target a maximum number of owned series per ingester pod.
-        // However, we can't use a `Value` metric because the HPA will also count pods assigned to read-only partitions when calculating the desired number of replicas.
-        // This means we need to use an `AverageValue` metric, which doesn't use the current replica count at all.
-        // To do this, we fake a "total owned series" value by multiplying the max owned series per pod by the number of active partitions.
-        // The HPA then calculates the desired replica count as this total value / threshold.
+      ] else []
+    ) + (
+      if $._config.ingest_storage_ingester_autoscaling_use_max_owned_series_trigger then [
+        {
+          // We want to target a maximum number of owned series per ingester pod.
+          // However, we can't use a `Value` metric because the HPA will also count pods assigned to read-only partitions when calculating the desired number of replicas.
+          // This means we need to use an `AverageValue` metric, which doesn't use the current replica count at all.
+          // To do this, we fake a "total owned series" value by multiplying the max owned series per pod by the number of active partitions.
+          // The HPA then calculates the desired replica count as this total value / threshold.
 
-        // Calculate the "total owned series" as the owned series on the worst pod multiplied by the number of active partitions.
-        local max_owned_series_x_active_partitions = |||
-          (
-              max(
-                  sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
-                  and
-                  sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
-              )
-              *
-              max(cortex_partition_ring_partitions{cluster="%(cluster)s", namespace="%(namespace)s", state="Active", container="distributor", name="ingester-partitions"})
-          )
-        |||,
+          // Calculate the "total owned series" as the owned series on the worst pod multiplied by the number of active partitions.
+          local max_owned_series_x_active_partitions = |||
+            (
+                max(
+                    sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", namespace="%(namespace)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
+                    and
+                    sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
+                )
+                *
+                max(cortex_partition_ring_partitions{cluster="%(cluster)s", namespace="%(namespace)s", state="Active", container="distributor", name="ingester-partitions"})
+            )
+          |||,
 
-        // Our compaction cycles are 2h long, but the max stabilizationWindowSeconds is only 1h. This means that we'll react to a scale-down
-        // after compaction half-way through a cycle, when the series counts in ingesters are still growing, resulting in partitions being put into read-only
-        // mode only to be taken back out of it a short time later. To artificially increase our stabilization window to 3h, we use a `max_over_time`
-        // of 2h. However, because this query uses both the max-owned-series-per-pod and the partition count, and the max-owned-series-per-pod doesn't decrease
-        // until some time after the partition count increases, we see brief spikes in the artificial "total series" we calculate after a scale-up. To
-        // mitigate this, we first use a `min_over_time` of 5m.
-        query: ('max_over_time(min_over_time(' + max_owned_series_x_active_partitions + '[5m:])[2h:5m])') % {
-          cluster: $._config.cluster,
-          namespace: $._config.namespace,
-          primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
+          // Our compaction cycles are 2h long, but the max stabilizationWindowSeconds is only 1h. This means that we'll react to a scale-down
+          // after compaction half-way through a cycle, when the series counts in ingesters are still growing, resulting in partitions being put into read-only
+          // mode only to be taken back out of it a short time later. To artificially increase our stabilization window to 3h, we use a `max_over_time`
+          // of 2h. However, because this query uses both the max-owned-series-per-pod and the partition count, and the max-owned-series-per-pod doesn't decrease
+          // until some time after the partition count increases, we see brief spikes in the artificial "total series" we calculate after a scale-up. To
+          // mitigate this, we first use a `min_over_time` of 5m.
+          query: ('max_over_time(min_over_time(' + max_owned_series_x_active_partitions + '[5m:])[2h:5m])') % {
+            cluster: $._config.cluster,
+            namespace: $._config.namespace,
+            primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
+          },
+          threshold: $._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold,
+          metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
         },
-        threshold: $._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold,
-        metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
-      },
-    ] else []),
+      ] else []
+    ),
 
     // When set to false, metrics used by scaling triggers are only indexed if there is more than 1 trigger.
     // When set to true, they are always indexed.
