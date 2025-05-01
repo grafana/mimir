@@ -266,7 +266,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		for {
 			var err error
 			var isEOS bool
-			streamingSeriesCount, streamingSeriesBatches, isEOS, err = receiveResponse(stream, streamingSeriesCount, streamingSeriesBatches, queryLimiter, &result)
+			streamingSeriesCount, streamingSeriesBatches, isEOS, err = result.receiveResponse(stream, streamingSeriesCount, streamingSeriesBatches, queryLimiter)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -387,7 +387,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	return resp, nil
 }
 
-func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamingSeriesCount int, streamingSeriesBatches [][]labels.Labels, queryLimiter *limiter.QueryLimiter, result *ingesterQueryResult) (int, [][]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamingSeriesCount int, streamingSeriesBatches [][]labels.Labels, queryLimiter *limiter.QueryLimiter) (int, [][]labels.Labels, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		return 0, nil, false, err
@@ -404,7 +404,7 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 		for i := range resp.Timeseries {
 			resp.Timeseries[i].CloneUnsafe()
 		}
-		result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
+		r.timeseriesBatches = append(r.timeseriesBatches, resp.Timeseries)
 	} else if len(resp.Chunkseries) > 0 {
 		// Enforce the max chunks limits.
 		if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
@@ -428,7 +428,7 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 		for i := range resp.Chunkseries {
 			resp.Chunkseries[i].CloneUnsafe()
 		}
-		result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
+		r.chunkseriesBatches = append(r.chunkseriesBatches, resp.Chunkseries)
 	} else if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 		streamingSeriesCount += len(resp.StreamingSeries)
