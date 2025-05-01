@@ -35,8 +35,8 @@ type OptimizationPass struct {
 func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
 	return &OptimizationPass{
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_duplication_nodes_introduced",
-			Help: "Number of duplication nodes introduced by the eliminate common subexpressions optimization pass.",
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced",
+			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
 		}),
 	}
 }

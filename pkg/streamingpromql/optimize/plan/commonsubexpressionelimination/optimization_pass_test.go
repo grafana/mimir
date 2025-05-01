@@ -293,9 +293,9 @@ func TestOptimizationPass(t *testing.T) {
 }
 
 func requireDuplicateNodeCount(t *testing.T, g prometheus.Gatherer, expected int) {
-	const metricName = "cortex_mimir_query_engine_duplication_nodes_introduced"
+	const metricName = "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced"
 
-	expectedMetrics := fmt.Sprintf(`# HELP %v Number of duplication nodes introduced by the eliminate common subexpressions optimization pass.
+	expectedMetrics := fmt.Sprintf(`# HELP %v Number of duplication nodes introduced by the common subexpression elimination optimization pass.
 # TYPE %v counter
 %v %v
 `, metricName, metricName, metricName, expected)
