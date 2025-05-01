@@ -711,63 +711,63 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 			for _, req := range reqs {
 				t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
-					engine := newEngine()
-					downstream := &downstreamHandler{
-						engine:                                  engine,
-						queryable:                               queryable,
-						includePositionInformationInAnnotations: true,
-					}
+					runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+						downstream := &downstreamHandler{
+							engine:                                  eng,
+							queryable:                               queryable,
+							includePositionInformationInAnnotations: true,
+						}
 
-					// Run the query without sharding.
-					expectedRes, err := downstream.Do(context.Background(), req)
-					require.Nil(t, err)
-					expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
-					require.True(t, ok)
-					if !testData.expectSpecificOrder {
-						sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
-					}
+						// Run the query without sharding.
+						expectedRes, err := downstream.Do(context.Background(), req)
+						require.Nil(t, err)
+						expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+						require.True(t, ok)
+						if !testData.expectSpecificOrder {
+							sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+						}
 
-					// Ensure the query produces some results.
-					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
-					requireValidSamples(t, expectedPrometheusRes.Data.Result)
+						// Ensure the query produces some results.
+						require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+						requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
-					if testData.expectedShardedQueries > 0 {
-						// Remove position information from annotations, to mirror what we expect from the sharded queries below.
-						removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
-						removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
-					}
+						if testData.expectedShardedQueries > 0 {
+							// Remove position information from annotations, to mirror what we expect from the sharded queries below.
+							removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+							removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+						}
 
-					for _, numShards := range []int{2, 4, 8, 16} {
-						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
-							reg := prometheus.NewPedanticRegistry()
-							shardingware := newQueryShardingMiddleware(
-								log.NewNopLogger(),
-								engine,
-								mockLimits{totalShards: numShards},
-								0,
-								reg,
-							)
+						for _, numShards := range []int{2, 4, 8, 16} {
+							t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+								reg := prometheus.NewPedanticRegistry()
+								shardingware := newQueryShardingMiddleware(
+									log.NewNopLogger(),
+									eng,
+									mockLimits{totalShards: numShards},
+									0,
+									reg,
+								)
 
-							// Run the query with sharding.
-							shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-							require.Nil(t, err)
+								// Run the query with sharding.
+								shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+								require.Nil(t, err)
 
-							// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-							// if you rerun the same query twice).
-							shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
-							require.True(t, ok)
-							if !testData.expectSpecificOrder {
-								sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
-							}
-							approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+								// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+								// if you rerun the same query twice).
+								shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+								require.True(t, ok)
+								if !testData.expectSpecificOrder {
+									sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+								}
+								approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
-							// Ensure the query has been sharded/not sharded as expected.
-							expectedSharded := 0
-							if testData.expectedShardedQueries > 0 {
-								expectedSharded = 1
-							}
+								// Ensure the query has been sharded/not sharded as expected.
+								expectedSharded := 0
+								if testData.expectedShardedQueries > 0 {
+									expectedSharded = 1
+								}
 
-							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+								assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
 					cortex_frontend_query_sharding_rewrites_attempted_total 1
@@ -778,11 +778,12 @@ func TestQuerySharding_Correctness(t *testing.T) {
 					# TYPE cortex_frontend_sharded_queries_total counter
 					cortex_frontend_sharded_queries_total %d
 				`, expectedSharded, testData.expectedShardedQueries*numShards)),
-								"cortex_frontend_query_sharding_rewrites_attempted_total",
-								"cortex_frontend_query_sharding_rewrites_succeeded_total",
-								"cortex_frontend_sharded_queries_total"))
-						})
-					}
+									"cortex_frontend_query_sharding_rewrites_attempted_total",
+									"cortex_frontend_query_sharding_rewrites_succeeded_total",
+									"cortex_frontend_sharded_queries_total"))
+							})
+						}
+					})
 				})
 			}
 		})
@@ -806,7 +807,8 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 	// Create a queryable on the fixtures.
 	queryable := storageSeriesQueryable(series)
 
-	engine := newEngine()
+	// TODO(56quarters): MQE test
+	engine := newEngine(t)
 	downstream := &downstreamHandler{
 		engine:    engine,
 		queryable: queryable,
@@ -924,8 +926,9 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		newSeries(labelsForShard(2), from, to, step, constant(evilFloatB)),
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: shards}, 0, prometheus.NewPedanticRegistry())
-	downstream := &downstreamHandler{engine: newEngine(), queryable: storageSeriesQueryable(storageSeries)}
+	// TODO(56quarters): MQE test
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), mockLimits{totalShards: shards}, 0, prometheus.NewPedanticRegistry())
+	downstream := &downstreamHandler{engine: newEngine(t), queryable: storageSeriesQueryable(storageSeries)}
 
 	req := &PrometheusInstantQueryRequest{
 		path:      "/query",
@@ -1080,6 +1083,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
 			newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 		})
+
+		// TODO(56quarters): Test MQE
 		testQueryShardingFunctionCorrectness(t, queryableFloats, append(testsForBoth, testsForFloatsOnly...), testsForNativeHistogramsOnly)
 	})
 
@@ -1093,6 +1098,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 			newNativeHistogramSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 		})
 
+		// TODO(56quarters): Test MQE
 		testQueryShardingFunctionCorrectness(t, queryableNativeHistograms, append(testsForBoth, testsForNativeHistogramsOnly...), testsForFloatsOnly)
 	})
 }
@@ -1137,7 +1143,8 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 				}
 
 				reg := prometheus.NewPedanticRegistry()
-				engine := newEngine()
+				// TODO(56quarters): Test MQE
+				engine := newEngine(t)
 				shardingware := newQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
@@ -1210,7 +1217,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), mockLimits{totalShards: 16}, 0, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
@@ -1238,7 +1245,8 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
+	// TODO(56quarters): Test MQE?
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), mockLimits{totalShards: 16}, 0, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
@@ -1434,7 +1442,9 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 				compactorShards:                  testData.compactorShards,
 				nativeHistogramsIngestionEnabled: testData.nativeHistograms,
 			}
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
+
+			// TODO(56quarters): Test MQE?
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), limits, 0, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
 			uniqueShardsMx := sync.Mutex{}
@@ -1530,7 +1540,9 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 				compactorShards:                  0,
 				nativeHistogramsIngestionEnabled: false,
 			}
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
+
+			// TODO(56quarters): Test MQE?
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), limits, 0, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
 			uniqueShardsMx := sync.Mutex{}
@@ -1570,7 +1582,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 		queryExpr: parseQuery(t, "vector(1)"), // A non shardable query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), mockLimits{totalShards: 16}, 0, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
@@ -1585,7 +1597,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 
 func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	var (
-		engine        = newEngine()
+		engine        = newEngine(t)
 		engineTimeout = promql.NewEngine(promql.EngineOpts{
 			Logger:               promslog.NewNopLogger(),
 			Reg:                  nil,
@@ -1632,8 +1644,8 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 
 	for _, tc := range []struct {
 		name             string
-		engineDownstream *promql.Engine
-		engineSharding   *promql.Engine
+		engineDownstream promql.QueryEngine
+		engineSharding   promql.QueryEngine
 		expError         error
 		queryable        storage.Queryable
 	}{
@@ -1721,7 +1733,8 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		numShards = 8
 	)
 	var (
-		engine = newEngine()
+		// TODO(56quarters): Test MQE?
+		engine = newEngine(t)
 	)
 
 	series := make([]storage.Series, 0, numSeries)
@@ -1741,7 +1754,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		queryExpr: parseQuery(t, `sum by (group_1) (metric_counter) - on(group_1) group_right(unique) (sum by (group_1,unique) (metric_counter))`),
 	}
 
-	downstream := &downstreamHandler{engine: newEngine(), queryable: queryable}
+	downstream := &downstreamHandler{engine: newEngine(t), queryable: queryable}
 	reg := prometheus.NewPedanticRegistry()
 	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engine, mockLimits{totalShards: numShards}, 0, reg)
 
@@ -1759,7 +1772,8 @@ func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 		queryExpr: parseQuery(t, "vector(1)"), // A non shardable query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, prometheus.NewRegistry())
+	// TODO(56quarters): Test MQE?
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), mockLimits{totalShards: 16}, 0, prometheus.NewRegistry())
 
 	require.NotPanics(t, func() {
 		_, err := shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -1801,7 +1815,8 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 10_000, nil)
+			// TODO(56quarters): Test MQE?
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(t), mockLimits{totalShards: 16}, 10_000, nil)
 			downstream := &mockHandler{}
 			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
 				Status: statusSuccess, Data: &PrometheusData{
@@ -1850,7 +1865,8 @@ func TestQuerySharding_Annotations(t *testing.T) {
 	const splitInterval = 15 * time.Second
 
 	reg := prometheus.NewPedanticRegistry()
-	engine := newEngine()
+	// TODO(56quarters): Test MQE?
+	engine := newEngine(t)
 	shardingware := newQueryShardingMiddleware(
 		log.NewNopLogger(),
 		engine,
@@ -2290,7 +2306,7 @@ func TestLongestRegexpMatcherBytes(t *testing.T) {
 }
 
 type downstreamHandler struct {
-	engine                                  *promql.Engine
+	engine                                  promql.QueryEngine
 	queryable                               storage.Queryable
 	includePositionInformationInAnnotations bool
 }
@@ -2654,21 +2670,12 @@ func (ssi *ThreadSafeStorageSeriesIterator) Err() error {
 	return nil
 }
 
+// TODO(56quarters): Add tests with MQE here
+
 // newEngine creates and return a new promql.Engine used for testing.
-func newEngine() *promql.Engine {
-	return promql.NewEngine(promql.EngineOpts{
-		Logger:               promslog.NewNopLogger(),
-		Reg:                  nil,
-		MaxSamples:           10e7,
-		Timeout:              1 * time.Hour,
-		ActiveQueryTracker:   nil,
-		LookbackDelta:        lookbackDelta,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
-		NoStepSubqueryIntervalFn: func(int64) int64 {
-			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
-		},
-	})
+func newEngine(t *testing.T) promql.QueryEngine {
+	_, eng := newEngineForTesting(t, querier.PrometheusEngine)
+	return eng
 }
 
 func TestRemoveAnnotationPositionInformation(t *testing.T) {

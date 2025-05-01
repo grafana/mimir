@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -160,13 +161,10 @@ sum by (group_1) (
 	}
 
 	queryable := setupSubquerySpinOffTestSeries(t, 2*24*time.Hour)
-	engine := newEngine()
-	downstream := &downstreamHandler{
-		engine:    engine,
-		queryable: queryable,
-	}
-
-	runSubquerySpinOffTests(t, tests, engine, downstream)
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		downstream := &downstreamHandler{engine: eng, queryable: queryable}
+		runSubquerySpinOffTests(t, tests, eng, downstream)
+	})
 }
 
 func TestSubquerySpinOff_LongRangeQuery(t *testing.T) {
@@ -183,13 +181,10 @@ func TestSubquerySpinOff_LongRangeQuery(t *testing.T) {
 	}
 
 	queryable := setupSubquerySpinOffTestSeries(t, 10*24*time.Hour)
-	engine := newEngine()
-	downstream := &downstreamHandler{
-		engine:    engine,
-		queryable: queryable,
-	}
-
-	runSubquerySpinOffTests(t, tests, engine, downstream)
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		downstream := &downstreamHandler{engine: eng, queryable: queryable}
+		runSubquerySpinOffTests(t, tests, eng, downstream)
+	})
 }
 
 func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
@@ -203,7 +198,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	downstreamErr := errors.Errorf("some err")
 	downstream := mockHandlerWith(nil, downstreamErr)
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), newEngine(t), nil, nil, defaultStepFunc)
 
 	// Run the query with subquery spin-off middleware wrapping the downstream one.
 	// We expect to get the downstream error.
@@ -275,7 +270,7 @@ func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) stora
 	return queryable
 }
 
-func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest, engine *promql.Engine, downstream MetricsQueryHandler) {
+func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest, engine promql.QueryEngine, downstream MetricsQueryHandler) {
 	t.Helper()
 
 	for testName, testData := range tests {
@@ -374,6 +369,31 @@ cortex_frontend_subquery_spinoff_successes_total %d
 				"cortex_frontend_subquery_spinoff_successes_total",
 				"cortex_frontend_subquery_spinoff_skipped_total",
 				"cortex_frontend_spun_off_subqueries_total"))
+		})
+	}
+}
+
+func runForEngines(t *testing.T, run func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine)) {
+	promOpts, promEngine := newEngineForTesting(t, querier.PrometheusEngine)
+	mqeOpts, mqeEngine := newEngineForTesting(t, querier.MimirEngine)
+
+	engines := map[string]struct {
+		engine  promql.QueryEngine
+		options promql.EngineOpts
+	}{
+		querier.PrometheusEngine: {
+			engine:  promEngine,
+			options: promOpts,
+		},
+		querier.MimirEngine: {
+			engine:  mqeEngine,
+			options: mqeOpts,
+		},
+	}
+
+	for name, tc := range engines {
+		t.Run(fmt.Sprintf("engine=%s", name), func(t *testing.T) {
+			run(t, tc.options, tc.engine)
 		})
 	}
 }

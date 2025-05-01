@@ -35,7 +35,7 @@ type spinOffSubqueriesMiddleware struct {
 	limits    Limits
 	logger    log.Logger
 
-	engine          *promql.Engine
+	engine          promql.QueryEngine
 	defaultStepFunc func(int64) int64
 
 	metrics spinOffSubqueriesMetrics
@@ -90,7 +90,7 @@ func newSpinOffSubqueriesMetrics(registerer prometheus.Registerer) spinOffSubque
 func newSpinOffSubqueriesMiddleware(
 	limits Limits,
 	logger log.Logger,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	registerer prometheus.Registerer,
 	rangeMiddleware MetricsQueryMiddleware,
 	defaultStepFunc func(int64) int64,

@@ -625,7 +625,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 		MaxSamples:         1e6,
 		Timeout:            1 * time.Minute,
 	})
-	cfg := Config{QueryEngine: prometheusEngine}
+	cfg := Config{QueryEngine: PrometheusEngine}
 	for _, c := range testCases {
 		t.Run(c.name, func(t *testing.T) {
 			distributor := &errDistributor{}
@@ -1697,10 +1697,7 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 	}
 
 	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
-
-	provider := &tenantQueryLimitsProvider{
-		limits: overrides,
-	}
+	provider := NewTenantQueryLimitsProvider(overrides)
 
 	testCases := map[string]struct {
 		ctx           context.Context
