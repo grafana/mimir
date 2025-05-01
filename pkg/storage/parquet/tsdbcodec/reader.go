@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -86,6 +85,43 @@ func NewTSDBBlockToParquetReader(
 	}, nil
 }
 
+//func (br *TSDBBlockToParquetReader) Close() error {
+//	err := &multierror.Error{}
+//	for i := range br.closers {
+//		err = multierror.Append(err, br.closers[i].Close())
+//	}
+//	return err.ErrorOrNil()
+//}
+//
+//func (br *TSDBBlockToParquetReader) RowsStream(
+//	ctx context.Context,
+//	rowsPerBatch int,
+//	maxBatchesInBuffer int,
+//) (rowsBatchChan chan []parquet.ParquetRow, errChan chan error) {
+//
+//	rowsBatchChan = make(chan []parquet.ParquetRow, maxBatchesInBuffer)
+//	defer close(rowsBatchChan)
+//	errChan = make(chan error, 1)
+//	defer close(errChan)
+//
+//	indexReaderMu := &sync.Mutex{}
+//
+//	for _, metricName := range br.metricNames {
+//		if ctxErr := ctx.Err(); ctxErr != nil {
+//			errChan <- ctxErr
+//			return
+//		}
+//		indexReaderMu.Lock()
+//		postings, err := br.indexReader.Postings(ctx, labels.MetricName, metricName)
+//		if err != nil {
+//			return
+//		}
+//		errGrp := &errgroup.Group{}
+//	}
+//
+//	return rowsBatchChan, errChan
+//}
+
 func BlockToParquetRowsStream(
 	ctx context.Context,
 	path string,
@@ -143,8 +179,11 @@ func BlockToParquetRowsStream(
 		defer cReader.Close()
 		defer idx.Close()
 		defer close(rc)
+
 		batch := make([]parquet.ParquetRow, 0, rowsPerBatch)
 		batchMutex := &sync.Mutex{}
+		postingsMutex := &sync.Mutex{}
+
 		for _, metricName := range metricNames {
 			if ctx.Err() != nil {
 				return
@@ -156,16 +195,27 @@ func BlockToParquetRowsStream(
 			eg := &errgroup.Group{}
 			eg.SetLimit(runtime.GOMAXPROCS(0))
 
-			for p.Next() {
-				chks := []chunks.Meta{}
-				builder := labels.ScratchBuilder{}
-
-				at := p.At()
-				err = idx.Series(at, &builder, &chks)
-				if err != nil {
-					return
+			for {
+				postingsMutex.Lock()
+				done := !p.Next()
+				postingsMutex.Unlock()
+				if done {
+					break
 				}
+
 				eg.Go(func() error {
+					chks := []chunks.Meta{}
+					builder := labels.ScratchBuilder{}
+
+					postingsMutex.Lock()
+					at := p.At()
+					postingsMutex.Unlock()
+
+					err := idx.Series(at, &builder, &chks)
+					if err != nil {
+						return err
+					}
+
 					for i := range chks {
 						chks[i].Chunk, _, err = cReader.ChunkOrIterable(chks[i])
 						if err != nil {
@@ -214,14 +264,6 @@ func BlockToParquetRowsStream(
 	}()
 
 	return rc, labelNames, total, nil
-}
-
-func (br *TSDBBlockToParquetReader) Close() error {
-	err := &multierror.Error{}
-	for i := range br.closers {
-		err = multierror.Append(err, br.closers[i].Close())
-	}
-	return err.ErrorOrNil()
 }
 
 func truncateByteArray(value []byte, sizeLimit int) []byte {
