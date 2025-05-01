@@ -115,7 +115,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.29.1 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/ebitengine/purego v0.8.1 // indirect
-	github.com/envoyproxy/go-control-plane/envoy v1.32.3 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -346,5 +345,3 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 
 // Pin this to v0.15.0 as newer versions require newer versions of gRPC which we have pinned above.
 replace cloud.google.com/go/auth => cloud.google.com/go/auth v0.15.0
-
-exclude github.com/envoyproxy/go-control-plane/envoy v1.32.4
