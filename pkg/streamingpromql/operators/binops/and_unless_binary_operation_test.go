@@ -361,7 +361,7 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 
 			o.Close()
 			// Make sure we've returned everything to their pools.
-			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 		})
 	}
 }
@@ -455,7 +455,7 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 
 					// Close the operator and confirm that we've returned everything to their pools.
 					o.Close()
-					require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+					require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 				})
 			}
 		})

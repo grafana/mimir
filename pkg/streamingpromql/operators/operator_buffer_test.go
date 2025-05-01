@@ -197,5 +197,5 @@ func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T)
 
 	// Close the buffer, which should release the buffered series.
 	buffer.Close()
-	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

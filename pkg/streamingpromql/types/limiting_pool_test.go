@@ -35,39 +35,39 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 	s100, err := p.Get(100, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 128, cap(s100))
-	require.Equal(t, 128*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 128*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 128*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 128*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Get another slice from the pool, the current and peak stats should be updated.
 	s2, err := p.Get(2, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 2, cap(s2))
-	require.Equal(t, 130*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 130*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Put a slice back into the pool, the current stat should be updated but peak should be unchanged.
 	p.Put(s100, tracker)
-	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Get another slice from the pool that doesn't take us over the previous peak.
 	s5, err := p.Get(5, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 8, cap(s5))
-	require.Equal(t, 10*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 10*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Get another slice from the pool that does take us over the previous peak.
 	s200, err := p.Get(200, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 256, cap(s200))
-	require.Equal(t, 266*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 266*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 266*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 266*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Ensure we handle nil slices safely.
 	p.Put(nil, tracker)
-	require.Equal(t, 266*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 266*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 266*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 266*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	assertRejectedQueryCount(t, reg, 0)
 }
@@ -88,38 +88,38 @@ func TestLimitingPool_Limited(t *testing.T) {
 	s7, err := p.Get(7, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 8, cap(s7))
-	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 8*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 8*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueryCount(t, reg, 0)
 
 	// Get another slice from the pool beneath the limit.
 	s1, err := p.Get(1, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 1, cap(s1))
-	require.Equal(t, 9*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 9*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueryCount(t, reg, 0)
 
 	// Return a slice to the pool.
 	p.Put(s1, tracker)
-	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueryCount(t, reg, 0)
 
 	// Try to get a slice where the requested size would push us over the limit.
 	_, err = p.Get(4, tracker)
 	expectedError := fmt.Sprintf("the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: %d bytes) (err-mimir-max-estimated-memory-consumption-per-query)", limit)
 	require.ErrorContains(t, err, expectedError)
-	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueryCount(t, reg, 1)
 
 	// Try to get a slice where the requested size is under the limit, but the capacity of the slice returned by the pool is over the limit.
 	// (We expect the pool to be configured with a factor of 2, so a slice of size 3 will be rounded up to 4 elements.)
 	_, err = p.Get(3, tracker)
 	require.ErrorContains(t, err, expectedError)
-	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Make sure we don't increment the rejection count a second time for the same query.
 	assertRejectedQueryCount(t, reg, 1)
@@ -129,15 +129,15 @@ func TestLimitingPool_Limited(t *testing.T) {
 		s1, err = p.Get(1, tracker)
 		require.NoError(t, err)
 		require.Equal(t, 1, cap(s1))
-		require.Equal(t, uint64(9+i)*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-		require.Equal(t, uint64(9+i)*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+		require.Equal(t, uint64(9+i)*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+		require.Equal(t, uint64(9+i)*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	}
 
 	// Try to get another slice while we're already at the limit.
 	_, err = p.Get(1, tracker)
 	require.ErrorContains(t, err, expectedError)
-	require.Equal(t, 11*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes)
-	require.Equal(t, 11*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes)
+	require.Equal(t, 11*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 11*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueryCount(t, reg, 1)
 }
 

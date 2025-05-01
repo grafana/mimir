@@ -53,6 +53,7 @@
 * [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
 * [BUGFIX] Ingester: read reactive limiters should activate and deactivate when the ingester changes state. #11234
 * [BUGFIX] Query-frontend: Fix an issue where errors from date/time parsing methods did not include the name of the invalid parameter. #11304
+* [BUGFIX] Compactor: Fix issue where `MimirBucketIndexNotUpdated` can fire even though the index has been updated within the alert threshold. #11303
 
 ### Mixin
 
