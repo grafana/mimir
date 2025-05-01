@@ -136,8 +136,14 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 
 	// Lookup ingesters ring because ingest storage is disabled.
 	shardSize := d.limits.IngestionTenantShardSize(userID)
-	r := d.ingestersRing
-	r = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now())
+	r := ring.ReadRing(d.ingestersRing)
+
+	consistencyLevel, err := d.tenantConsistencyLevel(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	r = d.ingestersRing.ShuffleShardWithLookbackAndConsistency(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now(), consistencyLevel)
 
 	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
 	if err != nil {
@@ -145,6 +151,15 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	return []ring.ReplicationSet{replicationSet}, nil
+}
+
+func (d *Distributor) tenantConsistencyLevel(userID string) (ring.ConsistencyLevel, error) {
+	consistencyLevelStr := d.cfg.IngestReadConsistency
+	if userConsistencyLevelStr := d.limits.ReadConsistencyLevel(userID); userConsistencyLevelStr != "" {
+		consistencyLevelStr = userConsistencyLevelStr
+	}
+
+	return ring.ConvertConsistencyLevel(consistencyLevelStr)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
