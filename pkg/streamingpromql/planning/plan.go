@@ -5,6 +5,7 @@ package planning
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -175,7 +176,7 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	if e.includeDescriptions {
-		encoded.Type = reflect.TypeOf(n).Elem().Name()
+		encoded.Type = NodeTypeName(n)
 		encoded.Description = n.Describe()
 		encoded.ChildrenLabels = n.ChildrenLabels()
 	}
@@ -185,6 +186,13 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	e.nodesToIndex[n] = idx
 
 	return idx, nil
+}
+
+// NodeTypeName returns the human-readable name of the type of n.
+//
+// This should not be used in performance-sensitive code.
+func NodeTypeName(n Node) string {
+	return reflect.TypeOf(n).Elem().Name()
 }
 
 func (p *EncodedQueryPlan) ToDecodedPlan() (*QueryPlan, error) {
@@ -291,4 +299,84 @@ func RegisterNodeFactory(f NodeFactory) {
 	}
 
 	knownNodeTypes[name] = f
+}
+
+// String returns a human-readable representation of the query plan, intended for use during debugging and tests.
+func (p *QueryPlan) String() string {
+	printer := &planPrinter{
+		builder:                     &strings.Builder{},
+		nodeReferenceCounts:         make(map[Node]int),
+		repeatedNodesPrintedAlready: make(map[Node]struct{}),
+		repeatedNodeLabels:          make(map[Node]string),
+	}
+
+	printer.identifyRepeatedNodes(p.Root)
+	printer.printNode(p.Root, 0, "")
+
+	return strings.TrimRight(printer.builder.String(), "\n")
+}
+
+type planPrinter struct {
+	builder                     *strings.Builder
+	nodeReferenceCounts         map[Node]int
+	repeatedNodesPrintedAlready map[Node]struct{}
+	repeatedNodeLabels          map[Node]string
+}
+
+func (p *planPrinter) identifyRepeatedNodes(n Node) {
+	if p.nodeReferenceCounts[n] > 1 {
+		// We already know this node is repeated, nothing more to do.
+		return
+	}
+
+	p.nodeReferenceCounts[n]++
+	if p.nodeReferenceCounts[n] > 1 {
+		// Just saw this node for the second time, assign a label to it and then we are done.
+		p.repeatedNodeLabels[n] = fmt.Sprintf("ref#%v", len(p.repeatedNodeLabels)+1)
+		return
+	}
+
+	for _, child := range n.Children() {
+		p.identifyRepeatedNodes(child)
+	}
+}
+
+func (p *planPrinter) printNode(n Node, indent int, label string) {
+	p.builder.WriteString(strings.Repeat("\t", indent))
+	p.builder.WriteString("- ")
+
+	if label != "" {
+		p.builder.WriteString(label)
+		p.builder.WriteString(": ")
+	}
+
+	ref, repeated := p.repeatedNodeLabels[n]
+	if repeated {
+		_, printedAlready := p.repeatedNodesPrintedAlready[n]
+		p.builder.WriteString(ref)
+		p.builder.WriteRune(' ')
+
+		if printedAlready {
+			p.builder.WriteString(NodeTypeName(n))
+			p.builder.WriteString(" ...\n")
+			return
+		}
+
+		p.repeatedNodesPrintedAlready[n] = struct{}{}
+	}
+
+	p.builder.WriteString(NodeTypeName(n))
+
+	description := n.Describe()
+	if description != "" {
+		p.builder.WriteString(": ")
+		p.builder.WriteString(description)
+	}
+
+	p.builder.WriteRune('\n')
+	childLabels := n.ChildrenLabels()
+
+	for childIdx, child := range n.Children() {
+		p.printNode(child, indent+1, childLabels[childIdx])
+	}
 }

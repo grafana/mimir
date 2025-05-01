@@ -2197,6 +2197,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
+  -querier.mimir-query-engine.enable-common-subexpression-elimination
+    	[experimental] Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled. (default true)
   -querier.mimir-query-engine.use-query-planning
     	[experimental] Use query planner when evaluating queries.
   -querier.minimize-ingester-requests

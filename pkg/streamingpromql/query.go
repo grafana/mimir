@@ -585,7 +585,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 		msg = append(msg,
 			"msg", "query stats",
-			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes,
+			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(),
 			"expr", q.originalExpression,
 		)
 
@@ -604,7 +604,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		}
 
 		level.Info(logger).Log(msg...)
-		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
 	switch root := q.root.(type) {
@@ -858,7 +858,7 @@ func (q *Query) Close() {
 	}
 
 	if q.engine.pedantic && q.result.Err == nil {
-		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes > 0 {
+		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
 			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
 		}
 	}
