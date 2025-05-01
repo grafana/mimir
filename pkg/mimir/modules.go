@@ -395,10 +395,32 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+	// Add mappings here for config options that are being migrated to per-tenant limits.
+	// Ex:
+	// if t.Cfg.<Section>.<DeprecatedField> != <Default> {
+	//     t.Cfg.LimitsConfig.<NewField> = t.Cfg.<Section>.<DeprecatedField>
+	// }
+
+	// AlertmanagerURL and Notifier sub-options are moving from a global config to a per-tenant config.
+	// We need to preserve the option in the ruler yaml for at least two releases (that is, at least Mimir 3.0).
+	// If the ruler config is configured by the user, map it to its new place in the default limits.
+	if t.Cfg.Ruler.DeprecatedAlertmanagerURL != "" {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.AlertmanagerURL = t.Cfg.Ruler.DeprecatedAlertmanagerURL
+	}
+	if !t.Cfg.Ruler.DeprecatedNotifier.IsDefault() {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig = t.Cfg.Ruler.DeprecatedNotifier
+	}
+	// Ensure the TLS settings reader is propagated.
+	if t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader != t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader
+	}
+
 	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}
+
+	// End mappings for per-tenant config migrations.
 
 	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
