@@ -93,7 +93,7 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			c := NewBlocksConsistency(uploadGracePeriod, reg)
+			c := NewBlocksConsistency(uploadGracePeriod, reg, 3)
 			tracker := c.NewTracker(testData.knownBlocks, log.NewNopLogger())
 			var missingBlocks bucketindex.Blocks
 			for _, queriedBlocksAttempt := range testData.queriedBlocks {

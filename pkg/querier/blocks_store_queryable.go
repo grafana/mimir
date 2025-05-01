@@ -56,13 +56,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-const (
-	// The maximum number of times we attempt fetching missing blocks from different
-	// store-gateways. If no more store-gateways are left (ie. due to lower replication
-	// factor) than we'll end the retries earlier.
-	maxFetchSeriesAttempts = 3
-)
-
 // BlocksStoreSet is the interface used to get the clients to query series on a set of blocks.
 type BlocksStoreSet interface {
 	services.Service
@@ -257,11 +250,17 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
+	maxReplication := gatewayCfg.ShardingRing.ReplicationFactor
+	if gatewayCfg.DynamicReplication.Enabled {
+		maxReplication *= gatewayCfg.DynamicReplication.Multiple
+	}
+
 	consistency := NewBlocksConsistency(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
 		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
 		reg,
+		maxReplication,
 	)
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
@@ -562,7 +561,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		consistencyTracker.Complete()
 	}()
 
-	for attempt := 1; attempt <= maxFetchSeriesAttempts; attempt++ {
+	for attempt := 1; attempt <= consistencyTracker.MaxReplication(); attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
 		// map of blocks queried so far, with the list of store-gateway addresses for each block.
 		clients, err := q.stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)

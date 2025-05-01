@@ -20,13 +20,15 @@ import (
 type BlocksConsistency struct {
 	uploadGracePeriod time.Duration
 
-	checksTotal  prometheus.Counter
-	checksFailed prometheus.Counter
+	checksTotal    prometheus.Counter
+	checksFailed   prometheus.Counter
+	maxReplication int
 }
 
-func NewBlocksConsistency(uploadGracePeriod time.Duration, reg prometheus.Registerer) *BlocksConsistency {
+func NewBlocksConsistency(uploadGracePeriod time.Duration, reg prometheus.Registerer, maxReplication int) *BlocksConsistency {
 	return &BlocksConsistency{
 		uploadGracePeriod: uploadGracePeriod,
+		maxReplication:    maxReplication,
 		checksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_consistency_checks_total",
 			Help: "Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.",
@@ -59,16 +61,18 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, logger lo
 	}
 
 	return BlocksConsistencyTracker{
-		checksFailed: c.checksFailed,
-		checksTotal:  c.checksTotal,
-		tracked:      blocksToTrack,
-		queried:      make(map[ulid.ULID]struct{}, len(blocksToTrack)),
+		maxReplication: c.maxReplication,
+		checksFailed:   c.checksFailed,
+		checksTotal:    c.checksTotal,
+		tracked:        blocksToTrack,
+		queried:        make(map[ulid.ULID]struct{}, len(blocksToTrack)),
 	}
 }
 
 type BlocksConsistencyTracker struct {
-	checksTotal  prometheus.Counter
-	checksFailed prometheus.Counter
+	maxReplication int
+	checksTotal    prometheus.Counter
+	checksFailed   prometheus.Counter
 
 	tracked map[ulid.ULID]*bucketindex.Block
 	queried map[ulid.ULID]struct{}
@@ -105,4 +109,8 @@ func (c BlocksConsistencyTracker) Complete() {
 	if len(c.queried) < len(c.tracked) {
 		c.checksFailed.Inc()
 	}
+}
+
+func (c BlocksConsistencyTracker) MaxReplication() int {
+	return c.maxReplication
 }
