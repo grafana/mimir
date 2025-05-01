@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_storage "github.com/grafana/mimir/pkg/storage/parquet"
+	"github.com/grafana/mimir/pkg/storage/parquet/tsdbcodec"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
@@ -62,7 +63,7 @@ type ParquetQueryable struct {
 	queryIngestersWithin time.Duration
 	limits               BlocksStoreLimits
 	bucket               objstore.InstrumentedBucket
-	chunkDecoder         *mimir_storage.PrometheusParquetChunksDecoder
+	chunkDecoder         *tsdbcodec.PrometheusParquetChunksDecoder
 	asyncRead            bool
 	dictionaryCacheSize  int
 	projectionPushdown   bool
@@ -153,7 +154,7 @@ func NewParquetStoreQueryable(
 		subservices:         manager,
 		subservicesWatcher:  services.NewFailureWatcher(),
 		limits:              limits,
-		chunkDecoder:        mimir_storage.NewPrometheusParquetChunksDecoder(),
+		chunkDecoder:        tsdbcodec.NewPrometheusParquetChunksDecoder(),
 		asyncRead:           true,
 		dictionaryCacheSize: 1024,
 		metrics:             newMetrics(reg),
@@ -233,7 +234,7 @@ type parquetQuerier struct {
 	readerCache  *mimir_storage.Cache[*mimir_storage.ParquetReader]
 	cacheMetrics *mimir_storage.CacheMetrics
 
-	chunkDecoder *mimir_storage.PrometheusParquetChunksDecoder
+	chunkDecoder *tsdbcodec.PrometheusParquetChunksDecoder
 }
 
 func (q *parquetQuerier) findBlocks(ctx context.Context, userID string, logger log.Logger, minT, maxT int64, matchers []*labels.Matcher) (bucketindex.Blocks, error) {
@@ -839,7 +840,7 @@ func (s Series) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
 	return dedup.NewBoundedSeriesIterator(newChunkSeriesIterator(iters), s.mint, s.maxt)
 }
 
-func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint, maxt int64, skipChunks bool, chunksDecoder *mimir_storage.PrometheusParquetChunksDecoder, projectionPushdown bool, queryLimiter *limiter.QueryLimiter, reqStats *stats.Stats, sts *mimir_storage.Stats) (*ParquetRowsSeriesSet, error) {
+func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint, maxt int64, skipChunks bool, chunksDecoder *tsdbcodec.PrometheusParquetChunksDecoder, projectionPushdown bool, queryLimiter *limiter.QueryLimiter, reqStats *stats.Stats, sts *mimir_storage.Stats) (*ParquetRowsSeriesSet, error) {
 	start := time.Now()
 	defer func() {
 		sts.AddCreateSeriesSetWallTime(time.Since(start).Milliseconds())
@@ -929,7 +930,7 @@ func newParquetRowsSeriesSet(sorted bool, rows []mimir_storage.ParquetRow, mint,
 	}, nil
 }
 
-func getChunksFromParquetRow(chunksDecoder *mimir_storage.PrometheusParquetChunksDecoder, row mimir_storage.ParquetRow, mint, maxt int64) ([]chunks.Meta, bool, error) {
+func getChunksFromParquetRow(chunksDecoder *tsdbcodec.PrometheusParquetChunksDecoder, row mimir_storage.ParquetRow, mint, maxt int64) ([]chunks.Meta, bool, error) {
 	chks, err := chunksDecoder.Decode(row.Data, mint, maxt)
 	if err != nil {
 		return nil, false, err

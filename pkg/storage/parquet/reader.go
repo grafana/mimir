@@ -119,6 +119,15 @@ func NewParquetReader(readerFactory CreateReadAtWithContext, size int64, asyncRe
 		return nil, err
 	}
 
+	fmt.Println(f.Schema())
+	fmt.Println(f.Schema().ID())
+	fmt.Println(f.Schema().Name())
+	fmt.Println(f.Schema().Type())
+	fmt.Println(f.Schema().Columns())
+	fmt.Println(f.Schema().Fields())
+	fmt.Println(f.Schema().Compression())
+	fmt.Println(f.Schema().Encoding())
+
 	return &ParquetReader{
 		readerFactory:         readerFactory,
 		f:                     f,

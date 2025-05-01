@@ -28,7 +28,7 @@ func TestReader(t *testing.T) {
 		// all copied from pkg/parquetconverter/parquet_converter.go for now
 		maxParquetIndexSizeLimit = 100 // TODO what & why is this restriction?
 		batchSize                = 50000
-		//batchStreamBufferSize    = 10
+		batchStreamBufferSize    = 10
 	)
 
 	var (
@@ -47,14 +47,14 @@ func TestReader(t *testing.T) {
 	require.NoError(t, err)
 
 	// read block file and convert to parquet rows
-	parquetRowsStream, _, numRows, err := BlockToParquetRows(
-		ctx, blockFilePath, maxParquetIndexSizeLimit, batchSize, logger,
+	parquetRowsStream, _, numRows, err := BlockToParquetRowsStream(
+		ctx, blockFilePath, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
 	)
 	require.NoError(t, err)
 
 	// collect rows; not bothering with batching over channel to avoid reading all into memory for now
 	rows := make([]parquet.ParquetRow, 0)
-	for _, rowBatch := range parquetRowsStream {
+	for rowBatch := range parquetRowsStream {
 		rows = append(rows, rowBatch...)
 	}
 
@@ -63,7 +63,7 @@ func TestReader(t *testing.T) {
 	require.Equal(t, len(storageSeries), len(rows))
 	require.Equal(t, numRows, len(rows))
 
-	parquetChunksDecoder := parquet.NewPrometheusParquetChunksDecoder()
+	parquetChunksDecoder := NewPrometheusParquetChunksDecoder()
 	for _, row := range rows {
 		fmt.Println(row.Columns)
 		chunksMeta, err := parquetChunksDecoder.Decode(row.Data, int64(mint), int64(mint+sampleCount))

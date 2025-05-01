@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package parquet
+package tsdbcodec
 
 import (
 	"bytes"
@@ -16,6 +16,8 @@ import (
 	"github.com/dennwc/varint"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+
+	"github.com/grafana/mimir/pkg/storage/parquet"
 )
 
 type PrometheusParquetChunksEncoder struct {
@@ -45,10 +47,10 @@ func (e *PrometheusParquetChunksEncoder) Encode(chks []chunks.Meta) ([][]byte, e
 		return chks[i].MinTime < chks[j].MinTime
 	})
 
-	reEncodedChunks := make([]chunks.Meta, ChunkColumnsPerDay)
-	reEncodedChunksAppenders := make([]chunkenc.Appender, ChunkColumnsPerDay)
+	reEncodedChunks := make([]chunks.Meta, parquet.ChunkColumnsPerDay)
+	reEncodedChunksAppenders := make([]chunkenc.Appender, parquet.ChunkColumnsPerDay)
 
-	for i := 0; i < ChunkColumnsPerDay; i++ {
+	for i := 0; i < parquet.ChunkColumnsPerDay; i++ {
 		reEncodedChunks[i] = chunks.Meta{
 			Chunk:   chunkenc.NewXORChunk(),
 			MinTime: math.MaxInt64,
@@ -71,7 +73,7 @@ func (e *PrometheusParquetChunksEncoder) Encode(chks []chunks.Meta) ([][]byte, e
 				}
 				t, v := it.At()
 				hour := time.UnixMilli(t).UTC().Hour()
-				chkIdx := (hour / int(ChunkColumnLength.Hours())) % ChunkColumnsPerDay
+				chkIdx := (hour / int(parquet.ChunkColumnLength.Hours())) % parquet.ChunkColumnsPerDay
 				reEncodedChunksAppenders[chkIdx].Append(t, v)
 				if t < reEncodedChunks[chkIdx].MinTime {
 					reEncodedChunks[chkIdx].MinTime = t
@@ -85,7 +87,7 @@ func (e *PrometheusParquetChunksEncoder) Encode(chks []chunks.Meta) ([][]byte, e
 		}
 	}
 
-	result := make([][]byte, ChunkColumnsPerDay)
+	result := make([][]byte, parquet.ChunkColumnsPerDay)
 
 	for i, chk := range reEncodedChunks {
 		var b [varint.MaxLen64]byte

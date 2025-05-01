@@ -8,6 +8,8 @@ package tsdbcodec
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -23,6 +26,65 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/parquet"
 )
+
+type TSDBBlockToParquetReader struct {
+	ctx context.Context
+
+	closers       []io.Closer
+	chunksEncoder *PrometheusParquetChunksEncoder
+
+	seriesCount int
+	metricNames []string
+	labelNames  []string
+}
+
+func NewTSDBBlockToParquetReader(
+	ctx context.Context,
+	blockReader tsdb.BlockReader,
+) (*TSDBBlockToParquetReader, error) {
+	closers := make([]io.Closer, 0, 2) // index and chunks readers
+
+	indexReader, err := blockReader.Index()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get index reader from block: %s", err)
+	}
+	closers = append(closers, indexReader)
+
+	chunkReader, err := blockReader.Chunks()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get chunk reader from block: %s", err)
+	}
+	closers = append(closers, chunkReader)
+
+	metricNames, err := indexReader.LabelValues(ctx, labels.MetricName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get metric names from block: %s", err)
+	}
+	k, v := index.AllPostingsKey()
+	all, err := indexReader.Postings(ctx, k, v)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get all postings from block: %s", err)
+	}
+
+	seriesCount := 0
+	for all.Next() {
+		seriesCount++
+	}
+
+	labelNames, err := indexReader.LabelNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get label names from block: %s", err)
+	}
+
+	return &TSDBBlockToParquetReader{
+		ctx:           ctx,
+		closers:       closers,
+		chunksEncoder: NewPrometheusParquetChunksEncoder(),
+		seriesCount:   seriesCount,
+		metricNames:   metricNames,
+		labelNames:    labelNames,
+	}, nil
+}
 
 func BlockToParquetRowsStream(
 	ctx context.Context,
@@ -74,7 +136,7 @@ func BlockToParquetRowsStream(
 		)
 	})
 	rc := make(chan []parquet.ParquetRow, batchStreamBufferSize)
-	chunksEncoder := parquet.NewPrometheusParquetChunksEncoder()
+	chunksEncoder := NewPrometheusParquetChunksEncoder()
 
 	go func() {
 		defer b.Close()
@@ -152,6 +214,14 @@ func BlockToParquetRowsStream(
 	}()
 
 	return rc, labelNames, total, nil
+}
+
+func (br *TSDBBlockToParquetReader) Close() error {
+	err := &multierror.Error{}
+	for i := range br.closers {
+		err = multierror.Append(err, br.closers[i].Close())
+	}
+	return err.ErrorOrNil()
 }
 
 func truncateByteArray(value []byte, sizeLimit int) []byte {
