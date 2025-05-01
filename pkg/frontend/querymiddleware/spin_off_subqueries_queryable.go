@@ -91,7 +91,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		}
 
 		// newSeriesSetFromEmbeddedQueriesResults copies the values, so it is safe to close the query after it is done.
-		// (It does not copy labels, but MQE does not reuse labels so it is still safe).
+		// (It does not copy labels, but MQE does not reuse labels as labels.Labels is immutable so it is still safe).
 		defer resp.Close()
 
 		promRes, ok := resp.GetPrometheusResponse()
@@ -185,7 +185,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 				return storage.ErrSeriesSet(fmt.Errorf("error running subquery: %w", err))
 			}
 			// newSeriesSetFromEmbeddedQueriesResults copies the values, so it is safe to close the query after it is done.
-			// (It does not copy labels, but MQE does not reuse labels so it is still safe).
+			// (It does not copy labels, but MQE does not reuse labels as labels.Labels is immutable so it is still safe).
 			defer resp.Close()
 
 			promRes, ok := resp.GetPrometheusResponse()
