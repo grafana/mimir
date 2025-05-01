@@ -201,7 +201,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 	result := make([]mimirpb.TimeSeries, len(exemplarResults))
 	for i, k := range keys {
 		result[i] = exemplarResults[k]
-		result[i].CloneUnsafe()
+		result[i].CloneRefs()
 	}
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
@@ -404,7 +404,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		}
 
 		for i := range resp.Timeseries {
-			resp.Timeseries[i].CloneUnsafe()
+			resp.Timeseries[i].CloneRefs()
 		}
 		r.timeseriesBatches = append(r.timeseriesBatches, resp.Timeseries)
 	} else if len(resp.Chunkseries) > 0 {
@@ -428,7 +428,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		}
 
 		for i := range resp.Chunkseries {
-			resp.Chunkseries[i].CloneUnsafe()
+			resp.Chunkseries[i].CloneRefs()
 		}
 		r.chunkseriesBatches = append(r.chunkseriesBatches, resp.Chunkseries)
 	} else if len(resp.StreamingSeries) > 0 {

@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestSeries_CloneUnsafe(t *testing.T) {
+func TestSeries_CloneRefs(t *testing.T) {
 	const (
 		origLabelName  = "name"
 		origLabelValue = "value"
@@ -34,7 +34,7 @@ func TestSeries_CloneUnsafe(t *testing.T) {
 		},
 	}
 
-	s.CloneUnsafe()
+	s.CloneRefs()
 
 	// Modify the referenced byte slices, to test whether s retains them (it shouldn't).
 	labelNameBytes[len(labelNameBytes)-1] = 'x'

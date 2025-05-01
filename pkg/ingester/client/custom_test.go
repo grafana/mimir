@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestTimeSeriesChunk_CloneUnsafe(t *testing.T) {
+func TestTimeSeriesChunk_CloneRefs(t *testing.T) {
 	const (
 		origLabelName  = "name"
 		origLabelValue = "value"
@@ -32,7 +32,7 @@ func TestTimeSeriesChunk_CloneUnsafe(t *testing.T) {
 		},
 	}
 
-	c.CloneUnsafe()
+	c.CloneRefs()
 
 	// Modify the referenced byte slices, to test whether c retains them (it shouldn't).
 	labelNameBytes[len(labelNameBytes)-1] = 'x'

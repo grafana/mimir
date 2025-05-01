@@ -150,8 +150,8 @@ func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
 	}
 }
 
-// CloneUnsafe converts all of s' unsafe references to safe copies.
-func (s *Series) CloneUnsafe() *Series {
+// CloneRefs converts all of s' unsafe references to safe copies.
+func (s *Series) CloneRefs() *Series {
 	for i, l := range s.Labels {
 		s.Labels[i].Name = strings.Clone(l.Name)
 		s.Labels[i].Value = strings.Clone(l.Value)

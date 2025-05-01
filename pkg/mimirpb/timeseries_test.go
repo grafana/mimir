@@ -627,7 +627,7 @@ func TestSortExemplars(t *testing.T) {
 	})
 }
 
-func TestTimeSeries_CloneUnsafe(t *testing.T) {
+func TestTimeSeries_CloneRefs(t *testing.T) {
 	const (
 		origLabelName  = "name"
 		origLabelValue = "value"
@@ -653,7 +653,7 @@ func TestTimeSeries_CloneUnsafe(t *testing.T) {
 		},
 	}
 
-	ts.CloneUnsafe()
+	ts.CloneRefs()
 
 	// Modify the referenced byte slices, to test whether ts retains them (it shouldn't).
 	labelNameBytes[len(labelNameBytes)-1] = 'x'

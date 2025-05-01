@@ -803,8 +803,8 @@ func preallocSliceIfNeeded[T any](size int) []T {
 	return nil
 }
 
-// CloneUnsafe converts all of ts' unsafe references to safe copies.
-func (ts *TimeSeries) CloneUnsafe() *TimeSeries {
+// CloneRefs converts all of ts' unsafe references to safe copies.
+func (ts *TimeSeries) CloneRefs() *TimeSeries {
 	for i, l := range ts.Labels {
 		ts.Labels[i].Name = strings.Clone(l.Name)
 		ts.Labels[i].Value = strings.Clone(l.Value)

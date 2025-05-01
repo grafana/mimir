@@ -69,8 +69,8 @@ func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
 }
 
-// CloneUnsafe converts all of c's unsafe references to safe copies.
-func (c *TimeSeriesChunk) CloneUnsafe() *TimeSeriesChunk {
+// CloneRefs converts all of c's unsafe references to safe copies.
+func (c *TimeSeriesChunk) CloneRefs() *TimeSeriesChunk {
 	for i, l := range c.Labels {
 		c.Labels[i].Name = strings.Clone(l.Name)
 		c.Labels[i].Value = strings.Clone(l.Value)
