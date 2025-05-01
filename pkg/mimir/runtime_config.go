@@ -231,6 +231,20 @@ func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logg
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
 	cfg.RuntimeConfig.Loader = loader.load
 
+	// AlertmanagerURL and Notifier sub-options are moving from a global config to a per-tenant config.
+	// We need to preserve the option in the ruler yaml for at least two releases (that is, at least Mimir 3.0).
+	// If the ruler config is configured by the user, map it to its new place in the default limits.
+	if cfg.Ruler.DeprecatedAlertmanagerURL != "" {
+		cfg.LimitsConfig.RulerAlertmanagerClientConfig.AlertmanagerURL = cfg.Ruler.DeprecatedAlertmanagerURL
+	}
+	if !cfg.Ruler.DeprecatedNotifier.IsDefault() {
+		cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig = cfg.Ruler.DeprecatedNotifier
+	}
+	// Ensure the TLS settings reader is propagated.
+	if cfg.Ruler.DeprecatedNotifier.TLS.Reader != cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader {
+		cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = cfg.Ruler.DeprecatedNotifier.TLS.Reader
+	}
+
 	// Make sure to set default limits before we start loading configuration into memory.
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(cfg.Ingester.DefaultLimits)
