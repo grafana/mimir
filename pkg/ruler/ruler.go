@@ -76,6 +76,8 @@ const (
 	rulerPeriodicSyncJitter = 0.1
 
 	// Limit errors
+	errRulesEvaluationDisabled                  = "rules evaluation is disabled for user"
+	errAlertingRulesEvaluationDisabled          = "alerting rules evaluation is disabled for user"
 	errMaxRuleGroupsPerUserLimitExceeded        = "per-user rule groups limit (limit: %d actual: %d) exceeded"
 	errMaxRulesPerRuleGroupPerUserLimitExceeded = "per-user rules per rule group limit (limit: %d actual: %d) exceeded"
 
@@ -956,7 +958,7 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
-func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDesc, string, error) {
+func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse, string, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("no user id found in context")
@@ -976,6 +978,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 	var (
 		mergedMx sync.Mutex
 		merged   []*GroupStateDesc
+		warnings []string
 	)
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
@@ -993,6 +996,9 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 		mergedMx.Lock()
 		merged = append(merged, newGrps.Groups...)
+		if len(newGrps.Warnings) > 0 {
+			warnings = append(warnings, newGrps.Warnings...)
+		}
 		mergedMx.Unlock()
 
 		return nil
@@ -1009,21 +1015,32 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 		return strings.Compare(a.Group.Name, b.Group.Name)
 	})
 
-	// If the request asks for pagination, we fetch req.MaxGroups number
-	// of rule groups from each replica. These are merged and sorted and
-	// we take the top k (k = MaxGroups)
-	if req.MaxGroups > 0 {
-		if len(merged) > int(req.MaxGroups) {
-			groupForToken := merged[req.MaxGroups]
-			return merged[:req.MaxGroups], getRuleGroupNextToken(groupForToken.Group.Namespace, groupForToken.Group.Name), err
-		}
-
-		// If len(merged) <= req.MaxGroups we are
-		// on the last page so there is no token to return
-		return merged, "", err
+	if len(warnings) > 0 {
+		// Remove duplicate warnings.
+		warningsSet := make(map[string]struct{}, len(warnings))
+		warnings = slices.DeleteFunc(warnings, func(s string) bool {
+			if _, ok := warningsSet[s]; ok {
+				return true
+			}
+			warningsSet[s] = struct{}{}
+			return false
+		})
 	}
 
-	return merged, "", err
+	resp := &RulesResponse{
+		Groups:   merged,
+		Warnings: warnings,
+	}
+
+	// If the request asks for pagination, we fetch req.MaxGroups number of rule groups from each replica.
+	// These are merged and sorted, and we take the top k (k = MaxGroups).
+	if req.MaxGroups > 0 && len(resp.Groups) > int(req.MaxGroups) {
+		groupForToken := resp.Groups[req.MaxGroups]
+		resp.Groups = merged[:req.MaxGroups]
+		return resp, getRuleGroupNextToken(groupForToken.Group.Namespace, groupForToken.Group.Name), err
+	}
+
+	return resp, "", err
 }
 
 // SyncRules implements the gRPC Ruler service.
@@ -1039,12 +1056,28 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
+	// Return an error rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
+	// to tell if a tenant doesn't have any rules loaded, or the tenant is blocked from evaluating the rules.
+	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
+		return nil, errTenantRuleEvaluationDisabled
+	}
+
 	groupDescs, err := r.getLocalRules(ctx, userID, *in)
 	if err != nil {
 		return nil, err
 	}
 
-	return &RulesResponse{Groups: groupDescs}, nil
+	resp := &RulesResponse{
+		Groups: groupDescs,
+	}
+	// Return a corresponding warning if tenant's rule evaluation is *partially* disabled.
+	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) {
+		resp.Warnings = append(resp.Warnings, errRulesEvaluationDisabled)
+	}
+	if !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
+		resp.Warnings = append(resp.Warnings, errAlertingRulesEvaluationDisabled)
+	}
+	return resp, nil
 }
 
 type StringFilterSet map[string]struct{}
