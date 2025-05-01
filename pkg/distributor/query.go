@@ -264,14 +264,16 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			var err error
-			var isEOS bool
-			streamingSeriesCount, streamingSeriesBatches, isEOS, err = result.receiveResponse(stream, streamingSeriesCount, streamingSeriesBatches, queryLimiter)
+			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
 			} else if err != nil {
 				return result, err
+			}
+			if labelsBatch != nil {
+				streamingSeriesCount += len(labelsBatch)
+				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
 			}
 			if isEOS {
 				if streamingSeriesCount > 0 {
@@ -387,17 +389,17 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	return resp, nil
 }
 
-func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamingSeriesCount int, streamingSeriesBatches [][]labels.Labels, queryLimiter *limiter.QueryLimiter) (int, [][]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter) ([]labels.Labels, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
-		return 0, nil, false, err
+		return nil, false, err
 	}
 	defer resp.FreeBuffer()
 
 	if len(resp.Timeseries) > 0 {
 		for _, series := range resp.Timeseries {
 			if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
-				return 0, nil, false, limitErr
+				return nil, false, limitErr
 			}
 		}
 
@@ -408,21 +410,21 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 	} else if len(resp.Chunkseries) > 0 {
 		// Enforce the max chunks limits.
 		if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-			return 0, nil, false, err
+			return nil, false, err
 		}
 
 		if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-			return 0, nil, false, err
+			return nil, false, err
 		}
 
 		for _, series := range resp.Chunkseries {
 			if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
-				return 0, nil, false, err
+				return nil, false, err
 			}
 		}
 
 		if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
-			return 0, nil, false, err
+			return nil, false, err
 		}
 
 		for i := range resp.Chunkseries {
@@ -431,31 +433,29 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		r.chunkseriesBatches = append(r.chunkseriesBatches, resp.Chunkseries)
 	} else if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
-		streamingSeriesCount += len(resp.StreamingSeries)
-
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
 			if err := queryLimiter.AddSeries(l); err != nil {
-				return 0, nil, false, err
+				return nil, false, err
 			}
 
 			// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
 			if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
-				return 0, nil, false, err
+				return nil, false, err
 			}
 
 			if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
-				return 0, nil, false, err
+				return nil, false, err
 			}
 
 			labelsBatch = append(labelsBatch, l)
 		}
 
-		streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
+		return labelsBatch, resp.IsEndOfSeriesStream, nil
 	}
 
-	return streamingSeriesCount, streamingSeriesBatches, resp.IsEndOfSeriesStream, nil
+	return nil, resp.IsEndOfSeriesStream, nil
 }
 
 // estimatedIngestersPerSeries estimates the number of ingesters that will have chunks for each streaming series.
