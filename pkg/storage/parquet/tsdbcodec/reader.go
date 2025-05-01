@@ -29,7 +29,7 @@ func BlockToParquetRowsStream(
 	path string,
 	maxParquetIndexSizeLimit int, // TODO what does this mean and how to set it?
 	rowsPerBatch int,
-	batchStreamBufferSize int,
+	bufferedBatches int,
 	logger log.Logger,
 ) (chan []parquet.ParquetRow, []string, int, error) {
 	// TODO
@@ -73,7 +73,7 @@ func BlockToParquetRowsStream(
 			truncateByteArray([]byte(b), maxParquetIndexSizeLimit),
 		)
 	})
-	rc := make(chan []parquet.ParquetRow, batchStreamBufferSize)
+	rc := make(chan []parquet.ParquetRow, bufferedBatches)
 	chunksEncoder := parquet.NewPrometheusParquetChunksEncoder()
 
 	go func() {
@@ -81,8 +81,11 @@ func BlockToParquetRowsStream(
 		defer cReader.Close()
 		defer idx.Close()
 		defer close(rc)
+
 		batch := make([]parquet.ParquetRow, 0, rowsPerBatch)
 		batchMutex := &sync.Mutex{}
+		postingsMutex := &sync.Mutex{}
+
 		for _, metricName := range metricNames {
 			if ctx.Err() != nil {
 				return
@@ -94,16 +97,27 @@ func BlockToParquetRowsStream(
 			eg := &errgroup.Group{}
 			eg.SetLimit(runtime.GOMAXPROCS(0))
 
-			for p.Next() {
-				chks := []chunks.Meta{}
-				builder := labels.ScratchBuilder{}
-
-				at := p.At()
-				err = idx.Series(at, &builder, &chks)
-				if err != nil {
-					return
+			for {
+				postingsMutex.Lock()
+				done := !p.Next()
+				postingsMutex.Unlock()
+				if done {
+					break
 				}
+
 				eg.Go(func() error {
+					chks := []chunks.Meta{}
+					builder := labels.ScratchBuilder{}
+
+					postingsMutex.Lock()
+					at := p.At()
+					postingsMutex.Unlock()
+
+					err := idx.Series(at, &builder, &chks)
+					if err != nil {
+						return err
+					}
+
 					for i := range chks {
 						chks[i].Chunk, _, err = cReader.ChunkOrIterable(chks[i])
 						if err != nil {
