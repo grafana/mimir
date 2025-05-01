@@ -1,6 +1,6 @@
 # undelete-blocks
 
-This program is a disaster recovery tool that can restore deleted Mimir blocks in object storage.
+This program is a disaster recovery tool that can restore deleted Mimir blocks in object storage. If a partial failure is encountered when running this tool it is safe to rerun.
 
 The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
 
