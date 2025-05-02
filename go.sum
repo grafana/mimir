@@ -1278,8 +1278,8 @@ github.com/grafana/alerting v0.0.0-20250424095029-28f3388bdf46 h1:pd6zw/GgbFuVqK
 github.com/grafana/alerting v0.0.0-20250424095029-28f3388bdf46/go.mod h1:pMfhRxL2LZ3Pm8iy7VcVsb9CLYuBtjFYbf1oxgx7yFA=
 github.com/grafana/dskit v0.0.0-20250428145251-88418d7c287b h1:cyLvh7TW+FhDRkRXb5t2/OHNCNG+hOwYge56dSs/LkM=
 github.com/grafana/dskit v0.0.0-20250428145251-88418d7c287b/go.mod h1:aT6thv8yV0shmqbbRbtEwxK9a+H/8fWDOMm2IRx8xx0=
-github.com/grafana/e2e v0.1.2-0.20250424195436-b10e2c0edbd6 h1:EMF+IKn0+HVuyfxGXu6HmcN0hsXuvvllJ/6CWwWZUF8=
-github.com/grafana/e2e v0.1.2-0.20250424195436-b10e2c0edbd6/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
+github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673 h1:Va04sDlP33f1SFUHRTho4QJfDlGTz+/HnBIpYwlqV9Q=
+github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl77qxEYbmt9TgRUz7iLqmjh8lYPpGlKQ=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce/go.mod h1:GFAN9Jn9t1cX7sNfc6ZoFyc4f7i8jtm3SajrWdZM2EE=
 github.com/grafana/gomemcache v0.0.0-20250318131618-74242eea118d h1:oXRJlb9UjVsl6LhqBdbyAQ9YFhExwsj4bjh5vwMNRZY=
