@@ -154,10 +154,12 @@ type BlocksStoreQueryable struct {
 	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
+	dynamicReplication storegateway.DynamicReplication
 }
 
 func NewBlocksStoreQueryable(
 	stores BlocksStoreSet,
+	dynamicReplication storegateway.DynamicReplication,
 	finder BlocksFinder,
 	consistency *BlocksConsistency,
 	limits BlocksStoreLimits,
@@ -173,6 +175,7 @@ func NewBlocksStoreQueryable(
 
 	q := &BlocksStoreQueryable{
 		stores:                   stores,
+		dynamicReplication:       dynamicReplication,
 		finder:                   finder,
 		consistency:              consistency,
 		queryStoreAfter:          queryStoreAfter,
@@ -250,22 +253,16 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
-	maxReplication := gatewayCfg.ShardingRing.ReplicationFactor
-	if gatewayCfg.DynamicReplication.Enabled {
-		maxReplication *= gatewayCfg.DynamicReplication.Multiple
-	}
-
 	consistency := NewBlocksConsistency(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
 		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
 		reg,
-		maxReplication,
 	)
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(stores, dynamicReplication, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -304,6 +301,7 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 		maxT:                     maxt,
 		finder:                   q.finder,
 		stores:                   q.stores,
+		dynamicReplication:       q.dynamicReplication,
 		metrics:                  q.metrics,
 		limits:                   q.limits,
 		streamingChunksBatchSize: q.streamingChunksBatchSize,
@@ -317,6 +315,7 @@ type blocksStoreQuerier struct {
 	minT, maxT               int64
 	finder                   BlocksFinder
 	stores                   BlocksStoreSet
+	dynamicReplication       storegateway.DynamicReplication
 	metrics                  *blocksStoreQueryableMetrics
 	consistency              *BlocksConsistency
 	limits                   BlocksStoreLimits
@@ -561,7 +560,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		consistencyTracker.Complete()
 	}()
 
-	for attempt := 1; attempt <= consistencyTracker.MaxReplication(); attempt++ {
+	for attempt := 1; attempt <= q.dynamicReplication.MaxReplicationFactor(); attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
 		// map of blocks queried so far, with the list of store-gateway addresses for each block.
 		clients, err := q.stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)
