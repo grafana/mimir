@@ -863,7 +863,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
 	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
 		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 	}
 
@@ -1254,7 +1254,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
-		QueryPlanner:                     {API},
+		QueryPlanner:                     {API, ActivityTracker},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},
