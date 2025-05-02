@@ -17,11 +17,14 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
@@ -38,8 +41,9 @@ type Config struct {
 	ResponseStreamingEnabled       bool              `yaml:"response_streaming_enabled" category:"experimental"`
 
 	// This configuration is injected internally.
-	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
-	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
+	MaxConcurrentRequests    int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
+	QuerySchedulerDiscovery  schedulerdiscovery.Config `yaml:"-"`
+	ClusterVerificationLabel string
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -107,6 +111,7 @@ type querierWorker struct {
 
 	maxConcurrentRequests int
 	grpcClientConfig      grpcclient.Config
+	cluster               string
 	log                   log.Logger
 
 	processor processor
@@ -134,7 +139,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 	var (
 		processor    processor
 		grpcCfg      grpcclient.Config
-		workerClient string
+		workerClient = "worker"
 		servs        []services.Service
 		factory      serviceDiscoveryFactory
 	)
@@ -166,19 +171,19 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol)
-	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
+	return newQuerierWorkerWithProcessor(grpcCfg, cfg, log, processor, factory, servs, reg, workerClient)
 }
 
-func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, invalidClusterValidation *prometheus.CounterVec) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, reg prometheus.Registerer, workerClient string) (*querierWorker, error) {
 	f := &querierWorker{
 		grpcClientConfig:         grpcCfg,
-		maxConcurrentRequests:    maxConcReq,
+		maxConcurrentRequests:    cfg.MaxConcurrentRequests,
+		cluster:                  cfg.ClusterVerificationLabel,
 		log:                      log,
 		managers:                 map[string]*processorManager{},
 		instances:                map[string]servicediscovery.Instance{},
 		processor:                processor,
-		invalidClusterValidation: invalidClusterValidation,
+		invalidClusterValidation: util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol),
 	}
 
 	// There's no service discovery in some tests.
@@ -399,8 +404,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := w.grpcClientConfig.DialOption(nil, nil, util.NewInvalidClusterValidationReporter(w.grpcClientConfig.ClusterValidation.Label, w.invalidClusterValidation, w.log))
-
+	opts, err := w.grpcClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.cluster, w.invalidClusterValidation, w.log)}, nil)
 	if err != nil {
 		return nil, err
 	}

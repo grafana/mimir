@@ -58,7 +58,7 @@ type RuleStore interface {
 	// It *MUST* populate fields User, Namespace, Name of all rule groups.
 	// It *MAY* populate the actual rules.
 	// If namespace is empty, groups from all namespaces are returned.
-	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...Option) (rulespb.RuleGroupList, error)
+	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, maxGroups int, opts ...Option) (rulespb.RuleGroupList, error)
 
 	// LoadRuleGroups loads rules for each rule group in the map.
 	//

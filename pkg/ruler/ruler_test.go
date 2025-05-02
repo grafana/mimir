@@ -120,7 +120,7 @@ func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (Rul
 
 func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer, rulerAddrMap map[string]*Ruler) *mockRulerClientsPool {
 	return &mockRulerClientsPool{
-		ClientsPool:  newRulerClientPool(cfg.ClientTLSConfig, logger, reg),
+		ClientsPool:  newRulerClientPool(cfg.ClientTLSConfig, "", logger, reg),
 		cfg:          cfg,
 		rulerAddrMap: rulerAddrMap,
 	}
@@ -1638,7 +1638,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	ctx := context.Background()
 
 	t.Run("ListRuleGroupsForUserAndNamespace()", func(t *testing.T) {
-		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", 0)
 		require.NoError(t, err)
 
 		if expectedDeleted {

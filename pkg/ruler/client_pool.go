@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -41,7 +42,7 @@ func (p *rulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerCl
 	return c.(RulerClient), nil
 }
 
-func newRulerClientPool(clientCfg grpcclient.Config, logger log.Logger, reg prometheus.Registerer) ClientsPool {
+func newRulerClientPool(clientCfg grpcclient.Config, cluster string, logger log.Logger, reg prometheus.Registerer) ClientsPool {
 	// We prefer sane defaults instead of exposing further config options.
 	poolCfg := client.PoolConfig{
 		CheckInterval:      10 * time.Second,
@@ -55,26 +56,27 @@ func newRulerClientPool(clientCfg grpcclient.Config, logger log.Logger, reg prom
 	})
 
 	return &rulerClientsPool{
-		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, reg, logger), clientsCount, logger),
+		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, cluster, reg, logger), clientsCount, logger),
 	}
 }
 
-func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
+func newRulerClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_ruler_client_request_duration_seconds",
 		Help:    "Time spent executing requests to the ruler.",
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler", util.GRPCProtocol)
+	invalidClusterValidation := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "ruler", util.GRPCProtocol)
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialRulerClient(clientCfg, inst, requestDuration, invalidClusterValidation, logger)
+		return dialRulerClient(clientCfg, cluster, inst, requestDuration, invalidClusterValidation, logger)
 	})
 }
 
-func dialRulerClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*rulerExtendedClient, error) {
+func dialRulerClient(clientCfg grpcclient.Config, cluster string, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*rulerExtendedClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster, invalidClusterValidation, logger))
+	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}

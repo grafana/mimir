@@ -225,6 +225,36 @@
         },
         {
           "kind": "field",
+          "name": "cluster_verification_label",
+          "required": false,
+          "desc": "Optionally define the server's cluster verification label, which are sent with requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.cluster-verification-label",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "cluster_verification_label_check",
+          "required": false,
+          "desc": "Enable validation that HTTP and/or gRPC requests have the configured -server.cluster-verification-label. Ignored if the latter is not set. One of none,all,grpc,http.",
+          "fieldValue": null,
+          "fieldDefaultValue": "none",
+          "fieldFlag": "server.cluster-verification-label-check",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "auxiliary_url_paths",
+          "required": false,
+          "desc": "Optionally define auxiliary URL paths, that should not be validated wrt. cluster verification label.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.auxiliary-url-paths",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "tls_cipher_suites",
           "required": false,
           "desc": "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.",
@@ -409,7 +439,7 @@
           "kind": "field",
           "name": "register_instrumentation",
           "required": false,
-          "desc": "Register the intrumentation handlers (/metrics etc).",
+          "desc": "Register the instrumentation handlers (/metrics etc).",
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "server.register-instrumentation",
@@ -6353,6 +6383,15 @@
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "clusterverificationlabel",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
         }
       ],
       "fieldValue": null,
@@ -13251,27 +13290,6 @@
               "fieldFlag": "ruler.client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "block",
-              "name": "cluster_validation",
-              "required": false,
-              "desc": "",
-              "blockEntries": [
-                {
-                  "kind": "field",
-                  "name": "label",
-                  "required": false,
-                  "desc": "Optionally define the cluster validation label.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.client.cluster-validation.label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
-                }
-              ],
-              "fieldValue": null,
-              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,

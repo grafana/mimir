@@ -31,7 +31,7 @@ type Config struct {
 	// series is considered stale.
 	LookbackDelta time.Duration `yaml:"lookback_delta" category:"advanced"`
 
-	MimirQueryEngine streamingpromql.EngineOpts `yaml:"mimir_query_engine" category:"experimental"`
+	MimirQueryEngine streamingpromql.Features `yaml:"mimir_query_engine" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -70,5 +70,5 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts
 
-	return commonOpts, cfg.MimirQueryEngine
+	return commonOpts, mqeOpts
 }
