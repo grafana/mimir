@@ -245,8 +245,8 @@ func (pr *ParquetReader) ScanRows(ctx context.Context, rows [][]int64, full bool
 	span, ctx := opentracing.StartSpanFromContext(ctx, "ParquetReader.ScanRows")
 	defer span.Finish()
 
-	ci, ok := pr.columnIndexMap[m.Name]
-	if !ok {
+	ci, validColumn := pr.columnIndexMap[m.Name]
+	if !validColumn {
 		if m.Matches("") {
 			return rows, nil
 		}
