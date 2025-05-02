@@ -15,8 +15,10 @@ import (
 	spb "github.com/gogo/googleapis/google/rpc"
 	"github.com/gogo/protobuf/types"
 	"github.com/gogo/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/log"
 )
@@ -58,14 +60,15 @@ func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 
 // FromHTTPRequestWithCluster converts an ordinary http.Request into an httpgrpc.HTTPRequest.
 // It's the same as FromHTTPRequest except that if cluster is non-empty, it has to be equal to the
-// middleware.ClusterVerificationLabelHeader header (or an error is returned).
+// middleware.ClusterValidationLabelHeader header (or an error is returned).
 func FromHTTPRequestWithCluster(r *http.Request, cluster string, invalidClusters *prometheus.CounterVec) (*HTTPRequest, error) {
 	if cluster != "" {
-		if c := r.Header.Get(clusterutil.ClusterVerificationLabelHeader); c != cluster {
+		if c := r.Header.Get(clusterutil.ClusterValidationLabelHeader); c != cluster {
 			if invalidClusters != nil {
-				invalidClusters.WithLabelValues("FromHTTPRequestWithCluster", c, clusterutil.FailureClient).Inc()
+				invalidClusters.WithLabelValues("FromHTTPRequestWithCluster").Inc()
 			}
-			return nil, fmt.Errorf("httpgrpc.FromHTTPRequestWithCluster: %q header should be %q, but is %q", clusterutil.ClusterVerificationLabelHeader, cluster, c)
+			return nil, fmt.Errorf("httpgrpc.FromHTTPRequestWithCluster: %q header should be %q, but is %q",
+				clusterutil.ClusterValidationLabelHeader, cluster, c)
 		}
 	}
 	return FromHTTPRequest(r)

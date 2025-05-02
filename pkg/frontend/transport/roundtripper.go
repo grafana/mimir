@@ -14,11 +14,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/dskit/middleware"
 )
 
 // GrpcRoundTripper is similar to http.RoundTripper, but works with HTTP requests converted to protobuf messages.
@@ -26,22 +23,28 @@ type GrpcRoundTripper interface {
 	RoundTripGRPC(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error)
 }
 
-func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper, cluster string, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
-	invalidClusters := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "query-frontend", util.HTTPProtocol)
-	return &grpcRoundTripperAdapter{
-		roundTripper:    r,
-		cluster:         cluster,
-		invalidClusters: invalidClusters,
-		logger:          logger,
+func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper, cluster string, InvalidClusterValidationReporter middleware.InvalidClusterValidationReporter, logger log.Logger) http.RoundTripper {
+	if r == nil {
+		return nil
 	}
+
+	rt := &grpcRoundTripperAdapter{
+		roundTripper: r,
+		cluster:      cluster,
+		logger:       logger,
+	}
+	if cluster == "" {
+		return rt
+	}
+
+	return middleware.ClusterValidationRoundTripper(cluster, InvalidClusterValidationReporter, rt)
 }
 
 // This adapter wraps GrpcRoundTripper and converted it into http.RoundTripper
 type grpcRoundTripperAdapter struct {
-	roundTripper    GrpcRoundTripper
-	cluster         string
-	invalidClusters *prometheus.CounterVec
-	logger          log.Logger
+	roundTripper GrpcRoundTripper
+	cluster      string
+	logger       log.Logger
 }
 
 type buffer struct {
@@ -54,7 +57,7 @@ func (b *buffer) Bytes() []byte {
 }
 
 func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
-	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster, a.invalidClusters)
+	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster, nil)
 	if err != nil {
 		level.Warn(a.logger).Log("msg", "grpcRoundTripperAdapter has failed while trying to call httpgrpc.FromHTTPRequestWithCluster", "err", err)
 		return nil, err
@@ -65,7 +68,6 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 		var ok bool
 		resp, ok = httpgrpc.HTTPResponseFromError(err)
 		level.Warn(a.logger).Log("msg", "grpcRoundTripperAdapter has failed while trying to call RoundTripGRPC()", "httpgrpc error", ok, "err", err)
-		a.invalidClusters.WithLabelValues(r.URL.Path, a.cluster, clusterutil.FailureServer)
 		if !ok {
 			return nil, err
 		}
