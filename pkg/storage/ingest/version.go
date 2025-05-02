@@ -85,7 +85,7 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 	return records, nil
 }
 
-func DeserializeRecordContent(content []byte, wr *mimirpb.WriteRequest, version int) error {
+func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
 	switch version {
 	case 0:
 		// V0 is body-comptaible with V1.
@@ -97,6 +97,6 @@ func DeserializeRecordContent(content []byte, wr *mimirpb.WriteRequest, version 
 	}
 }
 
-func deserializeRecordContentV1(content []byte, wr *mimirpb.WriteRequest) error {
+func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest) error {
 	return wr.Unmarshal(content)
 }
