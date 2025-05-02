@@ -122,6 +122,26 @@ func TestScanRows(t *testing.T) {
 		require.Equal(t, "brazil", r.Columns["country"])
 	}
 
+	// Noop for labels.MatchNotRegexp matcher on col that does not exits
+	foundRows, err = r.ScanRows(context.Background(), foundRows, false, labels.MustNewMatcher(labels.MatchNotRegexp, "this_label_does_not_exist", "some_regex.*"), sts)
+	require.NoError(t, err)
+	result, err = r.Materialize(context.Background(), foundRows, []int{0, 1, 2}, nil, false, sts)
+	require.NoError(t, err)
+	require.Len(t, result, len(stats)*len(indices))
+	for _, r := range result {
+		require.Equal(t, "brazil", r.Columns["country"])
+	}
+
+	// Noop for labels.MatchEqual matcher on col that does not exits
+	foundRows, err = r.ScanRows(context.Background(), foundRows, false, labels.MustNewMatcher(labels.MatchEqual, "this_label_does_not_exist", ""), sts)
+	require.NoError(t, err)
+	result, err = r.Materialize(context.Background(), foundRows, []int{0, 1, 2}, nil, false, sts)
+	require.NoError(t, err)
+	require.Len(t, result, len(stats)*len(indices))
+	for _, r := range result {
+		require.Equal(t, "brazil", r.Columns["country"])
+	}
+
 	// Scan for stats max
 	foundRows, err = r.ScanRows(context.Background(), foundRows, false, labels.MustNewMatcher(labels.MatchEqual, "stats", "max"), sts)
 	require.NoError(t, err)
@@ -167,12 +187,13 @@ func TestScanRows(t *testing.T) {
 
 	require.Equal(t, len(countries), len(allCountriesFromResults))
 
-	// Should return empty for equality matcher on col that does not exits
+	// Should return empty for labels.MatchEqual matcher on col that does not exits
 	foundRows, err = r.ScanRows(context.Background(), foundRows, true, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"), sts)
 	require.NoError(t, err)
 	result, err = r.Materialize(context.Background(), foundRows, []int{0, 1, 2}, nil, false, sts)
 	require.NoError(t, err)
 	require.Len(t, result, 0)
+
 }
 
 func generateRows(sortedKey string, numberOfCols, numberOfRows int, numberOfKeys int) []ParquetRow {
