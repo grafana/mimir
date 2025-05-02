@@ -79,7 +79,7 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("deserialize v1", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			wr := &mimirpb.PreallocWriteRequest{}
 			err := DeserializeRecordContent(v1bytes, wr, 1)
 			if err != nil {
@@ -90,7 +90,7 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	})
 
 	b.Run("deserialize v2", func(b *testing.B) {
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			wr := &mimirpb.PreallocWriteRequest{}
 			err := DeserializeRecordContent(v2bytes, wr, 2)
 			if err != nil {
