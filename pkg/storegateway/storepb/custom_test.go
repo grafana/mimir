@@ -15,9 +15,11 @@ func TestSeries_CloneRefs(t *testing.T) {
 	const (
 		origLabelName  = "name"
 		origLabelValue = "value"
+		origChunk      = "chunk"
 	)
 	labelNameBytes := []byte(origLabelName)
 	labelValueBytes := []byte(origLabelValue)
+	chunkBytes := []byte(origChunk)
 	s := Series{
 		Labels: []mimirpb.LabelAdapter{
 			{
@@ -28,7 +30,7 @@ func TestSeries_CloneRefs(t *testing.T) {
 		Chunks: []AggrChunk{
 			{
 				Raw: Chunk{
-					Data: mimirpb.UnsafeByteSlice(labelValueBytes),
+					Data: mimirpb.UnsafeByteSlice(origChunk),
 				},
 			},
 		},
@@ -39,13 +41,14 @@ func TestSeries_CloneRefs(t *testing.T) {
 	// Modify the referenced byte slices, to test whether s retains them (it shouldn't).
 	labelNameBytes[len(labelNameBytes)-1] = 'x'
 	labelValueBytes[len(labelValueBytes)-1] = 'x'
+	chunkBytes[len(chunkBytes)-1] = 'x'
 
 	for _, l := range s.Labels {
 		require.Equal(t, origLabelName, l.Name)
 		require.Equal(t, origLabelValue, l.Value)
 	}
 	for _, c := range s.Chunks {
-		require.Equal(t, origLabelValue, string(c.Raw.Data))
+		require.Equal(t, origChunk, string(c.Raw.Data))
 	}
 }
 
