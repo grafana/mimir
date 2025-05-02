@@ -5129,6 +5129,206 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "block",
+          "name": "ruler_alertmanager_client_config",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "alertmanager_url",
+              "required": false,
+              "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-url",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-cert-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-key-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-ca-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "Override the expected name on the server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-server-name",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "Skip validating server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.alertmanager-client.tls-insecure-skip-verify",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cipher_suites",
+              "required": false,
+              "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-cipher-suites",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_min_version",
+              "required": false,
+              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-min-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_username",
+              "required": false,
+              "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.basic-auth-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_password",
+              "required": false,
+              "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "oauth2",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "client_id",
+                  "required": false,
+                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "client_secret",
+                  "required": false,
+                  "desc": "OAuth2 client secret.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "token_url",
+                  "required": false,
+                  "desc": "Endpoint used to fetch access token.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "scopes",
+                  "required": false,
+                  "desc": "Optional scopes to include with the token request.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": {},
+                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "proxy_url",
+              "required": false,
+              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.proxy-url",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
@@ -13093,11 +13293,11 @@
           "kind": "field",
           "name": "alertmanager_url",
           "required": false,
-          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
+          "desc": "Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "ruler.alertmanager-url",
-          "fieldType": "string"
+          "fieldType": "string",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -13142,10 +13342,9 @@
               "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldDefaultValue": false,
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -13153,10 +13352,9 @@
               "kind": "field",
               "name": "tls_cert_path",
               "required": false,
-              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-cert-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13164,10 +13362,9 @@
               "kind": "field",
               "name": "tls_key_path",
               "required": false,
-              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-key-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13175,10 +13372,9 @@
               "kind": "field",
               "name": "tls_ca_path",
               "required": false,
-              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-ca-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13186,10 +13382,9 @@
               "kind": "field",
               "name": "tls_server_name",
               "required": false,
-              "desc": "Override the expected name on the server certificate.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-server-name",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13197,10 +13392,9 @@
               "kind": "field",
               "name": "tls_insecure_skip_verify",
               "required": false,
-              "desc": "Skip validating server certificate.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ruler.alertmanager-client.tls-insecure-skip-verify",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -13211,7 +13405,6 @@
               "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-cipher-suites",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13219,10 +13412,9 @@
               "kind": "field",
               "name": "tls_min_version",
               "required": false,
-              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13230,21 +13422,18 @@
               "kind": "field",
               "name": "basic_auth_username",
               "required": false,
-              "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.basic-auth-username",
               "fieldType": "string"
             },
             {
-              "kind": "field",
+              "kind": "block",
               "name": "basic_auth_password",
               "required": false,
-              "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
-              "fieldType": "string"
+              "fieldDefaultValue": null
             },
             {
               "kind": "block",
@@ -13256,50 +13445,44 @@
                   "kind": "field",
                   "name": "client_id",
                   "required": false,
-                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
                   "fieldType": "string"
                 },
                 {
-                  "kind": "field",
+                  "kind": "block",
                   "name": "client_secret",
                   "required": false,
-                  "desc": "OAuth2 client secret.",
+                  "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
-                  "fieldType": "string"
+                  "fieldDefaultValue": null
                 },
                 {
                   "kind": "field",
                   "name": "token_url",
                   "required": false,
-                  "desc": "Endpoint used to fetch access token.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
                   "fieldType": "string"
                 },
                 {
                   "kind": "field",
                   "name": "scopes",
                   "required": false,
-                  "desc": "Optional scopes to include with the token request.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
                   "fieldType": "string"
                 },
                 {
                   "kind": "field",
                   "name": "endpoint_params",
                   "required": false,
-                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": {},
-                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
                   "fieldType": "map of string to string",
                   "fieldCategory": "advanced"
                 }
@@ -13311,10 +13494,9 @@
               "kind": "field",
               "name": "proxy_url",
               "required": false,
-              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.proxy-url",
               "fieldType": "string",
               "fieldCategory": "advanced"
             }

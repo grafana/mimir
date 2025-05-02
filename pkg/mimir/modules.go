@@ -227,7 +227,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader = t.Vault
-	t.Cfg.Frontend.QueryMiddleware.Redis.TLS.Reader = t.Vault
+	t.Cfg.Frontend.QueryMiddleware.ResultsCache.Redis.TLS.Reader = t.Vault
 
 	// Update Configs - GRPC Clients
 	// lint:sorted
@@ -237,10 +237,13 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
-	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
+	t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader = t.Vault
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
+
+	// Update Configs - LimitsConfigs
+	t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Vault
 
 	// Update the Server
 	updateServerTLSCfgFunc := func(vault *vault.Vault, tlsConfig *server.TLSConfig) error {
@@ -860,7 +863,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
 	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
 		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 	}
 
@@ -981,7 +984,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -1251,7 +1254,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
-		QueryPlanner:                     {API},
+		QueryPlanner:                     {API, ActivityTracker},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},
