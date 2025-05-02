@@ -56,17 +56,17 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCacheConfig       `yaml:"results_cache"`
-	CacheResults             bool          `yaml:"cache_results"`
-	CacheErrors              bool          `yaml:"cache_errors"`
-	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
-	PrunedQueries            bool          `yaml:"prune_queries" category:"experimental"`
-	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	SplitQueriesByInterval   time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache             ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults             bool               `yaml:"cache_results"`
+	CacheErrors              bool               `yaml:"cache_errors"`
+	MaxRetries               int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool               `yaml:"parallelize_shardable_queries"`
+	PrunedQueries            bool               `yaml:"prune_queries" category:"experimental"`
+	TargetSeriesPerShard     uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool               `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool               `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -98,7 +98,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	cfg.ResultsCacheConfig.RegisterFlags(f)
+	cfg.ResultsCache.RegisterFlags(f)
 }
 
 // Validate validates the config.
@@ -110,7 +110,7 @@ func (cfg *Config) Validate() error {
 	}
 
 	if cfg.CacheResults || cfg.CacheErrors || cfg.cardinalityBasedShardingEnabled() {
-		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
+		if err := cfg.ResultsCache.Validate(); err != nil {
 			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
 	}
@@ -241,11 +241,11 @@ func newQueryTripperware(
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error
 
-		c, err = newResultsCache(cfg.ResultsCacheConfig, log, registerer)
+		c, err = newResultsCache(cfg.ResultsCache, log, registerer)
 		if err != nil {
 			return nil, err
 		}
-		c = cache.NewCompression(cfg.Compression, c, log)
+		c = cache.NewCompression(cfg.ResultsCache.Compression, c, log)
 	}
 
 	cacheKeyGenerator := cfg.CacheKeyGenerator

@@ -249,7 +249,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
 	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits)
 	require.NoError(t, err)
 
 	return manager
@@ -272,9 +272,12 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 
 	// We create an empty rule store so that the ruler will not load any rule from it.
 	cfg := defaultRulerConfig(t)
-	cfg.AlertmanagerURL = ts.URL
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = ts.URL
+	})
 
-	manager := prepareRulerManager(t, cfg)
+	manager := prepareRulerManager(t, cfg, withLimits(overrides))
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")

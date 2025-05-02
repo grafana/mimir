@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/objstore/providers/s3"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -500,6 +501,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(validation.LimitedQueriesConfig{})
 	case "blocked_requests_config...":
 		return reflect.TypeOf([]*validation.BlockedRequest{})
+	case "ruler_alertmanager_client_config...":
+		return reflect.TypeOf(notifier.AlertmanagerClientConfig{})
 	case "map of string to float64":
 		return reflect.TypeOf(flagext.LimitsMap[float64]{})
 	case "map of string to int":

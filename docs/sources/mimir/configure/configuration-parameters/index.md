@@ -1944,11 +1944,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.rule-path
 [rule_path: <string> | default = "./data-ruler/"]
 
-# Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
-# to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per
-# group can be supported by using DNS service discovery format, comprehensive of
-# the scheme. Basic auth is supported as part of the URL.
-# CLI flag: -ruler.alertmanager-url
+# (deprecated) Deprecated, use
+# limits.ruler_alertmanager_client_config.alertmanager_url instead.
 [alertmanager_url: <string> | default = ""]
 
 # (advanced) How long to wait between refreshing DNS resolutions of Alertmanager
@@ -1966,33 +1963,25 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.notification-timeout
 [notification_timeout: <duration> | default = 10s]
 
+# Deprecated, use limits.ruler_alertmanager_client_config instead.
 alertmanager_client:
-  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
-  # CLI flag: -ruler.alertmanager-client.tls-enabled
-  [tls_enabled: <boolean> | default = true]
+  # (advanced)
+  [tls_enabled: <boolean> | default = ]
 
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ruler.alertmanager-client.tls-cert-path
+  # (advanced)
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
-  # CLI flag: -ruler.alertmanager-client.tls-key-path
+  # (advanced)
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ruler.alertmanager-client.tls-ca-path
+  # (advanced)
   [tls_ca_path: <string> | default = ""]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ruler.alertmanager-client.tls-server-name
+  # (advanced)
   [tls_server_name: <string> | default = ""]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+  # (advanced)
+  [tls_insecure_skip_verify: <boolean> | default = ]
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
@@ -2025,50 +2014,28 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
   # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
   # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-  # CLI flag: -ruler.alertmanager-client.tls-cipher-suites
   [tls_cipher_suites: <string> | default = ""]
 
-  # (advanced) Override the default minimum TLS version. Allowed values:
-  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  # CLI flag: -ruler.alertmanager-client.tls-min-version
+  # (advanced)
   [tls_min_version: <string> | default = ""]
 
-  # HTTP Basic authentication username. It overrides the username set in the URL
-  # (if any).
-  # CLI flag: -ruler.alertmanager-client.basic-auth-username
   [basic_auth_username: <string> | default = ""]
 
-  # HTTP Basic authentication password. It overrides the password set in the URL
-  # (if any).
-  # CLI flag: -ruler.alertmanager-client.basic-auth-password
-  [basic_auth_password: <string> | default = ""]
+  basic_auth_password:
 
   oauth2:
-    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
-    # Alertmanager.
-    # CLI flag: -ruler.alertmanager-client.oauth.client_id
     [client_id: <string> | default = ""]
 
-    # OAuth2 client secret.
-    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
-    [client_secret: <string> | default = ""]
+    client_secret:
 
-    # Endpoint used to fetch access token.
-    # CLI flag: -ruler.alertmanager-client.oauth.token_url
     [token_url: <string> | default = ""]
 
-    # Optional scopes to include with the token request.
-    # CLI flag: -ruler.alertmanager-client.oauth.scopes
     [scopes: <string> | default = ""]
 
-    # (advanced) Optional additional URL parameters to send to the token URL.
-    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
-    [endpoint_params: <map of string to string> | default = {}]
+    # (advanced)
+    [endpoint_params: <map of string to string> | default = ]
 
-  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
-  # requests through. Applies to all requests, including auxiliary traffic, such
-  # as OAuth token requests.
-  # CLI flag: -ruler.alertmanager-client.proxy-url
+  # (advanced)
   [proxy_url: <string> | default = ""]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
@@ -3826,6 +3793,120 @@ The `limits` block configures default and per-tenant limits imposed by component
 # being greater than 0. Ideally this flag should be a lower value. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
 [ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
+
+# Per-tenant Alertmanager client configuration. If not supplied, the tenant's
+# notifications are sent to the ruler-wide default.
+ruler_alertmanager_client_config:
+  # Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
+  # to. Each URL is treated as a separate group. Multiple Alertmanagers in HA
+  # per group can be supported by using DNS service discovery format,
+  # comprehensive of the scheme. Basic auth is supported as part of the URL.
+  # CLI flag: -ruler.alertmanager-url
+  [alertmanager_url: <string> | default = ""]
+
+  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
+  # CLI flag: -ruler.alertmanager-client.tls-enabled
+  [tls_enabled: <boolean> | default = true]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ruler.alertmanager-client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ruler.alertmanager-client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ruler.alertmanager-client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ruler.alertmanager-client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ruler.alertmanager-client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ruler.alertmanager-client.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
+  # HTTP Basic authentication username. It overrides the username set in the URL
+  # (if any).
+  # CLI flag: -ruler.alertmanager-client.basic-auth-username
+  [basic_auth_username: <string> | default = ""]
+
+  # HTTP Basic authentication password. It overrides the password set in the URL
+  # (if any).
+  # CLI flag: -ruler.alertmanager-client.basic-auth-password
+  [basic_auth_password: <string> | default = ""]
+
+  oauth2:
+    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
+    # Alertmanager.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_id
+    [client_id: <string> | default = ""]
+
+    # OAuth2 client secret.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
+    [client_secret: <string> | default = ""]
+
+    # Endpoint used to fetch access token.
+    # CLI flag: -ruler.alertmanager-client.oauth.token_url
+    [token_url: <string> | default = ""]
+
+    # Optional scopes to include with the token request.
+    # CLI flag: -ruler.alertmanager-client.oauth.scopes
+    [scopes: <string> | default = ""]
+
+    # (advanced) Optional additional URL parameters to send to the token URL.
+    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
+    [endpoint_params: <map of string to string> | default = {}]
+
+  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
+  # requests through. Applies to all requests, including auxiliary traffic, such
+  # as OAuth token requests.
+  # CLI flag: -ruler.alertmanager-client.proxy-url
+  [proxy_url: <string> | default = ""]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
