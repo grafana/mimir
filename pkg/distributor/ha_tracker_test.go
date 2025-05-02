@@ -367,6 +367,8 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 				GetReplicaDescCodec(),
 			}
 
+			config.NotifyInterval = 250 * time.Millisecond
+
 			memberListSvc := memberlist.NewKVInitService(
 				&config,
 				logger,
@@ -399,8 +401,6 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 			// Write the first time.
 			err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now)
 			assert.NoError(t, err)
-
-			time.Sleep(time.Second)
 
 			key := fmt.Sprintf("%s/%s", tenant, cluster)
 
