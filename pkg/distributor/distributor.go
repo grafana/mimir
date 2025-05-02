@@ -2817,8 +2817,6 @@ respsLoop:
 		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
-		// Make safe copies of labels.
-		m.InternStrings(strings.Clone)
 		result = append(result, m)
 	}
 	return result, nil
