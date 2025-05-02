@@ -99,19 +99,16 @@ func BlockToParquetRowsStream(
 
 			for {
 				postingsMutex.Lock()
-				done := !p.Next()
-				postingsMutex.Unlock()
-				if done {
+				if !p.Next() {
+					postingsMutex.Unlock()
 					break
 				}
+				at := p.At()
+				postingsMutex.Unlock()
 
 				eg.Go(func() error {
 					chks := []chunks.Meta{}
 					builder := labels.ScratchBuilder{}
-
-					postingsMutex.Lock()
-					at := p.At()
-					postingsMutex.Unlock()
 
 					err := idx.Series(at, &builder, &chks)
 					if err != nil {
