@@ -13,7 +13,7 @@ import (
 
 const (
 	RecordVersionHeaderKey = "Version"
-	LatestRecordVersion    = 1
+	LatestRecordVersion    = 2
 )
 
 func ValidateRecordVersion(version int) error {
@@ -92,11 +92,18 @@ func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, 
 		fallthrough
 	case 1:
 		return deserializeRecordContentV1(content, wr)
+	case 2:
+		return deserializeRecordContentV2(content, wr)
 	default:
 		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, LatestRecordVersion)
 	}
 }
 
 func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest) error {
+	return wr.Unmarshal(content)
+}
+
+func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
+	wr.UnmarshalFromRW2 = true
 	return wr.Unmarshal(content)
 }
