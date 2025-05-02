@@ -17,6 +17,9 @@ The Alertmanager resources dashboard shows CPU, memory, disk and networking metr
 
 Use this dashboard for the following use cases:
 
+- Ensure the Alertmanager's performance and reliability across a multi-tenant Mimir cluster.
+- Monitor resource comsumption in real time.
+- Plan future resouce allocation needs.
 
 This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
