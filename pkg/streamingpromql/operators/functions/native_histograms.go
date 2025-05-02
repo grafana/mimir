@@ -112,9 +112,13 @@ func HistogramStdDevStdVar(isStdDev bool) InstantVectorSeriesFunction {
 					continue
 				}
 				var val float64
-				if bucket.Lower <= 0 && 0 <= bucket.Upper {
+				if histogram.H.UsesCustomBuckets() {
+					// Use arithmetic mean of bucket boundaries for custom buckets.
+					val = (bucket.Upper + bucket.Lower) / 2
+				} else if bucket.Lower <= 0 && 0 <= bucket.Upper {
 					val = 0
 				} else {
+					// Use geometric mean of bucket boundaries for exponential buckets.
 					val = math.Sqrt(bucket.Upper * bucket.Lower)
 					if bucket.Upper < 0 {
 						val = -val
