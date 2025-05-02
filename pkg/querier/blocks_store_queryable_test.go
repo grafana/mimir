@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2076,16 +2077,16 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 		storeSetResponses   []interface{}
 		expectedLabelNames  []string
 		expectedLabelValues []string // For __name__
-		expectedErr         string
+		expectedErrRegex    string
 		expectedMetrics     string
 	}{
 		"no block in the storage matching the query time range": {
-			finderResult: nil,
-			expectedErr:  "",
+			finderResult:     nil,
+			expectedErrRegex: "",
 		},
 		"error while finding blocks matching the query time range": {
-			finderErr:   errors.New("unable to find blocks"),
-			expectedErr: "unable to find blocks",
+			finderErr:        errors.New("unable to find blocks"),
+			expectedErrRegex: "unable to find blocks",
 		},
 		"error while getting clients to query the store-gateway": {
 			finderResult: bucketindex.Blocks{
@@ -2095,7 +2096,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			storeSetResponses: []interface{}{
 				errors.New("no client found"),
 			},
-			expectedErr: "no client found",
+			expectedErrRegex: "no client found",
 		},
 		"a single store-gateway instance holds the required blocks": {
 			finderResult: bucketindex.Blocks{
@@ -2304,7 +2305,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
 			},
-			expectedErr: newStoreConsistencyCheckFailedError([]ulid.ULID{block2}).Error(),
+			expectedErrRegex: regexp.QuoteMeta(newStoreConsistencyCheckFailedError([]ulid.ULID{block2}).Error()),
 		},
 		"multiple store-gateway instances have some missing blocks (consistency check failed)": {
 			finderResult: bucketindex.Blocks{
@@ -2346,7 +2347,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				// Second attempt returns an error because there are no other store-gateways left.
 				errors.New("no store-gateway remaining after exclude"),
 			},
-			expectedErr: newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}).Error(),
+			expectedErrRegex: regexp.QuoteMeta(newStoreConsistencyCheckFailedError([]ulid.ULID{block3, block4}).Error()),
 		},
 		"multiple store-gateway instances have some missing blocks but queried from a replica during subsequent attempts": {
 			// Block1 has series1
@@ -2513,12 +2514,28 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_count 1
 			`,
 		},
+		"unprocessable entity from store-gateway": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{
+						remoteAddr:           "1.1.1.1",
+						mockedLabelNamesErr:  status.Error(http.StatusUnprocessableEntity, "limit exceeded"),
+						mockedLabelValuesErr: status.Error(http.StatusUnprocessableEntity, "limit exceeded"),
+					}: {block1, block2},
+				},
+			},
+			expectedErrRegex: "non-retriable error while fetching label (names|values) from store: rpc error: code = Code\\(422\\) desc = limit exceeded",
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Splitting it because we need a new registry for names and values.
-			// And also the initial expectedErr checking needs to be done for both.
+			// And also the initial expectedErrRegex checking needs to be done for both.
 			for _, testFunc := range []string{"LabelNames", "LabelValues"} {
 				ctx := user.InjectOrgID(context.Background(), "user-1")
 				reg := prometheus.NewPedanticRegistry()
@@ -2539,8 +2556,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 				if testFunc == "LabelNames" {
 					names, warnings, err := q.LabelNames(ctx, &storage.LabelHints{})
-					if testData.expectedErr != "" {
-						require.Equal(t, testData.expectedErr, err.Error())
+					if testData.expectedErrRegex != "" {
+						require.Regexp(t, testData.expectedErrRegex, err.Error())
 						continue
 					}
 
@@ -2556,8 +2573,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 				if testFunc == "LabelValues" {
 					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
-					if testData.expectedErr != "" {
-						require.Equal(t, testData.expectedErr, err.Error())
+					if testData.expectedErrRegex != "" {
+						require.Regexp(t, testData.expectedErrRegex, err.Error())
 						continue
 					}
 
