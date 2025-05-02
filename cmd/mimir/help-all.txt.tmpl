@@ -3213,12 +3213,18 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
-  -server.auxiliary-url-paths comma-separated-list-of-strings
-    	Optionally define auxiliary URL paths, that should not be validated wrt. cluster verification label.
-  -server.cluster-verification-label string
-    	Optionally define the server's cluster verification label, which are sent with requests.
-  -server.cluster-verification-label-check value
-    	Enable validation that HTTP and/or gRPC requests have the configured -server.cluster-verification-label. Ignored if the latter is not set. One of none,all,grpc,http.
+  -server.cluster-validation.grpc.enabled
+    	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
+  -server.cluster-validation.grpc.soft-validation
+    	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.grpc.enabled
+  -server.cluster-validation.http.enabled
+    	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
+  -server.cluster-validation.http.excluded-paths comma-separated-list-of-strings
+    	[experimental] Comma-separated list of url paths that are excluded from the cluster validation check.
+  -server.cluster-validation.http.soft-validation
+    	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled
+  -server.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-conn-limit int
@@ -3304,7 +3310,7 @@ Usage of ./cmd/mimir/mimir:
   -server.proxy-protocol-enabled
     	[experimental] Enables PROXY protocol.
   -server.register-instrumentation
-    	Register the instrumentation handlers (/metrics etc). (default true)
+    	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
   -server.throughput.latency-cutoff duration

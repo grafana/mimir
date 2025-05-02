@@ -53,14 +53,13 @@ func newBlocksStoreReplicationSet(
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
 	limits BlocksStoreLimits,
-	clientConfig ClientConfig,
-	cluster string,
+	clientConfig grpcclient.Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
-		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, cluster, logger, reg),
+		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
 		dynamicReplication: dynamicReplication,
 		balancingStrategy:  balancingStrategy,
 		limits:             limits,

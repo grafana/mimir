@@ -5414,7 +5414,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 	// Query back the series using GRPC streaming.
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), nil)
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 	defer c.Close()
 

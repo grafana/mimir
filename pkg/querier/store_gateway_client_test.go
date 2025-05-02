@@ -46,7 +46,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	reg := prometheus.NewPedanticRegistry()
-	factory := newStoreGatewayClientFactory(cfg, "", reg, nil)
+	factory := newStoreGatewayClientFactory(cfg, reg, log.NewNopLogger())
 
 	for i := 0; i < 2; i++ {
 		inst := ring.InstanceDesc{Addr: listener.Addr().String()}

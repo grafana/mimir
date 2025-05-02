@@ -746,7 +746,6 @@ type Mimir struct {
 
 	API                              *api.API
 	Server                           *server.Server
-	ServerMetrics                    *server.Metrics
 	IngesterRing                     *ring.Ring
 	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
