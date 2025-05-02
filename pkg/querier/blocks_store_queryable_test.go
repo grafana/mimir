@@ -67,10 +67,9 @@ import (
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
 	const (
-		metricName            = "test_metric"
-		minT                  = int64(10)
-		maxT                  = int64(20)
-		maxDynamicReplication = 6 // this includes the sharding ring 3x replication and 2x dynamic replication
+		metricName = "test_metric"
+		minT       = int64(10)
+		maxT       = int64(20)
 	)
 
 	var (
@@ -1746,15 +1745,26 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
+					storeGatewayCfg := storegateway.Config{
+						ShardingRing: storegateway.RingConfig{
+							ReplicationFactor: 3,
+						},
+						DynamicReplication: storegateway.DynamicReplicationConfig{
+							Enabled:  true,
+							Multiple: 2,
+						},
+					}
+
 					q := &blocksStoreQuerier{
-						minT:        minT,
-						maxT:        maxT,
-						finder:      finder,
-						stores:      stores,
-						consistency: NewBlocksConsistency(0, reg),
-						logger:      log.NewNopLogger(),
-						metrics:     newBlocksStoreQueryableMetrics(reg),
-						limits:      testData.limits,
+						minT:               minT,
+						maxT:               maxT,
+						finder:             finder,
+						stores:             stores,
+						dynamicReplication: storegateway.NewMaxTimeDynamicReplication(storeGatewayCfg, 0),
+						consistency:        NewBlocksConsistency(0, reg),
+						logger:             log.NewNopLogger(),
+						metrics:            newBlocksStoreQueryableMetrics(reg),
+						limits:             testData.limits,
 					}
 
 					matchers := []*labels.Matcher{
