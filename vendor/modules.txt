@@ -369,18 +369,8 @@ github.com/efficientgo/core/logerrcapture
 github.com/efficientgo/core/merrors
 github.com/efficientgo/core/testutil
 github.com/efficientgo/core/testutil/internal
-<<<<<<< HEAD
-<<<<<<< HEAD
-# github.com/efficientgo/e2e v0.13.1-0.20220923082810-8fa9daa8af8a
-## explicit; go 1.18
-=======
-=======
 # github.com/efficientgo/e2e v0.14.1-0.20230710114240-c316eb95ae5b
 ## explicit; go 1.18
->>>>>>> 316780a929 (Parquet: Add parquet queryable (#11270))
-# github.com/envoyproxy/go-control-plane/envoy v1.32.4
-## explicit; go 1.22
->>>>>>> cd8b60b5bd (Parquet: Update parquet-mimir with parquet converter (#11239))
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
@@ -981,14 +971,10 @@ github.com/oklog/ulid/v2
 # github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 ## explicit
 github.com/okzk/sdnotify
-<<<<<<< HEAD
-# github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.124.1
-=======
 # github.com/olekukonko/tablewriter v0.0.5
 ## explicit; go 1.12
 github.com/olekukonko/tablewriter
-# github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.122.0
->>>>>>> cd8b60b5bd (Parquet: Update parquet-mimir with parquet converter (#11239))
+# github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.124.1
 ## explicit; go 1.23.0
 github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics/identity
 # github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.124.1
@@ -1017,8 +1003,6 @@ github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/mocktracer
-# github.com/oracle/oci-go-sdk/v65 v65.89.0
-## explicit; go 1.13
 # github.com/parquet-go/parquet-go v0.25.0 => github.com/alanprot/parquet-go v0.25.0-rc.1
 ## explicit; go 1.22
 github.com/parquet-go/parquet-go
@@ -1693,13 +1677,7 @@ golang.org/x/tools/internal/stdlib
 golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
-<<<<<<< HEAD
 # google.golang.org/api v0.229.0
-=======
-# gonum.org/v1/gonum v0.15.1
-## explicit; go 1.22
-# google.golang.org/api v0.227.0
->>>>>>> cd8b60b5bd (Parquet: Update parquet-mimir with parquet converter (#11239))
 ## explicit; go 1.23.0
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
@@ -1945,8 +1923,5 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
 # google.golang.org/grpc => google.golang.org/grpc v1.65.0
-<<<<<<< HEAD
 # cloud.google.com/go/auth => cloud.google.com/go/auth v0.15.0
-=======
 # github.com/parquet-go/parquet-go => github.com/alanprot/parquet-go v0.25.0-rc.1
->>>>>>> cd8b60b5bd (Parquet: Update parquet-mimir with parquet converter (#11239))
