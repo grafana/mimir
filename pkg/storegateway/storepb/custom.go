@@ -7,7 +7,7 @@ package storepb
 
 import (
 	"slices"
-	strings "strings"
+	"strings"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"

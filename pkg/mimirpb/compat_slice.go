@@ -8,7 +8,7 @@
 package mimirpb
 
 import (
-	strings "strings"
+	"strings"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
