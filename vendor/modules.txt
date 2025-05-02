@@ -1093,7 +1093,7 @@ github.com/prometheus/common/sigv4
 # github.com/prometheus/exporter-toolkit v0.14.0
 ## explicit; go 1.22
 github.com/prometheus/exporter-toolkit/web
-# github.com/prometheus/otlptranslator v0.0.0-20250417063547-0a6a352a36dc
+# github.com/prometheus/otlptranslator v0.0.0-20250501145537-53ceaec28820
 ## explicit; go 1.23.0
 github.com/prometheus/otlptranslator
 # github.com/prometheus/procfs v0.15.1
@@ -1375,7 +1375,7 @@ go.opentelemetry.io/collector/featuregate
 ## explicit; go 1.23.0
 go.opentelemetry.io/collector/internal/telemetry
 go.opentelemetry.io/collector/internal/telemetry/componentattribute
-# go.opentelemetry.io/collector/pdata v1.30.0
+# go.opentelemetry.io/collector/pdata v1.31.0
 ## explicit; go 1.23.0
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/data
@@ -1646,7 +1646,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.71.1 => google.golang.org/grpc v1.65.0
+# google.golang.org/grpc v1.72.0 => google.golang.org/grpc v1.65.0
 ## explicit; go 1.21
 google.golang.org/grpc
 google.golang.org/grpc/attributes
