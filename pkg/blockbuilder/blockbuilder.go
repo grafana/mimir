@@ -229,6 +229,15 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 
 // consumeJob performs block consumption from Kafka into object storage based on the given job spec.
 func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, spec schedulerpb.JobSpec) (lastOffset int64, err error) {
+	start := time.Now()
+	defer func() {
+		success := "true"
+		if err != nil {
+			success = "false"
+		}
+		b.blockBuilderMetrics.consumeJobDuration.WithLabelValues(success).Observe(time.Since(start).Seconds())
+	}()
+
 	sp, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BlockBuilder.consumeJob")
 	defer sp.Finish()
 
