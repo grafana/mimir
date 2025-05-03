@@ -958,7 +958,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 	// Response may either contain series, streaming series, warning or hints.
 	if s := resp.GetSeries(); s != nil {
-		s.CloneRefs()
+		s.MakeReferencesSafeToRetain()
 		mySeries = append(mySeries, s)
 
 		// Add series fingerprint to query limiter; will return error if we are over the limit
