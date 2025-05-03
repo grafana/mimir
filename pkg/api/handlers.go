@@ -282,6 +282,7 @@ func NewQuerierHandler(
 		nil,
 		otlpEnabled,
 		false,
+		false,
 		true,
 		0,
 	)
