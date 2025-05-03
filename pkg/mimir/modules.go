@@ -717,6 +717,9 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 		return
 	}
 
+	if t.IngesterPartitionRingWatcher != nil {
+		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
