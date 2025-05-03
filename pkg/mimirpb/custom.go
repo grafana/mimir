@@ -21,7 +21,10 @@ func init() {
 	encoding.RegisterCodecV2(&codecV2{codec: c})
 }
 
-// codecV2 customizes gRPC unmarshalling.
+// codecV2 customizes gRPC marshalling and unmarshalling.
+// We customize marshalling in order to use optimized paths when possible.
+// We customize unmarshalling in order to use an optimized path when possible,
+// and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
 	codec encoding.CodecV2
 }
@@ -111,10 +114,11 @@ func unmarshalSlicePoolSizes() []int {
 }
 
 // Unmarshal customizes gRPC unmarshalling.
-// If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
+// If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
+// The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	buf := data.MaterializeToBuffer(unmarshalSlicePool)
-	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
+	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
 
