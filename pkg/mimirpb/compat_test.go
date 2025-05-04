@@ -198,6 +198,29 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 	assert.NotSame(t, unsafe.StringData(input[0].Value), unsafe.StringData(actualValue))
 }
 
+func TestFromFromLabelAdaptersOverwriteLabelsSafe(t *testing.T) {
+	const (
+		origLabelName  = "hello"
+		origLabelValue = "world"
+	)
+	labelNameBytes := []byte(origLabelName)
+	labelValueBytes := []byte(origLabelValue)
+
+	input := []LabelAdapter{{Name: yoloString(labelNameBytes), Value: yoloString(labelValueBytes)}}
+	expected := labels.FromStrings("hello", "world")
+	var (
+		lb     labels.ScratchBuilder
+		actual labels.Labels
+	)
+	actual = FromLabelAdaptersOverwriteLabelsSafe(&lb, input, &actual)
+
+	// Modify the referenced byte slices, to verify they're not retained.
+	labelNameBytes[len(labelNameBytes)-1] = 'x'
+	labelValueBytes[len(labelValueBytes)-1] = 'x'
+
+	assert.Equal(t, expected, actual)
+}
+
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
 	input := []LabelAdapter{
 		{Name: "hello", Value: "world"},

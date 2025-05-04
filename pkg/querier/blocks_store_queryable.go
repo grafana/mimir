@@ -1027,8 +1027,12 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 	if ss := resp.GetStreamingSeries(); ss != nil {
 		myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
 
+		var (
+			labelsBuilder labels.ScratchBuilder
+			ls            labels.Labels
+		)
 		for _, s := range ss.Series {
-			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			ls = mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &ls)
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
 			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {

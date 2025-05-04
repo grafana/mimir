@@ -29,6 +29,13 @@ func FromLabelAdaptersOverwriteLabels(_ *labels.ScratchBuilder, ls []LabelAdapte
 	*dest = FromLabelAdaptersToLabels(ls)
 }
 
+// FromLabelAdaptersOverwriteLabelsSafe casts []LabelAdapter to labels.Labels, but with cloned label names/values (to avoid unsafe references) and returns the result.
+func FromLabelAdaptersOverwriteLabelsSafe(_ *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) labels.Labels {
+	*dest = FromLabelAdaptersToLabels(ls)
+	dest.InternStrings(strings.Clone)
+	return *dest
+}
+
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
 // Do NOT use unsafe to convert between data types because this function may
 // get input labels whose data structure is reused.

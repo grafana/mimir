@@ -438,8 +438,12 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		r.chunkseriesBatches = append(r.chunkseriesBatches, resp.Chunkseries)
 	} else if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
+		var (
+			labelsBuilder labels.ScratchBuilder
+			l             labels.Labels
+		)
 		for _, s := range resp.StreamingSeries {
-			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			l = mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, s.Labels, &l)
 
 			if err := queryLimiter.AddSeries(l); err != nil {
 				return nil, false, err

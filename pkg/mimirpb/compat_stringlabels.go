@@ -38,6 +38,15 @@ func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []Label
 	builder.Overwrite(dest)
 }
 
+// FromLabelAdaptersOverwriteLabelsSafe builds and returns a labels.Labels from LabelAdapters, which has its own copies of label name/value strings.
+func FromLabelAdaptersOverwriteLabelsSafe(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) labels.Labels {
+	// FromLabelAdaptersOverwriteLabels already doesn't retain the strings in the LabelAdapters, as it copies label strings to a buffer.
+	FromLabelAdaptersOverwriteLabels(builder, ls, dest)
+	// Make independent of builder buffer.
+	*dest = dest.Copy()
+	return *dest
+}
+
 // FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
 func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
 	builder.Reset(labels.EmptyLabels())
