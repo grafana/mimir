@@ -3111,9 +3111,24 @@ type storeGatewayClientMock struct {
 }
 
 func (m *storeGatewayClientMock) Series(ctx context.Context, _ *storepb.SeriesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_SeriesClient, error) {
+	// Make an independent copy of the responses, to avoid data races during tests.
+	seriesResponses := slices.Clone(m.mockedSeriesResponses)
+	for i := range seriesResponses {
+		sr := *seriesResponses[i]
+		if s := sr.GetSeries(); s != nil {
+			sr.Result = &storepb.SeriesResponse_Series{
+				Series: &storepb.Series{
+					Labels: slices.Clone(s.Labels),
+					Chunks: slices.Clone(s.Chunks),
+				},
+			}
+		}
+		seriesResponses[i] = &sr
+	}
+
 	seriesClient := &storeGatewaySeriesClientMock{
 		ClientStream:    grpcClientStreamMock{ctx: ctx}, // Required to not panic.
-		mockedResponses: m.mockedSeriesResponses,
+		mockedResponses: seriesResponses,
 	}
 
 	return seriesClient, m.mockedSeriesErr

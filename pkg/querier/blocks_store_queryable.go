@@ -327,6 +327,9 @@ type blocksStoreQuerier struct {
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
+
+	streamReadersMtx sync.Mutex
+	streamReaders    []*storeGatewayStreamReader
 }
 
 // Select implements storage.Querier interface.
@@ -430,6 +433,13 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints
 }
 
 func (q *blocksStoreQuerier) Close() error {
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	for _, r := range q.streamReaders {
+		r.FreeBuffer()
+	}
+
 	return nil
 }
 
@@ -443,7 +453,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 		resSeriesSets     = []storage.SeriesSet(nil)
 		resWarnings       annotations.Annotations
-		streamStarters    []func()
+		resStreamReaders  []*storeGatewayStreamReader
 		chunkEstimators   []func() int
 		queryLimiter      = limiter.QueryLimiterFromContextWithFallback(ctx)
 	)
@@ -454,14 +464,14 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	}
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, startStreamingChunks, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, streamReaders, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
 
 		resSeriesSets = append(resSeriesSets, seriesSets...)
 		resWarnings.Merge(warnings)
-		streamStarters = append(streamStarters, startStreamingChunks)
+		resStreamReaders = append(resStreamReaders, streamReaders...)
 		chunkEstimators = append(chunkEstimators, chunkEstimator)
 
 		return queriedBlocks, nil
@@ -472,12 +482,16 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		return storage.ErrSeriesSet(err)
 	}
 
-	if len(streamStarters) > 0 {
+	if len(resStreamReaders) > 0 {
 		spanLog.DebugLog("msg", "starting streaming")
 
+		q.streamReadersMtx.Lock()
+		q.streamReaders = append(q.streamReaders, resStreamReaders...)
+		q.streamReadersMtx.Unlock()
+
 		// If this was a streaming call, start fetching streaming chunks here.
-		for _, ss := range streamStarters {
-			ss()
+		for _, r := range resStreamReaders {
+			r.StartBuffering()
 		}
 
 		spanLog.DebugLog("msg", "streaming started, waiting for chunks estimates")
@@ -733,7 +747,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // In case of a successful run, fetchSeriesFromStores returns a startStreamingChunks function to start streaming
 // chunks for the fetched series iff it was a streaming call for series+chunks. startStreamingChunks must be called
 // before iterating on the series.
-func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, startStreamingChunks func(), estimateChunks func() int, _ error) {
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, streamReaders []*storeGatewayStreamReader, estimateChunks func() int, _ error) {
 	var (
 		// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
 		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
@@ -747,7 +761,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
-		streamReaders []*storeGatewayStreamReader
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
@@ -801,87 +814,32 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					return gCtx.Err()
 				}
 
-				resp, err := stream.Recv()
+				var err error
+				var isEOS bool
+				var shouldRetry bool
+				mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
+					c, stream, queryLimiter, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 					break
 				}
 				if err != nil {
-					if shouldRetry(err) {
-						level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
-						return nil
-					}
-
 					return err
 				}
-
-				// Response may either contain series, streaming series, warning or hints.
-				if s := resp.GetSeries(); s != nil {
-					mySeries = append(mySeries, s)
-
-					// Add series fingerprint to query limiter; will return error if we are over the limit
-					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
-						return err
-					}
-
-					chunksCount, chunksSize := countChunksAndBytes(s)
-					q.metrics.chunksTotal.Add(float64(chunksCount))
-					if err := queryLimiter.AddChunkBytes(chunksSize); err != nil {
-						return err
-					}
-					if err := queryLimiter.AddChunks(chunksCount); err != nil {
-						return err
-					}
-					if err := queryLimiter.AddEstimatedChunks(chunksCount); err != nil {
-						return err
-					}
+				if shouldRetry {
+					level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+					return nil
 				}
 
-				if w := resp.GetWarning(); w != "" {
-					myWarnings.Add(errors.New(w))
-				}
-
-				if h := resp.GetHints(); h != nil {
-					hints := hintspb.SeriesResponseHints{}
-					if err := types.UnmarshalAny(h, &hints); err != nil {
-						return errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
+				if isEOS {
+					// If we aren't expecting any series from this stream, close it now.
+					if len(myStreamingSeriesLabels) == 0 {
+						util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 					}
 
-					ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
-					if err != nil {
-						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
-					}
-
-					myQueriedBlocks = append(myQueriedBlocks, ids...)
-				}
-
-				if s := resp.GetStats(); s != nil {
-					indexBytesFetched += s.FetchedIndexBytes
-				}
-
-				if ss := resp.GetStreamingSeries(); ss != nil {
-					myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
-
-					for _, s := range ss.Series {
-						// Add series fingerprint to query limiter; will return error if we are over the limit
-						l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
-
-						if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
-							return limitErr
-						}
-
-						myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
-					}
-
-					if ss.IsEndOfSeriesStream {
-						// If we aren't expecting any series from this stream, close it now.
-						if len(myStreamingSeriesLabels) == 0 {
-							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
-						}
-
-						// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
-						break
-					}
+					// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
+					break
 				}
 			}
 
@@ -970,12 +928,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return nil, nil, nil, nil, nil, err
 	}
 
-	startStreamingChunks = func() {
-		for _, sr := range streamReaders {
-			sr.StartBuffering()
-		}
-	}
-
 	estimateChunks = func() int {
 		totalChunks := 0
 
@@ -986,7 +938,89 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return totalChunks
 	}
 
-	return seriesSets, queriedBlocks, warnings, startStreamingChunks, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
+	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
+}
+
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+	resp, err := stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
+
+		if shouldRetry(err) {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, true, nil
+		}
+
+		return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+	}
+	defer resp.FreeBuffer()
+
+	// Response may either contain series, streaming series, warning or hints.
+	if s := resp.GetSeries(); s != nil {
+		s.MakeReferencesSafeToRetain()
+		mySeries = append(mySeries, s)
+
+		// Add series fingerprint to query limiter; will return error if we are over the limit
+		if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
+
+		chunksCount, chunksSize := countChunksAndBytes(s)
+		q.metrics.chunksTotal.Add(float64(chunksCount))
+		if err := queryLimiter.AddChunkBytes(chunksSize); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
+		if err := queryLimiter.AddChunks(chunksCount); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
+		if err := queryLimiter.AddEstimatedChunks(chunksCount); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		}
+	}
+
+	if w := resp.GetWarning(); w != "" {
+		myWarnings.Add(errors.New(w))
+	}
+
+	if h := resp.GetHints(); h != nil {
+		hints := hintspb.SeriesResponseHints{}
+		if err := types.UnmarshalAny(h, &hints); err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
+		}
+
+		ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
+		if err != nil {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+		}
+
+		myQueriedBlocks = append(myQueriedBlocks, ids...)
+	}
+
+	if s := resp.GetStats(); s != nil {
+		indexBytesFetched += s.FetchedIndexBytes
+	}
+
+	if ss := resp.GetStreamingSeries(); ss != nil {
+		myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
+
+		for _, s := range ss.Series {
+			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+
+			// Add series fingerprint to query limiter; will return error if we are over the limit
+			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
+				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
+			}
+
+			myStreamingSeriesLabels = append(myStreamingSeriesLabels, ls)
+		}
+
+		if ss.IsEndOfSeriesStream {
+			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, true, false, nil
+		}
+	}
+
+	return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil
 }
 
 func shouldRetry(err error) bool {
