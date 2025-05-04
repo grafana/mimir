@@ -1277,9 +1277,14 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
 	// after Next() will be called again.
 	res := newSeriesChunkRefsSet(len(entry.Series), true)
+	var (
+		labelsBuilder labels.ScratchBuilder
+		ls            labels.Labels
+	)
 	for _, lset := range entry.Series {
+		ls = mimirpb.FromLabelAdaptersOverwriteLabelsSafe(&labelsBuilder, lset.Labels, &ls)
 		res.series = append(res.series, seriesChunkRefs{
-			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
+			lset: ls,
 		})
 	}
 	return res, true
