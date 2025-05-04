@@ -545,6 +545,8 @@ func (b *BlockBuilder) consumePartitionSection(
 	})
 	defer b.kafkaClient.RemoveConsumePartitions(map[string][]int32{b.cfg.Kafka.Topic: {partition}})
 
+	b.kafkaClient.ForceMetadataRefresh()
+
 	level.Info(logger).Log("msg", "start consuming")
 
 	var (
@@ -552,6 +554,33 @@ func (b *BlockBuilder) consumePartitionSection(
 		lastRec   *kgo.Record
 		commitRec *kgo.Record
 	)
+
+	fetcher, err := ingest.NewConcurrentFetchers(
+		ctx,
+		b.kafkaClient,
+		logger,
+		state.Commit.Topic,
+		state.Commit.Partition,
+		state.Commit.At,
+		b.cfg.ConcurrentFetcherConcurrency,
+		100_000_000,
+		false,
+		5*time.Second,
+		nil,
+		ingest.NewGenericOffsetReader[int64](func(context.Context) (int64, error) { return 0, nil }, 5*time.Second, logger), // Dummy.
+		backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: 1 * time.Second,
+		},
+		nil)
+	if err != nil {
+		return state, err
+	}
+
+	fetcher.Start(ctx)
+
+	consumeMetric := b.blockBuilderMetrics.recordsConsumedTotal.WithLabelValues(fmt.Sprintf("%d", partition))
+	metricUpdatePending := 0
 
 consumerLoop:
 	for recOffset := int64(-1); recOffset < cycleEndOffset-1; {
@@ -563,7 +592,7 @@ consumerLoop:
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
 		// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
-		fetches := b.kafkaClient.PollFetches(ctx)
+		fetches, _ := fetcher.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
 				level.Error(logger).Log("msg", "failed to fetch records", "err", err)
@@ -572,6 +601,10 @@ consumerLoop:
 		})
 
 		for recIter := fetches.RecordIter(); !recIter.Done(); {
+			if metricUpdatePending > 100 {
+				consumeMetric.Add(float64(metricUpdatePending))
+				metricUpdatePending = 0
+			}
 			rec := recIter.Next()
 			recOffset = rec.Offset
 
@@ -584,6 +617,8 @@ consumerLoop:
 			if rec.Timestamp.After(sectionEndTime) {
 				break consumerLoop
 			}
+
+			metricUpdatePending++
 
 			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
 			allSamplesProcessed, err := builder.Process(
@@ -616,6 +651,11 @@ consumerLoop:
 		}
 	}
 
+	fetcher.Stop()
+
+	consumeMetric.Add(float64(metricUpdatePending))
+	metricUpdatePending = 0
+
 	// Nothing was consumed from Kafka at all.
 	if firstRec == nil {
 		level.Info(logger).Log("msg", "no records were consumed")
@@ -633,7 +673,6 @@ consumerLoop:
 		commitRec = lastRec
 	}
 
-	var err error
 	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return state, err
