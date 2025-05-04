@@ -145,7 +145,7 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	// we set ctx to fail after half of the series are read.
 	failAfter := uint64(seriesCount / 2 / streamindex.CheckContextEveryNIterations)
 	ctx = &promtestutil.MockContextErrAfter{FailAfter: failAfter}
-	_, err = r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true })
+	_, err = r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true }, true)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
 }

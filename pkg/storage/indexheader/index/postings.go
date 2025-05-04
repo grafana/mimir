@@ -37,7 +37,7 @@ type PostingOffsetTable interface {
 	// LabelValuesOffsets returns all postings lists for the label named name that match filter and have the prefix provided.
 	// The ranges of each posting list are the same as returned by PostingsOffset.
 	// The returned label values are sorted lexicographically (which the same as sorted by posting offset).
-	LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) ([]PostingListOffset, error)
+	LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool, captureValue bool) ([]PostingListOffset, error)
 
 	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
@@ -320,7 +320,7 @@ func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.
 	return rng, true, nil
 }
 
-func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) ([]PostingListOffset, error) {
+func (t *PostingOffsetTableV1) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool, captureValue bool) ([]PostingListOffset, error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -511,7 +511,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	return index.Range{}, false, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool) (_ []PostingListOffset, err error) {
+func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, prefix string, filter func(string) bool, captureValue bool) (_ []PostingListOffset, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -574,7 +574,12 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		// any other reads against the decoding buffer are performed.
 		// We'll only need the string if it matches our filter.
 		if e.matches {
+			//if !captureValue && unsafeValue == noMoreMatchesMarkerVal {
+			//	e.LabelValue = strings.Clone(unsafeValue)
+			//} else {
 			e.LabelValue = strings.Clone(unsafeValue)
+			//}
+
 		}
 		// In the postings section of the index the information in each posting list for length and number
 		// of entries is redundant, because every entry in the list is a fixed number of bytes (4).
@@ -611,6 +616,7 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 		if currEntry.LabelValue == noMoreMatchesMarkerVal && lastValMatches {
 			// There is no next value though. Since we only need the offset, we can use what we have in the sampled postings.
 			currEntry.Off.End = e.lastValOffset
+
 		} else {
 			nextEntry = readNextList()
 
@@ -618,6 +624,9 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 			// The start of the next posting list is the byte offset of the number_of_entries field.
 			// Between these two there is the posting list length field of the next list, and the CRC32 of the current list.
 			currEntry.Off.End = nextEntry.Off.Start - crc32.Size - postingLengthFieldSize
+		}
+		if !captureValue {
+			currEntry.LabelValue = ""
 		}
 		offsets = append(offsets, currEntry.PostingListOffset)
 	}

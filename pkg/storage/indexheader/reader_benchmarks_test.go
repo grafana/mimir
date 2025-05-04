@@ -179,7 +179,7 @@ func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
 
 			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
 				return true
-			})
+			}, true)
 
 			require.NoError(b, err)
 			require.NotEmpty(b, values)
@@ -223,7 +223,7 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 
 			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
 				return true
-			})
+			}, true)
 
 			require.NoError(b, err)
 			require.NotEmpty(b, values)
@@ -241,7 +241,7 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 			for _, tc := range tcs {
 				b.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
-						values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
+						values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter, true)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
 					}

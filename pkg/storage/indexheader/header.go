@@ -57,7 +57,7 @@ type Reader interface {
 	// then empty slice is returned and no error.
 	// If non-empty prefix is provided, only posting lists starting with the prefix are returned.
 	// If non-nil filter is provided, then only posting lists for which filter returns true are returned.
-	LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error)
+	LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool, captureValue bool) ([]streamindex.PostingListOffset, error)
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)

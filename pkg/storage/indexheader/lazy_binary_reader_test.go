@@ -353,7 +353,7 @@ func (m mockReader) SymbolsReader(context.Context) (streamindex.SymbolsReader, e
 	panic("not implemented")
 }
 
-func (m mockReader) LabelValuesOffsets(context.Context, string, string, func(string) bool) ([]streamindex.PostingListOffset, error) {
+func (m mockReader) LabelValuesOffsets(context.Context, string, string, func(string) bool, bool) ([]streamindex.PostingListOffset, error) {
 	panic("not implemented")
 }
 

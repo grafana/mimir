@@ -90,7 +90,7 @@ func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reade
 		if g.isSubtract {
 			filter = not(filter)
 		}
-		vals, err := r.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
+		vals, err := r.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter, false)
 		if err != nil {
 			return postingGroup{}, err
 		}

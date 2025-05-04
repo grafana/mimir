@@ -237,14 +237,14 @@ func (r *LazyBinaryReader) SymbolsReader(ctx context.Context) (streamindex.Symbo
 }
 
 // LabelValuesOffsets implements Reader.
-func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool, captureValue bool) ([]streamindex.PostingListOffset, error) {
 	loaded := r.getOrLoadReader(ctx)
 	if loaded.err != nil {
 		return nil, loaded.err
 	}
 	defer loaded.inUse.Done()
 
-	return loaded.reader.LabelValuesOffsets(ctx, name, prefix, filter)
+	return loaded.reader.LabelValuesOffsets(ctx, name, prefix, filter, captureValue)
 }
 
 // LabelNames implements Reader.
