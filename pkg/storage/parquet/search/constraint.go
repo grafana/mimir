@@ -11,6 +11,9 @@ import (
 	"sort"
 
 	"github.com/parquet-go/parquet-go"
+	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/storage/parquet/util"
 )
 
 func initialize(s *parquet.Schema, cs ...Constraint) error {
@@ -38,13 +41,14 @@ func filter(rg parquet.RowGroup, cs ...Constraint) ([]rowRange, error) {
 			}
 		}
 	}
+	var err error
 	rr := []rowRange{{from: int64(0), count: rg.NumRows()}}
 	for i := range cs {
-		srr, err := cs[i].filter(rg, i == 0, rr)
+		isPrimary := len(sc) > 0 && cs[i].path() == sc[0].Path()[0]
+		rr, err = cs[i].filter(rg, isPrimary, rr)
 		if err != nil {
 			return nil, fmt.Errorf("unable to filter with constraint %d: %w", i, err)
 		}
-		rr = srr
 	}
 	return rr, nil
 }
@@ -183,8 +187,7 @@ func (ec *equalConstraint) filter(rg parquet.RowGroup, primary bool, rr []rowRan
 		}
 		symbols.Reset(pg)
 
-		// The page has the value, but the page might consist of many rows
-		// ideally we cut it down a little because chunk pages are pretty small
+		// The page has the value, we need to find the matching row ranges
 		n := int(pg.NumRows())
 		bl := int(max(pfrom, from) - pfrom)
 		br := n - int(pto-min(pto, to))
@@ -220,7 +223,7 @@ func (ec *equalConstraint) filter(rg parquet.RowGroup, primary bool, rr []rowRan
 	if len(res) == 0 {
 		return nil, nil
 	}
-	return simplify(res), nil
+	return intersectRowRanges(simplify(res), rr), nil
 }
 
 func (ec *equalConstraint) init(s *parquet.Schema) error {
@@ -264,6 +267,143 @@ func (ec *equalConstraint) skipByDictionary(pg parquet.Page) bool {
 	return true
 }
 
+func Regex(path string, r *labels.FastRegexMatcher) Constraint {
+	return &regexConstraint{pth: path, cache: make(map[parquet.Value]bool), r: r}
+}
+
+type regexConstraint struct {
+	pth   string
+	cache map[parquet.Value]bool
+
+	r *labels.FastRegexMatcher
+}
+
+func (rc *regexConstraint) filter(rg parquet.RowGroup, primary bool, rr []rowRange) ([]rowRange, error) {
+	if len(rr) == 0 {
+		return nil, nil
+	}
+	from, to := rr[0].from, rr[len(rr)-1].from+rr[len(rr)-1].count
+
+	col, ok := rg.Schema().Lookup(rc.path())
+	if !ok {
+		return nil, nil
+	}
+	cc := rg.ColumnChunks()[col.ColumnIndex]
+
+	pgs := cc.Pages()
+	defer func() { _ = pgs.Close() }()
+
+	oidx, err := cc.OffsetIndex()
+	if err != nil {
+		return nil, fmt.Errorf("unable to read offset index: %w", err)
+	}
+	cidx, err := cc.ColumnIndex()
+	if err != nil {
+		return nil, fmt.Errorf("unable to read column index: %w", err)
+	}
+	var (
+		symbols = new(symbolTable)
+		res     = make([]rowRange, 0)
+	)
+	for i := 0; i < cidx.NumPages(); i++ {
+		// If page does not intersect from, to; we can immediately discard it
+		pfrom := oidx.FirstRowIndex(i)
+		pcount := rg.NumRows() - pfrom
+		if i < oidx.NumPages()-1 {
+			pcount = oidx.FirstRowIndex(i+1) - pfrom
+		}
+		pto := pfrom + pcount
+		if pfrom > to {
+			break
+		}
+		if pto < from {
+			continue
+		}
+		// Page intersects [from, to] but we might be able to discard it with statistics
+		if cidx.NullPage(i) {
+			continue
+		}
+		// TODO: use setmatches / prefix for statistics
+
+		// We cannot discard the page through statistics but we might need to read it to see if it has the value
+		if err := pgs.SeekToRow(pfrom); err != nil {
+			return nil, fmt.Errorf("unable to seek to row: %w", err)
+		}
+		pg, err := pgs.ReadPage()
+		if err != nil {
+			return nil, fmt.Errorf("unable to read page: %w", err)
+		}
+
+		if skip := rc.skipByDictionary(pg); skip {
+			continue
+		}
+		symbols.Reset(pg)
+
+		// The page has the value, we need to find the matching row ranges
+		n := int(pg.NumRows())
+		bl := int(max(pfrom, from) - pfrom)
+		br := n - int(pto-min(pto, to))
+		off, count := bl, 0
+		for j := bl; j < br; j++ {
+			if !rc.matches(symbols.Get(j)) {
+				if count != 0 {
+					res = append(res, rowRange{pfrom + int64(off), int64(count)})
+				}
+				off, count = j, 0
+			} else {
+				if count == 0 {
+					off = j
+				}
+				count++
+			}
+		}
+		if count != 0 {
+			res = append(res, rowRange{pfrom + int64(off), int64(count)})
+		}
+	}
+	if len(res) == 0 {
+		return nil, nil
+	}
+	return intersectRowRanges(simplify(res), rr), nil
+}
+
+func (rc *regexConstraint) init(s *parquet.Schema) error {
+	c, ok := s.Lookup(rc.path())
+	if !ok {
+		return fmt.Errorf("schema: must contain path: %s", rc.path())
+	}
+	if stringKind := parquet.String().Type().Kind(); c.Node.Type().Kind() != stringKind {
+		return fmt.Errorf("schema: cannot search value of kind %s in column of kind %s", stringKind, c.Node.Type().Kind())
+	}
+	return nil
+}
+
+func (rc *regexConstraint) path() string {
+	return rc.pth
+}
+
+func (rc *regexConstraint) matches(v parquet.Value) bool {
+	accept, seen := rc.cache[v]
+	if !seen {
+		accept = rc.r.MatchString(util.YoloString(v.ByteArray()))
+		rc.cache[v] = accept
+	}
+	return accept
+}
+
+func (rc *regexConstraint) skipByDictionary(pg parquet.Page) bool {
+	d := pg.Dictionary()
+	if d == nil {
+		return false
+	}
+	for i := 0; i != d.Len(); i++ {
+		if rc.matches(d.Index(int32(i))) {
+			return false
+		}
+	}
+	return true
+}
+
 func Not(c Constraint) Constraint {
 	return &notConstraint{c: c}
 }
@@ -277,6 +417,7 @@ func (nc *notConstraint) filter(rg parquet.RowGroup, primary bool, rr []rowRange
 	if err != nil {
 		return nil, fmt.Errorf("unable to compute child constraint: %w", err)
 	}
+	// no need to intersect since its already subset of rr
 	return complementRowRanges(base, rr), nil
 }
 

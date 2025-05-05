@@ -5,7 +5,11 @@
 
 package util
 
-import "github.com/parquet-go/parquet-go"
+import (
+	"unsafe"
+
+	"github.com/parquet-go/parquet-go"
+)
 
 func CloneRows(rows []parquet.Row) []parquet.Row {
 	rr := make([]parquet.Row, len(rows))
@@ -13,4 +17,8 @@ func CloneRows(rows []parquet.Row) []parquet.Row {
 		rr[i] = row.Clone()
 	}
 	return rr
+}
+
+func YoloString(buf []byte) string {
+	return *((*string)(unsafe.Pointer(&buf)))
 }
