@@ -518,9 +518,8 @@ func ReuseSlice(ts []PreallocTimeseries) {
 	ReuseTimeseriesSliceDangerous(ts)
 }
 
-// ReuseTimeseriesSliceDangerous reuses *the slice* of timeseries.
-// It doesn't reuse the timeseries themselves. Only use this in contexts where
-// the individual timeseries are still being handled and can be freed later.
+// ReuseTimeseriesSliceDangerous reuses the slice of timeseries, but not its contents.
+// Only use this if you have another means of reusing the individual timeseries contained within.
 // Most times, you want to use ReuseSlice instead.
 func ReuseTimeseriesSliceDangerous(ts []PreallocTimeseries) {
 	preallocTimeseriesSlicePool.Put(ts[:0])
