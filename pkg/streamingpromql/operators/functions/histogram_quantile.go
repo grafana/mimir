@@ -347,7 +347,6 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 	// We also then only need to get a length for the remaining points.
 	var floatPoints []promql.FPoint
 	histogramIndex := 0
-	var currentHistogramPointIdx int64
 
 	for pointIdx := range h.timeRange.StepCount {
 		var currentHistogram *histogram.FloatHistogram
@@ -371,7 +370,6 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 			nextHPoint := g.nativeHistograms[histogramIndex]
 			if h.timeRange.PointIndex(nextHPoint.T) == int64(pointIdx) {
 				currentHistogram = nextHPoint.H
-				currentHistogramPointIdx = h.timeRange.PointIndex(nextHPoint.T)
 				histogramIndex++
 			}
 		}
@@ -406,7 +404,7 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 			continue
 		}
 
-		if currentHistogram != nil && currentHistogramPointIdx == int64(pointIdx) {
+		if currentHistogram != nil {
 			if floatPoints == nil {
 				var err error
 				floatPoints, err = types.FPointSlicePool.Get(h.timeRange.StepCount-pointIdx, h.memoryConsumptionTracker)
