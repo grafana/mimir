@@ -1028,7 +1028,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
-			planner := NewQueryPlanner(opts)
+			planner := NewQueryPlannerWithoutOptimizationPasses(opts)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
@@ -1310,7 +1310,7 @@ func TestAnalysisHandler(t *testing.T) {
 		},
 	}
 
-	planner := NewQueryPlanner(NewTestEngineOpts())
+	planner := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
 	handler := AnalysisHandler(planner)
 
 	for name, testCase := range testCases {

@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
 func TestMain(m *testing.M) {
@@ -1124,6 +1126,112 @@ user1:
 			ov := NewOverrides(LimitsYAML, tl)
 
 			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant("user1"))
+		})
+	}
+}
+
+func TestRulerAlertmanagerClientConfig(t *testing.T) {
+	tc := map[string]struct {
+		baseYAML       string
+		overrides      string
+		expectedConfig notifier.AlertmanagerClientConfig
+	}{
+		"no override provided": {
+			baseYAML:       ``,
+			expectedConfig: notifier.DefaultAlertmanagerClientConfig,
+		},
+		"no user specific client config": {
+			baseYAML: `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://custom-url:8080
+  proxy_url: http://some-proxy:1234
+  oauth2:
+    client_id: myclient
+    client_secret: mysecret
+    token_url: http://token-url
+    scopes: abc,def
+    endpoint_params:
+      key1: value1
+`,
+			expectedConfig: notifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://custom-url:8080",
+				NotifierConfig: notifier.Config{
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
+					OAuth2: notifier.OAuth2Config{
+						ClientID:     "myclient",
+						ClientSecret: flagext.SecretWithValue("mysecret"),
+						TokenURL:     "http://token-url",
+						Scopes:       []string{"abc", "def"},
+						EndpointParams: flagext.NewLimitsMapWithData(map[string]string{
+							"key1": "value1",
+						}, nil),
+					},
+				},
+			},
+		},
+		"overridden config for specific user": {
+			baseYAML: `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://some-base-url:8080
+`,
+			overrides: `
+user1:
+  ruler_alertmanager_client_config:
+    alertmanager_url: http://custom-url-for-this-tenant:8080
+    proxy_url: http://some-proxy:1234
+    oauth2:
+      client_id: myclient
+      client_secret: mysecret
+      token_url: http://token-url
+      scopes: abc,def
+      endpoint_params:
+        key1: value1
+`,
+			expectedConfig: notifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://custom-url-for-this-tenant:8080",
+				NotifierConfig: notifier.Config{
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
+					OAuth2: notifier.OAuth2Config{
+						ClientID:     "myclient",
+						ClientSecret: flagext.SecretWithValue("mysecret"),
+						TokenURL:     "http://token-url",
+						Scopes:       []string{"abc", "def"},
+						EndpointParams: flagext.NewLimitsMapWithData(map[string]string{
+							"key1": "value1",
+						}, nil),
+					},
+				},
+			},
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
+
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+			var limitsYAML Limits
+			limitsYAML.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
+			err := yaml.Unmarshal([]byte(tt.baseYAML), &limitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(limitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedConfig, ov.RulerAlertmanagerClientConfig("user1"))
+			require.True(t, tt.expectedConfig.Equal(ov.RulerAlertmanagerClientConfig("user1")))
 		})
 	}
 }

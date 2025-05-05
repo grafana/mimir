@@ -60,7 +60,7 @@ func TestFloatTransformationFunc(t *testing.T) {
 	modifiedSeriesData, err := transformFunc(seriesData, nil, types.QueryTimeRange{}, memoryConsumptionTracker)
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
-	require.Equal(t, types.FPointSize*2+types.HPointSize*1, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, types.FPointSize*2+types.HPointSize*1, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
@@ -92,5 +92,5 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedSeriesData)
 	// We expect the dropped histogram to be returned to the pool
-	require.Equal(t, types.FPointSize*2, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes)
+	require.Equal(t, types.FPointSize*2, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

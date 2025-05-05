@@ -42,6 +42,8 @@
 * [ENHANCEMENT] OTLP: Add support for converting OTel explicit bucket histograms to Prometheus native histograms with custom buckets using the `distributor.otel-convert-histograms-to-nhcb` flag. #11077
 * [ENHANCEMENT] Add configurable per-tenant `limited_queries`, which you can only run at or less than an allowed frequency. #11097
 * [ENHANCEMENT] Ingest-Storage: Add `ingest-storage.kafka.producer-record-version` to allow control Kafka record versioning. #11244
+* [ENHANCEMENT] Ruler: Update `<prometheus-http-prefix>/api/v1/rules` and `<prometheus-http-prefix>/api/v1/alerts` to reply with HTTP error 422 if rule evaluation is completely disabled for the tenant. If only recording rule- or alerting rule evaluation is disabled for the tenant, the response now includes a corresponding warning. #11321
+* [ENHANCEMENT] Add tenant configuration block `ruler_alertmanager_client_config` which allows the Ruler's Alertmanager client options to be specified on a per-tenant basis. #10816
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
@@ -54,6 +56,7 @@
 * [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #11198
 * [BUGFIX] Ingester: read reactive limiters should activate and deactivate when the ingester changes state. #11234
 * [BUGFIX] Query-frontend: Fix an issue where errors from date/time parsing methods did not include the name of the invalid parameter. #11304
+* [BUGFIX] Compactor: Fix issue where `MimirBucketIndexNotUpdated` can fire even though the index has been updated within the alert threshold. #11303
 
 ### Mixin
 
@@ -73,6 +76,7 @@
 * [CHANGE] Update rollout-operator version to 0.26.0. #11232
 * [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231
 * [FEATURE] Make ingest storage ingester HPA behavior configurable through `_config.ingest_storage_ingester_hpa_behavior`. #11168
+* [FEATURE] Add an alternate ingest storage HPA trigger that targets maximum owned series per pod. #11356
 
 ### Mimirtool
 
@@ -89,6 +93,7 @@
 * [ENHANCEMENT] `kafkatool`: Add `offsets` command for querying various partition offsets. #11115
 * [ENHANCEMENT] `listblocks`: Output can now also be JSON or YAML for easier parsing. #11184
 * [ENHANCEMENT] `mark-blocks`: Allow specifying blocks from multiple tenants. #11343
+* [ENHANCEMENT] `undelete-blocks`: Support removing S3 delete markers to avoid copying data when recovering blocks. #11256
 
 ## 2.16.0
 

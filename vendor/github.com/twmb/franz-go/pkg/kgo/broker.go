@@ -511,7 +511,8 @@ func (p bufPool) put(b []byte) { p.p.Put(&b) }
 func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerCxn, error) {
 	var (
 		pcxn         = &b.cxnNormal
-		isProduceCxn bool // see docs on brokerCxn.discard for why we do this
+		isProduceCxn bool
+		isFetchCxn   bool
 		reqKey       = req.Key()
 		_, isTimeout = req.(kmsg.TimeoutRequest)
 	)
@@ -521,6 +522,7 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		isProduceCxn = true
 	case reqKey == 1:
 		pcxn = &b.cxnFetch
+		isFetchCxn = true
 	case reqKey == 11 || reqKey == 14: // join || sync
 		pcxn = &b.cxnGroup
 	case isTimeout:
@@ -550,6 +552,12 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		return nil, err
 	}
 	b.cl.cfg.logger.Log(LogLevelDebug, "connection initialized successfully", "addr", b.addr, "broker", logID(b.meta.NodeID))
+
+	if isProduceCxn {
+		b.cl.metrics.observeRate(&b.cl.metrics.pConnCreation)
+	} else if isFetchCxn {
+		b.cl.metrics.observeRate(&b.cl.metrics.cConnCreation)
+	}
 
 	b.reapMu.Lock()
 	defer b.reapMu.Unlock()
@@ -1245,6 +1253,16 @@ func (cxn *brokerCxn) readResponse(
 			})
 		}
 	})
+
+	if readErr == nil {
+		latencyMillis := (writeWait + timeToWrite + readWait + timeToRead).Milliseconds()
+		if key == 0 { //nolint:staticcheck // tagged switch not needed for one case...
+			cxn.b.cl.metrics.observeNodeTime(cxn.b.meta.NodeID, &cxn.b.cl.metrics.pReqLatency, latencyMillis)
+		} else if key == 1 {
+			cxn.b.cl.metrics.observeNodeTime(cxn.b.meta.NodeID, &cxn.b.cl.metrics.cReqLatency, latencyMillis)
+		}
+	}
+
 	if logger := cxn.cl.cfg.logger; logger.Level() >= LogLevelDebug {
 		logger.Log(LogLevelDebug, fmt.Sprintf("read %s v%d", kmsg.NameForKey(key), version), "broker", logID(cxn.b.meta.NodeID), "bytes_read", bytesRead, "read_wait", readWait, "time_to_read", timeToRead, "err", readErr)
 	}
@@ -1502,6 +1520,9 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 		if throttleResponse, ok := pr.resp.(kmsg.ThrottleResponse); ok {
 			millis, throttlesAfterResp := throttleResponse.Throttle()
 			if millis > 0 {
+				if pr.resp.Key() == 0 {
+					cxn.b.cl.metrics.observeTime(&cxn.b.cl.metrics.pThrottle, int64(millis))
+				}
 				cxn.b.cl.cfg.logger.Log(LogLevelInfo, "broker is throttling us in response", "broker", logID(cxn.b.meta.NodeID), "req", kmsg.Key(pr.resp.Key()).Name(), "throttle_millis", millis, "throttles_after_resp", throttlesAfterResp)
 				if throttlesAfterResp {
 					throttleUntil := time.Now().Add(time.Millisecond * time.Duration(millis)).UnixNano()

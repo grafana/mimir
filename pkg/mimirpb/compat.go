@@ -321,6 +321,10 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}
+	// NOTE(jhesketh): fromSpansToSpansProto is not a deepcopy, slices are referenced. This could
+	// potentially cause issues where other Histograms using the same Spans are mutated. However,
+	// since https://github.com/prometheus/prometheus/pull/14771 change each Histogram should have
+	// its own Spans.
 	return Histogram{
 		Count:         &Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:           fh.Sum,

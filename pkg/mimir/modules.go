@@ -61,7 +61,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -228,7 +227,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader = t.Vault
-	t.Cfg.Frontend.QueryMiddleware.Redis.TLS.Reader = t.Vault
+	t.Cfg.Frontend.QueryMiddleware.ResultsCache.Redis.TLS.Reader = t.Vault
 
 	// Update Configs - GRPC Clients
 	// lint:sorted
@@ -238,10 +237,13 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
-	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
+	t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader = t.Vault
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
+
+	// Update Configs - LimitsConfigs
+	t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Vault
 
 	// Update the Server
 	updateServerTLSCfgFunc := func(vault *vault.Vault, tlsConfig *server.TLSConfig) error {
@@ -393,6 +395,28 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+	// Add mappings here for config options that are being migrated to per-tenant limits.
+	// Ex:
+	// if t.Cfg.<Section>.<DeprecatedField> != <Default> {
+	//     t.Cfg.LimitsConfig.<NewField> = t.Cfg.<Section>.<DeprecatedField>
+	// }
+
+	// AlertmanagerURL and Notifier sub-options are moving from a global config to a per-tenant config.
+	// We need to preserve the option in the ruler yaml for at least two releases (that is, at least Mimir 3.0).
+	// If the ruler config is configured by the user, map it to its new place in the default limits.
+	if t.Cfg.Ruler.DeprecatedAlertmanagerURL != "" {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.AlertmanagerURL = t.Cfg.Ruler.DeprecatedAlertmanagerURL
+	}
+	if !t.Cfg.Ruler.DeprecatedNotifier.IsDefault() {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig = t.Cfg.Ruler.DeprecatedNotifier
+	}
+	// Ensure the TLS settings reader is propagated.
+	if t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader != t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader
+	}
+
+	// End mappings for per-tenant config migrations.
+
 	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -861,11 +885,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
 	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
 		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
-
-		t.QueryPlanner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-		t.QueryPlanner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 	}
 
 	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
@@ -985,7 +1006,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,7 +1276,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
-		QueryPlanner:                     {API},
+		QueryPlanner:                     {API, ActivityTracker},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},

@@ -269,6 +269,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
+	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
