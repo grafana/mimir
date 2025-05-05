@@ -287,5 +287,5 @@ func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+"distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.")
-	f.BoolVar(&cfg.LogOnIngestStorageError, prefix+"log-on-ingest-storage-error", false, "When enabled, only log errors when writing to ingest storage. When disabled, failed ingest storage writes will fail the write request.")
+	f.BoolVar(&cfg.LogOnIngestStorageError, prefix+"log-on-ingest-storage-error", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests will fail if ingest storage write fails.")
 }
