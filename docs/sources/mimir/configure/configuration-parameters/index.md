@@ -4306,6 +4306,12 @@ migration:
   # written to both backends.
   # CLI flag: -ingest-storage.migration.distributor-send-to-ingesters-enabled
   [distributor_send_to_ingesters_enabled: <boolean> | default = false]
+
+  # When enabled, errors writing to ingest storage are logged but do not affect
+  # write success or quorum. When disabled, write requests will fail if ingest
+  # storage write fails.
+  # CLI flag: -ingest-storage.migration.log-on-ingest-storage-error
+  [log_on_ingest_storage_error: <boolean> | default = false]
 ```
 
 ### blocks_storage
