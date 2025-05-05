@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
+	"github.com/grafana/mimir/pkg/querier/parquet/cortex-poc"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -683,7 +684,7 @@ func (t *Mimir) initStoreQueryable() (services.Service, error) {
 		}
 		t.AdditionalStorageQueryables = append(t.AdditionalStorageQueryables, querier.NewStoreGatewayTimeRangeQueryable(q, t.Cfg.Querier))
 	*/
-	q, err := querier.NewParquetStoreQueryable(t.Overrides, t.Cfg.Querier, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
+	q, err := cortex_poc.NewParquetStoreQueryable(t.Overrides, t.Cfg.Querier, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize parquet store queryable: %v", err)
 	}
