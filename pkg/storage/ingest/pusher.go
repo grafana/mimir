@@ -93,10 +93,12 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				ctx:          r.ctx,
-				tenantID:     r.tenantID,
-				WriteRequest: &mimirpb.WriteRequest{},
-				index:        index,
+				ctx:      r.ctx,
+				tenantID: r.tenantID,
+				WriteRequest: &mimirpb.WriteRequest{
+					Timeseries: mimirpb.PreallocTimeseriesSliceFromPool(),
+				},
+				index: index,
 			}
 
 			if r.version > LatestRecordVersion {
@@ -396,6 +398,10 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorage aborts the request if it encounters an error.
 func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+	// We're moving Timeseries into batches, each batch has a fresh timeseries slice.
+	// We're done with the slice in the request here, the contents will live on in the batch and be freed when the batch is freed.
+	defer mimirpb.ReuseTimeseriesSliceDangerous(request.Timeseries)
+
 	hashBuf := make([]byte, 0, 1024)
 	for _, ts := range request.Timeseries {
 		var shard uint64

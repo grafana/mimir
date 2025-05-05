@@ -1604,3 +1604,54 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 
 	return queue
 }
+
+func BenchmarkPusherConsumer(b *testing.B) {
+	pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+		mimirpb.ReuseSlice(request.Timeseries)
+		return nil
+	})
+
+	records := make([]record, 50)
+	for i := range records {
+		wr := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, 100)}
+		for j := range len(wr.Timeseries) {
+			wr.Timeseries[j] = mockPreallocTimeseries(fmt.Sprintf("series_%d", i))
+		}
+		content, err := wr.Marshal()
+		require.NoError(b, err)
+		records[i].content = content
+		records[i].tenantID = "user-1"
+		records[i].version = 1
+		records[i].ctx = context.Background()
+	}
+
+	b.Run("sequential pusher", func(b *testing.B) {
+		kcfg := KafkaConfig{}
+		flagext.DefaultValues(&kcfg)
+		kcfg.IngestionConcurrencyMax = 0
+		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+
+		for _ = range b.N {
+			err := c.Consume(context.Background(), records)
+			require.NoError(b, err)
+		}
+	})
+
+	b.Run("parallel pusher", func(b *testing.B) {
+		kcfg := KafkaConfig{}
+		flagext.DefaultValues(&kcfg)
+		kcfg.IngestionConcurrencyMax = 2
+		kcfg.IngestionConcurrencyEstimatedBytesPerSample = 1
+		kcfg.IngestionConcurrencyTargetFlushesPerShard = 1
+		kcfg.IngestionConcurrencyBatchSize = 5
+		kcfg.IngestionConcurrencyQueueCapacity = 5
+		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+
+		for _ = range b.N {
+			err := c.Consume(context.Background(), records)
+			require.NoError(b, err)
+		}
+	})
+}
