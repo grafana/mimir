@@ -357,7 +357,7 @@ func isDecompressErr(err error) bool {
 func errCodeMessage(code int16, errMessage *string) error {
 	if err := kerr.ErrorForCode(code); err != nil {
 		if errMessage != nil {
-			return fmt.Errorf("%s: %w", *errMessage, err)
+			return fmt.Errorf("%w: %s", err, *errMessage)
 		}
 		return err
 	}

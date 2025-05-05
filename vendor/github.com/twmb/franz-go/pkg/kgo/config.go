@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"iter"
 	"math"
 	"math/rand"
 	"net"
@@ -101,6 +102,9 @@ type cfg struct {
 
 	sasls []sasl.Mechanism
 
+	disableClientMetrics bool
+	userMetrics          func() iter.Seq[Metric]
+
 	hooks hooks
 	pools pools
 
@@ -143,7 +147,10 @@ type cfg struct {
 	minBytes       int32
 	maxBytes       lazyI32
 	maxPartBytes   lazyI32
+	startOffset    Offset
 	resetOffset    Offset
+	setStartOffset bool
+	setResetOffset bool
 	isolationLevel int8
 	keepControl    bool
 	rack           string
@@ -194,6 +201,8 @@ type cfg struct {
 	autocommitMarks    bool
 	autocommitInterval time.Duration
 	commitCallback     func(*Client, *kmsg.OffsetCommitRequest, *kmsg.OffsetCommitResponse, error)
+
+	disableNextGenBalancer bool
 }
 
 func (cfg *cfg) validate() error {
@@ -554,6 +563,7 @@ func defaultCfg() cfg {
 		minBytes:       1,
 		maxBytes:       50 << 20,
 		maxPartBytes:   1 << 20,
+		startOffset:    NewOffset().AtStart(),
 		resetOffset:    NewOffset().AtStart(),
 		isolationLevel: 0,
 
@@ -938,6 +948,32 @@ func ConsiderMissingTopicDeletedAfter(t time.Duration) Opt {
 // You can read KIP-1102 for more info about this option.
 func OnRebootstrapRequired(fn func() ([]string, error)) Opt {
 	return clientOpt{func(cfg *cfg) { cfg.onRebootstrapRequired = fn }}
+}
+
+// DisableClientMetrics opts out of collecting and sending client metrics to
+// the broker (if the broker supports receiving client metrics). By default,
+// clients are recommended to gather a small set of metrics to help cluster
+// operators debug client issues (rather than relying on clients which may not
+// be instrumented at all).
+//
+// For more details on client metrics, see KIP-714.
+func DisableClientMetrics() Opt {
+	return clientOpt{func(cfg *cfg) { cfg.disableClientMetrics = true }}
+}
+
+// UserMetricsFn sets the function to call to add user metrics when rolling up
+// client metrics to send to the broker. Every metric rollup, fn is called and
+// returns an iterator. All metrics returned from the iterator are included in
+// the client metric aggregation and are sent to the broker. It is your
+// responsibility to ensure the metric name is formatted correctly (namespaced
+// and following OpenTelemetry format), and you need to ensure your Sum metrics
+// are monotonically increasing. See the documentation on [Metric] for more
+// details.
+//
+// For more details about the client sending metrics, see KIP-714. For more
+// details about enhancing client metrics with user metrics, see KIP-1076.
+func UserMetricsFn(fn func() iter.Seq[Metric]) Opt {
+	return clientOpt{func(cfg *cfg) { cfg.userMetrics = fn }}
 }
 
 ////////////////////////////
@@ -1339,33 +1375,73 @@ func MaxConcurrentFetches(n int) ConsumerOpt {
 	return consumerOpt{func(cfg *cfg) { cfg.maxConcurrentFetches = n }}
 }
 
-// ConsumeResetOffset sets the offset to start consuming from, or if
-// OffsetOutOfRange is seen while fetching, to restart consuming from. The
-// default is NewOffset().AtStart(), i.e., the earliest offset.
+// ConsumeStartOffset sets the offset to start consuming from when consuming a
+// partition for the first time. If you do not set [ConsumeResetOffset], this
+// is also the offset to reset to if the client sees an OffsetOutOfRange error
+// while consuming a partition. The default is NewOffset().AtStart(), i.e.,
+// start processing a partition from the earliest offset. If using this option,
+// it is strongly recommended to also set ConsumeResetOffset.
 //
-// For direct consumers, this is the offset that partitions begin to consume
-// from. For group consumers, this is the offset that partitions begin to
-// consume from if a partition has no commits. If partitions have commits, the
-// commit offset is used. While fetching, if OffsetOutOfRange is encountered,
-// the partition resets to ConsumeResetOffset. Using [NoResetOffset] stops
-// consuming a partition if the client encounters OffsetOutOfRange. Using
-// [Offset.AtCommitted] prevents consuming a partition in a group if the
-// partition has no prior commits.
+// If you use an exact or relative offsets and the offset ends up out of range,
+// the client chooses the nearest of either the log start offset or the log end
+// offset. For example, using At(3) when the partition starts at 8 results in
+// the partition being consumed from offset 8.
 //
-// If you use an exact offset or relative offsets and the offset ends up out of
-// range, the client chooses the nearest of either the log start offset or the
-// high watermark: using At(3) when the partition starts at 8 results in the
-// partition being consumed from offset 8.
+// For group consuming, you can use [Offset.AtCommitted] to prevent starting
+// consuming a partition in a group if the partition has no prior commits.
 //
-// In short form, the following determines the offset for when a partition is
-// seen for the first time, or reset while fetching:
+// The following determines the offset for when a partition is seen for the
+// first time:
 //
-//	reset at start?                        => log start offset
-//	reset at end?                          => high watermark
-//	reset at exact?                        => this exact offset (3 means offset 3)
-//	reset relative?                        => the above, + / - the relative amount
-//	reset exact or relative out of bounds? => nearest boundary (start or end)
-//	reset after millisec?                  => high watermark, or first offset after millisec if one exists
+//	at start?                         => start at the log start offset
+//	at end?                           => start at the log end offset
+//	at exact?                         => start at the an exact offset (3 means offset 3)
+//	relative?                         => start at the the above, + / - the relative amount
+//	exact/relative are out of bounds? => start at the nearest boundary (start or end)
+//	after millisec?                   => start at first offset after millisec if one exists, else log end offset
+//
+// To match Kafka's auto.offset.reset which is used for both the start offset
+// and the reset offset,
+//
+//	NewOffset().AtStart()     == auto.offset.reset "earliest"
+//	NewOffset().AtEnd()       == auto.offset.reset "latest"
+//	NewOffset().AtCommitted() == auto.offset.reset "none"
+//
+// Be sure to check the documentation for [ConsumeResetOffset], especially if
+// you rely on this option as the reset offset as well.
+func ConsumeStartOffset(offset Offset) ConsumerOpt {
+	return consumerOpt{func(cfg *cfg) { cfg.startOffset, cfg.setStartOffset = offset, true }}
+}
+
+// ConsumeResetOffset sets the offset to reset to if the client ever sees
+// OffsetOutOfRange while fetching. If you do not set [ConsumeStartOffset],
+// this is also the offset to start consuming from when consuming a partition
+// for the first time. The default is NewOffset().AtStart(), i.e., reset to the
+// earliest offset. If using this option, it is strongly recommended to also
+// set ConsumeStartOffset.
+//
+// This option is *only* used if a consumer seeds OffsetOutOfRange on the
+// *first* fetch of a partition. If the consumer has consumed the partition at
+// all and sees the error, it will automatically reset to the first offset
+// after the timestamp of the last successfully consumed offset. If data loss
+// occurred such that even the last successfully consumed offset is lost, the
+// client automatically resets to the new current end offset. If you want to
+// disable offset resetting entirely, you can use [NoResetOffset].
+//
+// If you use an exact or relative offsets and the offset ends up out of range,
+// the client chooses the nearest of either the log start offset or the log end
+// offset. For example, using At(3) when the partition starts at 8 results in
+// the partition being consumed from offset 8.
+//
+// The following determines the offset for when a partition is seen for the
+// first time, or reset while fetching:
+//
+//	at start?                         => reset to the log start offset
+//	at end?                           => reset to the log end offset
+//	at exact?                         => reset to the an exact offset (3 means offset 3)
+//	relative?                         => reset to the the above, + / - the relative amount
+//	exact/relative are out of bounds? => reset to the nearest boundary (start or end)
+//	after millisec?                   => reset to the first offset after millisec if one exists, else the log end offset
 //
 // To match Kafka's auto.offset.reset,
 //
@@ -1373,11 +1449,14 @@ func MaxConcurrentFetches(n int) ConsumerOpt {
 //	NewOffset().AtEnd()       == auto.offset.reset "latest"
 //	NewOffset().AtCommitted() == auto.offset.reset "none"
 //
-// With the above, make sure to use NoResetOffset() if you want to stop
+// With the above, make sure to use [NoResetOffset] if you want to stop
 // consuming when you encounter OffsetOutOfRange. It is highly recommended
-// to read the docs for all Offset methods to see a few other alternatives.
+// to read the docs for all Offset methods.
+//
+// Be sure to check the documentation for [ConsumeStartOffset], especially if
+// you rely on this option as the start offset as well.
 func ConsumeResetOffset(offset Offset) ConsumerOpt {
-	return consumerOpt{func(cfg *cfg) { cfg.resetOffset = offset }}
+	return consumerOpt{func(cfg *cfg) { cfg.resetOffset, cfg.setResetOffset = offset, true }}
 }
 
 // Rack specifies where the client is physically located and changes fetch
@@ -1894,3 +1973,22 @@ func AutoCommitCallback(fn func(*Client, *kmsg.OffsetCommitRequest, *kmsg.Offset
 		}
 	}}
 }
+
+// !!! Only uncomment once we trust the broker implementation!
+// !!! And add this option to Opt!
+//
+// DisableNextGenRebalancer opts out of the "next gen" rebalancer that is
+// the default as of Kafka 4.0+. The client opts in to the next gen rebalancer
+// automatically if the broker supports it AND if you are using either the
+// [RangeBalancer] or [StickyBalancer] or [CooperativeStickyBalancer]. If you
+// use your own rebalancer or use the [RoundRobinBalancer] or are talking to
+// a broker that does not support the next gen balancer, the client uses the
+// old client-driven group balancing behavior.
+//
+// You may want to use this function if you notice a regression or run into
+// a broker or client bug, or if you prefer the performance of the old
+// client driven rebalancers.
+//  func DisableNextGenRebalancer() GroupOpt {
+//  	return groupOpt{func(cfg *cfg) { cfg.disableNextGenBalancer = true }}
+//  }
+//
