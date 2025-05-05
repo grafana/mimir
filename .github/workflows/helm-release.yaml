@@ -1,6 +1,8 @@
 name: helm-release
 
 on:
+  workflow_dispatch:
+
   push:
     branches:
       - main
@@ -11,15 +13,14 @@ permissions: {}
 
 jobs:
   call-update-helm-repo:
-    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+    uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@60d9b01a5e698e7d463c72e95b2170c2c8880d2d
     permissions:
-      # Give restricted read permissions to "update-helm-repo" action. The action
-      # requests higher permissions for the specific "release" job.
-      contents: read
+      id-token: write
+      contents: write
+      packages: write
     with:
       charts_dir: operations/helm/charts
       cr_configfile: operations/helm/cr.yaml
       ct_configfile: operations/helm/ct.yaml
     secrets:
-      github_app_id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
-      github_app_pem: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}
+      vault_repo_secret_name: mimir-helm-release
