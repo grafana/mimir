@@ -101,8 +101,8 @@ func (p *PrefixedBucket) Attributes(ctx context.Context, name string) (ObjectAtt
 
 // Upload the contents of the reader as an object into the bucket.
 // Upload should be idempotent.
-func (p *PrefixedBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	return p.bkt.Upload(ctx, conditionalPrefix(p.prefix, name), r)
+func (p *PrefixedBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...ObjectUploadOption) error {
+	return p.bkt.Upload(ctx, conditionalPrefix(p.prefix, name), r, opts...)
 }
 
 // Delete removes the object with the given name.
