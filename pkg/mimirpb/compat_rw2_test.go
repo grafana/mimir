@@ -141,3 +141,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	// Check that the unmarshalled data matches the original data.
 	require.Equal(t, expected, &received)
 }
+
+func TestRW2UnmarshalWithOffset(t *testing.T) {
+
+}

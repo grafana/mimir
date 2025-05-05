@@ -14,6 +14,7 @@ import (
 const (
 	RecordVersionHeaderKey = "Version"
 	LatestRecordVersion    = 2
+	V2RecordSymbolOffset   = 64
 )
 
 func ValidateRecordVersion(version int) error {
@@ -105,5 +106,6 @@ func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest
 
 func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
 	wr.UnmarshalFromRW2 = true
+	wr.RW2SymbolOffset = V2RecordSymbolOffset
 	return wr.Unmarshal(content)
 }
