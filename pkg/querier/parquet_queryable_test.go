@@ -3,12 +3,14 @@ package querier
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,8 +23,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/user"
@@ -56,108 +60,108 @@ var benchmarkCases = []BenchmarkCase{
 			labels.MustNewMatcher(labels.MatchEqual, "instance", "1"),
 		},
 	},
-	{
-		Name: "SingleMetricAllInstances",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+	/*	{
+			Name: "SingleMetricAllInstances",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			},
 		},
-	},
-	{
-		Name: "MultipleMetricsRange",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+		{
+			Name: "MultipleMetricsRange",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+			},
 		},
-	},
-	{
-		Name: "MultipleMetricsSparse",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
+		{
+			Name: "MultipleMetricsSparse",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
+			},
 		},
-	},
-	{
-		Name: "HighCardinalitySingleMetric",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
-			labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
+		{
+			Name: "HighCardinalitySingleMetric",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
+				labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
+			},
 		},
-	},
-	{
-		Name: "HighCardinalityMultipleMetrics",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
-			labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
+		{
+			Name: "HighCardinalityMultipleMetrics",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
+				labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
+			},
 		},
-	},
-	{
-		Name: "SubsetSelectorsSingleMetric",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
-			labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
+		{
+			Name: "SubsetSelectorsSingleMetric",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+				labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
+				labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
+			},
 		},
-	},
-	{
-		Name: "SubsetSelectorsMultipleMetrics",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
-			labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
-			labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
+		{
+			Name: "SubsetSelectorsMultipleMetrics",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+				labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
+				labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
+			},
 		},
-	},
-	{
-		Name: "NegativeRegexSingleMetric",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
+		{
+			Name: "NegativeRegexSingleMetric",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+				labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
+			},
 		},
-	},
-	{
-		Name: "NegativeRegexMultipleMetrics",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-			labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
+		{
+			Name: "NegativeRegexMultipleMetrics",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+				labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
+			},
 		},
-	},
-	{
-		Name: "NonExistentValue",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchEqual, "pod", "non-existent-pod"),
+		{
+			Name: "NonExistentValue",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+				labels.MustNewMatcher(labels.MatchEqual, "pod", "non-existent-pod"),
+			},
 		},
-	},
-	{
-		Name: "ExpensiveRegexSingleMetric",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
+		{
+			Name: "ExpensiveRegexSingleMetric",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+				labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
+			},
 		},
-	},
-	{
-		Name: "ExpensiveRegexMultipleMetrics",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-			labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
+		{
+			Name: "ExpensiveRegexMultipleMetrics",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+				labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
+			},
 		},
-	},
-	{
-		Name: "SparseSeriesSingleMetric",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
-			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
+		{
+			Name: "SparseSeriesSingleMetric",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+				labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
+			},
 		},
-	},
-	{
-		Name: "SparseSeriesMultipleMetrics",
-		Matchers: []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
-			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
+		{
+			Name: "SparseSeriesMultipleMetrics",
+			Matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+				labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
+			},
 		},
-	},
-}
+	*/}
 
 // minimalBlocksStorageConfig returns a minimal config for mimir_tsdb.BlocksStorageConfig.
 func minimalBlocksStorageConfig(storageDir string) mimir_tsdb.BlocksStorageConfig {
@@ -219,12 +223,18 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) {
 
 				for ss.Next() {
 					series++
+					// Consume the iterator because that what you would nornmally do in a real query.
+					s := ss.At()
+					it := s.Iterator(nil)
+					for it.Next() != chunkenc.ValNone {
+					}
 				}
 				if err := ss.Err(); err != nil {
 					b.Fatal(err)
 				}
 			}
 			b.ReportMetric(float64(series)/float64(b.N), "series/op")
+
 		})
 	}
 }
@@ -237,7 +247,7 @@ func BenchmarkQueryableSelect(b *testing.B) {
 	b.Cleanup(func() { _ = bkt.Close() })
 
 	numSamples := 10000
-	numSeries := 10000
+	numSeries := 10
 	series := make([]labels.Labels, numSeries)
 	for i := 0; i < numSeries; i++ {
 		series[i] = labels.FromStrings(
@@ -520,4 +530,29 @@ func CreateFloatBlock(
 	}
 
 	return id, nil
+}
+
+type countingBucket struct {
+	objstore.Bucket
+
+	nGet       atomic.Int32
+	nGetRange  atomic.Int32
+	bsGetRange atomic.Int64
+}
+
+func (b *countingBucket) ResetCounters() {
+	b.nGet.Store(0)
+	b.nGetRange.Store(0)
+	b.bsGetRange.Store(0)
+}
+
+func (b *countingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	b.nGet.Add(1)
+	return b.Bucket.Get(ctx, name)
+}
+
+func (b *countingBucket) GetRange(ctx context.Context, name string, off int64, length int64) (io.ReadCloser, error) {
+	b.nGetRange.Add(1)
+	b.bsGetRange.Add(length)
+	return b.Bucket.GetRange(ctx, name, off, length)
 }
