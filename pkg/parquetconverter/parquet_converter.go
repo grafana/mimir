@@ -29,16 +29,20 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/parquet"
+	promParquetConvert "github.com/grafana/mimir/pkg/storage/parquet/convert"
+	promParquetSchema "github.com/grafana/mimir/pkg/storage/parquet/schema"
 	"github.com/grafana/mimir/pkg/storage/parquet/tsdbcodec"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -302,10 +306,24 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						level.Error(c.logger).Log("msg", "Error downloading block", "err", err)
 						continue
 					}
-					err = TSDBBlockToParquet(ctx, b.ID, uBucket, bdir, c.logger)
+					err = TSDBBlockToParquetSingleFile(ctx, b.ID, uBucket, bdir, c.logger)
 					if err != nil {
-						level.Error(c.logger).Log("msg", "failed to import block", "block", b.String(), "err", err)
+						level.Error(c.logger).Log("msg", "failed to convert block to single-file parquet format", "block", b.String(), "err", err)
 					}
+
+					labelsFileName, chunksFileName, err := TSDBBlockToParquetDualFile(
+						ctx, b, bdir, uBucket, c.logger,
+					)
+					if err != nil {
+						level.Error(c.logger).Log("msg", "failed to convert block to dual-file parquet format", "block", b.String(), "err", err)
+					} else {
+						level.Info(c.logger).Log(
+							"msg", "converted block to to dual-file parquet format",
+							"labelsFile", labelsFileName,
+							"chunksFile", chunksFileName,
+						)
+					}
+
 					// Add the blocks
 					pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b}
 				}
@@ -524,7 +542,7 @@ func (i *InDiskUploader) Upload(ctx context.Context, path string, r io.Reader) e
 	return err
 }
 
-func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bDir string, logger log.Logger) (err error) {
+func TSDBBlockToParquetSingleFile(ctx context.Context, id ulid.ULID, uploader Uploader, bDir string, logger log.Logger) (err error) {
 	r, w := io.Pipe()
 
 	wg := sync.WaitGroup{}
@@ -577,6 +595,42 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 
 	wg.Wait()
 	return err
+}
+
+const dualFileBlockName = "block.parquet.prom-common"
+
+func TSDBBlockToParquetDualFile(
+	ctx context.Context,
+	bucketIdxBlock *bucketindex.Block,
+	localBlockDir string,
+	bkt objstore.Bucket,
+	logger log.Logger,
+) (labelsFileName, chunksFileName string, err error) {
+
+	tsdbBlock, err := tsdb.OpenBlock(
+		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	_, err = promParquetConvert.ConvertTSDBBlock(
+		ctx,
+		bkt,
+		bucketIdxBlock.MinTime,
+		bucketIdxBlock.MaxTime,
+		[]promParquetConvert.Convertible{tsdbBlock},
+		promParquetConvert.WithName(dualFileBlockName),
+		promParquetConvert.WithColDuration(parquet.ChunkColumnLength),
+		promParquetConvert.WithSortBy(labels.MetricName),
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	labelsFileName = promParquetSchema.LabelsPfileNameForShard(dualFileBlockName, 0)
+	chunksFileName = promParquetSchema.ChunksPfileNameForShard(dualFileBlockName, 0)
+	return labelsFileName, chunksFileName, nil
 }
 
 func getBlockTimeRange(b *bucketindex.Block, timeRanges []int64) int64 {
