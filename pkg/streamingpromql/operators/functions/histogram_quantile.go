@@ -82,9 +82,7 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 	}),
 	uint64(unsafe.Sizeof(promql.Buckets{})),
 	true,
-	func(b promql.Buckets) promql.Buckets {
-		return mangleBuckets(b)
-	},
+	mangleBuckets,
 )
 
 func mangleBuckets(b promql.Buckets) promql.Buckets {
