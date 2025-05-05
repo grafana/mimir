@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package querier
+package cortex_poc
 
 import (
 	"context"
@@ -18,9 +18,15 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+var (
+	errBucketIndexBlocksFinderNotRunning = errors.New("bucket index blocks finder is not running")
+	errInvalidBlocksRange                = errors.New("invalid blocks time range")
 )
 
 type finderMetrics struct {
@@ -48,12 +54,12 @@ type ParquetBucketIndexBlocksFinderConfig struct {
 type ParquetBucketIndexBlocksFinder struct {
 	services.Service
 
-	cfg    BucketIndexBlocksFinderConfig
+	cfg    querier.BucketIndexBlocksFinderConfig
 	loader *bucketindex.ParquetLoader
 	m      *finderMetrics
 }
 
-func NewParquetBucketIndexBlocksFinder(cfg BucketIndexBlocksFinderConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) *ParquetBucketIndexBlocksFinder {
+func NewParquetBucketIndexBlocksFinder(cfg querier.BucketIndexBlocksFinderConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) *ParquetBucketIndexBlocksFinder {
 	loader := bucketindex.NewLParquetLoader(cfg.IndexLoader, bkt, cfgProvider, logger, reg)
 
 	return &ParquetBucketIndexBlocksFinder{
