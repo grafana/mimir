@@ -328,8 +328,7 @@ type blocksStoreQuerier struct {
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
 
-	streamReadersMtx sync.Mutex
-	streamReaders    []*storeGatewayStreamReader
+	streamReaders []*storeGatewayStreamReader
 }
 
 // Select implements storage.Querier interface.
@@ -433,9 +432,6 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints
 }
 
 func (q *blocksStoreQuerier) Close() error {
-	q.streamReadersMtx.Lock()
-	defer q.streamReadersMtx.Unlock()
-
 	for _, r := range q.streamReaders {
 		r.FreeBuffer()
 	}
@@ -485,9 +481,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	if len(resStreamReaders) > 0 {
 		spanLog.DebugLog("msg", "starting streaming")
 
-		q.streamReadersMtx.Lock()
 		q.streamReaders = append(q.streamReaders, resStreamReaders...)
-		q.streamReadersMtx.Unlock()
 
 		// If this was a streaming call, start fetching streaming chunks here.
 		for _, r := range resStreamReaders {
