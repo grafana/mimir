@@ -3,14 +3,12 @@ package querier
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/user"
@@ -177,8 +174,8 @@ func minimalBlocksStorageConfig(storageDir string) mimir_tsdb.BlocksStorageConfi
 	}
 }
 
-// QueryCreateFunc is a callback to create a Queryable from a pre-filled TestStorage. It may or may not use the provided Bucket.
-type QueryCreateFunc func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable
+// QueryCreateFunc is a callback to create a Queryable and return an instrumented bucket from a pre-filled TestStorage.
+type QueryCreateFunc func(tb testing.TB, st *teststorage.TestStorage) (storage.Queryable, *CountingBucket)
 
 // BenchmarkCase represents a single benchmark case with its matchers and name
 type BenchmarkCase struct {
@@ -202,9 +199,11 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) {
 	st := teststorage.New(b)
 	b.Cleanup(func() { _ = st.Close() })
 
-	q, err := f(b, st).Querier(math.MinInt64, math.MaxInt64)
+	queryable, bkt := f(b, st)
+
+	q, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	if err != nil {
-		b.Fatal("error building querier: ", err)
+		b.Fatal("error building q: ", err)
 	}
 	defer q.Close()
 
@@ -212,6 +211,11 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) {
 		b.Run(bc.Name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
+
+			// Reset bkt counters before each benchmark
+			if bkt != nil {
+				bkt.ResetCounters()
+			}
 
 			var series int
 			for i := 0; i < b.N; i++ {
@@ -235,6 +239,13 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) {
 			}
 			b.ReportMetric(float64(series)/float64(b.N), "series/op")
 
+			var getOps, getRangeOps, getRangeBytes int64
+			if bkt != nil {
+				getOps, getRangeOps, getRangeBytes = bkt.GetCounts()
+			}
+			b.ReportMetric(float64(getOps)/float64(b.N), "get_ops/op")
+			b.ReportMetric(float64(getRangeOps)/float64(b.N), "getrange_ops/op")
+			b.ReportMetric(float64(getRangeBytes)/float64(b.N), "getrange_bytes/op")
 		})
 	}
 }
@@ -247,7 +258,7 @@ func BenchmarkQueryableSelect(b *testing.B) {
 	b.Cleanup(func() { _ = bkt.Close() })
 
 	numSamples := 10000
-	numSeries := 10
+	numSeries := 10000
 	series := make([]labels.Labels, numSeries)
 	for i := 0; i < numSeries; i++ {
 		series[i] = labels.FromStrings(
@@ -328,9 +339,10 @@ func BenchmarkQueryableSelect(b *testing.B) {
 	require.NoError(b, bucketindex.WriteIndex(ctx, bkt, "test-tenant", nil, idx))
 
 	var querier storage.Queryable
+	var countingBucket *CountingBucket
 
 	if queryableType == "parquet" {
-		pq, err := func() (storage.Queryable, error) {
+		pq, err := func() (*ParquetQueryable, error) {
 			limits := &blocksStoreLimitsMock{}
 			logger := log.NewNopLogger()
 			reg := prometheus.NewRegistry()
@@ -365,6 +377,7 @@ func BenchmarkQueryableSelect(b *testing.B) {
 		}()
 		require.NoError(b, err)
 		querier = pq
+		countingBucket = pq.bucket
 	} else if queryableType == "block" {
 		blck, err := tsdb.OpenBlock(slog.Default(), blockDir, nil, nil)
 		require.NoError(b, err)
@@ -381,13 +394,14 @@ func BenchmarkQueryableSelect(b *testing.B) {
 			cleanup: func() {
 				require.NoError(b, q.Close())
 			},
+			bucket: nil,
 		}
 	} else {
 		b.Skip("No queryable type selected via MIMIR_SELECT_QUERYABLE environment variable")
 	}
 
-	RunBenchmarks(b, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
-		return querier
+	RunBenchmarks(b, func(tb testing.TB, st *teststorage.TestStorage) (storage.Queryable, *CountingBucket) {
+		return querier, countingBucket
 	}, benchmarkCases)
 }
 
@@ -395,6 +409,7 @@ func BenchmarkQueryableSelect(b *testing.B) {
 type blockQueryable struct {
 	querier storage.Querier
 	cleanup func()
+	bucket  *CountingBucket
 }
 
 func (q *blockQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -530,29 +545,4 @@ func CreateFloatBlock(
 	}
 
 	return id, nil
-}
-
-type countingBucket struct {
-	objstore.Bucket
-
-	nGet       atomic.Int32
-	nGetRange  atomic.Int32
-	bsGetRange atomic.Int64
-}
-
-func (b *countingBucket) ResetCounters() {
-	b.nGet.Store(0)
-	b.nGetRange.Store(0)
-	b.bsGetRange.Store(0)
-}
-
-func (b *countingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	b.nGet.Add(1)
-	return b.Bucket.Get(ctx, name)
-}
-
-func (b *countingBucket) GetRange(ctx context.Context, name string, off int64, length int64) (io.ReadCloser, error) {
-	b.nGetRange.Add(1)
-	b.bsGetRange.Add(length)
-	return b.Bucket.GetRange(ctx, name, off, length)
 }

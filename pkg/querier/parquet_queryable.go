@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -61,7 +62,7 @@ type ParquetQueryable struct {
 	queryStoreAfter      time.Duration
 	queryIngestersWithin time.Duration
 	limits               BlocksStoreLimits
-	bucket               objstore.InstrumentedBucket
+	bucket               *CountingBucket
 	chunkDecoder         *mimir_storage.PrometheusParquetChunksDecoder
 	asyncRead            bool
 	dictionaryCacheSize  int
@@ -112,6 +113,45 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 	}
 }
 
+// CountingBucket wraps a bucket and counts Get and GetRange operations
+type CountingBucket struct {
+	objstore.InstrumentedBucket
+
+	nGet       atomic.Int32
+	nGetRange  atomic.Int32
+	bsGetRange atomic.Int64
+}
+
+func (b *CountingBucket) ResetCounters() {
+	b.nGet.Store(0)
+	b.nGetRange.Store(0)
+	b.bsGetRange.Store(0)
+}
+
+func (b *CountingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	b.nGet.Add(1)
+	return b.InstrumentedBucket.Get(ctx, name)
+}
+
+func (b *CountingBucket) GetRange(ctx context.Context, name string, off int64, length int64) (io.ReadCloser, error) {
+	b.nGetRange.Add(1)
+	b.bsGetRange.Add(length)
+	return b.InstrumentedBucket.GetRange(ctx, name, off, length)
+}
+
+func (b *CountingBucket) ReaderWithExpectedErrs(fn objstore.IsOpFailureExpectedFunc) objstore.BucketReader {
+	return b.InstrumentedBucket.ReaderWithExpectedErrs(fn)
+}
+
+func (b *CountingBucket) WithExpectedErrs(fn objstore.IsOpFailureExpectedFunc) objstore.Bucket {
+	return b.InstrumentedBucket.WithExpectedErrs(fn)
+}
+
+// GetCounts returns the current counts of Get and GetRange operations
+func (b *CountingBucket) GetCounts() (getOps, getRangeOps, getRangeBytes int64) {
+	return int64(b.nGet.Load()), int64(b.nGetRange.Load()), b.bsGetRange.Load()
+}
+
 func NewParquetStoreQueryable(
 	limits BlocksStoreLimits,
 	config Config,
@@ -122,6 +162,10 @@ func NewParquetStoreQueryable(
 	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, ModuleName, logger, reg)
 	if err != nil {
 		return nil, err
+	}
+
+	countingBucket := &CountingBucket{
+		InstrumentedBucket: bucketClient,
 	}
 
 	cacheMetrics := mimir_storage.NewCacheMetrics(reg)
@@ -139,14 +183,14 @@ func NewParquetStoreQueryable(
 	bucketIndexBlocksFinder := BucketIndexBlocksFinderConfig{
 		IndexLoader: indexLoaderConfig,
 	}
-	finder := NewParquetBucketIndexBlocksFinder(bucketIndexBlocksFinder, bucketClient, limits, logger, reg)
+	finder := NewParquetBucketIndexBlocksFinder(bucketIndexBlocksFinder, countingBucket, limits, logger, reg)
 	manager, err := services.NewManager(finder)
 	if err != nil {
 		return nil, errors.Wrap(err, "parquet store queryable subservices")
 	}
 
 	q := &ParquetQueryable{
-		bucket:              bucketClient,
+		bucket:              countingBucket,
 		finder:              finder,
 		queryStoreAfter:     config.QueryStoreAfter,
 		logger:              logger,
