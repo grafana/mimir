@@ -399,8 +399,6 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 				F: res,
 			})
 			if forcedMonotonicity {
-				// Currently Prometheus does not correctly place the metric name onto this annotation.
-				// See: https://github.com/prometheus/prometheus/issues/15411
 				h.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
 					h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
 				))
