@@ -1632,7 +1632,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
 		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
 
-		for _ = range b.N {
+		for range b.N {
 			err := c.Consume(context.Background(), records)
 			require.NoError(b, err)
 		}
