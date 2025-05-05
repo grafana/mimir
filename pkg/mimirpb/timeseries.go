@@ -66,6 +66,10 @@ type PreallocWriteRequest struct {
 
 	// UnmarshalRW2 is set to true if the Unmarshal method should unmarshal the data as a remote write 2.0 message.
 	UnmarshalFromRW2 bool
+
+	// RW2SymbolOffset is an optimization used for RW2-adjacent applications where typical symbol refs are shifted by an offset.
+	// This allows certain symbols to be reserved without being present in the symbols list.
+	RW2SymbolOffset uint32
 }
 
 // Unmarshal implements proto.Message.
@@ -75,6 +79,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
+	p.rw2symbols.offset = p.RW2SymbolOffset
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
