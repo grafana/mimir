@@ -300,6 +300,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare.outputs.build_image }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -319,12 +322,8 @@ jobs:
           name: Docker Images
       - name: Extract Docker Images from Archive
         run: tar xvf images.tar -C /
+      - name: Login to DockerHub
+        uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
       - name: Deploy
         run: |
-          if [ -n "$DOCKER_PASSWORD" ]; then
-            printenv DOCKER_PASSWORD | skopeo login -u "$DOCKER_USERNAME" --password-stdin docker.io
-          fi
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
