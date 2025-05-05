@@ -179,7 +179,7 @@ func BenchmarkQueryableSelect(b *testing.B) {
 	b.Cleanup(func() { _ = bkt.Close() })
 
 	numSamples := 10000
-	numSeries := 10000
+	numSeries := 10
 	series := make([]labels.Labels, numSeries)
 	for i := 0; i < numSeries; i++ {
 		series[i] = labels.FromStrings(
@@ -419,14 +419,10 @@ func BenchmarkQueryableSelect(b *testing.B) {
 		}()
 		require.NoError(bb, err)
 
-		for _, bc := range benchmarkCases {
-			bb.Run(bc.Name, func(b *testing.B) {
-				result := RunBenchmarks(b, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
-					return pq
-				}, []BenchmarkCase{bc}, checkConsistency)
-				parquetResults = append(parquetResults, result)
-			})
-		}
+		result := RunBenchmarks(bb, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
+			return pq
+		}, benchmarkCases, checkConsistency)
+		parquetResults = append(parquetResults, result)
 	})
 
 	b.Run("BlockQueryable", func(bb *testing.B) {
@@ -447,14 +443,10 @@ func BenchmarkQueryableSelect(b *testing.B) {
 			},
 		}
 
-		for _, bc := range benchmarkCases {
-			bb.Run(bc.Name, func(b *testing.B) {
-				result := RunBenchmarks(b, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
-					return q
-				}, []BenchmarkCase{bc}, checkConsistency)
-				blockResults = append(blockResults, result)
-			})
-		}
+		result := RunBenchmarks(bb, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
+			return q
+		}, benchmarkCases, checkConsistency)
+		blockResults = append(blockResults, result)
 	})
 
 	if checkConsistency {

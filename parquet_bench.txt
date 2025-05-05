@@ -1,0 +1,33 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/pkg/querier
+cpu: Apple M2 Pro
+BenchmarkParquetQueryable/SingleMetricExact/Query/SingleMetricExact-12         	     583	   2107016 ns/op	         1.000 series/op	10687135 B/op	    2166 allocs/op
+BenchmarkParquetQueryable/SingleMetricAllInstances/Query/SingleMetricAllInstances-12         	     564	   2001353 ns/op	         1.000 series/op	10277363 B/op	    2019 allocs/op
+BenchmarkParquetQueryable/MultipleMetricsRange/Query/MultipleMetricsRange-12                 	     279	   4438383 ns/op	         5.000 series/op	34612422 B/op	    2557 allocs/op
+BenchmarkParquetQueryable/MultipleMetricsSparse/Query/MultipleMetricsSparse-12               	     294	   3864414 ns/op	         5.000 series/op	30122703 B/op	    2519 allocs/op
+BenchmarkParquetQueryable/HighCardinalitySingleMetric/Query/HighCardinalitySingleMetric-12   	     612	   2086873 ns/op	         1.000 series/op	10069962 B/op	    2158 allocs/op
+BenchmarkParquetQueryable/HighCardinalityMultipleMetrics/Query/HighCardinalityMultipleMetrics-12         	     561	   2202149 ns/op	         1.000 series/op	 9767359 B/op	    2240 allocs/op
+BenchmarkParquetQueryable/SubsetSelectorsSingleMetric/Query/SubsetSelectorsSingleMetric-12               	    8946	    130568 ns/op	         0 series/op	  202574 B/op	     340 allocs/op
+BenchmarkParquetQueryable/SubsetSelectorsMultipleMetrics/Query/SubsetSelectorsMultipleMetrics-12         	    3492	    332183 ns/op	         0 series/op	  137512 B/op	     547 allocs/op
+BenchmarkParquetQueryable/NegativeRegexSingleMetric/Query/NegativeRegexSingleMetric-12                   	    9315	    133316 ns/op	         0 series/op	  207683 B/op	     327 allocs/op
+BenchmarkParquetQueryable/NegativeRegexMultipleMetrics/Query/NegativeRegexMultipleMetrics-12             	     550	   2098243 ns/op	         1.000 series/op	10494904 B/op	    2238 allocs/op
+BenchmarkParquetQueryable/NonExistentValue/Query/NonExistentValue-12                                     	   13036	     88878 ns/op	         0 series/op	  190472 B/op	     276 allocs/op
+BenchmarkParquetQueryable/ExpensiveRegexSingleMetric/Query/ExpensiveRegexSingleMetric-12                 	     588	   1988980 ns/op	         1.000 series/op	10369697 B/op	    2165 allocs/op
+BenchmarkParquetQueryable/ExpensiveRegexMultipleMetrics/Query/ExpensiveRegexMultipleMetrics-12           	     358	   3464674 ns/op	         3.000 series/op	23501817 B/op	    2495 allocs/op
+BenchmarkParquetQueryable/SparseSeriesSingleMetric/Query/SparseSeriesSingleMetric-12                     	    6157	    186859 ns/op	         0 series/op	  219543 B/op	     465 allocs/op
+BenchmarkParquetQueryable/SparseSeriesMultipleMetrics/Query/SparseSeriesMultipleMetrics-12               	    3723	    315051 ns/op	         0 series/op	  141960 B/op	     548 allocs/op
+PASS
+ok  	github.com/grafana/mimir/pkg/querier	43.279s
+PASS
+ok  	github.com/grafana/mimir/pkg/querier/api	0.305s
+PASS
+ok  	github.com/grafana/mimir/pkg/querier/batch	0.234s
+PASS
+ok  	github.com/grafana/mimir/pkg/querier/engine	0.320s
+PASS
+ok  	github.com/grafana/mimir/pkg/querier/stats	0.197s
+PASS
+ok  	github.com/grafana/mimir/pkg/querier/tenantfederation	0.441s
+PASS
+ok  	github.com/grafana/mimir/pkg/querier/worker	0.306s
