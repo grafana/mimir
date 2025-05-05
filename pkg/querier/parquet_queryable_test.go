@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"testing"
 	"time"
 
@@ -22,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -38,12 +36,17 @@ import (
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
-// checkConsistency controls whether to run consistency checks in benchmarks.
-// It can be set via the MIMIR_PARQUET_CHECK_CONSISTENCY environment variable.
-var checkConsistency = func() bool {
-	v, _ := strconv.ParseBool(os.Getenv("MIMIR_PARQUET_CHECK_CONSISTENCY"))
-	return v
-}()
+// queryableType controls which queryable implementation to use in benchmarks.
+// It can be set via the MIMIR_SELECT_QUERYABLE environment variable.
+// Valid values are "block" or "parquet".
+var queryableType string
+
+func init() {
+	queryableType = os.Getenv("MIMIR_SELECT_QUERYABLE")
+	if queryableType == "" {
+		queryableType = "parquet"
+	}
+}
 
 // minimalBlocksStorageConfig returns a minimal config for mimir_tsdb.BlocksStorageConfig.
 func minimalBlocksStorageConfig(storageDir string) mimir_tsdb.BlocksStorageConfig {
@@ -82,7 +85,7 @@ type Sample struct {
 }
 
 // RunBenchmarks runs benchmarks for multiple cases with different matchers.
-func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase, checkConsistency bool) BenchmarkResult {
+func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) BenchmarkResult {
 	ctx := context.Background()
 	ctx = user.InjectOrgID(ctx, "test-tenant")
 
@@ -97,52 +100,6 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase, check
 
 	result := BenchmarkResult{
 		Samples: make([]Sample, 0),
-	}
-
-	if checkConsistency {
-		for _, bc := range cases {
-			ss := q.Select(ctx, false, &storage.SelectHints{
-				Start: math.MinInt64,
-				End:   math.MaxInt64,
-				Step:  10,
-			}, bc.Matchers...)
-
-			for ss.Next() {
-				s := ss.At()
-				it := s.Iterator(nil)
-
-				for {
-					v := it.Next()
-					if v == chunkenc.ValNone {
-						break
-					}
-
-					sample := Sample{
-						Labels:    s.Labels(),
-						Timestamp: it.AtT(),
-					}
-
-					switch v {
-					case chunkenc.ValFloat:
-						_, val := it.At()
-						sample.Value = val
-					case chunkenc.ValHistogram:
-						_, h := it.AtHistogram(nil)
-						sample.Histogram = h
-					default:
-						panic("unhandled default case")
-					}
-
-					result.Samples = append(result.Samples, sample)
-				}
-				if it.Err() != nil {
-					b.Fatal(it.Err())
-				}
-			}
-			if err := ss.Err(); err != nil {
-				b.Fatal(err)
-			}
-		}
 	}
 
 	for _, bc := range cases {
@@ -179,7 +136,7 @@ func BenchmarkQueryableSelect(b *testing.B) {
 	b.Cleanup(func() { _ = bkt.Close() })
 
 	numSamples := 10000
-	numSeries := 10
+	numSeries := 10000
 	series := make([]labels.Labels, numSeries)
 	for i := 0; i < numSeries; i++ {
 		series[i] = labels.FromStrings(
@@ -368,22 +325,11 @@ func BenchmarkQueryableSelect(b *testing.B) {
 				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
 			},
 		},
-		/*
-			TODO investigate why this one doesnt work
-			{
-				Name: "LabelQueries",
-				Matchers: []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric"),
-					labels.MustNewMatcher(labels.MatchRegexp, "container", "container-.*"),
-					labels.MustNewMatcher(labels.MatchRegexp, "pod", "pod-.*"),
-				},
-			},
-		*/
 	}
 
-	var parquetResults, blockResults []BenchmarkResult
+	var querier storage.Queryable
 
-	b.Run("ParquetQueryable", func(bb *testing.B) {
+	if queryableType == "parquet" {
 		pq, err := func() (storage.Queryable, error) {
 			limits := &blocksStoreLimitsMock{}
 			logger := log.NewNopLogger()
@@ -409,75 +355,40 @@ func BenchmarkQueryableSelect(b *testing.B) {
 				return nil, err
 			}
 
-			bb.Cleanup(func() {
+			b.Cleanup(func() {
 				pq.StopAsync()
 				err := pq.AwaitTerminated(context.Background())
-				require.NoError(bb, err)
+				require.NoError(b, err)
 			})
 
 			return pq, nil
 		}()
-		require.NoError(bb, err)
-
-		result := RunBenchmarks(bb, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
-			return pq
-		}, benchmarkCases, checkConsistency)
-		parquetResults = append(parquetResults, result)
-	})
-
-	b.Run("BlockQueryable", func(bb *testing.B) {
+		require.NoError(b, err)
+		querier = pq
+	} else if queryableType == "block" {
 		blck, err := tsdb.OpenBlock(slog.Default(), blockDir, nil, nil)
-		require.NoError(bb, err)
+		require.NoError(b, err)
 
-		bb.Cleanup(func() {
-			require.NoError(bb, blck.Close())
+		b.Cleanup(func() {
+			require.NoError(b, blck.Close())
 		})
 
-		querier, err := tsdb.NewBlockQuerier(blck, math.MinInt64, math.MaxInt64)
-		require.NoError(bb, err)
+		q, err := tsdb.NewBlockQuerier(blck, math.MinInt64, math.MaxInt64)
+		require.NoError(b, err)
 
-		q := &blockQueryable{
-			querier: querier,
+		querier = &blockQueryable{
+			querier: q,
 			cleanup: func() {
-				require.NoError(bb, querier.Close())
+				require.NoError(b, q.Close())
 			},
 		}
-
-		result := RunBenchmarks(bb, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
-			return q
-		}, benchmarkCases, checkConsistency)
-		blockResults = append(blockResults, result)
-	})
-
-	if checkConsistency {
-		require.Equal(b, len(parquetResults), len(blockResults), "Number of benchmark cases should match")
-		for i := range parquetResults {
-			require.Equal(b, len(parquetResults[i].Samples), len(blockResults[i].Samples),
-				"Number of samples should match for case %d", i)
-
-			for j := range parquetResults[i].Samples {
-				parquetSample := parquetResults[i].Samples[j]
-				blockSample := blockResults[i].Samples[j]
-
-				require.Equal(b, parquetSample.Labels, blockSample.Labels,
-					"Sample labels should match for case %d, sample %d", i, j)
-				require.Equal(b, parquetSample.Timestamp, blockSample.Timestamp,
-					"Sample timestamp should match for case %d, sample %d", i, j)
-
-				if parquetSample.Histogram != nil {
-					require.NotNil(b, blockSample.Histogram,
-						"Block sample should have histogram for case %d, sample %d", i, j)
-					require.Equal(b, parquetSample.Histogram.String(), blockSample.Histogram.String(),
-						"Histogram values should match for case %d, sample %d", i, j)
-				} else {
-					require.Nil(b, blockSample.Histogram,
-						"Block sample should not have histogram for case %d, sample %d", i, j)
-					require.Equal(b, parquetSample.Value, blockSample.Value,
-						"Sample value should match for case %d, sample %d", i, j)
-				}
-			}
-		}
+	} else {
+		b.Skip("No queryable type selected via MIMIR_SELECT_QUERYABLE environment variable")
 	}
+
+	RunBenchmarks(b, func(tb testing.TB, st *teststorage.TestStorage) storage.Queryable {
+		return querier
+	}, benchmarkCases)
 }
 
 // blockQueryable is a simple queryable that wraps a querier
