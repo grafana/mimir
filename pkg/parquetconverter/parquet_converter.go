@@ -533,7 +533,7 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 	go func() {
 		defer wg.Done()
 		defer r.Close()
-		err = uploader.Upload(context.Background(), path.Join(id.String(), parquetFileName), r)
+		err = uploader.Upload(ctx, path.Join(id.String(), parquetFileName), r)
 		if err != nil {
 			level.Error(logger).Log("msg", "failed to upload file", "err", err)
 		}
@@ -542,7 +542,7 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 		}
 	}()
 
-	batchedRowsStream, ln, totalMetrics, err := tsdbcodec.BlockToParquetRowsStream(
+	batchedRowsStream, ln, _, err := tsdbcodec.BlockToParquetRowsStream(
 		ctx, bDir, maxParquetIndexSizeLimit, batchSize, batchStreamBufferSize, logger,
 	)
 	if err != nil {
@@ -558,8 +558,8 @@ func TSDBBlockToParquet(ctx context.Context, id ulid.ULID, uploader Uploader, bD
 	for rows := range batchedRowsStream {
 		if ctx.Err() != nil {
 			err = ctx.Err()
+			break
 		}
-		fmt.Printf("Writing Metrics [%v] [%v]\n", 100*(float64(total)/float64(totalMetrics)), rows[0].Columns[labels.MetricName])
 		err := writer.WriteRows(rows)
 		if err != nil {
 			return err
