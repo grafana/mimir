@@ -41,6 +41,117 @@ import (
 // Valid values are "block" or "parquet".
 var queryableType string
 
+var benchmarkCases = []BenchmarkCase{
+	{
+		Name: "SingleMetricExact",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "instance", "1"),
+		},
+	},
+	{
+		Name: "SingleMetricAllInstances",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+		},
+	},
+	{
+		Name: "MultipleMetricsRange",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+		},
+	},
+	{
+		Name: "MultipleMetricsSparse",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
+		},
+	},
+	{
+		Name: "HighCardinalitySingleMetric",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
+			labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
+		},
+	},
+	{
+		Name: "HighCardinalityMultipleMetrics",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
+			labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
+		},
+	},
+	{
+		Name: "SubsetSelectorsSingleMetric",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
+			labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
+		},
+	},
+	{
+		Name: "SubsetSelectorsMultipleMetrics",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
+			labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
+			labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
+		},
+	},
+	{
+		Name: "NegativeRegexSingleMetric",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
+		},
+	},
+	{
+		Name: "NegativeRegexMultipleMetrics",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
+		},
+	},
+	{
+		Name: "NonExistentValue",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "pod", "non-existent-pod"),
+		},
+	},
+	{
+		Name: "ExpensiveRegexSingleMetric",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
+		},
+	},
+	{
+		Name: "ExpensiveRegexMultipleMetrics",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
+		},
+	},
+	{
+		Name: "SparseSeriesSingleMetric",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
+			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
+		},
+	},
+	{
+		Name: "SparseSeriesMultipleMetrics",
+		Matchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
+			labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
+			labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
+		},
+	},
+}
+
 func init() {
 	queryableType = os.Getenv("MIMIR_SELECT_QUERYABLE")
 	if queryableType == "" {
@@ -215,117 +326,6 @@ func BenchmarkQueryableSelect(b *testing.B) {
 		},
 	}
 	require.NoError(b, bucketindex.WriteIndex(ctx, bkt, "test-tenant", nil, idx))
-
-	benchmarkCases := []BenchmarkCase{
-		{
-			Name: "SingleMetricExact",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchEqual, "instance", "1"),
-			},
-		},
-		{
-			Name: "SingleMetricAllInstances",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-			},
-		},
-		{
-			Name: "MultipleMetricsRange",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
-			},
-		},
-		{
-			Name: "MultipleMetricsSparse",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_(1|5|10|15|20)"),
-			},
-		},
-		{
-			Name: "HighCardinalitySingleMetric",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
-				labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
-			},
-		},
-		{
-			Name: "HighCardinalityMultipleMetrics",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-1"),
-				labels.MustNewMatcher(labels.MatchRegexp, "container", ".*"),
-			},
-		},
-		{
-			Name: "SubsetSelectorsSingleMetric",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
-				labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
-			},
-		},
-		{
-			Name: "SubsetSelectorsMultipleMetrics",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-5]"),
-				labels.MustNewMatcher(labels.MatchEqual, "namespace", "ns-3"),
-				labels.MustNewMatcher(labels.MatchEqual, "cluster", "cluster-1"),
-			},
-		},
-		{
-			Name: "NegativeRegexSingleMetric",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
-			},
-		},
-		{
-			Name: "NegativeRegexMultipleMetrics",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-				labels.MustNewMatcher(labels.MatchNotRegexp, "container", "(container-1.*|container-2.*)"),
-			},
-		},
-		{
-			Name: "NonExistentValue",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchEqual, "pod", "non-existent-pod"),
-			},
-		},
-		{
-			Name: "ExpensiveRegexSingleMetric",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
-			},
-		},
-		{
-			Name: "ExpensiveRegexMultipleMetrics",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-				labels.MustNewMatcher(labels.MatchRegexp, "container", "(container-1|container-2|container-3|container-4|container-5)"),
-			},
-		},
-		{
-			Name: "SparseSeriesSingleMetric",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "__name__", "test_metric_1"),
-				labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
-				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
-			},
-		},
-		{
-			Name: "SparseSeriesMultipleMetrics",
-			Matchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchRegexp, "__name__", "test_metric_[1-3]"),
-				labels.MustNewMatcher(labels.MatchEqual, "service", "service-1"),
-				labels.MustNewMatcher(labels.MatchEqual, "environment", "env-0"),
-			},
-		},
-	}
 
 	var querier storage.Queryable
 

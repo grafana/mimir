@@ -406,27 +406,9 @@ func (q *parquetQuerier) selectSorted(ctx context.Context, sp *storage.SelectHin
 			"matchers", util.LabelMatchersToString(matchers),
 			"projectionPushdown", projectionPushdown,
 			"by", by,
-			"step", func() int64 {
-				if sp != nil {
-					return sp.Step
-				} else {
-					return 0
-				}
-			}(),
-			"range", func() int64 {
-				if sp != nil {
-					return sp.Range
-				} else {
-					return 0
-				}
-			}(),
-			"func", func() string {
-				if sp != nil {
-					return sp.Func
-				} else {
-					return ""
-				}
-			}(),
+			"step", sp.Step,
+			"range", sp.Range,
+			"func", sp.Func,
 			"fetchedSeries", reqStats.LoadFetchedSeries(),
 			"fetchedChunks", reqStats.LoadFetchedChunks(),
 			"fetchedChunkBytes", reqStats.LoadFetchedChunkBytes(),
