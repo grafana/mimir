@@ -41,6 +41,13 @@ import (
 // Valid values are "block" or "parquet".
 var queryableType string
 
+func init() {
+	queryableType = os.Getenv("MIMIR_SELECT_QUERYABLE")
+	if queryableType == "" {
+		queryableType = "parquet"
+	}
+}
+
 var benchmarkCases = []BenchmarkCase{
 	{
 		Name: "SingleMetricExact",
@@ -152,13 +159,6 @@ var benchmarkCases = []BenchmarkCase{
 	},
 }
 
-func init() {
-	queryableType = os.Getenv("MIMIR_SELECT_QUERYABLE")
-	if queryableType == "" {
-		queryableType = "parquet"
-	}
-}
-
 // minimalBlocksStorageConfig returns a minimal config for mimir_tsdb.BlocksStorageConfig.
 func minimalBlocksStorageConfig(storageDir string) mimir_tsdb.BlocksStorageConfig {
 	return mimir_tsdb.BlocksStorageConfig{
@@ -182,11 +182,6 @@ type BenchmarkCase struct {
 	Matchers []*labels.Matcher
 }
 
-// BenchmarkResult stores the results of a benchmark run
-type BenchmarkResult struct {
-	Samples []Sample // Store all samples from all series
-}
-
 // Sample represents a single data point from a series
 type Sample struct {
 	Labels    labels.Labels
@@ -196,7 +191,7 @@ type Sample struct {
 }
 
 // RunBenchmarks runs benchmarks for multiple cases with different matchers.
-func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) BenchmarkResult {
+func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) {
 	ctx := context.Background()
 	ctx = user.InjectOrgID(ctx, "test-tenant")
 
@@ -208,10 +203,6 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) Bench
 		b.Fatal("error building querier: ", err)
 	}
 	defer q.Close()
-
-	result := BenchmarkResult{
-		Samples: make([]Sample, 0),
-	}
 
 	for _, bc := range cases {
 		b.Run(bc.Name, func(b *testing.B) {
@@ -236,7 +227,6 @@ func RunBenchmarks(b *testing.B, f QueryCreateFunc, cases []BenchmarkCase) Bench
 			b.ReportMetric(float64(series)/float64(b.N), "series/op")
 		})
 	}
-	return result
 }
 
 func BenchmarkQueryableSelect(b *testing.B) {
