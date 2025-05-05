@@ -127,7 +127,6 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
 	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
-	rulesCmd.Flag("enable-experimental-duration-expressions", "If set, enables parsing experimental duration expressions.").BoolVar(&parser.ExperimentalDurationExpr)
 	r.ClientConfig.ExtraHeaders = map[string]string{}
 	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
