@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -28,8 +27,11 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -39,67 +41,93 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
-	queryable                storage.Queryable
-	opts                     promql.QueryOpts
-	statement                *parser.EvalStmt
-	root                     types.Operator
-	engine                   *Engine
-	qs                       string
+	queryable storage.Queryable
+	statement *parser.EvalStmt
+	root      types.Operator
+	engine    *Engine
+
+	// The original PromQL expression for this query.
+	// May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
+	originalExpression string
+
 	cancel                   context.CancelCauseFunc
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
+	lookbackDelta            time.Duration
 
 	// Time range of the top-level query.
 	// Subqueries may use a different range.
 	topLevelQueryTimeRange types.QueryTimeRange
 
+	operatorFactories map[planning.Node]planning.OperatorFactory
+	operatorParams    *planning.OperatorParameters
+
 	result *promql.Result
 }
 
-func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, engine *Engine) (*Query, error) {
+func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
-	maxEstimatedMemoryConsumptionPerQuery, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
+	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	q := &Query{
+		queryable:                queryable,
+		engine:                   e,
+		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		annotations:              annotations.New(),
+		stats:                    &types.QueryStats{},
+		topLevelQueryTimeRange:   timeRange,
+		lookbackDelta:            lookbackDelta,
+	}
+
+	return q, nil
+}
+
+func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (*Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
 
-	expr = promql.PreprocessExpr(expr, start, end)
-
-	q := &Query{
-		queryable:                queryable,
-		opts:                     opts,
-		engine:                   engine,
-		qs:                       qs,
-		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
-		annotations:              annotations.New(),
-		stats:                    &types.QueryStats{},
-
-		statement: &parser.EvalStmt{
-			Expr:          expr,
-			Start:         start,
-			End:           end,
-			Interval:      interval, // 0 for instant queries
-			LookbackDelta: opts.LookbackDelta(),
-		},
+	expr, err = promql.PreprocessExpr(expr, start, end)
+	if err != nil {
+		return nil, err
 	}
+	var timeRange types.QueryTimeRange
 
-	if q.IsInstant() {
-		q.topLevelQueryTimeRange = types.NewInstantQueryTimeRange(start)
+	if start.Equal(end) && interval == 0 {
+		timeRange = types.NewInstantQueryTimeRange(start)
 	} else {
-		q.topLevelQueryTimeRange = types.NewRangeQueryTimeRange(start, end, interval)
+		timeRange = types.NewRangeQueryTimeRange(start, end, interval)
 
 		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
 		}
+	}
+
+	q, err := e.newQuery(ctx, queryable, opts, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	q.originalExpression = qs
+	q.statement = &parser.EvalStmt{
+		Expr:          expr,
+		Start:         start,
+		End:           end,
+		Interval:      interval, // 0 for instant queries
+		LookbackDelta: q.lookbackDelta,
 	}
 
 	q.root, err = q.convertToOperator(expr, q.topLevelQueryTimeRange)
@@ -150,10 +178,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
-		lookbackDelta := q.opts.LookbackDelta()
-		if lookbackDelta == 0 {
-			lookbackDelta = q.engine.lookbackDelta
-		}
+		lookbackDelta := q.lookbackDelta
 
 		return &selectors.InstantVectorSelector{
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
@@ -165,19 +190,12 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				LookbackDelta: lookbackDelta,
 				Matchers:      e.LabelMatchers,
 
-				ExpressionPosition: e.PositionRange(),
+				ExpressionPosition:       e.PositionRange(),
+				MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			},
 			Stats: q.stats,
 		}, nil
 	case *parser.AggregateExpr:
-		if !q.engine.features.EnableAggregationOperations {
-			return nil, compat.NewNotSupportedError("aggregation operations")
-		}
-
-		if _, found := slices.BinarySearch(q.engine.disabledAggregationsItems, e.Op); found {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation disabled", e.Op.String()))
-		}
-
 		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
 			return nil, err
@@ -192,6 +210,21 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				}
 
 				return topkbottomk.New(inner, param, timeRange, e.Grouping, e.Without, e.Op == parser.TOPK, q.memoryConsumptionTracker, q.annotations, e.PosRange), nil
+			case parser.QUANTILE:
+				param, err := q.convertToScalarOperator(e.Param, timeRange)
+				if err != nil {
+					return nil, err
+				}
+				return aggregations.NewQuantileAggregation(
+					inner,
+					param,
+					timeRange,
+					e.Grouping,
+					e.Without,
+					q.memoryConsumptionTracker,
+					q.annotations,
+					e.PosRange,
+				)
 			case parser.COUNT_VALUES:
 				param, err := q.convertToStringOperator(e.Param)
 				if err != nil {
@@ -225,10 +258,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		// We don't need to handle scalars on both sides here, as that would produce a scalar and so is handled in convertToScalarOperator.
 
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			if e.Op.IsComparisonOperator() && !q.engine.features.EnableVectorScalarBinaryComparisonOperations {
-				return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/scalar binary expression with '%v'", e.Op))
-			}
-
 			var scalar types.ScalarOperator
 			var vector types.InstantVectorOperator
 			var err error
@@ -266,18 +295,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		}
 
 		// Vectors on both sides.
-		if e.Op.IsComparisonOperator() && !q.engine.features.EnableVectorVectorBinaryComparisonOperations {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/vector binary expression with '%v'", e.Op))
-		}
-
-		if e.Op.IsSetOperator() && !q.engine.features.EnableBinaryLogicalOperations {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
-		}
-
-		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne && !q.engine.features.EnableOneToManyAndManyToOneBinaryOperations {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
-		}
-
 		lhs, err := q.convertToInstantVectorOperator(e.LHS, timeRange)
 		if err != nil {
 			return nil, err
@@ -319,7 +336,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		return unaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
+		return functions.UnaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
@@ -332,27 +349,44 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 }
 
 func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
-	// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
-	// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
-	if _, found := slices.BinarySearch(q.engine.features.DisabledFunctions, e.Func.Name); found {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-	}
-
-	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
-	if !ok {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-	}
-
-	args := make([]types.Operator, len(e.Args))
-	for i := range e.Args {
-		a, err := q.convertToOperator(e.Args[i], timeRange)
+	switch e.Func.Name {
+	case "absent":
+		inner, err := q.convertToInstantVectorOperator(e.Args[0], timeRange)
 		if err != nil {
 			return nil, err
 		}
-		args[i] = a
-	}
 
-	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange, e.Args)
+		lbls := functions.CreateLabelsForAbsentFunction(e.Args[0])
+
+		return functions.NewAbsent(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
+
+	case "absent_over_time":
+		inner, err := q.convertToRangeVectorOperator(e.Args[0], timeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		lbls := functions.CreateLabelsForAbsentFunction(e.Args[0])
+
+		return functions.NewAbsentOverTime(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
+
+	default:
+		factory, ok := functions.InstantVectorFunctionOperatorFactories[e.Func.Name]
+		if !ok {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+		}
+
+		args := make([]types.Operator, len(e.Args))
+		for i := range e.Args {
+			a, err := q.convertToOperator(e.Args[i], timeRange)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+
+		return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
+	}
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.RangeVectorOperator, error) {
@@ -371,52 +405,20 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			Range:     e.Range,
 			Matchers:  vectorSelector.LabelMatchers,
 
-			ExpressionPosition: e.PositionRange(),
+			ExpressionPosition:       e.PositionRange(),
+			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
 
 	case *parser.SubqueryExpr:
-		if !q.engine.features.EnableSubqueries {
-			return nil, compat.NewNotSupportedError("subquery")
-		}
-
-		// Subqueries are evaluated as a single range query with steps aligned to Unix epoch time 0.
-		// They are not evaluated as queries aligned to the individual step timestamps.
-		// See https://www.robustperception.io/promql-subqueries-and-alignment/ for an explanation.
-		// Subquery evaluation aligned to step timestamps is not supported by Prometheus, but may be
-		// introduced in the future in https://github.com/prometheus/prometheus/pull/9114.
-		//
-		// While this makes subqueries simpler to implement and more efficient in most cases, it does
-		// mean we could waste time evaluating steps that won't be used if the subquery range is less
-		// than the parent query step. For example, if the parent query is running with a step of 1h,
-		// and the subquery is for a 10m range with 1m steps, then we'll evaluate ~50m of steps that
-		// won't be used.
-		// This is relatively uncommon, and Prometheus' engine does the same thing. In the future, we
-		// could be smarter about this if it turns out to be a big problem.
-		step := e.Step.Milliseconds()
+		step := e.Step
 
 		if step == 0 {
-			step = q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())
+			step = time.Duration(q.engine.noStepSubqueryIntervalFn(e.Range.Milliseconds())) * time.Millisecond
 		}
 
-		start := timeRange.StartT
-		end := timeRange.EndT
-
-		if e.Timestamp != nil {
-			start = *e.Timestamp
-			end = *e.Timestamp
-		}
-
-		// Find the first timestamp inside the subquery range that is aligned to the step.
-		alignedStart := step * ((start - e.OriginalOffset.Milliseconds() - e.Range.Milliseconds()) / step)
-		if alignedStart < start-e.OriginalOffset.Milliseconds()-e.Range.Milliseconds() {
-			alignedStart += step
-		}
-
-		end = end - e.OriginalOffset.Milliseconds()
-
-		subqueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(alignedStart), timestamp.Time(end), time.Duration(step)*time.Millisecond)
+		subqueryTimeRange := core.SubqueryTimeRange(timeRange, e.Range, step, core.TimeFromTimestamp(e.Timestamp), e.OriginalOffset)
 		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange)
 		if err != nil {
 			return nil, err
@@ -447,10 +449,6 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("cannot create scalar operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
-	}
-
-	if !q.engine.features.EnableScalars {
-		return nil, compat.NewNotSupportedError("scalar values")
 	}
 
 	switch e := expr.(type) {
@@ -490,10 +488,6 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 	case *parser.ParenExpr:
 		return q.convertToScalarOperator(e.Expr, timeRange)
 	case *parser.BinaryExpr:
-		if e.Op.IsComparisonOperator() && !q.engine.features.EnableScalarScalarBinaryComparisonOperations {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("scalar/scalar binary expression with '%v'", e.Op))
-		}
-
 		lhs, err := q.convertToScalarOperator(e.LHS, timeRange)
 		if err != nil {
 			return nil, err
@@ -512,7 +506,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 }
 
 func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
-	factory, ok := scalarFunctionOperatorFactories[e.Func.Name]
+	factory, ok := functions.ScalarFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
@@ -529,12 +523,40 @@ func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange ty
 	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
 }
 
-func (q *Query) IsInstant() bool {
-	return q.statement.Start == q.statement.End && q.statement.Interval == 0
+func (q *Query) convertNodeToOperator(node planning.Node, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if f, ok := q.operatorFactories[node]; ok {
+		return f.Produce()
+	}
+
+	childTimeRange := node.ChildrenTimeRange(timeRange)
+	childrenNodes := node.Children()
+	childrenOperators := make([]types.Operator, 0, len(childrenNodes))
+	for _, child := range childrenNodes {
+		o, err := q.convertNodeToOperator(child, childTimeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		childrenOperators = append(childrenOperators, o)
+	}
+
+	f, err := node.OperatorFactory(childrenOperators, timeRange, q.operatorParams)
+	if err != nil {
+		return nil, err
+	}
+
+	q.operatorFactories[node] = f
+
+	return f.Produce()
 }
 
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
+
+	if q.engine.pedantic {
+		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
+		defer q.root.Close()
+	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	q.cancel = cancel
@@ -550,14 +572,12 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	// (so that it runs before the cancellation of the context with timeout created above).
 	defer cancel(errQueryFinished)
 
-	if q.engine.activeQueryTracker != nil {
-		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.qs)
-		if err != nil {
-			return &promql.Result{Err: err}
-		}
-
-		defer q.engine.activeQueryTracker.Delete(queryID)
+	queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
+	if err != nil {
+		return &promql.Result{Err: err}
 	}
+
+	defer q.engine.activeQueryTracker.Delete(queryID)
 
 	defer func() {
 		logger := spanlogger.FromContext(ctx, q.engine.logger)
@@ -565,11 +585,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 		msg = append(msg,
 			"msg", "query stats",
-			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes,
-			"expr", q.qs,
+			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(),
+			"expr", q.originalExpression,
 		)
 
-		if q.IsInstant() {
+		if q.topLevelQueryTimeRange.IsInstant {
 			msg = append(msg,
 				"queryType", "instant",
 				"time", q.topLevelQueryTimeRange.StartT,
@@ -584,17 +604,16 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		}
 
 		level.Info(logger).Log(msg...)
-		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
+		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
-	switch q.statement.Expr.Type() {
-	case parser.ValueTypeMatrix:
-		root := q.root.(types.RangeVectorOperator)
+	switch root := q.root.(type) {
+	case types.RangeVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -602,15 +621,14 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		}
 
 		q.result = &promql.Result{Value: v}
-	case parser.ValueTypeVector:
-		root := q.root.(types.InstantVectorOperator)
+	case types.InstantVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.PutSeriesMetadataSlice(series)
+		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
 
-		if q.IsInstant() {
+		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
 			if err != nil {
 				return &promql.Result{Err: err}
@@ -625,30 +643,21 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 			q.result = &promql.Result{Value: v}
 		}
-	case parser.ValueTypeScalar:
-		root := q.root.(types.ScalarOperator)
+	case types.ScalarOperator:
 		d, err := root.GetValues(ctx)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
 
-		if q.IsInstant() {
+		if q.topLevelQueryTimeRange.IsInstant {
 			q.result = &promql.Result{Value: q.populateScalarFromScalarOperator(d)}
 		} else {
 			q.result = &promql.Result{Value: q.populateMatrixFromScalarOperator(d)}
 		}
-	case parser.ValueTypeString:
-		if q.IsInstant() {
-			root := q.root.(types.StringOperator)
-			str := root.GetValue()
-			q.result = &promql.Result{Value: q.populateStringFromStringOperator(str)}
-		} else {
-			// This should be caught in newQuery above
-			return &promql.Result{Err: fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(q.statement.Expr.Type()))}
-		}
+	case types.StringOperator:
+		q.result = &promql.Result{Value: q.populateStringFromStringOperator(root)}
 	default:
-		// This should be caught in newQuery above.
-		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
+		return &promql.Result{Err: fmt.Errorf("operator %T produces unknown result type", root)}
 	}
 
 	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.
@@ -659,15 +668,15 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return q.result
 }
 
-func (q *Query) populateStringFromStringOperator(str string) promql.String {
+func (q *Query) populateStringFromStringOperator(o types.StringOperator) promql.String {
 	return promql.String{
-		T: timeMilliseconds(q.statement.Start),
-		V: str,
+		T: q.topLevelQueryTimeRange.StartT,
+		V: o.GetValue(),
 	}
 }
 
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
-	ts := timeMilliseconds(q.statement.Start)
+	ts := q.topLevelQueryTimeRange.StartT
 	v, err := types.VectorPool.Get(len(series), q.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -849,7 +858,7 @@ func (q *Query) Close() {
 	}
 
 	if q.engine.pedantic && q.result.Err == nil {
-		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes > 0 {
+		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
 			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
 		}
 	}
@@ -875,9 +884,5 @@ func (q *Query) Cancel() {
 }
 
 func (q *Query) String() string {
-	return q.qs
-}
-
-func timeMilliseconds(t time.Time) int64 {
-	return t.UnixNano() / int64(time.Millisecond/time.Nanosecond)
+	return q.originalExpression
 }

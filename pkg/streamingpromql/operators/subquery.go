@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -72,6 +73,14 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 
 	if err := s.floats.Use(data.Floats); err != nil {
 		return err
+	}
+
+	// Clear counter reset information to avoid under- or over-counting resets.
+	// See https://github.com/prometheus/prometheus/pull/15987 for more explanation.
+	for _, p := range data.Histograms {
+		if p.H.CounterResetHint == histogram.NotCounterReset || p.H.CounterResetHint == histogram.CounterReset {
+			p.H.CounterResetHint = histogram.UnknownCounterReset
+		}
 	}
 
 	if err := s.histograms.Use(data.Histograms); err != nil {

@@ -105,7 +105,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
@@ -210,15 +210,18 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	warn = removeDuplicates(warn)
 	info = removeDuplicates(info)
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  shardedQueryable.getResponseHeaders(),
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  shardedQueryable.getResponseHeaders(),
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
 }
 

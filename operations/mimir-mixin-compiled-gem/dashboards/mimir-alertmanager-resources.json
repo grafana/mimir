@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -877,7 +878,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -973,7 +975,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Alertmanager resources",
+      "title": "GEM / Alertmanager resources",
       "uid": "a6883fb22799ac74479c7db872451092",
       "version": 0
    }

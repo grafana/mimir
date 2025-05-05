@@ -31,7 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -173,8 +173,8 @@ const (
 )
 
 type requestWithUsersAndCallback struct {
-	users    *util.AllowedTenants // if nil, all tenants are allowed.
-	callback chan<- struct{}      // when compaction/shipping is finished, this channel is closed
+	users    *util.AllowList // if nil, all tenants are allowed.
+	callback chan<- struct{} // when compaction/shipping is finished, this channel is closed
 }
 
 // Config for an Ingester.
@@ -633,8 +633,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.reactiveLimiter != nil {
-		servs = append(servs, i.reactiveLimiter)
+	if i.reactiveLimiter.service != nil {
+		servs = append(servs, i.reactiveLimiter.service)
 	}
 
 	if i.ingestPartitionLifecycler != nil {
@@ -657,6 +657,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// If the ingester is not read-only, activate the push circuit breaker.
 		i.circuitBreaker.push.activate()
 	}
+
+	if i.reactiveLimiter.read != nil {
+		i.reactiveLimiter.read.activate()
+	}
+
 	return nil
 }
 
@@ -945,11 +950,6 @@ func (i *Ingester) applyTSDBSettings() {
 		} else {
 			db.db.DisableNativeHistograms()
 		}
-		if i.limits.OOONativeHistogramsIngestionEnabled(userID) {
-			db.db.EnableOOONativeHistograms()
-		} else {
-			db.db.DisableOOONativeHistograms()
-		}
 	}
 }
 
@@ -1036,7 +1036,7 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 
 // PreparePushRequest implements pushReceiver.
 func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
-	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil {
+	if i.reactiveLimiter.push != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
 		if err != nil {
@@ -1099,7 +1099,7 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
-	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
+	if i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1305,14 +1305,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.sampleOutOfOrderCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonSampleOutOfOrder, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
-					return e
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
@@ -1345,6 +1337,27 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, err, model.Time(timestamp), labels)
+				})
+			},
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+				stats.invalidNativeHistogramCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
+					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, err, model.Time(timestamp), labels)
 				})
 			},
 		)
@@ -1712,7 +1725,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+	if i.reactiveLimiter.isReadLimiterActive() && !i.reactiveLimiter.read.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1737,7 +1750,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
+	if i.reactiveLimiter.isReadLimiterActive() {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
@@ -2822,7 +2835,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
-		EnableOOONativeHistograms:             i.limits.OOONativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
 	if err != nil {
@@ -3131,7 +3143,7 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 }
 
 // shipBlocks runs shipping for all users.
-func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants) {
+func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowList) {
 	// Number of concurrent workers is limited in order to avoid to concurrently sync a lot
 	// of tenants in a large cluster.
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.ShipConcurrency, func(ctx context.Context, userID string) error {
@@ -3264,7 +3276,14 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 }
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
-func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
+func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		defer i.metrics.forcedCompactionInProgress.Set(0)
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3384,7 +3403,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 
 	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
 	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
-	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowedTenants(usersToCompact, nil))
+	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList(usersToCompact, nil))
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", totalMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
@@ -3584,9 +3603,9 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 
 	tenants := r.Form[tenantParam]
 
-	allowedUsers := util.NewAllowedTenants(tenants, nil)
+	allowedUsers := util.NewAllowList(tenants, nil)
 	run := func() {
-		ingCtx := i.BasicService.ServiceContext()
+		ingCtx := i.ServiceContext()
 		if ingCtx == nil || ingCtx.Err() != nil {
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: ingester not running, ignoring flush request")
 			return
@@ -3855,6 +3874,10 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 			return
 		}
 
+		if i.reactiveLimiter.read != nil {
+			i.reactiveLimiter.read.deactivate()
+		}
+
 	case http.MethodDelete:
 		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
 		if err != nil {
@@ -3875,6 +3898,10 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 				level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
+			}
+
+			if i.reactiveLimiter.read != nil {
+				i.reactiveLimiter.read.activate()
 			}
 		}
 	}
@@ -3952,7 +3979,10 @@ func (i *Ingester) checkAvailableForPush() error {
 
 // PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
 func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
-	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	err := i.PushWithCleanup(ctx, req, func() {
+		req.FreeBuffer()
+		mimirpb.ReuseSlice(req.Timeseries)
+	})
 	if err != nil {
 		return mapPushErrorToErrorWithStatus(err)
 	}

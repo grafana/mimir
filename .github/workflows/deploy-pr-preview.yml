@@ -11,15 +11,33 @@ on:
 
 jobs:
   deploy-pr-preview:
-    if: ${{ ! github.event.pull_request.head.repo.fork }}
+    permissions:
+      contents: read # Clone repository.
+      id-token: write # Fetch Vault secrets.
+      pull-requests: write # Create or update pull request comments.
+      statuses: write # Update GitHub status check with deploy preview link.
+    if: "!github.event.pull_request.head.repo.fork"
     uses: grafana/writers-toolkit/.github/workflows/deploy-preview.yml@main
     with:
-      sha: ${{ github.event.pull_request.head.sha }}
       branch: ${{ github.head_ref }}
       event_number: ${{ github.event.number }}
-      title: ${{ github.event.pull_request.title }}
       repo: mimir
-      source_directory: docs/sources/mimir
-      website_directory: content/docs/mimir/latest
-      relative_prefix: /docs/mimir/latest/
-      index_file: true
+      sha: ${{ github.event.pull_request.head.sha }}
+      sources: |
+        [
+          {
+            "index_file": null,
+            "relative_prefix": "/docs/mimir/v2.15.x/",
+            "repo": "mimir",
+            "source_directory": "docs/sources/mimir",
+            "website_directory": "content/docs/mimir/v2.15.x"
+          },
+          {
+            "index_file": "content/docs/helm-charts/mimir-distributed/_index.md",
+            "relative_prefix": "/docs/helm-charts/mimir-distributed/latest/",
+            "repo": "mimir",
+            "source_directory": "docs/sources/helm-charts/mimir-distributed",
+            "website_directory": "content/docs/helm-charts/mimir-distributed/latest"
+          }
+        ]
+      title: ${{ github.event.pull_request.title }}

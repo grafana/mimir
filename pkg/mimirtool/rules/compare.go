@@ -192,10 +192,10 @@ func stringSlicesElementsMatch(s1, s2 []string) bool {
 	return true
 }
 
-func rulesEqual(a, b *rulefmt.RuleNode) bool {
-	if a.Alert.Value != b.Alert.Value ||
-		a.Record.Value != b.Record.Value ||
-		a.Expr.Value != b.Expr.Value ||
+func rulesEqual(a, b *rulefmt.Rule) bool {
+	if a.Alert != b.Alert ||
+		a.Record != b.Record ||
+		a.Expr != b.Expr ||
 		a.For != b.For {
 		return false
 	}

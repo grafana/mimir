@@ -3,9 +3,6 @@
 package scheduler
 
 import (
-	"container/heap"
-	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -19,19 +16,16 @@ type testSpec struct {
 	commitRecTs time.Time
 }
 
-func testSpecLess(a, b testSpec) bool {
-	return a.commitRecTs.Before(b.commitRecTs)
-}
-
 func TestAssign(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
 	j0, j0spec, err := s.assign("w0")
 	require.Empty(t, j0.id)
 	require.Zero(t, j0spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	j1, j1spec, err := s.assign("w0")
 	require.NotEmpty(t, j1.id)
 	require.NotZero(t, j1spec)
@@ -43,7 +37,8 @@ func TestAssign(t *testing.T) {
 	require.Zero(t, j2spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
+	e = s.add("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	j3, j3spec, err := s.assign("w0")
 	require.NotZero(t, j3.id)
 	require.NotZero(t, j3spec)
@@ -52,14 +47,15 @@ func TestAssign(t *testing.T) {
 }
 
 func TestAssignComplete(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
 	{
 		err := s.completeJob(jobKey{"rando job", 965}, "w0")
 		require.ErrorIs(t, err, errJobNotFound)
 	}
 
-	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk)
 	require.NotZero(t, jspec)
@@ -96,8 +92,9 @@ func TestAssignComplete(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
-	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
+	e := s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, e)
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
 	require.NotZero(t, jspec)
@@ -137,7 +134,7 @@ func TestLease(t *testing.T) {
 // TestImportJob tests the importJob method - the method that is called to learn
 // about jobs in-flight from a previous scheduler instance.
 func TestImportJob(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 	spec := testSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
 	require.NoError(t, s.importJob(jobKey{"job1", 122}, "w0", spec))
 	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
@@ -153,42 +150,39 @@ func TestImportJob(t *testing.T) {
 	require.Equal(t, "w2", j.assignee)
 }
 
-func TestMinHeap(t *testing.T) {
-	n := 517
-	jobs := make([]*job[testSpec], n)
-	order := make([]int, n)
-	for i := 0; i < n; i++ {
-		jobs[i] = &job[testSpec]{
-			key: jobKey{
-				id:    fmt.Sprintf("job%d", i),
-				epoch: 0,
-			},
-			spec: testSpec{topic: "hello", commitRecTs: time.Unix(int64(i), 0)},
-		}
-		order[i] = i
-	}
+func TestJobCreationPolicies(t *testing.T) {
+	t.Run("noOpJobCreationPolicy", func(t *testing.T) {
+		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[testSpec]{})
 
-	// Push them in random order.
-	r := rand.New(rand.NewSource(9900))
-	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+		// noOp policy should always allow job creation
+		require.NoError(t, s.add("job1", testSpec{topic: "topic1"}))
+		require.NoError(t, s.add("job2", testSpec{topic: "topic2"}))
 
-	h := jobHeap[*job[testSpec]]{
-		less: func(a, b *job[testSpec]) bool {
-			return testSpecLess(a.spec, b.spec)
-		},
-	}
+		_, ok1 := s.jobs["job1"]
+		require.True(t, ok1, "job1 should be created")
+		_, ok2 := s.jobs["job2"]
+		require.True(t, ok2, "job2 should be created")
+	})
 
-	for _, j := range order {
-		heap.Push(&h, jobs[j])
-	}
+	t.Run("allowNone", func(t *testing.T) {
+		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), allowNoneJobCreationPolicy[testSpec]{})
 
-	require.Equal(t, n, h.Len())
+		// allowNone policy should never allow job creation
+		require.ErrorIs(t, s.add("job1", testSpec{topic: "topic1"}), errJobCreationDisallowed)
+		require.ErrorIs(t, s.add("job2", testSpec{topic: "topic2"}), errJobCreationDisallowed)
 
-	for i := 0; i < len(jobs); i++ {
-		p := heap.Pop(&h).(*job[testSpec])
-		println(i)
-		require.Equal(t, jobs[i], p, "pop order should be in increasing commitRecTs")
-	}
-
-	require.Zero(t, h.Len())
+		_, ok1 := s.jobs["job1"]
+		require.False(t, ok1, "job1 should not be created")
+		_, ok2 := s.jobs["job2"]
+		require.False(t, ok2, "job2 should not be created")
+	})
 }
+
+// allowNoneJobCreationPolicy is a job creation policy that never allows job creation.
+type allowNoneJobCreationPolicy[T any] struct{}
+
+func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool { // nolint:unused
+	return false
+}
+
+var _ jobCreationPolicy[any] = (*allowNoneJobCreationPolicy[any])(nil)

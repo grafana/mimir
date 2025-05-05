@@ -71,10 +71,10 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			refreshMetrics := discovery.NewRefreshMetrics(reg)
 			cfg := dnsServiceDiscovery{
-				RefreshInterval: time.Millisecond,
-				Resolver:        resolver,
-				QType:           dns.A,
-				Host:            sourceAddress,
+				refreshInterval: time.Millisecond,
+				resolver:        resolver,
+				qType:           dns.A,
+				host:            sourceAddress,
 				refreshMetrics:  refreshMetrics,
 			}
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
@@ -129,10 +129,10 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			reg := prometheus.NewRegistry()
 			refreshMetrics := discovery.NewRefreshMetrics(reg)
 			cfg := dnsServiceDiscovery{
-				RefreshInterval: time.Millisecond,
-				Resolver:        resolver,
-				QType:           tc.qType,
-				Host:            tc.host,
+				refreshInterval: time.Millisecond,
+				resolver:        resolver,
+				qType:           tc.qType,
+				host:            tc.host,
 				refreshMetrics:  refreshMetrics,
 			}
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})

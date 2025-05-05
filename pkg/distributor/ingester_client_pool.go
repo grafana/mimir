@@ -18,9 +18,8 @@ import (
 
 //lint:ignore faillint It's non-trivial to remove this global variable.
 var clients = promauto.NewGauge(prometheus.GaugeOpts{
-	Namespace: "cortex",
-	Name:      "distributor_ingester_clients",
-	Help:      "The current number of ingester clients.",
+	Name: "cortex_distributor_ingester_clients",
+	Help: "The current number of ingester clients.",
 })
 
 // PoolConfig is config for creating a Pool.

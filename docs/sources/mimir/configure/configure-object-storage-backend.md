@@ -1,9 +1,7 @@
 ---
 aliases:
   - ../operators-guide/configure/configure-object-storage-backend/
-description:
-  Learn how to configure Grafana Mimir to use different object storage
-  backend implementations.
+description: Learn how to configure Grafana Mimir to use different object storage backend implementations.
 menuTitle: Object storage
 title: Configure Grafana Mimir object storage backend
 weight: 65
@@ -28,22 +26,22 @@ empty directories behind when removing blocks. For example, if you use Azure Blo
 [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
 {{% /admonition %}}
 
-Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "./configuration-parameters#filesystem_storage_backend" >}}) object storage implementation.
+To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration](../about-runtime-configuration/):
 
-[Ruler and alertmanager support a `local` implementation]({{< relref "../references/architecture/components/ruler#local-storage" >}}),
+Ruler and alertmanager support a [`local` implementation](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/ruler/#local-storage),
 which is similar to `filesystem` in the way that it uses the local file system,
 but it is a read-only data source and can be used to provision state into those components.
 
 ## Common configuration
 
-To avoid repetition, you can use the [common configuration]({{< relref "./about-configurations#common-configurations" >}}) and fill the [`common`]({{< relref "./configuration-parameters#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
+To avoid repetition, you can use the [common configuration](../about-configurations/#common-configurations) and fill the [`common`](../configuration-parameters/#common) configuration block or by providing the `-common.storage.*` CLI flags.
 
-To use environment variables in the configuration file, ensure that you [enable expansion]({{< relref "./configuration-parameters#use-environment-variables-in-the-configuration" >}}) for the variables.
+To use environment variables in the configuration file, ensure that you [enable expansion](../configuration-parameters/#use-environment-variables-in-the-configuration) for the variables.
 
 {{< admonition type="note" >}}
 Blocks storage can't be located in the same path of the same bucket as the ruler and Alertmanager stores.
 
-When using the common configuration, make [`blocks_storage`]({{< relref "./configuration-parameters#blocks_storage" >}}) use either a:
+When using the common configuration, make [`blocks_storage`](../configuration-parameters/#blocks_storage) use either a:
 
 - different bucket, overriding the common bucket name
 - storage prefix
@@ -55,7 +53,7 @@ Grafana Mimir will fail to start if you configure blocks storage to use the same
 Find examples of setting up the different object stores below:
 
 {{< admonition type="note" >}}
-If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "./about-configurations#common-configurations" >}}).
+If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic](../about-configurations/#common-configurations).
 {{< /admonition >}}
 
 ### S3
@@ -82,6 +80,10 @@ ruler_storage:
   s3:
     bucket_name: mimir-ruler
 ```
+
+{{< admonition type="note" >}}
+Don't prefix the endpoint value with your bucket name. For example, if your bucket is named "my-storage-bucket", you cannot name the endpoint "my-storage-bucket.s3.amazonaws.com".
+{{< /admonition >}}
 
 ### GCS
 

@@ -10,8 +10,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/opentracing/opentracing-go/ext"
+	"github.com/gogo/status"
 	"github.com/prometheus/prometheus/model/labels"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -43,10 +44,11 @@ type SeriesChunksStreamReader struct {
 	cleanup             func()
 	log                 log.Logger
 
-	seriesBatchChan chan []QueryStreamSeriesChunks
-	errorChan       chan error
-	err             error
-	seriesBatch     []QueryStreamSeriesChunks
+	seriesMessageChan chan *QueryStreamResponse
+	errorChan         chan error
+	err               error
+	lastMessage       *QueryStreamResponse
+	seriesBatch       []QueryStreamSeriesChunks
 
 	// Keeping the ingester name for debug logs.
 	ingesterName string
@@ -68,7 +70,8 @@ func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStrea
 	}
 }
 
-// Close cleans up all resources associated with this SeriesChunksStreamReader.
+// Close cleans up all resources associated with this SeriesChunksStreamReader, except any
+// values previously returned by GetChunks.
 // This method should only be directly called if StartBuffering is not called,
 // otherwise StartBuffering will call it once done.
 func (s *SeriesChunksStreamReader) Close() {
@@ -79,13 +82,23 @@ func (s *SeriesChunksStreamReader) Close() {
 	s.cleanup()
 }
 
+// FreeBuffer frees any buffers held by this SeriesChunksStreamReader.
+// Any values previously returned by GetChunks must not be used after calling FreeBuffer.
+// It is safe to call FreeBuffer multiple times, or to alternate GetChunks and FreeBuffer calls.
+func (s *SeriesChunksStreamReader) FreeBuffer() {
+	if s.lastMessage != nil {
+		s.lastMessage.FreeBuffer()
+		s.lastMessage = nil
+	}
+}
+
 // StartBuffering begins streaming series' chunks from the ingester associated with
 // this SeriesChunksStreamReader. Once all series have been consumed with GetChunks, all resources
 // associated with this SeriesChunksStreamReader are cleaned up.
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's client.Ingester_QueryStreamClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesBatchChan = make(chan []QueryStreamSeriesChunks, 1)
+	s.seriesMessageChan = make(chan *QueryStreamResponse, 1)
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
@@ -96,18 +109,18 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 		defer func() {
 			s.Close()
 
-			close(s.seriesBatchChan)
+			close(s.seriesMessageChan)
 			close(s.errorChan)
 			log.Finish()
 		}()
 
 		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
-			if errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 				return
 			}
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
-			ext.Error.Set(log.Span, true)
+			log.SetError()
 		}
 	}()
 }
@@ -137,11 +150,13 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 
 		if len(msg.StreamingSeriesChunks) == 0 {
+			msg.FreeBuffer()
 			continue
 		}
 
 		totalSeries += len(msg.StreamingSeriesChunks)
 		if totalSeries > s.expectedSeriesCount {
+			msg.FreeBuffer()
 			return fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 		}
 
@@ -157,6 +172,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 		// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
+			msg.FreeBuffer()
 			return err
 		}
 
@@ -174,8 +190,9 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			// the stream's underlying ClientConn is closed, which can happen if the querier decides that the ingester is no
 			// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
 			// a generic 'context canceled' error.
+			msg.FreeBuffer()
 			return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
-		case s.seriesBatchChan <- msg.StreamingSeriesChunks:
+		case s.seriesMessageChan <- msg:
 			// Batch enqueued successfully, nothing else to do for this batch.
 		}
 	}
@@ -183,6 +200,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
+// Any values previously returned by GetChunks must not be used after calling FreeBuffer.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err error) {
 	if s.err != nil {
 		// Why not just return s.err?
@@ -235,7 +253,9 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 }
 
 func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
-	batch, channelOpen := <-s.seriesBatchChan
+	s.FreeBuffer()
+
+	msg, channelOpen := <-s.seriesMessageChan
 
 	if !channelOpen {
 		// If there's an error, report it.
@@ -253,6 +273,7 @@ func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
 		return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 	}
 
-	s.seriesBatch = batch
+	s.lastMessage = msg
+	s.seriesBatch = msg.StreamingSeriesChunks
 	return nil
 }

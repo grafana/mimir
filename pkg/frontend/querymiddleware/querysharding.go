@@ -190,15 +190,18 @@ func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine 
 		headers = shardedQueryable.getResponseHeaders()
 	}
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  headers,
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  headers,
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
 }
 
@@ -254,11 +257,14 @@ func mapEngineError(err error) error {
 		cause = err
 	}
 
-	// The engine sometimes returns context.Canceled without mapping it to one of the expected
-	// error types. Handle that specially here since we rely on the error type for errors being
-	// accurate.
+	// The engine sometimes returns context.Canceled or context.DeadlineExceeded without mapping it
+	// to one of the expected error types. Handle those cases specially here since we rely on the error
+	// type for errors being accurate.
 	if errors.Is(cause, context.Canceled) {
 		return apierror.New(apierror.TypeCanceled, cause.Error())
+	}
+	if errors.Is(cause, context.DeadlineExceeded) {
+		return apierror.New(apierror.TypeTimeout, cause.Error())
 	}
 
 	// By default, all errors returned by engine.Eval() are execution errors,
@@ -339,7 +345,6 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		totalShards = int(r.GetOptions().TotalShards)
 	}
 
-	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
 	hints := r.GetHints()
 
 	var seriesCount *EstimatedSeriesCount
@@ -365,7 +370,15 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 
 	// If total queries is provided through hints, then we adjust the number of shards for the query
 	// based on the configured max sharded queries limit.
-	if hints != nil && hints.TotalQueries > 0 && maxShardedQueries > 0 {
+	if maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries); maxShardedQueries > 0 {
+		// If the total number of queries (e.g. after time splitting) is unknown, then assume there was no splitting,
+		// and we just have 1 query. The hints may not be populated for instant queries, and defaulting to 1 make
+		// this logic work for instant queries too.
+		totalQueries := int32(1)
+		if hints != nil && hints.TotalQueries > 0 {
+			totalQueries = hints.TotalQueries
+		}
+
 		// Calculate how many legs are shardable. To do it we use a trick: rewrite the query passing 1
 		// total shards and then we check how many sharded queries are generated. In case of any error,
 		// we just consider as if there's only 1 shardable leg (the error will be detected anyway later on).
@@ -386,7 +399,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		}
 
 		prevTotalShards := totalShards
-		totalShards = max(1, min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
+		totalShards = max(1, min(totalShards, (maxShardedQueries/int(totalQueries))/numShardableLegs))
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
@@ -395,7 +408,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 				"previous total shards", prevTotalShards,
 				"max sharded queries", maxShardedQueries,
 				"shardable legs", numShardableLegs,
-				"total queries", hints.TotalQueries)
+				"total queries", totalQueries)
 		}
 	}
 

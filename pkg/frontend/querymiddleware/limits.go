@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -108,6 +109,9 @@ type Limits interface {
 	// BlockedRequests returns the blocked http requests.
 	BlockedRequests(userID string) []*validation.BlockedRequest
 
+	// LimitedQueries returns the limited queries.
+	LimitedQueries(userID string) []*validation.LimitedQuery
+
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
 
@@ -117,12 +121,8 @@ type Limits interface {
 	// IngestStorageReadConsistency returns the default read consistency for the tenant.
 	IngestStorageReadConsistency(userID string) string
 
-	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
-	// If the list is empty, the feature is disabled.
-	InstantQueriesWithSubquerySpinOff(userID string) []string
-
-	// MaxFutureQueryWindow returns the maximum duration into the future a query can be executed for the tenant.
-	MaxFutureQueryWindow(userID string) time.Duration
+	// SubquerySpinOffEnabled returns if the feature of spinning off subqueries from instant queries as range queries is enabled.
+	SubquerySpinOffEnabled(userID string) bool
 }
 
 type limitsMiddleware struct {
@@ -152,7 +152,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	}
 
 	// Clamp the time range based on the max query lookback and block retention period.
-	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
+	blocksRetentionPeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
 	maxLookback := smallestPositiveNonZeroDuration(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {
@@ -202,34 +202,6 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
 	}
-
-	if maxFutureQueryWindow := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxFutureQueryWindow); maxFutureQueryWindow > 0 {
-		maxAllowedTs := util.TimeToMillis(time.Now().Add(maxFutureQueryWindow))
-		if r.GetStart() > maxAllowedTs {
-			// The request is fully outside the allowed range, so we can return an empty response.
-			level.Debug(log).Log(
-				"msg", "skipping the execution of the query because its time range is exclusively after the 'max future window' setting",
-				"reqStart", util.FormatTimeMillis(r.GetStart()),
-				"redEnd", util.FormatTimeMillis(r.GetEnd()),
-				"maxFutureWindow", maxFutureQueryWindow,
-			)
-			return newEmptyPrometheusResponse(), nil
-		}
-
-		if r.GetEnd() > maxAllowedTs {
-			level.Debug(log).Log(
-				"msg", "the end time of the query has been manipulated because of the 'max-future-query-window' setting",
-				"original", util.FormatTimeMillis(r.GetEnd()),
-				"updated", util.FormatTimeMillis(maxAllowedTs),
-				"maxFutureWindow", maxFutureQueryWindow,
-			)
-			r, err = r.WithStartEnd(r.GetStart(), maxAllowedTs)
-			if err != nil {
-				return nil, apierror.New(apierror.TypeInternal, err.Error())
-			}
-		}
-	}
-
 	return l.next.Do(ctx, r)
 }
 
@@ -281,6 +253,12 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
+				// Without this change, using WithTimeoutCause has no effect when calling Do on
+				// limitedParallelismRoundTripper, since that would need to return the cause as error,
+				// which is the normal behaviour except that semaphore does not do that.
+				if errors.Is(err, ctx.Err()) {
+					err = context.Cause(ctx)
+				}
 				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
 			defer sem.Release(1)
@@ -291,6 +269,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
+	// EncodeMetricsQueryResponse handles closing the response
 	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 

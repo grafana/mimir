@@ -8,11 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -421,7 +422,101 @@ func TestHandleNoCompactMarker(t *testing.T) {
 	}
 }
 
+func v(t int, isDeleteMarker bool) version {
+	return version{
+		lastModified: time.Unix(int64(t), 0),
+		info: objtools.VersionInfo{
+			VersionID:      strconv.FormatInt(int64(t), 10),
+			IsDeleteMarker: isDeleteMarker,
+		},
+	}
+}
+
+func TestShadowingDeleteMarkers(t *testing.T) {
+	targetTime := 5
+	target := v(targetTime, false)
+
+	testCases := map[string]struct {
+		versions    []version
+		expectStart int
+		expectEnd   int
+	}{
+		"empty": {
+			versions: nil,
+		},
+		"single delete": {
+			versions:    []version{target, v(targetTime+1, true)},
+			expectStart: 1,
+			expectEnd:   2,
+		},
+		"surrounding delete": {
+			versions:    []version{v(targetTime-1, true), target, v(targetTime+1, true)},
+			expectStart: 2,
+			expectEnd:   3,
+		},
+		"multiple delete": {
+			versions:    []version{target, v(targetTime+1, true), v(targetTime+2, true)},
+			expectStart: 1,
+			expectEnd:   3,
+		},
+		"single delete unordered": {
+			versions:    []version{v(targetTime+1, true), target},
+			expectStart: 0,
+			expectEnd:   1,
+		},
+		"non-delete marker shadow": {
+			versions: []version{target, v(targetTime+1, false)},
+		},
+		"mixed shadow": {
+			versions: []version{target, v(targetTime+1, true), v(targetTime+2, false)},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actual := deleteMarkersShadowingTarget(tc.versions, target)
+			if tc.expectStart != tc.expectEnd {
+				require.Equal(t, tc.versions[tc.expectStart:tc.expectEnd], actual)
+			} else {
+				require.Empty(t, actual)
+			}
+		})
+	}
+}
+
+func TestBuildRestore(t *testing.T) {
+	targetTime := 5
+	target := v(targetTime, false)
+	versions := []version{target, v(targetTime+1, true)}
+
+	for _, allowVersionDelete := range []bool{false, true} {
+		restoreInfo := buildRestore(
+			versions,
+			target,
+			allowVersionDelete,
+		)
+		require.Equal(t, restoreInfo.target, target)
+		if allowVersionDelete {
+			require.Equal(t, versions[1:2], restoreInfo.shadowingDeleteMarkers)
+		} else {
+			require.Empty(t, restoreInfo.shadowingDeleteMarkers)
+		}
+	}
+}
+
+func TestRestoreDryRun(t *testing.T) {
+	r := restoreInfo{
+		shadowingDeleteMarkers: []version{v(0, true)},
+		target:                 v(0, false),
+	}
+
+	// Passing a nil bucket as a trap. A dry run should not touch it
+	require.NoError(t, restore(context.Background(), nil, r, nopSlog(), true))
+	r.shadowingDeleteMarkers = nil
+	require.NoError(t, restore(context.Background(), nil, r, nopSlog(), true))
+}
+
 func nopSlog() *slog.Logger {
-	// there's a proposal to make this more direct: https://github.com/golang/go/issues/62005
+	// slog.DiscardHandler can be used in go 1.24: https://github.com/golang/go/issues/62005
 	return slog.New(slog.NewJSONHandler(io.Discard, nil))
 }

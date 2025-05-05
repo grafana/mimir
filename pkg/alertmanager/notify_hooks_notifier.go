@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	commoncfg "github.com/prometheus/common/config"
@@ -34,8 +35,19 @@ type notifyHooksNotifier struct {
 	client   *http.Client
 }
 
-func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, user string, logger log.Logger) (*notifyHooksNotifier, error) {
-	client, err := commoncfg.NewClientFromConfig(commoncfg.DefaultHTTPClientConfig, "notify_hooks")
+func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger) (*notifyHooksNotifier, error) {
+	clientCfg := commoncfg.DefaultHTTPClientConfig
+
+	// Inject user as X-Scope-OrgID into requests to hooks.
+	clientCfg.HTTPHeaders = &commoncfg.Headers{
+		Headers: map[string]commoncfg.Header{
+			user.OrgIDHeaderName: {
+				Values: []string{userID},
+			},
+		},
+	}
+
+	client, err := commoncfg.NewClientFromConfig(clientCfg, "notify_hooks")
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +55,7 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 	return &notifyHooksNotifier{
 		upstream: upstream,
 		limits:   limits,
-		user:     user,
+		user:     userID,
 		logger:   logger,
 		client:   client,
 	}, nil

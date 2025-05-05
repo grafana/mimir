@@ -17,20 +17,22 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/objtools"
 )
 
 type config struct {
-	bucketConfig   objtools.BucketConfig
-	blocksFrom     string
-	inputFile      string
-	includeTenants flagext.StringSliceCSV
-	excludeTenants flagext.StringSliceCSV
-	dryRun         bool
+	bucketConfig       objtools.BucketConfig
+	blocksFrom         string
+	inputFile          string
+	includeTenants     flagext.StringSliceCSV
+	excludeTenants     flagext.StringSliceCSV
+	allowVersionDelete bool
+	dryRun             bool
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
@@ -39,6 +41,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	f.StringVar(&c.inputFile, "input-file", "-", "The file path to read when --blocks-from is json or lines, otherwise ignored. The default (\"-\") assumes reading from standard input.")
 	f.Var(&c.includeTenants, "include-tenants", "A comma separated list of what tenants to target.")
 	f.Var(&c.excludeTenants, "exclude-tenants", "A comma separated list of what tenants to ignore. Has precedence over included tenants.")
+	f.BoolVar(&c.allowVersionDelete, "allow-version-delete", true, "Allow using version deletion. This is used to remove delete marker versions instead of copying data when possible (S3 backends only).")
 	f.BoolVar(&c.dryRun, "dry-run", false, "When set the changes that would be made to object storage are only logged rather than performed.")
 }
 
@@ -56,6 +59,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
+
+	// Version deletion is used for removing delete marker versions which only applies to S3
+	cfg.allowVersionDelete = cfg.allowVersionDelete && cfg.bucketConfig.Backend() == bucket.S3
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -78,7 +84,7 @@ func run(ctx context.Context, cfg config) error {
 		return errors.Wrap(err, "failed to get blocks")
 	}
 
-	undeleteBlocks(ctx, bucket, blocks, cfg.dryRun)
+	undeleteBlocks(ctx, bucket, blocks, cfg.allowVersionDelete, cfg.dryRun)
 	return nil
 }
 
@@ -300,7 +306,7 @@ func listGlobalMarkers(ctx context.Context, bucket objtools.Bucket, tenantID str
 	return m, nil
 }
 
-func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[string][]ulid.ULID, dryRun bool) {
+func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[string][]ulid.ULID, allowVersionDelete, dryRun bool) {
 	succeeded, notNeeded, failed := 0, 0, 0
 	defer func() {
 		slog.Info("undelete operations summary", "succeeded", succeeded, "notNeeded", notNeeded, "failed", failed, "dryRun", dryRun)
@@ -323,7 +329,7 @@ func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[stri
 				return
 			}
 
-			undeleted, err := undeleteBlock(ctx, bucket, tenantID, blockID, globalMarkerState[blockID], logger, dryRun)
+			undeleted, err := undeleteBlock(ctx, bucket, tenantID, blockID, globalMarkerState[blockID], logger, allowVersionDelete, dryRun)
 			if err != nil {
 				failed++
 				logger.Error("failed to undelete block", "err", err)
@@ -347,7 +353,13 @@ type version struct {
 	info         objtools.VersionInfo
 }
 
-func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, globalState globalMarkerState, logger *slog.Logger, dryRun bool) (bool, error) {
+// restoreInfo contains the information necessary to perform a restore on an object
+type restoreInfo struct {
+	shadowingDeleteMarkers []version
+	target                 version
+}
+
+func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, globalState globalMarkerState, logger *slog.Logger, allowVersionDelete bool, dryRun bool) (bool, error) {
 	/*
 	 Lifecycle of a block:
 	 1. Files without meta.json added
@@ -358,7 +370,7 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 	 6. Delete the delete markers, local then global
 
 	 To undelete a block we are going to:
-	 1. Ensure all files within an existing or restorable meta.json are exiting or restorable with a matching size
+	 1. Ensure all files within an existing or restorable meta.json are existing or restorable with a matching size
 	 2. Restore objects as needed (if restoring the meta.json it goes last)
 	 3. Delete the delete markers (local then global) as needed
 	 4. Restore the no-compact markers (local then global) as needed
@@ -393,24 +405,19 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 		return false, errors.Wrap(err, "failed reading the block meta file")
 	}
 
-	restoreTargets, err := targetsToRestore(m, objVersions, blockPrefix)
+	restoreInfos, err := targetsToRestore(m, objVersions, blockPrefix, allowVersionDelete)
 	if err != nil {
 		return false, errors.Wrap(err, "failed getting target versions to restore")
 	}
 	// Restore the meta last if it's needed
 	if metaVersion != nil {
-		restoreTargets = append(restoreTargets, *metaVersion)
+		restoreInfos = append(restoreInfos, buildRestore(objVersions[metaName], *metaVersion, allowVersionDelete))
 	}
 
-	for _, target := range restoreTargets {
-		if dryRun {
-			logger.Info("dry run: would restore", "object", target.objectName, "version", target.info.VersionID)
-			continue
+	for _, restoreInfo := range restoreInfos {
+		if err = restore(ctx, bkt, restoreInfo, logger, dryRun); err != nil {
+			return false, err
 		}
-		if err := bkt.RestoreVersion(ctx, target.objectName, target.info); err != nil {
-			return false, errors.Wrapf(err, "failed to restore object %s with version %s", target.objectName, target.info.VersionID)
-		}
-		logger.Info("restored an object version", "object", target.objectName, "version", target.info.VersionID)
 	}
 
 	markersModified, err := handleMarkers(ctx, bkt, tenantID, blockID, globalState, objVersions, dryRun, logger)
@@ -418,7 +425,7 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 		return false, err
 	}
 
-	return len(restoreTargets) != 0 || markersModified, nil
+	return len(restoreInfos) != 0 || markersModified, nil
 }
 
 func getMeta(ctx context.Context, bkt objtools.Bucket, path string, versions []version) (*block.Meta, *version, error) {
@@ -449,8 +456,8 @@ func getMeta(ctx context.Context, bkt objtools.Bucket, path string, versions []v
 	return m, metaVersion, nil
 }
 
-func targetsToRestore(m *block.Meta, objVersions map[string][]version, blockPrefix string) ([]version, error) {
-	targetVersions := make([]version, 0, len(m.Thanos.Files))
+func targetsToRestore(m *block.Meta, objVersions map[string][]version, blockPrefix string, allowVersionDelete bool) ([]restoreInfo, error) {
+	restores := make([]restoreInfo, 0, len(m.Thanos.Files))
 
 	// Verify that every expected file is present in the block and restorable
 	for _, file := range m.Thanos.Files {
@@ -468,11 +475,11 @@ func targetsToRestore(m *block.Meta, objVersions map[string][]version, blockPref
 			return nil, fmt.Errorf("block %s contained versions for %s, but none were restorable", blockPrefix, file.RelPath)
 		}
 		if restoreVersion != nil { // nil indicates the object has an existing current version
-			targetVersions = append(targetVersions, *restoreVersion)
+			restores = append(restores, buildRestore(versions, *restoreVersion, allowVersionDelete))
 		}
 	}
 
-	return targetVersions, nil
+	return restores, nil
 }
 
 func versionToRestore(versions []version, targetSize *int64) (v *version, ok bool) {
@@ -491,6 +498,75 @@ func versionToRestore(versions []version, targetSize *int64) (v *version, ok boo
 	}
 
 	return target, target != nil
+}
+
+// buildRestore builds restoration information
+func buildRestore(versions []version, target version, allowVersionDelete bool) restoreInfo {
+	var shadowingDeleteMarkers []version
+	if allowVersionDelete {
+		// If delete markers can be removed then copying data may be avoidable
+		shadowingDeleteMarkers = deleteMarkersShadowingTarget(versions, target)
+	}
+
+	return restoreInfo{
+		shadowingDeleteMarkers: shadowingDeleteMarkers,
+		target:                 target,
+	}
+}
+
+// deleteMarkersShadowingTarget identifies the case where there are versions (excluding the target) with a
+// last modified time >= the target version's last modified time and all such versions are delete markers.
+// If that is the case, a non-empty list of those versions are returned
+func deleteMarkersShadowingTarget(versions []version, target version) []version {
+	shadowing := make([]version, 0, len(versions))
+	for _, version := range versions {
+		if version.lastModified.Before(target.lastModified) || version.info.VersionID == target.info.VersionID {
+			continue
+		} else if !version.info.IsDeleteMarker {
+			// A non-delete marker is shadowing. Deleting it could cause unrecoverable data loss.
+			// It would be unexpected to ever encounter this case in Mimir, but out of caution refuse to delete it.
+			return nil
+		} else {
+			shadowing = append(shadowing, version)
+		}
+	}
+
+	return shadowing
+}
+
+func restore(ctx context.Context, bkt objtools.Bucket, restoreInfo restoreInfo, logger *slog.Logger, dryRun bool) error {
+	target := restoreInfo.target
+
+	if len(restoreInfo.shadowingDeleteMarkers) == 0 {
+		if dryRun {
+			logger.Info("dry run: would restore", "object", target.objectName, "version", target.info.VersionID)
+			return nil
+		}
+
+		if err := bkt.RestoreVersion(ctx, target.objectName, target.info); err != nil {
+			return errors.Wrapf(err, "failed to restore object %s with version %s", target.objectName, target.info.VersionID)
+		}
+
+		logger.Info("restored an object version", "object", target.objectName, "version", target.info.VersionID)
+		return nil
+	}
+
+	for _, deleteMarker := range restoreInfo.shadowingDeleteMarkers {
+		if dryRun {
+			logger.Info("dry run: would remove S3 delete marker", "object", deleteMarker.objectName, "version", deleteMarker.info.VersionID)
+			continue
+		}
+
+		err := bkt.Delete(ctx, deleteMarker.objectName, objtools.DeleteOptions{
+			VersionID: deleteMarker.info.VersionID,
+		})
+		if err != nil {
+			return errors.Wrapf(err, "failed to remove an S3 delete marker from object %s with version %s", deleteMarker.objectName, deleteMarker.info.VersionID)
+		}
+		logger.Info("removed S3 delete marker", "object", deleteMarker.objectName, "version", deleteMarker.info.VersionID)
+	}
+
+	return nil
 }
 
 func handleMarkers(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, globalState globalMarkerState,

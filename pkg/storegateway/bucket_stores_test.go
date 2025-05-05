@@ -22,7 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -75,7 +75,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), reg)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -222,7 +222,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -290,7 +290,7 @@ func TestBucketStores_ownedUsers(t *testing.T) {
 
 	tests := map[string]struct {
 		shardingStrategy ShardingStrategy
-		allowedTenants   *util.AllowedTenants
+		allowedTenants   *util.AllowList
 		expectedStores   int
 	}{
 		"when sharding is disabled all users should be synced": {
@@ -307,13 +307,13 @@ func TestBucketStores_ownedUsers(t *testing.T) {
 		},
 		"when user is disabled, their stores should not be created": {
 			shardingStrategy: newNoShardingStrategy(),
-			allowedTenants:   util.NewAllowedTenants(nil, []string{"user-2"}),
+			allowedTenants:   util.NewAllowList(nil, []string{"user-2"}),
 			expectedStores:   2,
 		},
 
 		"when single user is enabled, only their stores should be created": {
 			shardingStrategy: newNoShardingStrategy(),
-			allowedTenants:   util.NewAllowedTenants([]string{"user-3"}, nil),
+			allowedTenants:   util.NewAllowList([]string{"user-3"}, nil),
 			expectedStores:   1,
 		},
 	}
@@ -385,10 +385,9 @@ func TestBucketStores_ChunksAndSeriesLimiterFactoriesInitializedByEnforcedLimits
 			bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 			require.NoError(t, err)
 
-			overrides, err := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(defaultLimits, validation.NewMockTenantLimits(testData.tenantLimits))
 
-			var allowedTenants *util.AllowedTenants
+			var allowedTenants *util.AllowList
 			reg := prometheus.NewPedanticRegistry()
 			stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, overrides, log.NewNopLogger(), reg)
 			require.NoError(t, err)
@@ -445,7 +444,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -518,16 +517,16 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			{
 				Labels: seriesWithOutOfOrderChunks,
 				Chunks: []chunks.Meta{
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 20, Val: 20}, test.Sample{TS: 21, Val: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 10, Val: 10}, test.Sample{TS: 11, Val: 11}})),
 				},
 			},
 			// Series with out of order and overlapping chunks.
 			{
 				Labels: seriesWithOverlappingChunks,
 				Chunks: []chunks.Meta{
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 20, Val: 20}, test.Sample{TS: 21, Val: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{test.Sample{TS: 10, Val: 10}, test.Sample{TS: 20, Val: 20}})),
 				},
 			},
 		}
@@ -553,7 +552,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	createBucketIndex(t, bkt, userID)
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -565,26 +564,26 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	tests := map[string]struct {
 		minT                                int64
 		maxT                                int64
-		expectedSamplesForOutOfOrderChunks  []sample
-		expectedSamplesForOverlappingChunks []sample
+		expectedSamplesForOutOfOrderChunks  []test.Sample
+		expectedSamplesForOverlappingChunks []test.Sample
 	}{
 		"query all samples": {
 			minT:                                math.MinInt64,
 			maxT:                                math.MaxInt64,
-			expectedSamplesForOutOfOrderChunks:  []sample{{t: 20, v: 20}, {t: 21, v: 21}, {t: 10, v: 10}, {t: 11, v: 11}},
-			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}, {t: 10, v: 10}, {t: 20, v: 20}},
+			expectedSamplesForOutOfOrderChunks:  []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}, {TS: 10, Val: 10}, {TS: 11, Val: 11}},
+			expectedSamplesForOverlappingChunks: []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}, {TS: 10, Val: 10}, {TS: 20, Val: 20}},
 		},
 		"query samples from 1st chunk only": {
 			minT:                                21,
 			maxT:                                22, // Not included.
-			expectedSamplesForOutOfOrderChunks:  []sample{{t: 20, v: 20}, {t: 21, v: 21}},
-			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}},
+			expectedSamplesForOutOfOrderChunks:  []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}},
+			expectedSamplesForOverlappingChunks: []test.Sample{{TS: 20, Val: 20}, {TS: 21, Val: 21}},
 		},
 		"query samples from 2nd (out of order) chunk only": {
 			minT:                                10,
 			maxT:                                11, // Not included.
-			expectedSamplesForOutOfOrderChunks:  []sample{{t: 10, v: 10}, {t: 11, v: 11}},
-			expectedSamplesForOverlappingChunks: []sample{{t: 10, v: 10}, {t: 20, v: 20}},
+			expectedSamplesForOutOfOrderChunks:  []test.Sample{{TS: 10, Val: 10}, {TS: 11, Val: 11}},
+			expectedSamplesForOverlappingChunks: []test.Sample{{TS: 10, Val: 10}, {TS: 20, Val: 20}},
 		},
 	}
 
@@ -720,7 +719,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	sharding := userShardingStrategy{}
 
-	var allowedTenants *util.AllowedTenants
+	var allowedTenants *util.AllowList
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, &sharding, bucket, allowedTenants, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)

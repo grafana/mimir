@@ -303,7 +303,7 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
 			o := New(
-				&operators.TestOperator{Series: testCase.inputSeries},
+				&operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
 				&scalars.ScalarConstant{Value: 2, TimeRange: timeRange, MemoryConsumptionTracker: memoryConsumptionTracker},
 				timeRange,
 				testCase.grouping,

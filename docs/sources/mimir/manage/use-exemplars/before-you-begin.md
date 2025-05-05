@@ -8,6 +8,8 @@ title: Before you begin using exemplars with Grafana Mimir
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Before you begin using exemplars with Grafana Mimir
 
 Follow the checklist to ensure that your application is generating metrics, traces, and exemplars.
@@ -29,6 +31,6 @@ Follow the checklist to ensure that your application is generating metrics, trac
 
 See also:
 
-- [Store exemplars in Grafana Mimir]({{< relref "./store-exemplars" >}})
-- [View exemplar data]({{< relref "./view-exemplar-data" >}})
+- [Store exemplars in Grafana Mimir](../store-exemplars/)
+- [View exemplar data](../view-exemplar-data/)
 - [TNS demo](https://github.com/grafana/tns)

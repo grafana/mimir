@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -37,7 +38,7 @@ const ownedServiceTestUserSeriesLimit = 10000
 const defaultHeartbeatPeriod = 100 * time.Millisecond
 
 type ownedSeriesTestContextBase struct {
-	seriesToWrite []series
+	seriesToWrite []util_test.Series
 
 	user        string
 	ownedSeries *ownedSeriesService
@@ -736,9 +737,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 			c.registerTestedIngesterIntoRing(t, c.cfg.IngesterRing.InstanceID, c.cfg.IngesterRing.InstanceAddr, c.cfg.IngesterRing.InstanceZone)
 
-			var err error
-			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
-			require.NoError(t, err)
+			c.overrides = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 
 			c.ing = setupIngesterWithOverrides(t, c.cfg, c.overrides, c.ingesterRing, "") // Pass ring so that limiter and oss see the same state
 
@@ -759,21 +758,20 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 	}
 }
 
-func generateSeriesWithTokens(testUser string) ([]series, []uint32) {
+func generateSeriesWithTokens(testUser string) ([]util_test.Series, []uint32) {
 	return generateSeriesWithTokensAt(testUser, time.Now())
 }
 
-func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]series, []uint32) {
-	var seriesToWrite []series
+func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]util_test.Series, []uint32) {
+	var seriesToWrite []util_test.Series
 	var seriesTokens []uint32
 	for seriesIdx := 0; seriesIdx < ownedServiceSeriesCount; seriesIdx++ {
-		s := series{
-			lbls:      labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
-			value:     float64(0),
-			timestamp: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(),
+		s := util_test.Series{
+			Labels:  labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
+			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(), Val: float64(0)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
-		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.lbls))
+		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.Labels))
 	}
 	return seriesToWrite, seriesTokens
 }
@@ -795,7 +793,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 	})
 
 	for _, s := range c.seriesToWrite {
-		req, _, _, _ := mockWriteRequest(t, s.lbls, s.value, s.timestamp)
+		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
 		require.NoError(t, writer.WriteSync(context.Background(), c.partitionID, c.user, req))
 	}
 
@@ -1450,10 +1448,7 @@ func TestOwnedSeriesServiceWithPartitionsRing(t *testing.T) {
 			c.cfg.IngesterPartitionRing.KVStore.Mock = c.kvStore                               // Set ring with our in-memory KV, that we will use for watching.
 			c.cfg.BlocksStorageConfig.TSDB.Dir = ""                                            // Don't use default value, otherwise
 
-			var err error
-			c.overrides, err = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
-			require.NoError(t, err)
-
+			c.overrides = validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tc.limits))
 			// createTestIngesterWithIngestStorage will register partition and ingester into the partition ring.
 			c.createIngesterAndPartitionRing(t)
 

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
@@ -25,12 +26,17 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/alerting/definition"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/kv/consul"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
@@ -46,6 +52,7 @@ import (
 	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
@@ -55,12 +62,14 @@ import (
 	"go.uber.org/goleak"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -391,6 +400,7 @@ templates:
 	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
 
 	// Ensure that when a Grafana config is added, it is synced correctly.
+	testSmtpFrom := "test@grafana.com"
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
 		User:               "user4",
 		RawConfig:          grafanaConfig,
@@ -399,6 +409,7 @@ templates:
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        "test.grafana.com",
+		SmtpFrom:           testSmtpFrom,
 		StaticHeaders:      map[string]string{"Header1": "Value1"},
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
@@ -410,7 +421,7 @@ templates:
 	require.Len(t, am.alertmanagers, 4)
 
 	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
-	amCfg, err := am.createUsableGrafanaConfig(userGrafanaCfg, am.fallbackConfig)
+	amCfg, err := createUsableGrafanaConfig(am.logger, userGrafanaCfg, am.fallbackConfig)
 	require.NoError(t, err)
 	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
 	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
@@ -461,6 +472,7 @@ templates:
 	require.NoError(t, err)
 
 	gCfg.AlertmanagerConfig.Global = mCfg.Global
+	gCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 
 	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
 	require.NoError(t, err)
@@ -834,9 +846,7 @@ receivers:
 				flagext.DefaultValues(&limits)
 				limits.AlertmanagerReceiversBlockPrivateAddresses = firewallEnabled
 
-				overrides, err := validation.NewOverrides(limits, nil)
-				require.NoError(t, err)
-
+				overrides := validation.NewOverrides(limits, nil)
 				features := featurecontrol.NoopFlags{}
 
 				// Start the alertmanager.
@@ -883,10 +893,8 @@ receivers:
 				// Ensure the server endpoint has not been called if firewall is enabled. Since the alert is delivered
 				// asynchronously, we should pool it for a short period.
 				deadline := time.Now().Add(3 * time.Second)
-				for {
-					if time.Now().After(deadline) || serverInvoked.Load() {
-						break
-					}
+				for !time.Now().After(deadline) && !serverInvoked.Load() {
+
 					time.Sleep(100 * time.Millisecond)
 				}
 
@@ -2474,6 +2482,7 @@ receivers:
 	ctx = notify.WithReceiverName(ctx, "email")
 	ctx = notify.WithGroupKey(ctx, "key")
 	ctx = notify.WithRepeatInterval(ctx, time.Minute)
+	ctx = notify.WithNow(ctx, time.Now())
 
 	// Verify that rate-limiter is in place for email notifier.
 	_, _, err = uam.lastPipeline.Exec(ctx, log.NewNopLogger(), &types.Alert{})
@@ -2524,7 +2533,9 @@ func TestComputeConfig(t *testing.T) {
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
 	require.NoError(t, err)
 
+	testSmtpFrom := "test-instance@grafana.com"
 	grafanaCfg.AlertmanagerConfig.Global = fallbackCfg.Global
+	grafanaCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 	combinedCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
 	require.NoError(t, err)
 
@@ -2546,6 +2557,101 @@ func TestComputeConfig(t *testing.T) {
 				Mimir: alertspb.AlertConfigDesc{
 					User:      "user-grafana",
 					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user-grafana",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "empty grafana configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user-grafana",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user-grafana",
+					RawConfig:     "",
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user-grafana",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is not promoted",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user-grafana",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user-grafana",
+					RawConfig:     grafanaConfig,
+					Promoted:      false,
+					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user-grafana",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is default",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user-grafana",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user-grafana",
+					RawConfig:     grafanaConfig,
+					Default:       true,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user-grafana",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "empty mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user-grafana",
+					RawConfig: "",
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user-grafana",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
 			expStartAM: true,
@@ -3179,6 +3285,7 @@ func TestComputeConfig(t *testing.T) {
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
 					StaticHeaders: testHeaders,
+					SmtpFrom:      testSmtpFrom,
 				},
 			},
 			expStartAM: true,
@@ -3321,6 +3428,7 @@ func TestComputeConfig(t *testing.T) {
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
 					StaticHeaders: testHeaders,
+					SmtpFrom:      testSmtpFrom,
 				},
 			},
 			expStartAM: true,
@@ -4056,4 +4164,153 @@ func (m *mockAlertManagerLimits) AlertmanagerMaxAlertsCount(_ string) int {
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxAlertsSizeBytes(_ string) int {
 	return m.maxAlertsSizeBytes
+}
+
+func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
+	requestDuration := func(reg prometheus.Registerer) *prometheus.HistogramVec {
+		return promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_alertmanager_distributor_client_request_duration_seconds",
+			Help:    "Time spent executing requests from an alertmanager to another alertmanager.",
+			Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
+		}, []string{"operation", "status_code"})
+	}
+	testCases := map[string]struct {
+		serverClusterValidation clusterutil.ServerClusterValidationConfig
+		clientClusterValidation clusterutil.ClusterValidationConfig
+		expectedError           *status.Status
+		expectedMetrics         string
+	}{
+		"if server and client have equal cluster validation labels and cluster validation is disabled no error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "cluster"},
+				GRPC:                    clusterutil.ClusterValidationProtocolConfig{Enabled: false},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "cluster"},
+			expectedError:           nil,
+		},
+		"if server and client have different cluster validation labels and cluster validation is disabled no error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
+				GRPC:                    clusterutil.ClusterValidationProtocolConfig{Enabled: false},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
+			expectedError:           nil,
+		},
+		"if server and client have equal cluster validation labels and cluster validation is enabled no error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "cluster"},
+				GRPC:                    clusterutil.ClusterValidationProtocolConfig{Enabled: true},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "cluster"},
+			expectedError:           nil,
+		},
+		"if server and client have different cluster validation labels and soft cluster validation is enabled no error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
+				GRPC: clusterutil.ClusterValidationProtocolConfig{
+					Enabled:        true,
+					SoftValidation: true,
+				},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
+			expectedError:           nil,
+		},
+		"if server and client have different cluster validation labels and cluster validation is enabled an error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
+				GRPC: clusterutil.ClusterValidationProtocolConfig{
+					Enabled:        true,
+					SoftValidation: false,
+				},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
+			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`),
+			expectedMetrics: `
+				# HELP cortex_client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
+        	    # TYPE cortex_client_invalid_cluster_validation_label_requests_total counter
+        	    cortex_client_invalid_cluster_validation_label_requests_total{client="alertmanager",method="/alertmanagerpb.Alertmanager/HandleRequest",protocol="grpc"} 1
+			`,
+		},
+		"if client has no cluster validation label and soft cluster validation is enabled no error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
+				GRPC: clusterutil.ClusterValidationProtocolConfig{
+					Enabled:        true,
+					SoftValidation: true,
+				},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{},
+			expectedError:           nil,
+		},
+		"if client has no cluster validation label and cluster validation is enabled an error is returned": {
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
+				GRPC: clusterutil.ClusterValidationProtocolConfig{
+					Enabled:        true,
+					SoftValidation: false,
+				},
+			},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{},
+			expectedError:           grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be "server-cluster"`),
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			var grpcOptions []grpc.ServerOption
+			if testCase.serverClusterValidation.GRPC.Enabled {
+				reg := prometheus.NewPedanticRegistry()
+				grpcOptions = []grpc.ServerOption{
+					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(
+						testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation,
+						middleware.NewInvalidClusterRequests(reg, "cortex"), log.NewNopLogger(),
+					)),
+				}
+			}
+
+			grpcServer := grpc.NewServer(grpcOptions...)
+			defer grpcServer.GracefulStop()
+
+			srv := &mockAlertmanagerServer{}
+			alertmanagerpb.RegisterAlertmanagerServer(grpcServer, srv)
+
+			listener, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+
+			go func() {
+				require.NoError(t, grpcServer.Serve(listener))
+			}()
+
+			cfg := grpcclient.Config{}
+			flagext.DefaultValues(&cfg)
+			cfg.ClusterValidation = testCase.clientClusterValidation
+
+			reg := prometheus.NewPedanticRegistry()
+			inst := ring.InstanceDesc{Addr: listener.Addr().String()}
+			client, err := dialAlertmanagerClient(cfg, inst, requestDuration(reg), util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "alertmanager", util.GRPCProtocol), log.NewNopLogger())
+			require.NoError(t, err)
+			defer client.Close() //nolint:errcheck
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			_, err = client.HandleRequest(ctx, &httpgrpc.HTTPRequest{})
+			if testCase.expectedError == nil {
+				require.NoError(t, err)
+			} else {
+				stat, ok := grpcutil.ErrorToStatus(err)
+				require.True(t, ok)
+				require.Equal(t, testCase.expectedError.Code(), stat.Code())
+				require.Equal(t, testCase.expectedError.Message(), stat.Message())
+			}
+			// Check tracked Prometheus metrics
+			err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "cortex_client_invalid_cluster_validation_label_requests_total")
+			assert.NoError(t, err)
+		})
+	}
+}
+
+type mockAlertmanagerServer struct {
+	alertmanagerpb.UnimplementedAlertmanagerServer
+}
+
+func (*mockAlertmanagerServer) HandleRequest(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	return &httpgrpc.HTTPResponse{}, nil
 }

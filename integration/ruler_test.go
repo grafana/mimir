@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -250,11 +249,6 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	// reverse order and check that they are sorted when returned.
 	expectedGroups := make([]NGPair, 0, numRuleGroups)
 	for i := numRuleGroups - 1; i >= 0; i-- {
-		var recordNode yaml.Node
-		var exprNode yaml.Node
-
-		recordNode.SetString(fmt.Sprintf("rule_%d", i))
-		exprNode.SetString(strconv.Itoa(i))
 		ruleGroupName := fmt.Sprintf("test_%d", i)
 
 		expectedGroups = append(expectedGroups,
@@ -267,9 +261,9 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		require.NoError(t, c.SetRuleGroup(rulefmt.RuleGroup{
 			Name:     ruleGroupName,
 			Interval: 60,
-			Rules: []rulefmt.RuleNode{{
-				Record: recordNode,
-				Expr:   exprNode,
+			Rules: []rulefmt.Rule{{
+				Record: fmt.Sprintf("rule_%d", i),
+				Expr:   strconv.Itoa(i),
 			}},
 		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
 	}
@@ -347,20 +341,15 @@ func TestRulerSharding(t *testing.T) {
 	ruleGroups := make([]rulefmt.RuleGroup, numRulesGroups)
 	expectedNames := make([]string, numRulesGroups)
 	for i := 0; i < numRulesGroups; i++ {
-		var recordNode yaml.Node
-		var exprNode yaml.Node
-
-		recordNode.SetString(fmt.Sprintf("rule_%d", i))
-		exprNode.SetString(strconv.Itoa(i))
 		ruleName := fmt.Sprintf("test_%d", i)
 
 		expectedNames[i] = ruleName
 		ruleGroups[i] = rulefmt.RuleGroup{
 			Name:     ruleName,
 			Interval: 60,
-			Rules: []rulefmt.RuleNode{{
-				Record: recordNode,
-				Expr:   exprNode,
+			Rules: []rulefmt.Rule{{
+				Record: fmt.Sprintf("rule_%d", i),
+				Expr:   strconv.Itoa(i),
 			}},
 		}
 	}
@@ -1537,7 +1526,7 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 	rg := rulefmt.RuleGroup{
 		Name:     "nameX",
 		Interval: 5,
-		Rules: []rulefmt.RuleNode{
+		Rules: []rulefmt.Rule{
 			recordingRule("tenant_vector_one", "count(series_1)"),
 			recordingRule("tenant_vector_two", "count(series_1)"),
 			recordingRule("tenant_vector_three", "count(series_1)"),
@@ -1696,7 +1685,7 @@ func ruleGroupWithAlertingRule(groupName string, ruleName string, expression str
 	return ruleGroupWithRules(groupName, 10, alertingRule(ruleName, expression))
 }
 
-func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulefmt.RuleNode) rulefmt.RuleGroup {
+func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulefmt.Rule) rulefmt.RuleGroup {
 	return rulefmt.RuleGroup{
 		Name:     groupName,
 		Interval: model.Duration(interval),
@@ -1722,29 +1711,17 @@ func createTestRuleGroup(opts ...testRuleGroupsOption) rulefmt.RuleGroup {
 	return rg
 }
 
-func recordingRule(record, expr string) rulefmt.RuleNode {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	recordNode.SetString(record)
-	exprNode.SetString(expr)
-
-	return rulefmt.RuleNode{
-		Record: recordNode,
-		Expr:   exprNode,
+func recordingRule(record, expr string) rulefmt.Rule {
+	return rulefmt.Rule{
+		Record: record,
+		Expr:   expr,
 	}
 }
 
-func alertingRule(alert, expr string) rulefmt.RuleNode {
-	var alertNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	alertNode.SetString(alert)
-	exprNode.SetString(expr)
-
-	return rulefmt.RuleNode{
-		Alert: alertNode,
-		Expr:  exprNode,
+func alertingRule(alert, expr string) rulefmt.Rule {
+	return rulefmt.Rule{
+		Alert: alert,
+		Expr:  expr,
 		For:   30,
 	}
 }

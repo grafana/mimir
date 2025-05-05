@@ -20,11 +20,14 @@ type AndUnlessBinaryOperation struct {
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	IsUnless                 bool // If true, this operator represents an 'unless', if false, this operator represents an 'and'
 
-	timeRange            types.QueryTimeRange
-	expressionPosition   posrange.PositionRange
-	leftSeriesGroups     []*andGroup
-	rightSeriesGroups    []*andGroup
-	nextRightSeriesIndex int
+	timeRange                  types.QueryTimeRange
+	expressionPosition         posrange.PositionRange
+	leftSeriesGroups           []*andGroup
+	rightSeriesGroups          []*andGroup
+	nextRightSeriesIndex       int
+	lastRightSeriesIndexToRead int
+	nextLeftSeriesIndex        int
+	lastLeftSeriesIndexToRead  int
 }
 
 var _ types.InstantVectorOperator = &AndUnlessBinaryOperation{}
@@ -46,10 +49,25 @@ func NewAndUnlessBinaryOperation(
 		IsUnless:                 isUnless,
 		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
+
+		lastLeftSeriesIndexToRead:  -1,
+		lastRightSeriesIndexToRead: -1,
 	}
 }
 
 func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	defer func() {
+		if a.lastLeftSeriesIndexToRead == -1 {
+			// We're not going to read anything from the left side, close it now.
+			a.Left.Close()
+		}
+
+		if a.lastRightSeriesIndexToRead == -1 {
+			// We're not going to read anything from the right side, close it now.
+			a.Right.Close()
+		}
+	}()
+
 	leftMetadata, err := a.Left.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -57,7 +75,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 
 	if len(leftMetadata) == 0 {
 		// We can't produce any series, we are done.
-		types.PutSeriesMetadataSlice(leftMetadata)
+		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -66,10 +84,11 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, err
 	}
 
-	defer types.PutSeriesMetadataSlice(rightMetadata)
+	defer types.SeriesMetadataSlicePool.Put(rightMetadata, a.MemoryConsumptionTracker)
 
 	if len(rightMetadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
+		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -101,6 +120,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 
 		if exists {
 			group.lastRightSeriesIndex = idx
+			a.lastRightSeriesIndexToRead = idx
 		}
 
 		// Even if there is no matching group, we want to store a nil value here so we know to throw the series away when we read it later.
@@ -110,7 +130,6 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 	if a.IsUnless {
 		return a.computeUnlessSeriesMetadata(leftMetadata), nil
 	}
-
 	return a.computeAndSeriesMetadata(leftMetadata), nil
 }
 
@@ -127,6 +146,7 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 		} else {
 			leftMetadata[nextOutputSeriesIndex] = leftMetadata[seriesIdx]
 			nextOutputSeriesIndex++
+			a.lastLeftSeriesIndexToRead = seriesIdx
 		}
 	}
 
@@ -142,10 +162,20 @@ func (a *AndUnlessBinaryOperation) computeUnlessSeriesMetadata(leftMetadata []ty
 		}
 	}
 
+	a.lastLeftSeriesIndexToRead = len(leftMetadata) - 1
+
 	return leftMetadata
 }
 
 func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	defer func() {
+		// If we're done reading the left side, close it so it can release any resources as early as possible.
+		// We do the same thing for the right side in readRightSideUntilGroupComplete.
+		if a.nextLeftSeriesIndex > a.lastLeftSeriesIndexToRead {
+			a.Left.Close()
+		}
+	}()
+
 	for {
 		if len(a.leftSeriesGroups) == 0 {
 			// No more series to return.
@@ -154,6 +184,7 @@ func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.Instan
 
 		thisSeriesGroup := a.leftSeriesGroups[0]
 		a.leftSeriesGroups = a.leftSeriesGroups[1:]
+		a.nextLeftSeriesIndex++
 
 		if thisSeriesGroup == nil {
 			// This series from the left side has no matching series on the right side.
@@ -221,6 +252,11 @@ func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.C
 		a.nextRightSeriesIndex++
 	}
 
+	// If we're done reading the right side, close it so it can release any resources as early as possible.
+	if a.nextRightSeriesIndex > a.lastRightSeriesIndexToRead {
+		a.Right.Close()
+	}
+
 	return nil
 }
 
@@ -231,6 +267,19 @@ func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 func (a *AndUnlessBinaryOperation) Close() {
 	a.Left.Close()
 	a.Right.Close()
+
+	for _, group := range a.leftSeriesGroups {
+		if group == nil {
+			continue
+		}
+
+		group.Close(a.MemoryConsumptionTracker)
+	}
+
+	a.leftSeriesGroups = nil
+
+	// We don't need to explicitly close any groups in rightSeriesGroups, as they would have been closed above.
+	a.rightSeriesGroups = nil
 }
 
 type andGroup struct {
@@ -271,4 +320,5 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 
 func (g *andGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
+	g.rightSamplePresence = nil
 }

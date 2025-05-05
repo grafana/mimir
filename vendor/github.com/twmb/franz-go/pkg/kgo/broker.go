@@ -41,6 +41,8 @@ func (p *pinReq) SetVersion(v int16) {
 	p.Request.SetVersion(v)
 }
 
+type forceOpenReq struct{ kmsg.Request }
+
 type promisedReq struct {
 	ctx     context.Context
 	req     kmsg.Request
@@ -408,6 +410,16 @@ start:
 	default:
 	}
 
+	if _, isForceOpen := req.(*forceOpenReq); isForceOpen {
+		// We issue ApiVersions with v0; we could try to bound the
+		// version by going to the start above, but it really does
+		// not matter much.
+		kreq := kmsg.NewPtrApiVersionsRequest()
+		kreq.ClientSoftwareName = b.cl.cfg.softwareName
+		kreq.ClientSoftwareVersion = b.cl.cfg.softwareVersion
+		req = kreq
+	}
+
 	// Produce requests (and only produce requests) can be written
 	// without receiving a reply. If we see required acks is 0,
 	// then we immediately call the promise with no response.
@@ -499,7 +511,8 @@ func (p bufPool) put(b []byte) { p.p.Put(&b) }
 func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerCxn, error) {
 	var (
 		pcxn         = &b.cxnNormal
-		isProduceCxn bool // see docs on brokerCxn.discard for why we do this
+		isProduceCxn bool
+		isFetchCxn   bool
 		reqKey       = req.Key()
 		_, isTimeout = req.(kmsg.TimeoutRequest)
 	)
@@ -509,6 +522,7 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		isProduceCxn = true
 	case reqKey == 1:
 		pcxn = &b.cxnFetch
+		isFetchCxn = true
 	case reqKey == 11 || reqKey == 14: // join || sync
 		pcxn = &b.cxnGroup
 	case isTimeout:
@@ -538,6 +552,12 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		return nil, err
 	}
 	b.cl.cfg.logger.Log(LogLevelDebug, "connection initialized successfully", "addr", b.addr, "broker", logID(b.meta.NodeID))
+
+	if isProduceCxn {
+		b.cl.metrics.observeRate(&b.cl.metrics.pConnCreation)
+	} else if isFetchCxn {
+		b.cl.metrics.observeRate(&b.cl.metrics.cConnCreation)
+	}
 
 	b.reapMu.Lock()
 	defer b.reapMu.Unlock()
@@ -766,6 +786,7 @@ start:
 			maxVersion = 0
 			goto start
 		}
+		cxn.cl.cfg.logger.Log(LogLevelDebug, "broker does not know our ApiVersions version but replied with all keys, deserializing as v0", "broker", logID(cxn.b.meta.NodeID))
 		resp.Version = 0
 	}
 
@@ -915,10 +936,7 @@ func (cxn *brokerCxn) doSasl(authenticate bool) error {
 					return err
 				}
 
-				if err = kerr.ErrorForCode(resp.ErrorCode); err != nil {
-					if resp.ErrorMessage != nil {
-						return fmt.Errorf("%s: %w", *resp.ErrorMessage, err)
-					}
+				if err := errCodeMessage(resp.ErrorCode, resp.ErrorMessage); err != nil {
 					return err
 				}
 				challenge = resp.SASLAuthBytes
@@ -1235,6 +1253,16 @@ func (cxn *brokerCxn) readResponse(
 			})
 		}
 	})
+
+	if readErr == nil {
+		latencyMillis := (writeWait + timeToWrite + readWait + timeToRead).Milliseconds()
+		if key == 0 { //nolint:staticcheck // tagged switch not needed for one case...
+			cxn.b.cl.metrics.observeNodeTime(cxn.b.meta.NodeID, &cxn.b.cl.metrics.pReqLatency, latencyMillis)
+		} else if key == 1 {
+			cxn.b.cl.metrics.observeNodeTime(cxn.b.meta.NodeID, &cxn.b.cl.metrics.cReqLatency, latencyMillis)
+		}
+	}
+
 	if logger := cxn.cl.cfg.logger; logger.Level() >= LogLevelDebug {
 		logger.Log(LogLevelDebug, fmt.Sprintf("read %s v%d", kmsg.NameForKey(key), version), "broker", logID(cxn.b.meta.NodeID), "bytes_read", bytesRead, "read_wait", readWait, "time_to_read", timeToRead, "err", readErr)
 	}
@@ -1476,6 +1504,11 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 		return
 	}
 
+	if pr.resp.Key() == 18 && len(rawResp) > 2 && rawResp[1] == 35 {
+		cxn.b.cl.cfg.logger.Log(LogLevelDebug, "ApiVersions response returned with UNSUPPORTED_VERSION error at byte 1, downgraded to v0 to deserialize response")
+		pr.resp.SetVersion(0)
+	}
+
 	cxn.successes++
 	readErr := pr.resp.ReadFrom(rawResp)
 
@@ -1487,6 +1520,9 @@ func (cxn *brokerCxn) handleResp(pr promisedResp) {
 		if throttleResponse, ok := pr.resp.(kmsg.ThrottleResponse); ok {
 			millis, throttlesAfterResp := throttleResponse.Throttle()
 			if millis > 0 {
+				if pr.resp.Key() == 0 {
+					cxn.b.cl.metrics.observeTime(&cxn.b.cl.metrics.pThrottle, int64(millis))
+				}
 				cxn.b.cl.cfg.logger.Log(LogLevelInfo, "broker is throttling us in response", "broker", logID(cxn.b.meta.NodeID), "req", kmsg.Key(pr.resp.Key()).Name(), "throttle_millis", millis, "throttles_after_resp", throttlesAfterResp)
 				if throttlesAfterResp {
 					throttleUntil := time.Now().Add(time.Millisecond * time.Duration(millis)).UnixNano()

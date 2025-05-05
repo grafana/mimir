@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -20,11 +19,10 @@ import (
 func TestIngestionRateStrategy(t *testing.T) {
 	t.Run("rate limiter should share the limit across the number of distributors", func(t *testing.T) {
 		// Init limits overrides
-		overrides, err := validation.NewOverrides(validation.Limits{
+		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:      float64(1000),
 			IngestionBurstSize: 10000,
 		}, nil)
-		require.NoError(t, err)
 
 		mockRing := newReadLifecyclerMock()
 		mockRing.On("HealthyInstancesCount").Return(2)
@@ -42,11 +40,10 @@ func TestIngestionRateStrategy(t *testing.T) {
 	})
 	t.Run("Burst factor should be 3x the per distributor limit", func(t *testing.T) {
 		// Init limits overrides
-		overrides, err := validation.NewOverrides(validation.Limits{
+		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:        float64(1000),
 			IngestionBurstFactor: 3,
 		}, nil)
-		require.NoError(t, err)
 
 		mockRing := newReadLifecyclerMock()
 		mockRing.On("HealthyInstancesCount").Return(2)
@@ -57,11 +54,10 @@ func TestIngestionRateStrategy(t *testing.T) {
 	})
 	t.Run("Burst factor should be set to to max int if limit is too large", func(t *testing.T) {
 		// Init limits overrides
-		overrides, err := validation.NewOverrides(validation.Limits{
+		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:        float64(math.MaxInt),
 			IngestionBurstFactor: 3,
 		}, nil)
-		require.NoError(t, err)
 
 		mockRing := newReadLifecyclerMock()
 		mockRing.On("HealthyInstancesCount").Return(2)
@@ -72,11 +68,10 @@ func TestIngestionRateStrategy(t *testing.T) {
 	})
 	t.Run("Burst factor should be set to to max int if limit is rate.inf", func(t *testing.T) {
 		// Init limits overrides
-		overrides, err := validation.NewOverrides(validation.Limits{
+		overrides := validation.NewOverrides(validation.Limits{
 			IngestionRate:        math.MaxFloat64,
 			IngestionBurstFactor: 3,
 		}, nil)
-		require.NoError(t, err)
 
 		mockRing := newReadLifecyclerMock()
 		mockRing.On("HealthyInstancesCount").Return(2)

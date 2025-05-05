@@ -34,7 +34,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/regexp"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,13 +57,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -861,8 +862,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+		mockBucket.AssertNotCalled(t, "Get")
+		mockBucket.AssertNotCalled(t, "GetRange")
 	})
 
 	t.Run("requesting a label value (with regex) that doesn't exist doesn't reach the cache or the bucket", func(t *testing.T) {
@@ -879,8 +880,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		postings, _, err := b.indexReader(selectAllStrategy{}).ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Empty(t, postings)
-		mockBucket.Mock.AssertNotCalled(t, "Get")
-		mockBucket.Mock.AssertNotCalled(t, "GetRange")
+		mockBucket.AssertNotCalled(t, "Get")
+		mockBucket.AssertNotCalled(t, "GetRange")
 	})
 
 	t.Run("postings selection strategy is respected", func(t *testing.T) {
@@ -1046,10 +1047,13 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 	tmpDir := tb.TempDir()
 	bucketDir := filepath.Join(tmpDir, "bkt")
 
-	bkt, err := filesystem.NewBucket(bucketDir)
+	ubkt, err := filesystem.NewBucket(bucketDir)
 	assert.NoError(tb, err)
 
+	bkt := objstore.WithNoopInstr(ubkt)
+
 	tb.Cleanup(func() {
+		assert.NoError(tb, ubkt.Close())
 		assert.NoError(tb, bkt.Close())
 	})
 
@@ -1073,7 +1077,7 @@ func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucke
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               localBucket{Bucket: bkt, dir: bucketDir},
+			bkt:               localBucket{Bucket: ubkt, dir: bucketDir},
 			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
@@ -1449,9 +1453,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 				expectedSamples = 1
 			}
 			seriesCut := int(p * float64(numOfBlocks*seriesPerBlock))
-			if seriesCut == 0 {
+			switch seriesCut {
+			case 0:
 				seriesCut = 1
-			} else if seriesCut == 1 {
+			case 1:
 				seriesCut = expectedSamples / samplesPerSeriesPerBlock
 			}
 
@@ -1731,9 +1736,14 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	ubkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, bkt.Close()) }()
+	bkt := objstore.WithNoopInstr(ubkt)
+
+	t.Cleanup(func() {
+		require.NoError(t, ubkt.Close())
+		require.NoError(t, bkt.Close())
+	})
 
 	logger := log.NewNopLogger()
 	thanosMeta := block.ThanosMeta{
@@ -2900,7 +2910,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	var w *wlog.WL
 	var err error
 	if opts.WithWAL {
-		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), wlog.CompressionSnappy)
+		w, err = wlog.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), compression.Snappy)
 		assert.NoError(t, err)
 	} else {
 		assert.NoError(t, os.MkdirAll(filepath.Join(opts.TSDBDir, "wal"), os.ModePerm))

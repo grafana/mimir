@@ -141,9 +141,10 @@ func newFakeEngineThatSupportsLimitedQueries() *fakeEngineThatSupportsLimitedQue
 }
 
 func (f *fakeEngineThatSupportsLimitedQueries) NewInstantQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, qs string, _ time.Time) (promql.Query, error) {
-	if qs == "a_supported_expression" {
+	switch qs {
+	case "a_supported_expression":
 		return f.query, nil
-	} else if qs == "an_invalid_expression" {
+	case "an_invalid_expression":
 		return nil, errors.New("the query is invalid")
 	}
 
@@ -151,9 +152,10 @@ func (f *fakeEngineThatSupportsLimitedQueries) NewInstantQuery(_ context.Context
 }
 
 func (f *fakeEngineThatSupportsLimitedQueries) NewRangeQuery(_ context.Context, _ storage.Queryable, _ promql.QueryOpts, qs string, _, _ time.Time, _ time.Duration) (promql.Query, error) {
-	if qs == "a_supported_expression" {
+	switch qs {
+	case "a_supported_expression":
 		return f.query, nil
-	} else if qs == "an_invalid_expression" {
+	case "an_invalid_expression":
 		return nil, errors.New("the query is invalid")
 	}
 

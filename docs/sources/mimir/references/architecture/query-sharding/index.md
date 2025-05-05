@@ -7,6 +7,8 @@ title: Grafana Mimir query sharding
 weight: 90
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir query sharding
 
 Mimir includes the ability to run a single query across multiple machines. This is
@@ -16,8 +18,8 @@ partial queries are distributed by the query-frontend to run on different
 queriers in parallel. The results of those partial queries are aggregated by the
 query-frontend to return the full query result.
 
-Query sharding is applied on the [`query`]({{< relref "../../http-api#instant-query" >}})
-and [`query_range`]({{< relref "../../http-api#range-query" >}}) APIs only.
+Query sharding is applied on the [`query`](../../http-api/#instant-query)
+and [`query_range`](../../http-api/#range-query) APIs only.
 
 ## Query sharding at glance
 

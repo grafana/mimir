@@ -1,6 +1,6 @@
-# Undelete Blocks
+# undelete-blocks
 
-This program is a disaster recovery tool that can restore deleted Mimir blocks in object storage.
+This program is a disaster recovery tool that can restore deleted Mimir blocks in object storage. If a partial failure is encountered when running this tool it is safe to rerun.
 
 The currently supported services are Amazon Simple Storage Service (S3 and S3-compatible), Azure Blob Storage (ABS), and Google Cloud Storage (GCS).
 
@@ -16,6 +16,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 - `--input-file` (optional) The file path to read when `--blocks-from` is `json` or `lines`, otherwise ignored. The default (`"-"`) assumes reading from standard input.
 - `--include-tenants` (optional) A comma separated list of what tenants to target.
 - `--exclude-tenants` (optional) A comma separated list of what tenants to ignore. Has precedence over `--include-tenants`.
+- `--allow-version-delete` (optional) Allow using version deletion. This is used to remove delete marker versions instead of copying data when possible (S3 backends only). The default is `true`.
 - `--dry-run` (optional) When set the changes that would be made to object storage are only logged rather than performed.
 
 Each supported object storage service also has an additional set of flags (see examples in [Running](##Running)).
@@ -68,7 +69,7 @@ Files not listed within the `meta.json` of a block are not restored if they were
 
 ## Running
 
-Running `go build .` in this directory builds the program. Then use an example below as a guide.
+Run `go build` in this directory to build the program. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 

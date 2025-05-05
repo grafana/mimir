@@ -302,13 +302,13 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		TimeseriesUnmarshalCachingEnabled = false
 
-		require.NoError(t, msg.Unmarshal(data))
+		require.NoError(t, msg.Unmarshal(data, nil, nil))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.Nil(t, msg.marshalledData)
 
 		TimeseriesUnmarshalCachingEnabled = true
 
-		require.NoError(t, msg.Unmarshal(data))
+		require.NoError(t, msg.Unmarshal(data, nil, nil))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.NotNil(t, msg.marshalledData)
 	}
@@ -625,4 +625,48 @@ func TestSortExemplars(t *testing.T) {
 		assert.Equal(t, int64(3), p.Exemplars[1].TimestampMs)
 		assert.Nil(t, p.marshalledData)
 	})
+}
+
+func TestTimeSeries_MakeReferencesSafeToRetain(t *testing.T) {
+	const (
+		origLabelName  = "name"
+		origLabelValue = "value"
+	)
+	labelNameBytes := []byte(origLabelName)
+	labelValueBytes := []byte(origLabelValue)
+	ts := TimeSeries{
+		Labels: []LabelAdapter{
+			{
+				Name:  yoloString(labelNameBytes),
+				Value: yoloString(labelValueBytes),
+			},
+		},
+		Exemplars: []Exemplar{
+			{
+				Labels: []LabelAdapter{
+					{
+						Name:  yoloString(labelNameBytes),
+						Value: yoloString(labelValueBytes),
+					},
+				},
+			},
+		},
+	}
+
+	ts.MakeReferencesSafeToRetain()
+
+	// Modify the referenced byte slices, to test whether ts retains them (it shouldn't).
+	labelNameBytes[len(labelNameBytes)-1] = 'x'
+	labelValueBytes[len(labelValueBytes)-1] = 'x'
+
+	for _, l := range ts.Labels {
+		require.Equal(t, origLabelName, l.Name)
+		require.Equal(t, origLabelValue, l.Value)
+	}
+	for _, ex := range ts.Exemplars {
+		for _, l := range ex.Labels {
+			require.Equal(t, origLabelName, l.Name)
+			require.Equal(t, origLabelValue, l.Value)
+		}
+	}
 }

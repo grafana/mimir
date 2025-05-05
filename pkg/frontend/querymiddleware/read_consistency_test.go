@@ -153,8 +153,7 @@ func TestGetDefaultReadConsistency(t *testing.T) {
 		"tenant-c": {IngestStorageReadConsistency: querierapi.ReadConsistencyStrong},
 	}
 
-	ov, err := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
-	require.NoError(t, err)
+	ov := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
 
 	tests := []struct {
 		tenantIDs []string

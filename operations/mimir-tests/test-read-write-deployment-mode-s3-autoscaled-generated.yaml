@@ -565,7 +565,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -629,7 +629,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.23.0
+        image: grafana/rollout-operator:v0.26.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -693,7 +693,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -746,7 +746,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -799,7 +799,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -852,7 +852,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.2
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -978,9 +978,10 @@ spec:
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=70
+        - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local.:9095
         - -ruler.ring.store=memberlist
@@ -1005,7 +1006,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1171,9 +1172,10 @@ spec:
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=70
+        - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local.:9095
         - -ruler.ring.store=memberlist
@@ -1198,7 +1200,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1364,9 +1366,10 @@ spec:
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
+        - -ruler-storage.cache.memcached.timeout=500ms
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=70
+        - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local.:9095
         - -ruler.ring.store=memberlist
@@ -1391,7 +1394,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1529,7 +1532,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1667,7 +1670,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1805,7 +1808,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

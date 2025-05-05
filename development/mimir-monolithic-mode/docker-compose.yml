@@ -21,7 +21,7 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.2.1
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -31,7 +31,7 @@ services:
   prometheusRW2:
     profiles:
       - prometheusRW2
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.2.1
     command: ["--config.file=/etc/prometheus/prometheusRW2.yaml", "--enable-feature=metadata-wal-records,native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -42,7 +42,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:11.5.2
+    image: grafana/grafana:11.6.1
     ports:
       - 3000:3000
     volumes:
@@ -63,7 +63,7 @@ services:
   grafana-alloy:
     profiles:
       - grafana-alloy
-    image: grafana/alloy:v1.6.1
+    image: grafana/alloy:v1.8.2
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./config/config.alloy:/etc/alloy/config.alloy
@@ -122,7 +122,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.119.0
+    image: otel/opentelemetry-collector-contrib:0.123.0
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -137,7 +137,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.119.0
+    image: otel/opentelemetry-collector-contrib:0.123.0
     profiles:
       - otel-collector-otlp-push
     volumes:
