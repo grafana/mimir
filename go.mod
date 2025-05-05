@@ -242,7 +242,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grafana/gomemcache v0.0.0-20250318131618-74242eea118d
+	github.com/grafana/gomemcache v0.0.0-20250428181140-a78a5f9b0a0e
 	github.com/hashicorp/consul/api v1.32.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
