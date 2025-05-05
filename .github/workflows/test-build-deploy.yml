@@ -300,6 +300,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.prepare.outputs.build_image }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
