@@ -33,7 +33,7 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Name: "cortex_blockbuilder_consume_job_duration_seconds",
 		Help: "Time spent consuming a job.",
 
-		NativeHistogramBucketFactor: 1.414,
+		NativeHistogramBucketFactor: 1.1,
 	}, []string{"success"})
 
 	m.processPartitionDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
