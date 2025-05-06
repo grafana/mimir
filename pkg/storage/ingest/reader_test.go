@@ -1870,6 +1870,10 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				if blocked.Load() {
 					blockedTicker := time.NewTicker(100 * time.Millisecond)
 					defer blockedTicker.Stop()
+
+					timeoutTimer := time.NewTimer(3 * time.Second)
+					defer timeoutTimer.Stop()
+
 				outer:
 					for {
 						select {
@@ -1877,7 +1881,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 							if !blocked.Load() {
 								break outer
 							}
-						case <-time.After(3 * time.Second):
+						case <-timeoutTimer.C:
 							// This is basically a test failure as we never finish the test in time.
 							t.Log("failed to finish unblocking the consumer in time")
 							return nil

@@ -86,7 +86,7 @@ func (d *directConsumer) findNewAssignments() map[string]map[int32]Offset {
 			}
 			toUseTopic := make(map[int32]Offset, len(partitions.partitions))
 			for partition := range partitions.partitions {
-				toUseTopic[int32(partition)] = d.cfg.resetOffset
+				toUseTopic[int32(partition)] = d.cfg.startOffset
 			}
 			toUse[topic] = toUseTopic
 		}

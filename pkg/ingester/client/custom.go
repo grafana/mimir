@@ -6,6 +6,9 @@
 package client
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -64,4 +67,15 @@ func ChunkFromMeta(meta chunks.Meta) (Chunk, error) {
 // equivalent to no limits and no filtering.
 func DefaultMetricsMetadataRequest() *MetricsMetadataRequest {
 	return &MetricsMetadataRequest{Limit: -1, LimitPerMetric: -1, Metric: ""}
+}
+
+// MakeReferencesSafeToRetain converts all of c's unsafe references to safe copies.
+func (c *TimeSeriesChunk) MakeReferencesSafeToRetain() {
+	for i, l := range c.Labels {
+		c.Labels[i].Name = strings.Clone(l.Name)
+		c.Labels[i].Value = strings.Clone(l.Value)
+	}
+	for i, cc := range c.Chunks {
+		c.Chunks[i].Data = slices.Clone(cc.Data)
+	}
 }

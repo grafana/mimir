@@ -1,7 +1,6 @@
 package kgo
 
 import (
-	"cmp"
 	"encoding/hex"
 	"fmt"
 	"slices"
@@ -82,23 +81,6 @@ func mapi32sDeepEq(l, r map[string][]int32) bool {
 		}
 	}
 	return true
-}
-
-func slicesDeepEq[S ~[]E, E cmp.Ordered](l, r S) bool {
-	if len(l) != len(r) {
-		return false
-	}
-	if l == nil && r != nil {
-		return false
-	}
-	if r == nil && l != nil {
-		return false
-	}
-	dupl := slices.Clone(l)
-	dupr := slices.Clone(r)
-	slices.Sort(dupl)
-	slices.Sort(dupr)
-	return slices.Equal(dupl, dupr)
 }
 
 func (a *amtps) store(m map[string][]int32) { a.v.Store(m) }

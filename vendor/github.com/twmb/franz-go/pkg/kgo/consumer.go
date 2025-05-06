@@ -147,9 +147,9 @@ func (o Offset) Relative(n int64) Offset {
 	return o
 }
 
-// WithEpoch copies 'o' and returns an offset with the given epoch.  to use the
-// given epoch. This epoch is used for truncation detection; the default of -1
-// implies no truncation detection.
+// WithEpoch copies 'o' and returns an offset with the given epoch. This epoch
+// is used for truncation detection; the default of -1 implies no truncation
+// detection.
 func (o Offset) WithEpoch(e int32) Offset {
 	o.afterMilli = false
 	if e < 0 {
