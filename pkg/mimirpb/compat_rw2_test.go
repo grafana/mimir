@@ -192,7 +192,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, expected, &received)
 	})
 
-	t.Run("offset too high fails to unmarshal", func(t *testing.T) {
+	t.Run("wrong offset fails to unmarshal", func(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithOffset(nil, 256)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
@@ -205,20 +205,10 @@ func TestRW2Unmarshal(t *testing.T) {
 		received.UnmarshalFromRW2 = true
 		received.RW2SymbolOffset = 257
 		err = received.Unmarshal(data)
-
 		require.ErrorContains(t, err, "invalid")
-	})
-
-	t.Run("offset too low fails to unmarshal", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithOffset(nil, 256)
-		// Create a new WriteRequest with some sample data.
-		writeRequest := makeTestRW2WriteRequest(syms)
-		writeRequest.Symbols = syms.GetSymbols()
-		data, err := writeRequest.Marshal()
-		require.NoError(t, err)
 
 		// Unmarshal the data back into Mimir's WriteRequest.
-		received := PreallocWriteRequest{}
+		received = PreallocWriteRequest{}
 		received.UnmarshalFromRW2 = true
 		received.RW2SymbolOffset = 255
 		err = received.Unmarshal(data)
