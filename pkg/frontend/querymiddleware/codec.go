@@ -23,7 +23,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/munnerz/goautoneg"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -877,9 +876,11 @@ func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http
 		return nil, spanlog.Error(err)
 	}
 
-	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
-		otlog.Int("status_code", r.StatusCode),
-		otlog.Int("bytes", len(buf)))
+	spanlog.LogKV(
+		"message", "ParseQueryRangeResponse",
+		"status_code", r.StatusCode,
+		"bytes", len(buf),
+	)
 
 	// Before attempting to decode a response based on the content type, check if the
 	// Content-Type header was even set. When the scheduler returns gRPC errors, they
@@ -933,9 +934,11 @@ func (c prometheusCodec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r 
 		return nil, spanlog.Error(err)
 	}
 
-	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
-		otlog.Int("status_code", r.StatusCode),
-		otlog.Int("bytes", len(buf)))
+	spanlog.LogKV(
+		"message", "ParseQueryRangeResponse",
+		"status_code", r.StatusCode,
+		"bytes", len(buf),
+	)
 
 	// Before attempting to decode a response based on the content type, check if the
 	// Content-Type header was even set. When the scheduler returns gRPC errors, they
