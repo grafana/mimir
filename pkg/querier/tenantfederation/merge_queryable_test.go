@@ -1053,8 +1053,3 @@ type spanWithAttributes struct {
 	name string
 	tags []attribute.KeyValue
 }
-
-type expectedTag struct {
-	key    string
-	values []string
-}
