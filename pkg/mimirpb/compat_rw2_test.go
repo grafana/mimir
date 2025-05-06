@@ -51,7 +51,6 @@ func TestRW2Unmarshal(t *testing.T) {
 		syms := test.NewSymbolTableBuilder(nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
-		writeRequest.Symbols = syms.GetSymbols()
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
 
@@ -122,7 +121,6 @@ func TestRW2Unmarshal(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithOffset(nil, 256)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
-		writeRequest.Symbols = syms.GetSymbols()
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
 
@@ -196,7 +194,6 @@ func TestRW2Unmarshal(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithOffset(nil, 256)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
-		writeRequest.Symbols = syms.GetSymbols()
 		data, err := writeRequest.Marshal()
 		require.NoError(t, err)
 
@@ -218,7 +215,7 @@ func TestRW2Unmarshal(t *testing.T) {
 }
 
 func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
-	return &rw2.Request{
+	req := &rw2.Request{
 		Timeseries: []rw2.TimeSeries{
 			{
 				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
@@ -243,4 +240,6 @@ func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
 			},
 		},
 	}
+	req.Symbols = syms.GetSymbols()
+	return req
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -46,6 +47,102 @@ func TestRecordVersionHeader(t *testing.T) {
 	}
 }
 
+func TestDeserializeRecordContent(t *testing.T) {
+	t.Run("invalid version", func(t *testing.T) {
+		content := make([]byte, 0)
+
+		wr := mimirpb.PreallocWriteRequest{}
+		err := DeserializeRecordContent(content, &wr, 255)
+
+		require.ErrorContains(t, err, "unsupported version")
+	})
+
+	t.Run("v0", func(t *testing.T) {
+		reqv0 := &mimirpb.PreallocWriteRequest{
+			WriteRequest: mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithAll("series_0"),
+					mockPreallocTimeseriesWithAll("series_1"),
+					mockPreallocTimeseriesWithAll("series_2"),
+				},
+				Source: mimirpb.API,
+			},
+		}
+		v0bytes, err := reqv0.Marshal()
+		require.NoError(t, err)
+
+		wr := mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(v0bytes, &wr, 0)
+
+		require.NoError(t, err)
+		wr.ClearTimeseriesUnmarshalData()
+		require.Equal(t, reqv0, &wr)
+	})
+
+	t.Run("v1", func(t *testing.T) {
+		reqv1 := &mimirpb.PreallocWriteRequest{
+			WriteRequest: mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithAll("series_0"),
+					mockPreallocTimeseriesWithAll("series_1"),
+					mockPreallocTimeseriesWithAll("series_2"),
+				},
+				Source: mimirpb.API,
+			},
+		}
+		v1bytes, err := reqv1.Marshal()
+		require.NoError(t, err)
+
+		wr := mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(v1bytes, &wr, 1)
+
+		require.NoError(t, err)
+		wr.ClearTimeseriesUnmarshalData()
+		require.Equal(t, reqv1, &wr)
+	})
+
+	t.Run("v2", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilderWithOffset(nil, V2RecordSymbolOffset)
+		reqv2 := &mimirpb.WriteRequestRW2{
+			Timeseries: []mimirpb.TimeSeriesRW2{{
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
+				Samples: []mimirpb.Sample{
+					{
+						Value:       123.456,
+						TimestampMs: 1234567890,
+					},
+				},
+				Exemplars: []mimirpb.ExemplarRW2{
+					{
+						Value:      123.456,
+						Timestamp:  1234567890,
+						LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
+					},
+				},
+			}},
+		}
+		reqv2.Symbols = syms.GetSymbols()
+		v2bytes, err := reqv2.Marshal()
+		require.NoError(t, err)
+
+		wr := mimirpb.PreallocWriteRequest{}
+		err = DeserializeRecordContent(v2bytes, &wr, 2)
+		require.NoError(t, err)
+		require.Len(t, wr.Timeseries, 1)
+		expLabels := []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric_total"}, {Name: "job", Value: "test_job"}}
+		require.Equal(t, expLabels, wr.Timeseries[0].Labels)
+		expSamples := []mimirpb.Sample{{Value: 123.456, TimestampMs: 1234567890}}
+		require.Equal(t, expSamples, wr.Timeseries[0].Samples)
+		expExemplars := []mimirpb.Exemplar{
+			{
+				Value:       123.456,
+				TimestampMs: 1234567890,
+				Labels:      []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric_total"}, {Name: "traceID", Value: "1234567890abcdef"}}},
+		}
+		require.Equal(t, expExemplars, wr.Timeseries[0].Exemplars)
+	})
+}
+
 func BenchmarkDeserializeRecordContent(b *testing.B) {
 	// Generate a write request in each version
 	reqv1 := &mimirpb.PreallocWriteRequest{
@@ -69,7 +166,7 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	reqv2.SymbolsRW2 = append(reqv2.SymbolsRW2, "__name__")
 	for i := range reqv2.TimeseriesRW2 {
 		reqv2.TimeseriesRW2[i] = mimirpb.TimeSeriesRW2{
-			LabelsRefs: []uint32{1, uint32(i) + 2},
+			LabelsRefs: []uint32{V2RecordSymbolOffset + 1, V2RecordSymbolOffset + uint32(i) + 2},
 			Samples:    []mimirpb.Sample{{TimestampMs: 1, Value: 2}},
 			Exemplars:  []mimirpb.ExemplarRW2{},
 		}
