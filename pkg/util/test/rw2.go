@@ -130,7 +130,7 @@ func (symbols *SymbolTableBuilder) GetSymbol(sym string) uint32 {
 func (symbols *SymbolTableBuilder) GetSymbols() []string {
 	res := make([]string, len(symbols.symbols))
 	for sym, i := range symbols.symbols {
-		res[i] = sym
+		res[i-symbols.offset] = sym
 	}
 	return res
 }
