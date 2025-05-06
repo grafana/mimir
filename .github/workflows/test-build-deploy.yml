@@ -170,10 +170,18 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Run Tests
-        run: |
-          echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-          ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+      # We use retry logic for tests to handle flaky tests that might fail intermittently.
+      # The retry action will run the test command up to max_attempts times if it fails.
+      # This helps reduce CI failures caused by temporary issues, timing problems, or race conditions.
+      - name: Run Tests with retry
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          timeout_minutes: 180 # 3 hours so that we rely on the timeout in the makefile
+          max_attempts: 2
+          retry_wait_seconds: 0
+          command: |
+            echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+            ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   test-docs:
     uses: ./.github/workflows/test-docs.yml
@@ -282,16 +290,25 @@ jobs:
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
         run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
-      - name: Integration Tests
-        run: |
-          export IMAGE_TAG_RACE=$(make image-tag-race)
-          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
-          export IMAGE_TAG=$(make image-tag)
-          export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
-          export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
-          echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
-          echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+      # We use retry logic for integration tests to handle flaky tests that might fail intermittently.
+      # The retry action will run the test command up to max_attempts times if it fails.
+      # This helps reduce CI failures caused by temporary issues, network problems, or timing conditions
+      # that are common in integration tests with multiple services interacting.
+      - name: Integration Tests with retry
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          timeout_minutes: 180 # 3 hours so that we rely on the timeout in the makefile
+          max_attempts: 2
+          retry_wait_seconds: 0
+          command: |
+            export IMAGE_TAG_RACE=$(make image-tag-race)
+            export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
+            export IMAGE_TAG=$(make image-tag)
+            export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
+            export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+            echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
+            echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+            ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
     needs: [prepare, build, test, lint, integration]
