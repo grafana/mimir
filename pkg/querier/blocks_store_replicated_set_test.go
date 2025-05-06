@@ -427,7 +427,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(3), limits, grpcclient.Config{}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck

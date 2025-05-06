@@ -238,7 +238,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 	}
 
-	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication()
+	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
 	if gatewayCfg.DynamicReplication.Enabled {
 		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
 			gatewayCfg,
