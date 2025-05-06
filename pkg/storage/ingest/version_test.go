@@ -66,6 +66,11 @@ func TestDeserializeRecordContent(t *testing.T) {
 					mockPreallocTimeseriesWithAll("series_2"),
 				},
 				Source: mimirpb.API,
+				Metadata: []*mimirpb.MetricMetadata{
+					mockMetricMetadata("series_0"),
+					mockMetricMetadata("series_1"),
+					mockMetricMetadata("series_2"),
+				},
 			},
 		}
 		v0bytes, err := reqv0.Marshal()
@@ -88,6 +93,11 @@ func TestDeserializeRecordContent(t *testing.T) {
 					mockPreallocTimeseriesWithAll("series_2"),
 				},
 				Source: mimirpb.API,
+				Metadata: []*mimirpb.MetricMetadata{
+					mockMetricMetadata("series_0"),
+					mockMetricMetadata("series_1"),
+					mockMetricMetadata("series_2"),
+				},
 			},
 		}
 		v1bytes, err := reqv1.Marshal()
@@ -132,6 +142,11 @@ func TestDeserializeRecordContent(t *testing.T) {
 						NegativeDeltas: []int64{1},
 					},
 				},
+				Metadata: mimirpb.MetadataRW2{
+					Type:    mimirpb.METRIC_TYPE_COUNTER,
+					HelpRef: syms.GetSymbol("Help for test_metric_total"),
+					UnitRef: syms.GetSymbol("seconds"),
+				},
 			}},
 		}
 		reqv2.Symbols = syms.GetSymbols()
@@ -167,6 +182,13 @@ func TestDeserializeRecordContent(t *testing.T) {
 			},
 		}
 		require.Equal(t, expHistograms, wr.Timeseries[0].Histograms)
+		expMetadata := []*mimirpb.MetricMetadata{{
+			Type:             mimirpb.COUNTER,
+			MetricFamilyName: "test_metric_total",
+			Help:             "Help for test_metric_total",
+			Unit:             "seconds",
+		}}
+		require.Equal(t, expMetadata, wr.Metadata)
 	})
 }
 
