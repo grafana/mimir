@@ -278,7 +278,7 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 // set for any other reason.
 type MigrationConfig struct {
 	DistributorSendToIngestersEnabled bool `yaml:"distributor_send_to_ingesters_enabled"`
-	LogOnIngestStorageError           bool `yaml:"log_on_ingest_storage_error"`
+	IgnoreIngestStorageError          bool `yaml:"ignore_ingest_storage_errors"`
 }
 
 func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
@@ -287,5 +287,5 @@ func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+"distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.")
-	f.BoolVar(&cfg.LogOnIngestStorageError, prefix+"log-on-ingest-storage-error", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests will fail if ingest storage write fails.")
+	f.BoolVar(&cfg.IgnoreIngestStorageError, prefix+"ignore-ingest-storage-error", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests will fail if ingest storage write fails.")
 }

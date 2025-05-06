@@ -1783,7 +1783,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
 	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
 	if partitionsErr != nil {
-		if d.cfg.IngestStorageConfig.Migration.LogOnIngestStorageError {
+		if d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageError {
 			level.Warn(d.log).Log("msg", "failed to write to ingest storage", "error", partitionsErr)
 		} else {
 			return partitionsErr

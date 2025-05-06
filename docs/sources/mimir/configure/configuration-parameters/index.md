@@ -4310,8 +4310,8 @@ migration:
   # When enabled, errors writing to ingest storage are logged but do not affect
   # write success or quorum. When disabled, write requests will fail if ingest
   # storage write fails.
-  # CLI flag: -ingest-storage.migration.log-on-ingest-storage-error
-  [log_on_ingest_storage_error: <boolean> | default = false]
+  # CLI flag: -ingest-storage.migration.ignore-ingest-storage-error
+  [ignore_ingest_storage_errors: <boolean> | default = false]
 ```
 
 ### blocks_storage

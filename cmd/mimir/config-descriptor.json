@@ -7860,12 +7860,12 @@
             },
             {
               "kind": "field",
-              "name": "log_on_ingest_storage_error",
+              "name": "ignore_ingest_storage_errors",
               "required": false,
               "desc": "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests will fail if ingest storage write fails.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ingest-storage.migration.log-on-ingest-storage-error",
+              "fieldFlag": "ingest-storage.migration.ignore-ingest-storage-error",
               "fieldType": "boolean"
             }
           ],
