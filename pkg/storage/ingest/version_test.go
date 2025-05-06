@@ -119,6 +119,19 @@ func TestDeserializeRecordContent(t *testing.T) {
 						LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
 					},
 				},
+				Histograms: []mimirpb.Histogram{
+					{
+						Timestamp:      1234567890,
+						Count:          &mimirpb.Histogram_CountInt{CountInt: 10},
+						Sum:            100,
+						Schema:         3,
+						ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+						PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+						PositiveDeltas: []int64{1},
+						NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+						NegativeDeltas: []int64{1},
+					},
+				},
 			}},
 		}
 		reqv2.Symbols = syms.GetSymbols()
@@ -140,6 +153,20 @@ func TestDeserializeRecordContent(t *testing.T) {
 				Labels:      []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric_total"}, {Name: "traceID", Value: "1234567890abcdef"}}},
 		}
 		require.Equal(t, expExemplars, wr.Timeseries[0].Exemplars)
+		expHistograms := []mimirpb.Histogram{
+			{
+				Timestamp:      1234567890,
+				Count:          &mimirpb.Histogram_CountInt{CountInt: 10},
+				Sum:            100,
+				Schema:         3,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				PositiveDeltas: []int64{1},
+				NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				NegativeDeltas: []int64{1},
+			},
+		}
+		require.Equal(t, expHistograms, wr.Timeseries[0].Histograms)
 	})
 }
 
