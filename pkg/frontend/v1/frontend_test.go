@@ -22,16 +22,15 @@ import (
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 	"github.com/uber/jaeger-client-go/config"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -41,6 +40,14 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
+
+func init() {
+	// Install OTel tracing, we need it for the tests.
+	_, err := tracing.NewOTelFromJaegerEnv("test")
+	if err != nil {
+		panic(err)
+	}
+}
 
 const (
 	query        = "/api/v1/query_range?end=1536716898&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
@@ -79,11 +86,12 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	observedTraceID := make(chan string, 2)
 
 	handler := middleware.Tracer{}.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sp := opentracing.SpanFromContext(r.Context())
-		defer sp.Finish()
-
-		traceID := fmt.Sprintf("%v", sp.Context().(jaeger.SpanContext).TraceID())
-		observedTraceID <- traceID
+		traceID, ok := tracing.ExtractTraceID(r.Context())
+		if !ok {
+			t.Errorf("Request context does not contain trace ID")
+		} else {
+			observedTraceID <- traceID
+		}
 
 		_, err = w.Write([]byte(responseBody))
 		require.NoError(t, err)
@@ -92,7 +100,10 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	test := func(addr string, _ *Frontend) {
 		ctx, sp := tracer.Start(context.Background(), "client")
 		defer sp.End()
-		traceID := sp.SpanContext().TraceID().String()
+
+		traceID := sp.SpanContext().TraceID()
+		require.True(t, traceID.IsValid())
+		expectedTraceID := traceID.String()
 
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/%s", addr, query), nil)
 		require.NoError(t, err)
@@ -100,11 +111,8 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req)
 		require.NoError(t, err)
 
-		req, tr := nethttp.TraceRequest(opentracing.GlobalTracer(), req)
-		defer tr.Finish()
-
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -115,7 +123,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		require.NoError(t, err)
 
 		// Query should do one call.
-		assert.Equal(t, traceID, <-observedTraceID)
+		assert.Equal(t, expectedTraceID, <-observedTraceID)
 	}
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, nil)
 }
@@ -327,7 +335,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	}()
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	defer grpcServer.GracefulStop()
 
