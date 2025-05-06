@@ -43,6 +43,7 @@ import (
 
 func init() {
 	types.EnableManglingReturnedSlices = true
+	parser.ExperimentalDurationExpr = true
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
