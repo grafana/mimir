@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestRecordVersionHeader(t *testing.T) {
@@ -225,7 +226,7 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	require.NoError(b, err)
 
 	b.Run("deserialize v1", func(b *testing.B) {
-		for b.Loop() {
+		for range b.N {
 			wr := &mimirpb.PreallocWriteRequest{}
 			err := DeserializeRecordContent(v1bytes, wr, 1)
 			if err != nil {
@@ -236,7 +237,7 @@ func BenchmarkDeserializeRecordContent(b *testing.B) {
 	})
 
 	b.Run("deserialize v2", func(b *testing.B) {
-		for b.Loop() {
+		for range b.N {
 			wr := &mimirpb.PreallocWriteRequest{}
 			err := DeserializeRecordContent(v2bytes, wr, 2)
 			if err != nil {
