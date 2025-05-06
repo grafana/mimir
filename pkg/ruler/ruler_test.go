@@ -759,6 +759,7 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
+		// GetRules() fails
 		"shard size 0, LEAVING ruler": {
 			shuffleShardSize: 0,
 
@@ -774,6 +775,7 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
+		// GetRules() fails
 		"shard size 0, JOINING ruler": {
 			shuffleShardSize: 0,
 
@@ -932,7 +934,8 @@ func TestSharding(t *testing.T) {
 				},
 			},
 		},
-		"shard size 2, 3 rulers, ruler2 is in joining stat": {
+		// GetRules() fails
+		"shard size 2, 3 rulers, ruler2 is in joining state": {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
@@ -1054,6 +1057,10 @@ func TestSharding(t *testing.T) {
 			addToExpected(ruler3, r3)
 
 			require.Equal(t, tc.expectedRules, expected)
+
+			// temp check to prove "too many unhealthy instances in the ring" is happening when rulers are in non-active state
+			_, _, err = r1.GetRules(user.InjectOrgID(context.Background(), user1), RulesRequest{Filter: AnyRule})
+			require.NoError(t, err)
 		})
 	}
 }
