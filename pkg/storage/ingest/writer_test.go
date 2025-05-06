@@ -1095,6 +1095,15 @@ func mockPreallocTimeseriesWithAll(metricName string) mimirpb.PreallocTimeseries
 	}
 }
 
+func mockMetricMetadata(name string) *mimirpb.MetricMetadata {
+	return &mimirpb.MetricMetadata{
+		Type:             mimirpb.COUNTER,
+		MetricFamilyName: name,
+		Help:             fmt.Sprintf("Help for %s", name),
+		Unit:             "seconds",
+	}
+}
+
 func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 	count := 0
 
