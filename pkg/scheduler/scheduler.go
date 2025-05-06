@@ -266,8 +266,6 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			// information, since that is a long-running request.
 			parentSpanContext, _ := httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.HttpRequest)
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
-			// TODO: Oleg: we didn't do this before, but we should, right?
-			otel.GetTextMapPropagator().Inject(reqCtx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(msg.HttpRequest))
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
