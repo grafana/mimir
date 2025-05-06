@@ -2148,3 +2148,128 @@ func TestConfig_Validate(t *testing.T) {
 		require.ErrorIs(t, err, errInnvalidRuleEvaluationConcurrencyMinDurationPercentage)
 	})
 }
+
+func TestRuler_RulerInJoiningStateCausesGetRulesError(t *testing.T) {
+	const (
+		initialRulers = 2
+		userID        = "user-1"
+	)
+
+	var (
+		ctx          = context.Background()
+		logger       = log.NewNopLogger()
+		rulerAddrMap = map[string]*Ruler{}
+	)
+
+	bucketCfg := bucket.Config{StorageBackendConfig: bucket.StorageBackendConfig{Backend: "filesystem", Filesystem: filesystem.Config{Directory: t.TempDir()}}}
+	bucketClient, err := bucket.NewClient(ctx, bucketCfg, "ruler-storage", logger, nil)
+	require.NoError(t, err)
+
+	store := bucketclient.NewBucketRuleStore(bucketClient, nil, logger)
+
+	kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
+	t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+	rulers := make([]*Ruler, initialRulers+1)
+	regs := make([]*prometheus.Registry, initialRulers+1)
+
+	for i := 0; i < initialRulers; i++ {
+		rulerAddr := fmt.Sprintf("ruler-%d", i)
+
+		rulerCfg := defaultRulerConfig(t)
+		//TODO: which of the following options are actually necessary?
+		rulerCfg.PollInterval = time.Hour
+		rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+		rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+		rulerCfg.Ring.NumTokens = 128
+		rulerCfg.Ring.Common.InstanceID = rulerAddr
+		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
+		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+		rulerCfg.Ring.Common.HeartbeatTimeout = 0
+
+		regs[i] = prometheus.NewPedanticRegistry()
+		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[i]))
+	}
+
+	// wait for everything to successfully start up
+	test.Poll(t, 2*time.Second, nil, func() interface{} {
+		_, _, err := rulers[0].GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+		return err
+	})
+
+	userCtx := user.InjectOrgID(ctx, userID)
+	_, _, err = rulers[0].GetRules(userCtx, RulesRequest{})
+	require.NoError(t, err)
+
+	rulerAddr := fmt.Sprintf("ruler-%d", initialRulers)
+
+	rulerCfg := defaultRulerConfig(t)
+	rulerCfg.PollInterval = time.Hour
+	rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+	rulerCfg.Ring.NumTokens = 128
+	rulerCfg.Ring.Common.InstanceID = rulerAddr
+	rulerCfg.Ring.Common.InstanceAddr = rulerAddr
+	rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+	rulerCfg.Ring.Common.HeartbeatTimeout = 0
+
+	// create new ruler async - it will be in joining state
+	pausableStore := &PausableBucketRuleStore{RuleStore: store, mu: sync.Mutex{}}
+	pausableStore.Pause()
+
+	newRulerPrepared := make(chan struct{})
+	newRulerIdx := initialRulers
+	newRulerID := fmt.Sprintf("ruler-%d", newRulerIdx)
+
+	// Start new ruler async - the ruler will be in pending state since the rule store is paused
+	go func() {
+		regs[newRulerIdx] = prometheus.NewPedanticRegistry()
+		rulers[newRulerIdx] = prepareRuler(t, rulerCfg, pausableStore, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withStart(), withPrometheusRegisterer(regs[newRulerIdx]))
+		newRulerPrepared <- struct{}{}
+	}()
+
+	// Wait for ruler-0 to detect ruler-2
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		return rulers[0].ring.HasInstance(newRulerID)
+	})
+
+	_, _, err = rulers[0].GetRules(userCtx, RulesRequest{})
+	require.Error(t, err)
+	require.EqualError(t, err, "too many unhealthy instances in the ring")
+
+	// Allow rules store actions to execute and wait for new ruler to be ACTIVE
+	// TODO: timeout to avoid potential deadlock
+	pausableStore.Resume()
+	<-newRulerPrepared
+
+	// Wait for ruler-0 to detect new ruler as ACTIVE
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		s, err := rulers[0].ring.GetInstanceState(newRulerID)
+		require.NoError(t, err)
+		return s == ring.ACTIVE
+	})
+
+	_, _, err = rulers[0].GetRules(userCtx, RulesRequest{})
+	require.NoError(t, err)
+
+}
+
+// TODO: only pauses one op atm (which is enough for the test, but messy)
+type PausableBucketRuleStore struct {
+	rulestore.RuleStore
+	mu sync.Mutex // hacky way of pausing/unpausing
+}
+
+func (p *PausableBucketRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Option) ([]string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.RuleStore.ListAllUsers(ctx, opts...)
+}
+
+func (p *PausableBucketRuleStore) Pause() {
+	p.mu.Lock()
+}
+
+func (p *PausableBucketRuleStore) Resume() {
+	p.mu.Unlock()
+}
