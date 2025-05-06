@@ -1745,22 +1745,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
-					storeGatewayCfg := storegateway.Config{
-						ShardingRing: storegateway.RingConfig{
-							ReplicationFactor: 3,
-						},
-						DynamicReplication: storegateway.DynamicReplicationConfig{
-							Enabled:  true,
-							Multiple: 2,
-						},
-					}
-
 					q := &blocksStoreQuerier{
 						minT:               minT,
 						maxT:               maxT,
 						finder:             finder,
 						stores:             stores,
-						dynamicReplication: storegateway.NewMaxTimeDynamicReplication(storeGatewayCfg, 0),
+						dynamicReplication: newDynamicReplication(),
 						consistency:        NewBlocksConsistency(0, reg),
 						logger:             log.NewNopLogger(),
 						metrics:            newBlocksStoreQueryableMetrics(reg),
@@ -1908,14 +1898,15 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		reg := prometheus.NewPedanticRegistry()
 		q := &blocksStoreQuerier{
-			minT:        minT,
-			maxT:        maxT,
-			finder:      finder,
-			stores:      stores,
-			consistency: NewBlocksConsistency(0, reg),
-			logger:      logger,
-			metrics:     newBlocksStoreQueryableMetrics(reg),
-			limits:      &blocksStoreLimitsMock{},
+			minT:               minT,
+			maxT:               maxT,
+			finder:             finder,
+			stores:             stores,
+			dynamicReplication: newDynamicReplication(),
+			consistency:        NewBlocksConsistency(0, reg),
+			logger:             logger,
+			metrics:            newBlocksStoreQueryableMetrics(reg),
+			limits:             &blocksStoreLimitsMock{},
 		}
 
 		return srv, q, reg
@@ -2136,14 +2127,15 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}, nil)
 
 			q := &blocksStoreQuerier{
-				minT:        minT,
-				maxT:        maxT,
-				finder:      finder,
-				stores:      stores,
-				consistency: NewBlocksConsistency(0, nil),
-				logger:      log.NewNopLogger(),
-				metrics:     newBlocksStoreQueryableMetrics(reg),
-				limits:      &blocksStoreLimitsMock{},
+				minT:               minT,
+				maxT:               maxT,
+				finder:             finder,
+				stores:             stores,
+				dynamicReplication: newDynamicReplication(),
+				consistency:        NewBlocksConsistency(0, nil),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(reg),
+				limits:             &blocksStoreLimitsMock{},
 			}
 
 			matchers := []*labels.Matcher{
@@ -2639,14 +2631,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
 				q := &blocksStoreQuerier{
-					minT:        minT,
-					maxT:        maxT,
-					finder:      finder,
-					stores:      stores,
-					consistency: NewBlocksConsistency(0, nil),
-					logger:      log.NewNopLogger(),
-					metrics:     newBlocksStoreQueryableMetrics(reg),
-					limits:      &blocksStoreLimitsMock{},
+					minT:               minT,
+					maxT:               maxT,
+					finder:             finder,
+					stores:             stores,
+					dynamicReplication: newDynamicReplication(),
+					consistency:        NewBlocksConsistency(0, nil),
+					logger:             log.NewNopLogger(),
+					metrics:            newBlocksStoreQueryableMetrics(reg),
+					limits:             &blocksStoreLimitsMock{},
 				}
 
 				if testFunc == "LabelNames" {
@@ -2710,14 +2703,15 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}, nil)
 
 				q := &blocksStoreQuerier{
-					minT:        minT,
-					maxT:        maxT,
-					finder:      finder,
-					stores:      stores,
-					consistency: NewBlocksConsistency(0, nil),
-					logger:      log.NewNopLogger(),
-					metrics:     newBlocksStoreQueryableMetrics(reg),
-					limits:      &blocksStoreLimitsMock{},
+					minT:               minT,
+					maxT:               maxT,
+					finder:             finder,
+					stores:             stores,
+					dynamicReplication: newDynamicReplication(),
+					consistency:        NewBlocksConsistency(0, nil),
+					logger:             log.NewNopLogger(),
+					metrics:            newBlocksStoreQueryableMetrics(reg),
+					limits:             &blocksStoreLimitsMock{},
 				}
 
 				var err error
@@ -2784,15 +2778,16 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
 			q := &blocksStoreQuerier{
-				minT:            testData.queryMinT,
-				maxT:            testData.queryMaxT,
-				finder:          finder,
-				stores:          &blocksStoreSetMock{},
-				consistency:     NewBlocksConsistency(0, nil),
-				logger:          log.NewNopLogger(),
-				metrics:         newBlocksStoreQueryableMetrics(nil),
-				limits:          &blocksStoreLimitsMock{},
-				queryStoreAfter: testData.queryStoreAfter,
+				minT:               testData.queryMinT,
+				maxT:               testData.queryMaxT,
+				finder:             finder,
+				stores:             &blocksStoreSetMock{},
+				dynamicReplication: newDynamicReplication(),
+				consistency:        NewBlocksConsistency(0, nil),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(nil),
+				limits:             &blocksStoreLimitsMock{},
+				queryStoreAfter:    testData.queryStoreAfter,
 			}
 
 			sp := &storage.SelectHints{
@@ -2887,13 +2882,14 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
-				minT:        testData.queryMinT,
-				maxT:        testData.queryMaxT,
-				finder:      finder,
-				stores:      &blocksStoreSetMock{},
-				consistency: NewBlocksConsistency(0, nil),
-				logger:      log.NewNopLogger(),
-				metrics:     newBlocksStoreQueryableMetrics(nil),
+				minT:               testData.queryMinT,
+				maxT:               testData.queryMaxT,
+				finder:             finder,
+				stores:             &blocksStoreSetMock{},
+				dynamicReplication: newDynamicReplication(),
+				consistency:        NewBlocksConsistency(0, nil),
+				logger:             log.NewNopLogger(),
+				metrics:            newBlocksStoreQueryableMetrics(nil),
 				limits: &blocksStoreLimitsMock{
 					maxLabelsQueryLength: testData.maxLabelsQueryLength,
 				},
@@ -2923,6 +2919,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			})
 		})
 	}
+}
+
+func newDynamicReplication() *storegateway.MaxTimeDynamicReplication {
+	cfg := storegateway.Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.DynamicReplication.Enabled = true
+	return storegateway.NewMaxTimeDynamicReplication(cfg, time.Hour)
 }
 
 func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
