@@ -400,6 +400,7 @@ templates:
 	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
 
 	// Ensure that when a Grafana config is added, it is synced correctly.
+	testSmtpFrom := "test@grafana.com"
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
 		User:               "user4",
 		RawConfig:          grafanaConfig,
@@ -408,6 +409,7 @@ templates:
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        "test.grafana.com",
+		SmtpFrom:           testSmtpFrom,
 		StaticHeaders:      map[string]string{"Header1": "Value1"},
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
@@ -470,6 +472,7 @@ templates:
 	require.NoError(t, err)
 
 	gCfg.AlertmanagerConfig.Global = mCfg.Global
+	gCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 
 	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
 	require.NoError(t, err)
@@ -2525,7 +2528,9 @@ func TestComputeConfig(t *testing.T) {
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
 	require.NoError(t, err)
 
+	testSmtpFrom := "test-instance@grafana.com"
 	grafanaCfg.AlertmanagerConfig.Global = fallbackCfg.Global
+	grafanaCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 	combinedCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
 	require.NoError(t, err)
 
@@ -2568,6 +2573,7 @@ func TestComputeConfig(t *testing.T) {
 					Default:       false,
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
 					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
@@ -2590,6 +2596,7 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig:     grafanaConfig,
 					Promoted:      false,
 					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
 					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
@@ -2613,6 +2620,7 @@ func TestComputeConfig(t *testing.T) {
 					Default:       true,
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
 					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
@@ -2636,6 +2644,7 @@ func TestComputeConfig(t *testing.T) {
 					Default:       false,
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
 					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
@@ -2661,6 +2670,7 @@ func TestComputeConfig(t *testing.T) {
 					Default:       false,
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
 					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
@@ -2687,6 +2697,7 @@ func TestComputeConfig(t *testing.T) {
 					Default:       false,
 					Promoted:      true,
 					ExternalUrl:   grafanaExternalURL,
+					SmtpFrom:      testSmtpFrom,
 					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},

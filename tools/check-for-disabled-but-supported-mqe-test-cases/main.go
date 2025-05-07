@@ -34,6 +34,7 @@ var (
 
 func main() {
 	parser.EnableExperimentalFunctions = true // Silence parsing errors due to the use of experimental functions.
+	parser.ExperimentalDurationExpr = true    // Silence parsing errors due to the use of experimental duration expressions.
 
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

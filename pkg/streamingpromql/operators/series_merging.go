@@ -98,7 +98,6 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-		// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 		defer types.FPointSlicePool.Put(second.Floats, memoryConsumptionTracker)
 
 		if len(second.Floats) == 0 {
@@ -127,7 +126,6 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 	// We're going to create a new slice, so return this one to the pool.
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	// FIXME: this isn't correct for many-to-one / one-to-many matching - we'll need the series again (unless we store the result of the merge)
 	defer types.FPointSlicePool.Put(data[0].Floats, memoryConsumptionTracker)
 
 	// Re-slice the data with just the series with floats to make the rest of our job easier

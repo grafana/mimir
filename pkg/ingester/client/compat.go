@@ -111,7 +111,7 @@ func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (*s
 func FromMetricsForLabelMatchersResponse(resp *MetricsForLabelMatchersResponse) []labels.Labels {
 	metrics := []labels.Labels{}
 	for _, m := range resp.Metric {
-		metrics = append(metrics, mimirpb.FromLabelAdaptersToLabels(m.Labels))
+		metrics = append(metrics, mimirpb.FromLabelAdaptersToLabelsWithCopy(m.Labels))
 	}
 	return metrics
 }

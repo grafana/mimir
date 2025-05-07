@@ -81,6 +81,8 @@ type Client struct {
 	consumer consumer
 	id2t     atomic.Value // map[[16]byte]string
 
+	metrics metrics
+
 	coordinatorsMu sync.Mutex
 	coordinators   map[coordinatorKey]*coordinatorLoad
 
@@ -257,6 +259,8 @@ func (cl *Client) OptValues(opt any) []any {
 		return []any{cfg.dialTLS}
 	case namefn(DialTLS):
 		return []any{cfg.dialTLS != nil}
+	case namefn(DialTimeout):
+		return []any{cfg.dialTimeout}
 	case namefn(SeedBrokers):
 		return []any{cfg.seedBrokers}
 	case namefn(MaxVersions):
@@ -293,6 +297,12 @@ func (cl *Client) OptValues(opt any) []any {
 		return []any{cfg.missingTopicDelete}
 	case namefn(OnRebootstrapRequired):
 		return []any{cfg.onRebootstrapRequired}
+	case namefn(WithContext):
+		return []any{cfg.ctx}
+	case namefn(DisableClientMetrics):
+		return []any{cfg.disableClientMetrics}
+	case namefn(UserMetricsFn):
+		return []any{cfg.userMetrics}
 
 	case namefn(DefaultProduceTopic):
 		return []any{cfg.defaultProduceTopic}
@@ -348,6 +358,8 @@ func (cl *Client) OptValues(opt any) []any {
 		return []any{cfg.decompressor}
 	case namefn(ConsumeRegex):
 		return []any{cfg.regex}
+	case namefn(ConsumeStartOffset):
+		return []any{cfg.startOffset}
 	case namefn(ConsumeResetOffset):
 		return []any{cfg.resetOffset}
 	case namefn(ConsumeTopics):
@@ -418,8 +430,7 @@ func (cl *Client) OptValues(opt any) []any {
 		return []any{cfg.requireStable}
 	case namefn(SessionTimeout):
 		return []any{cfg.sessionTimeout}
-	case namefn(WithContext):
-		return []any{cfg.ctx}
+
 	default:
 		return nil
 	}
@@ -477,6 +488,12 @@ func NewClient(opts ...Opt) (*Client, error) {
 		}
 	}
 
+	if cfg.setResetOffset && !cfg.setStartOffset {
+		cfg.startOffset = cfg.resetOffset
+	} else if cfg.setStartOffset && !cfg.setResetOffset {
+		cfg.resetOffset = cfg.startOffset
+	} // else they are both set (keep) or both unset (defaults)
+
 	ctx := context.Background()
 
 	if cfg.ctx != nil {
@@ -530,6 +547,7 @@ func NewClient(opts ...Opt) (*Client, error) {
 	cl.producer.init(cl)
 	cl.consumer.init(cl)
 	cl.metawait.init()
+	cl.metrics.init(cl)
 
 	if cfg.id != nil {
 		cl.reqFormatter = kmsg.NewRequestFormatter(kmsg.FormatterClientID(*cfg.id))
@@ -543,6 +561,7 @@ func NewClient(opts ...Opt) (*Client, error) {
 	cl.seeds.Store(seedBrokers)
 	go cl.updateMetadataLoop()
 	go cl.reapConnectionsLoop()
+	go cl.pushMetrics()
 
 	return cl, nil
 }
@@ -567,14 +586,14 @@ func (cl *Client) loadSeeds() []*broker {
 	return cl.seeds.Load().([]*broker)
 }
 
-// Ping returns whether any broker is reachable, iterating over any discovered
-// broker or seed broker until one returns a successful response to an
-// ApiVersions request. No discovered broker nor seed broker is attempted more
-// than once. If all requests fail, this returns final error.
+// Ping returns whether any broker is reachable and that the client can
+// communicate with it, iterating over any discovered broker or seed broker
+// until one returns a successful response to a broker-only Metadata request.
+// No discovered broker nor seed broker is attempted more than once. If all
+// requests fail, this returns final error.
 func (cl *Client) Ping(ctx context.Context) error {
-	req := kmsg.NewPtrApiVersionsRequest()
-	req.ClientSoftwareName = cl.cfg.softwareName
-	req.ClientSoftwareVersion = cl.cfg.softwareVersion
+	req := kmsg.NewPtrMetadataRequest()
+	req.Topics = []kmsg.MetadataRequestTopic{}
 
 	cl.brokersMu.RLock()
 	brokers := append([]*broker(nil), cl.brokers...)
@@ -586,8 +605,9 @@ func (cl *Client) Ping(ctx context.Context) error {
 		cl.loadSeeds(),
 	} {
 		for _, br := range brs {
-			_, err := br.waitResp(ctx, req)
+			resp, err := br.waitResp(ctx, req)
 			if lastErr = err; lastErr == nil {
+				cl.updateMetadataBrokers(resp.(*kmsg.MetadataResponse))
 				return nil
 			}
 		}
@@ -861,6 +881,12 @@ func (cl *Client) supportsKIP848v1() bool {
 	return cl.supportsKeyVersion(int16(kmsg.ConsumerGroupHeartbeat), 1)
 }
 
+// Called after the first metric observed, which is always after a response.
+func (cl *Client) supportsClientMetrics() bool {
+	return cl.supportsKeyVersion(int16(kmsg.GetTelemetrySubscriptions), 0) &&
+		cl.supportsKeyVersion(int16(kmsg.PushTelemetry), 0)
+}
+
 // A broker may not support some requests we want to make. This function checks
 // support. This should only be used *after* at least one successful response.
 func (cl *Client) supportsKeyVersion(key, version int16) bool {
@@ -903,7 +929,9 @@ func (cl *Client) fetchBrokerMetadata(ctx context.Context) error {
 		close(wait.done)
 	}()
 
-	_, _, wait.err = cl.fetchMetadata(ctx, kmsg.NewPtrMetadataRequest(), true, nil)
+	req := kmsg.NewPtrMetadataRequest()
+	req.Topics = []kmsg.MetadataRequestTopic{}
+	_, _, wait.err = cl.fetchMetadata(ctx, req, true, nil)
 	return wait.err
 }
 
@@ -956,18 +984,22 @@ start:
 				}
 			}
 		}
-		cl.controllerIDMu.Lock()
-		if meta.ControllerID >= 0 {
-			cl.controllerID = meta.ControllerID
-		}
-		cl.clusterID = meta.ClusterID
-		cl.controllerIDMu.Unlock()
-		cl.updateBrokers(meta.Brokers)
+		cl.updateMetadataBrokers(meta)
 
 		// Cache the mapped metadata, and potentially store each topic in the results.
 		cl.storeCachedMappedMetadata(meta, intoMapped)
 	}
 	return r.last, meta, err
+}
+
+func (cl *Client) updateMetadataBrokers(resp *kmsg.MetadataResponse) {
+	cl.controllerIDMu.Lock()
+	if resp.ControllerID >= 0 {
+		cl.controllerID = resp.ControllerID
+	}
+	cl.clusterID = resp.ClusterID
+	cl.controllerIDMu.Unlock()
+	cl.updateBrokers(resp.Brokers)
 }
 
 // updateBrokers is called with the broker portion of every metadata response.
@@ -1101,8 +1133,21 @@ func (cl *Client) close(ctx context.Context) (rerr error) {
 
 	// Now we kill the client context and all brokers, ensuring all
 	// requests fail. This will finish all producer callbacks and
-	// stop the metadata loop.
+	// stop the metadata loop and metrics loop.
 	cl.ctxCancel()
+
+	// Before killing brokers, give metrics 1s to push any final
+	// terminating message. The client context cancelation awakens
+	// the push-period-wait loop.
+	after := time.NewTimer(time.Second)
+	select {
+	case <-cl.metrics.ctx.Done():
+	case <-after.C:
+		cl.metrics.ctxCancel()
+	case <-ctx.Done():
+		cl.metrics.ctxCancel()
+	}
+
 	cl.brokersMu.Lock()
 	cl.stopBrokers = true
 	for _, broker := range cl.brokers {
@@ -1513,8 +1558,7 @@ func (cl *Client) shardedRequest(ctx context.Context, req kmsg.Request) ([]Respo
 		return shards(cl.handleAdminReq(ctx, t)), nil
 
 	case kmsg.GroupCoordinatorRequest,
-		kmsg.TxnCoordinatorRequest,
-		*kmsg.ConsumerGroupHeartbeatRequest:
+		kmsg.TxnCoordinatorRequest:
 		return shards(cl.handleCoordinatorReq(ctx, t)), nil
 
 	case *kmsg.ApiVersionsRequest:
@@ -2003,8 +2047,15 @@ func (cl *Client) handleCoordinatorReq(ctx context.Context, req kmsg.Request) Re
 		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.Group, req)
 	case *kmsg.OffsetDeleteRequest:
 		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.Group, req)
+
+	// ConsumerGroupHeartbeat cannot be retried at all
 	case *kmsg.ConsumerGroupHeartbeatRequest:
-		return cl.handleCoordinatorReqSimple(ctx, coordinatorTypeGroup, t.Group, req)
+		br, err := cl.loadCoordinator(ctx, coordinatorTypeGroup, t.Group)
+		var resp kmsg.Response
+		if err == nil {
+			resp, err = br.waitResp(ctx, req)
+		}
+		return shard(br, req, resp, err)
 	}
 }
 

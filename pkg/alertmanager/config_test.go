@@ -87,6 +87,7 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				ExternalUrl:   "http://test:3000",
 				RawConfig:     "",
 				StaticHeaders: map[string]string{"test": "test"},
+				SmtpFrom:      "test-instance@grafana.com",
 			},
 			simpleConfigOne,
 			"failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
@@ -97,6 +98,7 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				ExternalUrl:   "http://test:3000",
 				RawConfig:     "invalid",
 				StaticHeaders: map[string]string{"test": "test"},
+				SmtpFrom:      "test-instance@grafana.com",
 			},
 			simpleConfigOne,
 			"failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
@@ -107,6 +109,7 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				ExternalUrl:   "http://test:3000",
 				RawConfig:     grafanaConfig,
 				StaticHeaders: map[string]string{"test": "test"},
+				SmtpFrom:      "test-instance@grafana.com",
 			},
 			"",
 			"",
@@ -117,12 +120,24 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				ExternalUrl:   "http://test:3000",
 				RawConfig:     grafanaConfigWithDuplicateReceiverName,
 				StaticHeaders: map[string]string{"test": "test"},
+				SmtpFrom:      "test-instance@grafana.com",
 			},
 			"",
 			"",
 		},
 		{
 			"non-empty mimir config",
+			alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl:   "http://test:3000",
+				RawConfig:     grafanaConfig,
+				StaticHeaders: map[string]string{"test": "test"},
+				SmtpFrom:      "test-instance@grafana.com",
+			},
+			simpleConfigOne,
+			"",
+		},
+		{
+			"non-empty mimir config, empty SMTP from address",
 			alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl:   "http://test:3000",
 				RawConfig:     grafanaConfig,
@@ -149,7 +164,7 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 			require.True(t, cfg.usingGrafanaConfig)
 
 			if test.mimirConfig != "" {
-				// The resulting config should contain Mimir's globals.
+				// The resulting config should contain Mimir's globals with Grafana's "from" address.
 				mCfg, err := definition.LoadCompat([]byte(test.mimirConfig))
 				require.NoError(t, err)
 
@@ -157,6 +172,10 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				require.NoError(t, json.Unmarshal([]byte(test.grafanaConfig.RawConfig), &gCfg))
 
 				gCfg.AlertmanagerConfig.Global = mCfg.Global
+				if test.grafanaConfig.SmtpFrom != "" {
+					gCfg.AlertmanagerConfig.Global.SMTPFrom = test.grafanaConfig.SmtpFrom
+				}
+
 				b, err := json.Marshal(gCfg.AlertmanagerConfig)
 				require.NoError(t, err)
 

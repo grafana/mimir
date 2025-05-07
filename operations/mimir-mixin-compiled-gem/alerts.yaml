@@ -235,9 +235,9 @@ groups:
             message: GEM servers in {{ $labels.cluster }}/{{ $labels.namespace }} are receiving requests with invalid cluster validation labels.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirserverinvalidclustervalidationlabelrequests
           expr: |
-            (sum by (cluster, namespace) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
+            (sum by (cluster, namespace, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (cluster, namespace) (mimir_build_info) > 0)
+            and on (cluster, namespace) (mimir_build_info > 0)
           labels:
             severity: warning
         - alert: MimirClientInvalidClusterValidationLabelRequests
@@ -245,9 +245,9 @@ groups:
             message: GEM clients in {{ $labels.cluster }}/{{ $labels.namespace }} are having requests rejected due to invalid cluster validation labels.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirclientinvalidclustervalidationlabelrequests
           expr: |
-            (sum by (cluster, namespace) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
+            (sum by (cluster, namespace, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[5m]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (cluster, namespace) (mimir_build_info) > 0)
+            and on (cluster, namespace) (mimir_build_info > 0)
           labels:
             severity: warning
         - alert: MimirRingMembersMismatch

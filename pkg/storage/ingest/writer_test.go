@@ -1027,10 +1027,14 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 }
 
 func mockPreallocTimeseries(metricName string) mimirpb.PreallocTimeseries {
+	return mockPreallocTimeseriesWithSample(metricName, 1, 2)
+}
+
+func mockPreallocTimeseriesWithSample(metricName string, ts int64, val float64) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
 			Labels:    []mimirpb.LabelAdapter{{Name: "__name__", Value: metricName}},
-			Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2}},
+			Samples:   []mimirpb.Sample{{TimestampMs: ts, Value: val}},
 			Exemplars: []mimirpb.Exemplar{}, // Makes comparison with unmarshalled TimeSeries easy.
 		},
 	}
