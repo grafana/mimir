@@ -709,14 +709,11 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 
 			// Remove histogram from slice to ensure it's not mutated when the slice is reused.
 			d.Histograms[0].H = nil
+		} else if len(d.Floats) == 0 && len(d.Histograms) == 0 {
+			// A series may have no data points.
+			// There's nothing to do, fall through to return 'd' to the pool below.
 		} else {
 			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
-
-			// A series may have no data points.
-			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-				continue
-			}
-
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
