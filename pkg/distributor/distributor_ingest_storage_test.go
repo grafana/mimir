@@ -1494,9 +1494,15 @@ func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartition
 	// Init the client.
 	kafkaClient, err := kgo.NewClient(
 		kgo.SeedBrokers(kafkaAddresses...),
+		// Override the default retry backoff to quickly retry Fetches.
+		kgo.RetryBackoffFn(func(_ int) time.Duration { return 10 * time.Millisecond }),
+		// Set a low FetchMaxWait, because we prefer to retry the Fetch rather than hanging on it,
+		// in case the Fetch is stuck on the server side (fake Kafka) for any reason.
+		kgo.FetchMaxWait(timeout/4),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			kafkaTopic: offsets,
 		}))
+
 	require.NoError(t, err)
 	t.Cleanup(kafkaClient.Close)
 
@@ -1509,7 +1515,8 @@ func readAllRecordsFromKafka(t testing.TB, kafkaAddresses []string, numPartition
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
-		fetches := kafkaClient.PollRecords(ctx, 1000)
+		// Fetch all buffered records.
+		fetches := kafkaClient.PollFetches(ctx)
 		if err := fetches.Err(); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				break
@@ -1547,7 +1554,9 @@ func readAllMetricNamesByPartitionFromKafka(t testing.TB, kafkaAddresses []strin
 	for partitionID, requests := range requestsByPartition {
 		for _, req := range requests {
 			for _, series := range req.Timeseries {
-				metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
+				metricName, err := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
+				require.NoError(t, err)
+
 				actualSeriesByPartition[partitionID] = append(actualSeriesByPartition[partitionID], metricName)
 			}
 		}
