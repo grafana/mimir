@@ -32,14 +32,13 @@ import (
 // with special handling for classic and native histograms.
 // At the moment, it supports only histogram_quantile and histogram_fraction.
 type HistogramFunction struct {
-	phArg                    types.ScalarOperator
+	f                        histogramFunction
 	inner                    types.InstantVectorOperator
 	currentInnerSeriesIndex  int
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
 
 	annotations            *annotations.Annotations
-	phValues               types.ScalarData
 	expressionPosition     posrange.PositionRange
 	innerSeriesMetricNames *operators.MetricNames // We need to keep track of the metric names for annotations.NewBadBucketLabelWarning
 
@@ -112,12 +111,20 @@ func NewHistogramQuantileFunction(
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 ) *HistogramFunction {
+	innerSeriesMetricNames := &operators.MetricNames{}
+
 	return &HistogramFunction{
-		phArg:                    phArg,
+		f: &histogramQuantile{
+			phArg:                    phArg,
+			memoryConsumptionTracker: memoryConsumptionTracker,
+			annotations:              annotations,
+			innerSeriesMetricNames:   innerSeriesMetricNames,
+			innerExpressionPosition:  inner.ExpressionPosition(),
+		},
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		annotations:              annotations,
-		innerSeriesMetricNames:   &operators.MetricNames{},
+		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
 	}
@@ -128,10 +135,7 @@ func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 }
 
 func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	// Pre-process any Scalar arguments
-	var err error
-	h.phValues, err = h.phArg.GetValues(ctx)
-	if err != nil {
+	if err := h.f.LoadArguments(ctx); err != nil {
 		return nil, err
 	}
 
@@ -356,15 +360,6 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 			thisPointBuckets = g.pointBuckets[pointIdx]
 		}
 
-		ph := h.phValues.Samples[pointIdx].F
-		if math.IsNaN(ph) || ph < 0 || ph > 1 {
-			// Even when ph is invalid we still return a series as BucketQuantile will return +/-Inf.
-			// So don't skip/continue the series, just emit a warning.
-			// Additionally, even if a point isn't returned, an annotation is emitted if ph is invalid
-			// at any step.
-			h.annotations.Add(annotations.NewInvalidQuantileWarning(ph, h.phArg.ExpressionPosition()))
-		}
-
 		// Get the HPoint if it exists at this step
 		if g.nativeHistograms != nil && histogramIndex < len(g.nativeHistograms) {
 			nextHPoint := g.nativeHistograms[histogramIndex]
@@ -384,7 +379,8 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 		}
 
 		if thisPointBuckets != nil {
-			res, forcedMonotonicity, _ := promql.BucketQuantile(ph, thisPointBuckets)
+			res := h.f.ComputeClassicHistogramResult(pointIdx, g.lastInputSeriesIdx, thisPointBuckets)
+
 			if floatPoints == nil {
 				var err error
 				floatPoints, err = types.FPointSlicePool.Get(h.timeRange.StepCount-pointIdx, h.memoryConsumptionTracker)
@@ -392,15 +388,12 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
+
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,
 			})
-			if forcedMonotonicity {
-				h.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-					h.innerSeriesMetricNames.GetMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
-				))
-			}
+
 			continue
 		}
 
@@ -412,7 +405,8 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			res := promql.HistogramQuantile(ph, currentHistogram)
+
+			res := h.f.ComputeNativeHistogramResult(pointIdx, currentHistogram)
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,
@@ -435,10 +429,7 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 
 func (h *HistogramFunction) Close() {
 	h.inner.Close()
-	h.phArg.Close()
-
-	types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)
-	h.phValues.Samples = nil
+	h.f.Close()
 }
 
 type bucketGroupSorter struct {
@@ -461,4 +452,66 @@ func (g bucketGroupSorter) Less(i, j int) bool {
 func (g bucketGroupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
+}
+
+type histogramFunction interface {
+	LoadArguments(ctx context.Context) error
+	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
+	ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64
+	Close()
+}
+
+type histogramQuantile struct {
+	phArg    types.ScalarOperator
+	phValues types.ScalarData
+
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	annotations              *annotations.Annotations
+	innerSeriesMetricNames   *operators.MetricNames
+	innerExpressionPosition  posrange.PositionRange
+}
+
+func (q *histogramQuantile) LoadArguments(ctx context.Context) error {
+	var err error
+	q.phValues, err = q.phArg.GetValues(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range q.phValues.Samples {
+		ph := s.F
+		if math.IsNaN(ph) || ph < 0 || ph > 1 {
+			// Even when ph is invalid we still return a series as BucketQuantile will return +/-Inf.
+			// Additionally, even if a point isn't returned, an annotation is emitted if ph is invalid
+			// at any step.
+			q.annotations.Add(annotations.NewInvalidQuantileWarning(ph, q.phArg.ExpressionPosition()))
+		}
+	}
+
+	return nil
+}
+
+func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64 {
+	ph := q.phValues.Samples[pointIndex].F
+	res, forcedMonotonicity, _ := promql.BucketQuantile(ph, buckets)
+
+	if forcedMonotonicity {
+		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
+			q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex), q.innerExpressionPosition,
+		))
+	}
+
+	return res
+}
+
+func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64 {
+	ph := q.phValues.Samples[pointIndex].F
+	return promql.HistogramQuantile(ph, h)
+}
+
+func (q *histogramQuantile) Close() {
+	q.phArg.Close()
+
+	types.FPointSlicePool.Put(q.phValues.Samples, q.memoryConsumptionTracker)
+	q.phValues.Samples = nil
 }
