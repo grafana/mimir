@@ -28,6 +28,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231
