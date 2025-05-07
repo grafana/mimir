@@ -4199,6 +4199,8 @@ provisioner:
     pullPolicy: IfNotPresent
   # -- Volume mounts to add to the provisioner pods
   extraVolumeMounts: []
+  # -- Volumes to add to the provisioner pods
+  extraVolumes: []
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
