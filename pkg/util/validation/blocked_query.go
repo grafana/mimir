@@ -7,3 +7,5 @@ type BlockedQuery struct {
 	Regex   bool   `yaml:"regex"`
 	Reason  string `yaml:"reason"`
 }
+
+type BlockedQueriesConfig []*BlockedQuery
