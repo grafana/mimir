@@ -367,7 +367,7 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
 	case reflect.TypeOf(validation.BlockedQueriesConfig{}).String():
-		return "list of pattern (string), regex (bool), and optionally reason (string)", true
+		return "list of pattern (string), regex (bool), and, optionally, reason (string)", true
 	case reflect.TypeOf(validation.LimitedQueriesConfig{}).String():
 		return "list of query (string) and allowed_frequency (duration)", true
 	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
@@ -459,7 +459,7 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQueriesConfig{}).String():
-		return "list of pattern (string), regex (bool), and optionally reason (string)", true
+		return "list of pattern (string), regex (bool), and, optionally, reason (string)", true
 	case reflect.TypeOf(validation.LimitedQueriesConfig{}).String():
 		return "list of query (string) and allowed_frequency (duration)", true
 	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
@@ -495,7 +495,7 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(map[string]string{})
 	case "relabel_config...":
 		return reflect.TypeOf([]*relabel.Config{})
-	case "list of pattern (string), regex (bool), and optionally reason (string)":
+	case "list of pattern (string), regex (bool), and, optionally, reason (string)":
 		return reflect.TypeOf([]*validation.BlockedQueriesConfig{})
 	case "list of query (string) and allowed_frequency (duration)":
 		return reflect.TypeOf(validation.LimitedQueriesConfig{})

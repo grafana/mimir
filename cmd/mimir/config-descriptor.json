@@ -4873,7 +4873,7 @@
           "desc": "List of queries to block.",
           "fieldValue": null,
           "fieldDefaultValue": [],
-          "fieldType": "list of pattern (string), regex (bool), and optionally reason (string)",
+          "fieldType": "list of pattern (string), regex (bool), and, optionally, reason (string)",
           "fieldCategory": "experimental"
         },
         {
