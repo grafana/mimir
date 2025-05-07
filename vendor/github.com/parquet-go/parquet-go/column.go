@@ -106,7 +106,7 @@ func (c *Column) PagesFrom(reader io.ReaderAt) Pages {
 		pages: make([]FilePages, len(c.file.rowGroups)),
 	}
 	for i := range r.pages {
-		r.pages[i].init(c.file.rowGroups[i].(*FileRowGroup).columns[c.index].(*FileColumnChunk), reader)
+		r.pages[i].init(c.file.rowGroups[i].(*FileRowGroup).columns[c.index].(*FileColumnChunk), c.file.config.ReadBufferSize, reader)
 	}
 	return r
 }

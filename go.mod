@@ -359,3 +359,5 @@ replace cloud.google.com/go/auth => cloud.google.com/go/auth v0.15.0
 
 // Temporarily exclude v1.72 until we've fully tested the unpinning of v1.65 and upgrade to v1.71
 exclude google.golang.org/grpc v1.72.0
+
+replace github.com/parquet-go/parquet-go => github.com/alanprot/parquet-go v0.25.0-rc.1

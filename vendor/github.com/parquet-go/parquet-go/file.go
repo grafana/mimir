@@ -530,7 +530,7 @@ func (c *FileColumnChunk) Bounds() (min, max Value, ok bool) {
 
 // Pages returns a page reader for the column chunk.
 func (c *FileColumnChunk) Pages() Pages {
-	pages := Pages(c.PagesFrom(c.file.reader))
+	pages := Pages(c.PagesFrom(c.file.reader, c.file.config.ReadBufferSize))
 	if c.file.config.ReadMode == ReadModeAsync {
 		pages = AsyncPages(pages)
 	}
@@ -542,9 +542,9 @@ func (c *FileColumnChunk) Pages() Pages {
 //
 // Note that unlike when calling Pages, the returned reader is not wrapped in an
 // AsyncPages reader if the file was opened in async mode.
-func (c *FileColumnChunk) PagesFrom(reader io.ReaderAt) *FilePages {
+func (c *FileColumnChunk) PagesFrom(reader io.ReaderAt, bufferSize int) *FilePages {
 	pages := new(FilePages)
-	pages.init(c, reader)
+	pages.init(c, bufferSize, reader)
 	return pages
 }
 
@@ -744,11 +744,11 @@ type FilePages struct {
 	bufferSize int
 }
 
-func (f *FilePages) init(c *FileColumnChunk, reader io.ReaderAt) {
+func (f *FilePages) init(c *FileColumnChunk, bufferSize int, reader io.ReaderAt) {
 	f.chunk = c
 	f.baseOffset = c.chunk.MetaData.DataPageOffset
 	f.dataOffset = f.baseOffset
-	f.bufferSize = c.file.config.ReadBufferSize
+	f.bufferSize = bufferSize
 
 	if c.chunk.MetaData.DictionaryPageOffset != 0 {
 		f.baseOffset = c.chunk.MetaData.DictionaryPageOffset
@@ -773,6 +773,10 @@ func (f *FilePages) ReadDictionary() (Dictionary, error) {
 		}
 	}
 	return f.dictionary, nil
+}
+
+func (f *FilePages) SetDictionary(dict Dictionary) {
+	f.dictionary = dict
 }
 
 // ReadPages reads the next from from f.
