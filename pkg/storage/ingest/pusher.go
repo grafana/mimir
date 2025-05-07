@@ -398,12 +398,8 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorage aborts the request if it encounters an error.
 func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
-	// We're moving Timeseries into batches, each batch has a fresh timeseries slice.
-	// We're done with the slice in the request here, the contents will live on in the batch and be freed when the batch is freed.
-	defer mimirpb.ReuseTimeseriesSliceDangerous(request.Timeseries)
-
 	hashBuf := make([]byte, 0, 1024)
-	for _, ts := range request.Timeseries {
+	for i, ts := range request.Timeseries {
 		var shard uint64
 		hashBuf, shard = labelAdaptersHash(hashBuf, ts.Labels)
 		shard = shard % uint64(p.numShards)
@@ -411,7 +407,11 @@ func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimi
 		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
+		// We're transferring ownership of the timeseries to the batch, and clearing the slice so we can reuse it.
+		request.Timeseries[i] = mimirpb.PreallocTimeseries{}
 	}
+	// The slice no longer owns any timeseries, so we can re-use it.
+	mimirpb.ReuseTimeseriesSliceDangerous(request.Timeseries)
 
 	// Push metadata to every shard in a round-robin fashion.
 	// Start from a random shard to avoid hotspots in the first few shards when there are not many metadata pieces in each request.
