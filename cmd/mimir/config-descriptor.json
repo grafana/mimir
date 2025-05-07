@@ -905,6 +905,17 @@
             },
             {
               "kind": "field",
+              "name": "ha_tracker_use_sample_time_for_failover",
+              "required": false,
+              "desc": "Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.ha-tracker.use-sample-time-for-failover",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "enable_elected_replica_metric",
               "required": false,
               "desc": "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.",

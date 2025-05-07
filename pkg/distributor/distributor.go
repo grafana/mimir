@@ -763,7 +763,7 @@ func (d *Distributor) stopping(_ error) error {
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
-func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string) (removeReplicaLabel bool, _ error) {
+func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string, ts int64) (removeReplicaLabel bool, _ error) {
 	// If the sample doesn't have either HA label, accept it.
 	// At the moment we want to accept these samples by default.
 	if cluster == "" || replica == "" {
@@ -777,7 +777,9 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 
 	// At this point we know we have both HA labels, we should lookup
 	// the cluster/instance here to see if we want to accept this sample.
-	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now())
+	// Convert the timestamp to a time.Time for checking the replica
+	sampleTime := time.Unix(ts, 0)
+	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now(), sampleTime)
 	// checkReplica would have returned an error if there was a real error talking to Consul,
 	// or if the replica is not the currently elected replica.
 	if err != nil { // Don't accept the sample.
@@ -997,6 +999,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
+		sampleTimestamp := req.Timeseries[0].Samples[0].TimestampMs
 
 		span := opentracing.SpanFromContext(ctx)
 		if span != nil {
@@ -1011,7 +1014,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica, sampleTimestamp)
 		if err != nil {
 			if errors.As(err, &replicasDidNotMatchError{}) {
 				// These samples have been deduped.
