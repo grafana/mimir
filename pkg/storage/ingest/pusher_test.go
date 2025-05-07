@@ -1631,6 +1631,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		kcfg.IngestionConcurrencyMax = 0
 		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
 		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+		b.ResetTimer()
 
 		for range b.N {
 			err := c.Consume(context.Background(), records)
@@ -1642,12 +1643,9 @@ func BenchmarkPusherConsumer(b *testing.B) {
 		kcfg := KafkaConfig{}
 		flagext.DefaultValues(&kcfg)
 		kcfg.IngestionConcurrencyMax = 2
-		kcfg.IngestionConcurrencyEstimatedBytesPerSample = 1
-		kcfg.IngestionConcurrencyTargetFlushesPerShard = 1
-		kcfg.IngestionConcurrencyBatchSize = 5
-		kcfg.IngestionConcurrencyQueueCapacity = 5
 		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
 		c := newPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+		b.ResetTimer()
 
 		for range b.N {
 			err := c.Consume(context.Background(), records)
