@@ -850,9 +850,13 @@ func (q *Query) Close() {
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	case promql.String:
 		// Nothing to do as strings don't come from a pool
+	case nil:
+		// Nothing to do if there is no value.
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}
+
+	q.result.Value = nil
 
 	if q.engine.pedantic && q.result.Err == nil {
 		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
