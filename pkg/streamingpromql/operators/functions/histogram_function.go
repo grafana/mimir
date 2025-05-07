@@ -130,6 +130,30 @@ func NewHistogramQuantileFunction(
 	}
 }
 
+func NewHistogramFractionFunction(
+	lower types.ScalarOperator,
+	upper types.ScalarOperator,
+	inner types.InstantVectorOperator,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
+) *HistogramFunction {
+	return &HistogramFunction{
+		f: &histogramFraction{
+			upperArg:                 upper,
+			lowerArg:                 lower,
+			memoryConsumptionTracker: memoryConsumptionTracker,
+		},
+		inner:                    inner,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+		annotations:              annotations,
+		innerSeriesMetricNames:   &operators.MetricNames{},
+		expressionPosition:       expressionPosition,
+		timeRange:                timeRange,
+	}
+}
+
 func (h *HistogramFunction) ExpressionPosition() posrange.PositionRange {
 	return h.expressionPosition
 }
@@ -514,4 +538,53 @@ func (q *histogramQuantile) Close() {
 
 	types.FPointSlicePool.Put(q.phValues.Samples, q.memoryConsumptionTracker)
 	q.phValues.Samples = nil
+}
+
+type histogramFraction struct {
+	lowerArg    types.ScalarOperator
+	upperArg    types.ScalarOperator
+	lowerValues types.ScalarData
+	upperValues types.ScalarData
+
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+}
+
+func (f *histogramFraction) LoadArguments(ctx context.Context) error {
+	var err error
+	f.lowerValues, err = f.lowerArg.GetValues(ctx)
+	if err != nil {
+		return err
+	}
+
+	f.upperValues, err = f.upperArg.GetValues(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (f *histogramFraction) ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64 {
+	lower := f.lowerValues.Samples[pointIndex].F
+	upper := f.upperValues.Samples[pointIndex].F
+
+	return promql.BucketFraction(lower, upper, buckets)
+}
+
+func (f *histogramFraction) ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64 {
+	lower := f.lowerValues.Samples[pointIndex].F
+	upper := f.upperValues.Samples[pointIndex].F
+
+	return promql.HistogramFraction(lower, upper, h)
+}
+
+func (f *histogramFraction) Close() {
+	f.lowerArg.Close()
+	f.upperArg.Close()
+
+	types.FPointSlicePool.Put(f.lowerValues.Samples, f.memoryConsumptionTracker)
+	f.lowerValues.Samples = nil
+
+	types.FPointSlicePool.Put(f.upperValues.Samples, f.memoryConsumptionTracker)
+	f.upperValues.Samples = nil
 }
