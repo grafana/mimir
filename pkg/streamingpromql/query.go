@@ -692,6 +692,12 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 			return nil, err
 		}
 
+		if len(d.Floats)+len(d.Histograms) > 1 {
+			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
+		}
+
+		// In addition to the two cases below, a series may also have no data points, in which case we don't need to do anything.
 		if len(d.Floats) == 1 && len(d.Histograms) == 0 {
 			point := d.Floats[0]
 			v = append(v, promql.Sample{
@@ -709,15 +715,6 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 
 			// Remove histogram from slice to ensure it's not mutated when the slice is reused.
 			d.Histograms[0].H = nil
-		} else {
-			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
-
-			// A series may have no data points.
-			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-				continue
-			}
-
-			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
 		types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
@@ -853,9 +850,13 @@ func (q *Query) Close() {
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	case promql.String:
 		// Nothing to do as strings don't come from a pool
+	case nil:
+		// Nothing to do if there is no value.
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}
+
+	q.result.Value = nil
 
 	if q.engine.pedantic && q.result.Err == nil {
 		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
