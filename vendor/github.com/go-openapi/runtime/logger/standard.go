@@ -5,8 +5,6 @@ import (
 	"os"
 )
 
-var _ Logger = StandardLogger{}
-
 type StandardLogger struct{}
 
 func (StandardLogger) Printf(format string, args ...interface{}) {

@@ -34,7 +34,7 @@ func Error(e Encoding, err error) error {
 
 // Errorf is like Error but constructs the error message from the given format
 // and arguments.
-func Errorf(e Encoding, msg string, args ...any) error {
+func Errorf(e Encoding, msg string, args ...interface{}) error {
 	return Error(e, fmt.Errorf(msg, args...))
 }
 

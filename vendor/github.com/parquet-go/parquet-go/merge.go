@@ -139,7 +139,10 @@ func (r *mergedRowGroupRows) Close() (lastErr error) {
 
 func (r *mergedRowGroupRows) ReadRows(rows []Row) (int, error) {
 	for r.rowIndex < r.seekToRow {
-		n := min(int(r.seekToRow-r.rowIndex), len(rows))
+		n := int(r.seekToRow - r.rowIndex)
+		if n > len(rows) {
+			n = len(rows)
+		}
 		n, err := r.readInternal(rows[:n])
 		if err != nil {
 			return 0, err
@@ -281,11 +284,11 @@ func (m *mergedRowReader) Swap(i, j int) {
 	m.readers[i], m.readers[j] = m.readers[j], m.readers[i]
 }
 
-func (m *mergedRowReader) Push(x any) {
+func (m *mergedRowReader) Push(x interface{}) {
 	panic("NOT IMPLEMENTED")
 }
 
-func (m *mergedRowReader) Pop() any {
+func (m *mergedRowReader) Pop() interface{} {
 	i := len(m.readers) - 1
 	r := m.readers[i]
 	m.readers = m.readers[:i]
@@ -421,7 +424,7 @@ func (m *mergeBuffer) Less(i, j int) bool {
 	return m.compare(x[m.head[i]], y[m.head[j]]) == -1
 }
 
-func (m *mergeBuffer) Pop() any {
+func (m *mergeBuffer) Pop() interface{} {
 	m.len--
 	// We don't use the popped value.
 	return nil
@@ -436,7 +439,7 @@ func (m *mergeBuffer) Swap(i, j int) {
 	m.head[i], m.head[j] = m.head[j], m.head[i]
 }
 
-func (m *mergeBuffer) Push(x any) {
+func (m *mergeBuffer) Push(x interface{}) {
 	panic("NOT IMPLEMENTED")
 }
 
@@ -465,7 +468,7 @@ func (m *mergeBuffer) WriteRowsTo(w RowWriter) (n int64, err error) {
 }
 
 func (m *mergeBuffer) left() bool {
-	for i := range m.len {
+	for i := 0; i < m.len; i++ {
 		if m.head[i] < len(m.buffer[i]) {
 			return true
 		}

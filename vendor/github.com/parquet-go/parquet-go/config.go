@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/parquet-go/parquet-go/compress"
-	"slices"
 )
 
 // ReadMode is an enum that is used to configure the way that a File reads pages.
@@ -632,7 +631,7 @@ func KeyValueMetadata(key, value string) WriterOption {
 // and applications need to explicitly declare the columns that they want to
 // create filters for.
 func BloomFilters(filters ...BloomFilterColumn) WriterOption {
-	filters = slices.Clone(filters)
+	filters = append([]BloomFilterColumn{}, filters...)
 	return writerOption(func(config *WriterConfig) { config.BloomFilters = filters })
 }
 
@@ -645,7 +644,7 @@ func Compression(codec compress.Codec) WriterOption {
 // SortingWriterConfig is a writer option which applies configuration specific
 // to sorting writers.
 func SortingWriterConfig(options ...SortingOption) WriterOption {
-	options = slices.Clone(options)
+	options = append([]SortingOption{}, options...)
 	return writerOption(func(config *WriterConfig) { config.Sorting.Apply(options...) })
 }
 
@@ -669,7 +668,7 @@ func ColumnBufferCapacity(size int) RowGroupOption {
 // SortingRowGroupConfig is a row group option which applies configuration
 // specific sorting row groups.
 func SortingRowGroupConfig(options ...SortingOption) RowGroupOption {
-	options = slices.Clone(options)
+	options = append([]SortingOption{}, options...)
 	return rowGroupOption(func(config *RowGroupConfig) { config.Sorting.Apply(options...) })
 }
 
@@ -684,7 +683,7 @@ func SortingColumns(columns ...SortingColumn) SortingOption {
 	// for the variable argument list, and also avoid having a nil slice when
 	// the option is passed with no sorting columns, so we can differentiate it
 	// from it not being passed.
-	columns = slices.Clone(columns)
+	columns = append([]SortingColumn{}, columns...)
 	return sortingOption(func(config *SortingConfig) { config.SortingColumns = columns })
 }
 
@@ -817,20 +816,22 @@ func validatePositiveInt64(optionName string, optionValue int64) error {
 }
 
 func validateOneOfInt(optionName string, optionValue int, supportedValues ...int) error {
-	if slices.Contains(supportedValues, optionValue) {
-		return nil
+	for _, value := range supportedValues {
+		if value == optionValue {
+			return nil
+		}
 	}
 	return errorInvalidOptionValue(optionName, optionValue)
 }
 
-func validateNotNil(optionName string, optionValue any) error {
+func validateNotNil(optionName string, optionValue interface{}) error {
 	if optionValue != nil {
 		return nil
 	}
 	return errorInvalidOptionValue(optionName, optionValue)
 }
 
-func errorInvalidOptionValue(optionName string, optionValue any) error {
+func errorInvalidOptionValue(optionName string, optionValue interface{}) error {
 	return fmt.Errorf("invalid option value: %s: %v", optionName, optionValue)
 }
 

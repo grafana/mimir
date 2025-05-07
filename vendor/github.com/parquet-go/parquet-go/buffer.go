@@ -360,7 +360,7 @@ func (buf *Buffer) Reset() {
 }
 
 // Write writes a row held in a Go value to the buffer.
-func (buf *Buffer) Write(row any) error {
+func (buf *Buffer) Write(row interface{}) error {
 	if buf.schema == nil {
 		buf.configure(SchemaOf(row))
 	}
@@ -570,7 +570,7 @@ func bufferPoolNextSize(size int) int {
 func bufferPoolBucketIndexAndSizeOfGet(size int) (int, int) {
 	limit := bufferPoolMinSize
 
-	for i := range bufferPoolBucketCount {
+	for i := 0; i < bufferPoolBucketCount; i++ {
 		if size <= limit {
 			return i, limit
 		}
@@ -586,7 +586,7 @@ func bufferPoolBucketIndexAndSizeOfPut(size int) (int, int) {
 	// have to put the buffer is the highest bucket with a size less or equal
 	// to the buffer capacity.
 	if limit := bufferPoolMinSize; size >= limit {
-		for i := range bufferPoolBucketCount {
+		for i := 0; i < bufferPoolBucketCount; i++ {
 			n := bufferPoolNextSize(limit)
 			if size < n {
 				return i, limit

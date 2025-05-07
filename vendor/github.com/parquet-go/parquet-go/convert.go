@@ -280,7 +280,7 @@ func Convert(to, from Node) (conv Conversion, err error) {
 			targetNode := to
 			sourceNode := from
 
-			for j := range path {
+			for j := 0; j < len(path); j++ {
 				targetNode = fieldByName(targetNode, path[j])
 				sourceNode = fieldByName(sourceNode, path[j])
 
@@ -432,7 +432,7 @@ func maskMissingRowGroupColumns(r RowGroup, numColumns int, conv Conversion) Row
 		columns[i] = &missing[i]
 	}
 
-	for i := range numColumns {
+	for i := 0; i < numColumns; i++ {
 		j := conv.Column(i)
 		if j >= 0 && j < len(columns) {
 			columns[j] = rowGroupColumns[j]

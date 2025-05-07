@@ -193,7 +193,7 @@ func (e *ByteArrayEncoding) wrap(err error) error {
 	return err
 }
 
-func (e *ByteArrayEncoding) wrapf(msg string, args ...any) error {
+func (e *ByteArrayEncoding) wrapf(msg string, args ...interface{}) error {
 	return encoding.Errorf(e, msg, args...)
 }
 
@@ -205,7 +205,10 @@ func linearSearchPrefixLength(base, data []byte) (n int) {
 }
 
 func binarySearchPrefixLength(base, data []byte) int {
-	n := min(len(base), len(data))
+	n := len(base)
+	if n > len(data) {
+		n = len(data)
+	}
 	return sort.Search(n, func(i int) bool {
 		return !bytes.Equal(base[:i+1], data[:i+1])
 	})

@@ -86,7 +86,7 @@ func New(cfg Config) (*Client, error) {
 // service interface implementations and do not need connection management.
 func NewCtxClient(ctx context.Context, opts ...Option) *Client {
 	cctx, cancel := context.WithCancel(ctx)
-	c := &Client{ctx: cctx, cancel: cancel, lgMu: new(sync.RWMutex), mu: new(sync.RWMutex)}
+	c := &Client{ctx: cctx, cancel: cancel, lgMu: new(sync.RWMutex)}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -148,7 +148,7 @@ func (c *Client) Close() error {
 		c.Lease.Close()
 	}
 	if c.conn != nil {
-		return ContextError(c.ctx, c.conn.Close())
+		return toErr(c.ctx, c.conn.Close())
 	}
 	return c.ctx.Err()
 }
@@ -231,30 +231,15 @@ func (c *Client) dialSetupOpts(creds grpccredentials.TransportCredentials, dopts
 		opts = append(opts, grpc.WithInsecure())
 	}
 
-	unaryMaxRetries := defaultUnaryMaxRetries
-	if c.cfg.MaxUnaryRetries > 0 {
-		unaryMaxRetries = c.cfg.MaxUnaryRetries
-	}
-
-	backoffWaitBetween := defaultBackoffWaitBetween
-	if c.cfg.BackoffWaitBetween > 0 {
-		backoffWaitBetween = c.cfg.BackoffWaitBetween
-	}
-
-	backoffJitterFraction := defaultBackoffJitterFraction
-	if c.cfg.BackoffJitterFraction > 0 {
-		backoffJitterFraction = c.cfg.BackoffJitterFraction
-	}
-
 	// Interceptor retry and backoff.
 	// TODO: Replace all of clientv3/retry.go with RetryPolicy:
 	// https://github.com/grpc/grpc-proto/blob/cdd9ed5c3d3f87aef62f373b93361cf7bddc620d/grpc/service_config/service_config.proto#L130
-	rrBackoff := withBackoff(c.roundRobinQuorumBackoff(backoffWaitBetween, backoffJitterFraction))
+	rrBackoff := withBackoff(c.roundRobinQuorumBackoff(defaultBackoffWaitBetween, defaultBackoffJitterFraction))
 	opts = append(opts,
 		// Disable stream retry by default since go-grpc-middleware/retry does not support client streams.
 		// Streams that are safe to retry are enabled individually.
 		grpc.WithStreamInterceptor(c.streamClientInterceptor(withMax(0), rrBackoff)),
-		grpc.WithUnaryInterceptor(c.unaryClientInterceptor(withMax(unaryMaxRetries), rrBackoff)),
+		grpc.WithUnaryInterceptor(c.unaryClientInterceptor(withMax(defaultUnaryMaxRetries), rrBackoff)),
 	)
 
 	return opts, nil
@@ -279,7 +264,6 @@ func (c *Client) getToken(ctx context.Context) error {
 	resp, err := c.Auth.Authenticate(ctx, c.Username, c.Password)
 	if err != nil {
 		if err == rpctypes.ErrAuthNotEnabled {
-			c.authTokenBundle.UpdateAuthToken("")
 			return nil
 		}
 		return err
@@ -302,7 +286,8 @@ func (c *Client) dial(creds grpccredentials.TransportCredentials, dopts ...grpc.
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure dialer: %v", err)
 	}
-	if c.authTokenBundle != nil {
+	if c.Username != "" && c.Password != "" {
+		c.authTokenBundle = credentials.NewBundle(credentials.Config{})
 		opts = append(opts, grpc.WithPerRPCCredentials(c.authTokenBundle.PerRPCCredentials()))
 	}
 
@@ -398,7 +383,6 @@ func newClient(cfg *Config) (*Client, error) {
 	if cfg.Username != "" && cfg.Password != "" {
 		client.Username = cfg.Username
 		client.Password = cfg.Password
-		client.authTokenBundle = credentials.NewBundle(credentials.Config{})
 	}
 	if cfg.MaxCallSendMsgSize > 0 || cfg.MaxCallRecvMsgSize > 0 {
 		if cfg.MaxCallRecvMsgSize > 0 && cfg.MaxCallSendMsgSize > cfg.MaxCallRecvMsgSize {
@@ -517,7 +501,7 @@ func (c *Client) checkVersion() (err error) {
 					return
 				}
 			}
-			if maj < 3 || (maj == 3 && min < 4) {
+			if maj < 3 || (maj == 3 && min < 2) {
 				rerr = ErrOldCluster
 			}
 			errc <- rerr
@@ -525,7 +509,7 @@ func (c *Client) checkVersion() (err error) {
 	}
 	// wait for success
 	for range eps {
-		if err = <-errc; err != nil {
+		if err = <-errc; err == nil {
 			break
 		}
 	}
@@ -573,9 +557,7 @@ func isUnavailableErr(ctx context.Context, err error) bool {
 	return false
 }
 
-// ContextError converts the error into an EtcdError if the error message matches one of
-// the defined messages; otherwise, it tries to retrieve the context error.
-func ContextError(ctx context.Context, err error) error {
+func toErr(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}

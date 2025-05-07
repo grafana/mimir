@@ -12,7 +12,6 @@ import (
 	"github.com/parquet-go/parquet-go/internal/bitpack"
 	"github.com/parquet-go/parquet-go/internal/unsafecast"
 	"github.com/parquet-go/parquet-go/sparse"
-	"slices"
 )
 
 const (
@@ -162,7 +161,7 @@ func (d *booleanDictionary) insert(indexes []int32, rows sparse.Array) {
 	values := rows.Uint8Array()
 	dict := d.table
 
-	for i := range rows.Len() {
+	for i := 0; i < rows.Len(); i++ {
 		v := values.Index(i) & 1
 		indexes[i] = dict[v]
 	}
@@ -444,7 +443,7 @@ func (d *int96Dictionary) insertValues(indexes []int32, count int, valueAt func(
 		}
 	}
 
-	for i := range count {
+	for i := 0; i < count; i++ {
 		value := valueAt(i)
 
 		index, exists := d.hashmap[value]
@@ -709,7 +708,7 @@ func (d *byteArrayDictionary) init() {
 	numValues := d.len()
 	d.table = make(map[string]int32, numValues)
 
-	for i := range numValues {
+	for i := 0; i < numValues; i++ {
 		d.table[string(d.index(i))] = int32(len(d.table))
 	}
 }
@@ -841,7 +840,7 @@ func (d *fixedLenByteArrayDictionary) insertValues(indexes []int32, count int, v
 		}
 	}
 
-	for i := range count {
+	for i := 0; i < count; i++ {
 		value := unsafe.Slice(valueAt(i), d.size)
 
 		index, exists := d.hashmap[string(value)]
@@ -1348,7 +1347,7 @@ func (col *indexedColumnBuffer) Clone() ColumnBuffer {
 	return &indexedColumnBuffer{
 		indexedPage: indexedPage{
 			typ:         col.typ,
-			values:      slices.Clone(col.values),
+			values:      append([]int32{}, col.values...),
 			columnIndex: col.columnIndex,
 		},
 	}

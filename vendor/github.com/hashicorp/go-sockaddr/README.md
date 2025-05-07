@@ -68,7 +68,7 @@ the
 run:
 
 ```text
-$ go install github.com/hashicorp/go-sockaddr/cmd/sockaddr@latest
+$ go get -u github.com/hashicorp/go-sockaddr/cmd/sockaddr
 ```
 
 If you're familiar with UNIX's `sockaddr` struct's, the following diagram

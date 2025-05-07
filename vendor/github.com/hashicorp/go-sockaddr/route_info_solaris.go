@@ -1,5 +1,3 @@
-//go:build solaris
-
 package sockaddr
 
 import (
