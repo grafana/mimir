@@ -20,32 +20,24 @@ local filename = 'mimir-block-builder.json';
         )
       )
       .addPanel(
-        $.timeseriesPanel('Outstanding jobs') +
+        $.timeseriesPanel('Jobs') +
         $.panelDescription(
           'Outstanding jobs',
-          'Number of outstanding jobs that needs to be processed.',
+          'Number of outstanding and active jobs.',
         ) +
         $.queryPanel(
-          'cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          'jobs',
+          [
+            'cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'cortex_blockbuilder_scheduler_assigned_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            'outstanding',
+            'active',
+          ],
         )
       )
       .addPanel(
-        $.timeseriesPanel('Active jobs') +
-        $.panelDescription(
-          'Active jobs',
-          'Number of jobs that block builders are actively working on.',
-        ) +
-        $.queryPanel(
-          'cortex_blockbuilder_scheduler_assigned_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          'jobs',
-        )
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.timeseriesPanel('Scheduler Job Update Duration') +
+        $.timeseriesPanel('Job Update Duration') +
         $.panelDescription(
           'Scheduler Job Update Duration',
           'Amount of time the scheduler took to calculate the jobs.'
@@ -65,15 +57,15 @@ local filename = 'mimir-block-builder.json';
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
-        $.timeseriesPanel('Error rates') +
+        $.timeseriesPanel('Errors') +
         $.panelDescription(
-          'Error rates',
-          'Various errors rates exposed by the scheduler.',
+          'Errors',
+          'Various errors exposed by the scheduler.',
         ) +
         $.queryPanel(
           [
-            'sum(rate(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-            'sum(rate(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
           ],
           [
             'fetch offsets failed',
