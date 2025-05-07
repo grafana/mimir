@@ -257,8 +257,6 @@ jobs:
           persist-credentials: false
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
-      - name: Install Docker Client
-        run: sudo ./.github/workflows/scripts/install-docker.sh
       - name: Symlink Expected Path to Workspace
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
