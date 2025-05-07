@@ -444,7 +444,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsu
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for histogram_fraction, got %v", len(args))
@@ -468,12 +468,7 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsu
 		return nil, fmt.Errorf("expected an instant vector for 3rd argument for histogram_fraction, got %T", args[2])
 	}
 
-	f := FunctionOverInstantVectorDefinition{
-		SeriesDataFunc:         HistogramFraction,
-		SeriesMetadataFunction: DropSeriesName,
-	}
-
-	o := NewFunctionOverInstantVector(inner, []types.ScalarOperator{lower, upper}, memoryConsumptionTracker, f, expressionPosition, timeRange)
+	o := NewHistogramFractionFunction(lower, upper, inner, memoryConsumptionTracker, annotations, expressionPosition, timeRange)
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 

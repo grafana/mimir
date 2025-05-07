@@ -59,36 +59,6 @@ func HistogramCount(seriesData types.InstantVectorSeriesData, _ []types.ScalarDa
 	return data, nil
 }
 
-func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
-	fPoints, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	data := types.InstantVectorSeriesData{
-		Floats: fPoints,
-	}
-
-	lower := scalarArgsData[0]
-	upper := scalarArgsData[1]
-
-	for _, histogram := range seriesData.Histograms {
-		// Scalars are guaranteed to have a point for each step in the query.
-		idx := timeRange.PointIndex(histogram.T)
-		lowerVal := lower.Samples[idx].F
-		upperVal := upper.Samples[idx].F
-
-		data.Floats = append(data.Floats, promql.FPoint{
-			T: histogram.T,
-			F: promql.HistogramFraction(lowerVal, upperVal, histogram.H),
-		})
-	}
-
-	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
-
-	return data, nil
-}
-
 // HistogramStdDevStdVar returns either the standard deviation, or standard variance of a native histogram.
 // Float values are ignored.
 func HistogramStdDevStdVar(isStdDev bool) InstantVectorSeriesFunction {
