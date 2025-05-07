@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
+	promstats "github.com/prometheus/prometheus/util/stats"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 
@@ -3230,6 +3231,7 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 
 func TestQueryStats(t *testing.T) {
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -3249,14 +3251,14 @@ func TestQueryStats(t *testing.T) {
 			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
 	`)
 
-	runQueryAndGetTotalSamples := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) int64 {
+	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-
+		opts := promql.NewPrometheusQueryOpts(true, 0)
 		if isInstantQuery {
-			q, err = engine.NewInstantQuery(context.Background(), storage, nil, expr, end)
+			q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, end)
 		} else {
-			q, err = engine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, time.Minute)
+			q, err = engine.NewRangeQuery(context.Background(), storage, opts, expr, start, end, time.Minute)
 		}
 
 		require.NoError(t, err)
@@ -3266,100 +3268,118 @@ func TestQueryStats(t *testing.T) {
 		res := q.Exec(context.Background())
 		require.NoError(t, res.Err)
 
-		return q.Stats().Samples.TotalSamples
+		return q.Stats().Samples
 	}
 
 	testCases := map[string]struct {
-		expr                 string
-		isInstantQuery       bool
-		expectedTotalSamples int64
+		expr                        string
+		isInstantQuery              bool
+		expectedTotalSamples        int64
+		expectedTotalSamplesPerStep []int64
 	}{
 		"instant vector selector with point at every time step": {
-			expr:                 `dense_series{}`,
-			expectedTotalSamples: 11,
+			expr:                        `dense_series{}`,
+			expectedTotalSamples:        11,
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
 		"instant vector selector with points only in start of time range": {
-			expr:                 `start_series{}`,
-			expectedTotalSamples: 2 + 4, // 2 for original points, plus 4 for lookback to last point.
+			expr:                        `start_series{}`,
+			expectedTotalSamples:        2 + 4, // 2 for original points, plus 4 for lookback to last point.
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0},
 		},
 		"instant vector selector with points only at end of time range": {
-			expr:                 `end_series{}`,
-			expectedTotalSamples: 6,
+			expr:                        `end_series{}`,
+			expectedTotalSamples:        6,
+			expectedTotalSamplesPerStep: []int64{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1},
 		},
 		"instant vector selector with sparse points": {
-			expr:                 `sparse_series{}`,
-			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
+			expr:                        `sparse_series{}`,
+			expectedTotalSamples:        5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1},
 		},
 		"instant vector selector with stale marker": {
-			expr:                 `stale_series{}`,
-			expectedTotalSamples: 10, // Instant vector selectors ignore stale markers.
+			expr:                        `stale_series{}`,
+			expectedTotalSamples:        10, // Instant vector selectors ignore stale markers.
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1},
 		},
-
 		"raw range vector selector with single point": {
-			expr:                 `dense_series[45s]`,
-			isInstantQuery:       true,
-			expectedTotalSamples: 1,
+			expr:                        `dense_series[45s]`,
+			isInstantQuery:              true,
+			expectedTotalSamples:        1,
+			expectedTotalSamplesPerStep: []int64{1},
 		},
 		"raw range vector selector with multiple points": {
-			expr:                 `dense_series[3m45s]`,
-			isInstantQuery:       true,
-			expectedTotalSamples: 4,
+			expr:                        `dense_series[3m45s]`,
+			isInstantQuery:              true,
+			expectedTotalSamples:        4,
+			expectedTotalSamplesPerStep: []int64{4},
 		},
-
 		"range vector selector with point at every time step": {
-			expr:                 `sum_over_time(dense_series{}[30s])`,
-			expectedTotalSamples: 11,
+			expr:                        `sum_over_time(dense_series{}[30s])`,
+			expectedTotalSamples:        11,
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
 		"range vector selector with points only in start of time range": {
-			expr:                 `sum_over_time(start_series{}[30s])`,
-			expectedTotalSamples: 2,
+			expr:                        `sum_over_time(start_series{}[30s])`,
+			expectedTotalSamples:        2,
+			expectedTotalSamplesPerStep: []int64{1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
 		"range vector selector with points only at end of time range": {
-			expr:                 `sum_over_time(end_series{}[30s])`,
-			expectedTotalSamples: 6,
+			expr:                        `sum_over_time(end_series{}[30s])`,
+			expectedTotalSamples:        6,
+			expectedTotalSamplesPerStep: []int64{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1},
 		},
 		"range vector selector with sparse points": {
-			expr:                 `sum_over_time(sparse_series{}[30s])`,
-			expectedTotalSamples: 2,
+			expr:                        `sum_over_time(sparse_series{}[30s])`,
+			expectedTotalSamples:        2,
+			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
 		},
 		"range vector selector where range overlaps previous step's range": {
-			expr:                 `sum_over_time(dense_series{}[1m30s])`,
-			expectedTotalSamples: 21, // Each step except the first selects two points.
+			expr:                        `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples:        21, // Each step except the first selects two points.
+			expectedTotalSamplesPerStep: []int64{1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
 		},
 		"range vector selector with stale marker": {
-			expr:                 `count_over_time(stale_series{}[1m30s])`,
-			expectedTotalSamples: 19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
+			expr:                        `count_over_time(stale_series{}[1m30s])`,
+			expectedTotalSamples:        19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
+			expectedTotalSamplesPerStep: []int64{1, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2},
 		},
-
 		"expression with multiple selectors": {
-			expr:                 `dense_series{} + end_series{}`,
-			expectedTotalSamples: 11 + 6,
+			expr:                        `dense_series{} + end_series{}`,
+			expectedTotalSamples:        11 + 6,
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2},
 		},
 		"instant vector selector with NaNs": {
-			expr:                 `nan_series{}`,
-			expectedTotalSamples: 11,
+			expr:                        `nan_series{}`,
+			expectedTotalSamples:        11,
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
 		"range vector selector with NaNs": {
-			expr:                 `sum_over_time(nan_series{}[1m])`,
-			expectedTotalSamples: 11,
+			expr:                        `sum_over_time(nan_series{}[1m])`,
+			expectedTotalSamples:        11,
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
 		"instant vector selector with native histograms": {
-			expr:                 `native_histogram_series{}`,
-			expectedTotalSamples: 78,
+			expr:                        `native_histogram_series{}`,
+			expectedTotalSamples:        78,
+			expectedTotalSamplesPerStep: []int64{13, 13, 13, 13, 13, 13, 0, 0, 0, 0, 0},
 		},
 		"range vector selector with native histograms": {
-			expr:                 `sum_over_time(native_histogram_series{}[1m])`,
-			expectedTotalSamples: 26,
+			expr:                        `sum_over_time(native_histogram_series{}[1m])`,
+			expectedTotalSamples:        26,
+			expectedTotalSamplesPerStep: []int64{13, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			prometheusCount := runQueryAndGetTotalSamples(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
-			require.Equal(t, testCase.expectedTotalSamples, prometheusCount, "invalid test case: expected samples does not match value from Prometheus' engine")
+			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
+			require.Equal(t, testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per stepsamples does not match value from Prometheus' engine")
 
-			mimirCount := runQueryAndGetTotalSamples(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-			require.Equal(t, testCase.expectedTotalSamples, mimirCount)
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples)
+			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
 		})
 	}
 }

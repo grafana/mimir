@@ -86,7 +86,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		engine:                   e,
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
 		annotations:              annotations.New(),
-		stats:                    &types.QueryStats{},
+		stats:                    &types.QueryStats{EnablePerStepStats: e.enablePerStepStats && opts.EnablePerStepStats()},
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 	}
@@ -606,7 +606,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		level.Info(logger).Log(msg...)
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
-
+	if q.topLevelQueryTimeRange.IsInstant {
+		q.stats.InitStepTracking(q.topLevelQueryTimeRange.StartT, q.topLevelQueryTimeRange.StartT, 1)
+	} else {
+		q.stats.InitStepTracking(q.topLevelQueryTimeRange.StartT, q.topLevelQueryTimeRange.EndT, q.topLevelQueryTimeRange.IntervalMilliseconds)
+	}
 	switch root := q.root.(type) {
 	case types.RangeVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
@@ -664,7 +668,6 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	if len(*q.annotations) > 0 {
 		q.result.Warnings = *q.annotations
 	}
-
 	return q.result
 }
 
@@ -872,7 +875,8 @@ func (q *Query) Stats() *stats.Statistics {
 	return &stats.Statistics{
 		Timers: stats.NewQueryTimers(),
 		Samples: &stats.QuerySamples{
-			TotalSamples: q.stats.TotalSamples,
+			TotalSamples:        q.stats.TotalSamples,
+			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
 		},
 	}
 }
