@@ -399,15 +399,15 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorage aborts the request if it encounters an error.
 func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
 	hashBuf := make([]byte, 0, 1024)
-	for i, ts := range request.Timeseries {
+	for i := range request.Timeseries {
 		var shard uint64
-		hashBuf, shard = labelAdaptersHash(hashBuf, ts.Labels)
+		hashBuf, shard = labelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
 		shard = shard % uint64(p.numShards)
 
-		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
+		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i]); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
-		// We're transferring ownership of the timeseries to the batch, and clearing the slice so we can reuse it.
+		// We're transferring ownership of the timeseries to the batch, clear the slice as we go so we can reuse it.
 		request.Timeseries[i] = mimirpb.PreallocTimeseries{}
 	}
 	// The slice no longer owns any timeseries, so we can re-use it.

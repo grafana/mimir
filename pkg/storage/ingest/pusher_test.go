@@ -1284,14 +1284,17 @@ func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 
 		req := generateWriteRequest(batchID, numSeriesPerWriteRequest)
 
+		// We need this for later, but psp's PushToStorage destroys the request by freeing resources.
+		requestSeriesLabelValues := []string{}
+		for _, series := range req.Timeseries {
+			requestSeriesLabelValues = append(requestSeriesLabelValues, series.Labels[0].Value)
+		}
 		if err := psp.PushToStorage(ctx, req); err == nil {
 			enqueuedTimeSeriesReqs++
 
 			// Keep track of the enqueued series. We don't keep track of it if there was an error because, in case
 			// of an error, only some series may been added to a batch (it breaks on the first failed "append to batch").
-			for _, series := range req.Timeseries {
-				enqueuedTimeSeriesPerTenant[tenantID] = append(enqueuedTimeSeriesPerTenant[tenantID], series.Labels[0].Value)
-			}
+			enqueuedTimeSeriesPerTenant[tenantID] = append(enqueuedTimeSeriesPerTenant[tenantID], requestSeriesLabelValues...)
 		} else {
 			// We received an error. Make sure a server error was reported by the upstream pusher.
 			require.Greater(t, serverErrsCount.Load(), int64(0))
