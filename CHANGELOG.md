@@ -85,6 +85,8 @@
 
 ### Mimir Continuous Test
 
+* [FEATURE] Add `-tests.client.cluster-validation.label` flag to send the `X-Cluster` header with queries. #11418
+
 ### Query-tee
 
 ### Documentation
