@@ -226,7 +226,7 @@
           // by default). Allow a 15m lookback (the default compactor.cleanup-interval) to include compactors that may have recently updated the index and then been terminated.
           alert: $.alertName('BucketIndexNotUpdated'),
           expr: |||
-            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m])) > 2100)
+            min by(%(alert_aggregation_labels)s, user) (time() - (max_over_time(cortex_bucket_index_last_successful_update_timestamp_seconds[15m]))) > 2100
           ||| % $._config,
           labels: {
             severity: 'critical',
