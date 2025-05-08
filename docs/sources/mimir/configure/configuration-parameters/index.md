@@ -3646,7 +3646,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_query_expression_size_bytes: <int> | default = 0]
 
 # (experimental) List of queries to block.
-[blocked_queries: <blocked_queries_config...> | default = ]
+[blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
