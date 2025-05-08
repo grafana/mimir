@@ -339,6 +339,6 @@ jobs:
         run: tar xvf images.tar -C /
       - name: Login to DockerHub
         uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
-      - name: Deploy
+      - name: Push Docker Images
         run: |
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
