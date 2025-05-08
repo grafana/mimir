@@ -34,6 +34,10 @@ func NewFirewallDialer(cfgProvider FirewallDialerConfigProvider) *FirewallDialer
 	return d
 }
 
+func (d *FirewallDialer) Dialer() *net.Dialer {
+	return d.parent
+}
+
 func (d *FirewallDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	return d.parent.DialContext(ctx, network, address)
 }
