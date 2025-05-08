@@ -980,7 +980,8 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	err = r.forEachRulerInTheRing(ctx, rr, RuleEvalRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
+	// TODO: add retries? - e.g. if ruler is leaving and we read after it's left
+	err = r.forEachRulerInTheRing(ctx, rr, RuleReadRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		// Fail if we have not been able to get the client for a ruler.
 		if rulerClientErr != nil {
 			return err

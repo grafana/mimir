@@ -736,7 +736,10 @@ func TestSharding(t *testing.T) {
 			},
 		},
 
+		// GetRules() fails as ACTIVE ruler is unhealthy. This is expected. Retries might be able to help in this case (over ring op changes)
+		// TODO: possibly another case to consider alongside JOINING/LEAVING rulers
 		"shard size 0, unhealthy ACTIVE ruler": {
+
 			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
@@ -2241,7 +2244,7 @@ func TestRuler_RulerInJoiningStateCausesGetRulesError(t *testing.T) {
 	})
 
 	_, _, err = rulers[0].GetRules(userCtx, RulesRequest{})
-	require.Error(t, err)
+	require.Error(t, err) // This condition now fails because we don't consider JOINING rulers unhealthy anymore
 	require.EqualError(t, err, "too many unhealthy instances in the ring")
 
 	// Allow rules store actions to execute and wait for new ruler to be ACTIVE

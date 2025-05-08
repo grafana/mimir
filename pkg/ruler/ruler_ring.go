@@ -34,6 +34,17 @@ var (
 		// Only ACTIVE or JOINING rulers can sync rule groups. If instance is not ACTIVE NOR JOINING, we need to find another ruler.
 		return s != ring.ACTIVE && s != ring.JOINING
 	})
+
+	// RuleReadRingOp is the operation used for reading rules
+	// We want to try reading from rulers in all states, as the state could change while the ruler executing GetRules() is reading all the rulers
+	// JOINING - joining rulers aren't evaluating any rules yet, but they could switch to ACTIVE (and start evaluating rules) before it's read
+	// ACTIVE - the regular case
+	// LEAVING - a LEAVING ruler can still be evaluating rules, so we should query them to get their latest rule evaluation.
+	// TODO: check logic
+	// TODO: check if getLocalRules() for JOINING/LEAVING can return errors.
+	// TODO: Should PENDING be accepted too? Not sure if you can see PENDING rulers in the ring.
+	// TODO: does shouldExtendReplicaSet need to be set?
+	RuleReadRingOp = ring.NewOp([]ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.LEAVING}, nil)
 )
 
 // RingConfig masks the ring lifecycler config which contains
