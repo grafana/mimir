@@ -90,7 +90,7 @@ func New(ctx context.Context, logger log.Logger, method string, resolver TenantR
 func NewOTel(ctx context.Context, logger log.Logger, tracer trace.Tracer, method string, resolver TenantResolver, kvps ...any) (*SpanLogger, context.Context) {
 	ctx, span := tracer.Start(ctx, method)
 	if ids, err := resolver.TenantIDs(ctx); err == nil && len(ids) > 0 {
-		span.SetAttributes(attribute.String(TenantIDsTagName, strings.Join(ids, ",")))
+		span.SetAttributes(attribute.StringSlice(TenantIDsTagName, ids))
 	}
 	sampled := span.SpanContext().IsSampled()
 
