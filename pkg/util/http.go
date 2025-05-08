@@ -23,10 +23,10 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
 )
@@ -150,18 +150,13 @@ const (
 // You can pass in an optional RequestBuffers.
 // If no error is returned, the returned actualSize is the size of the uncompressed proto.
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) (actualSize int, err error) {
-	sp := opentracing.SpanFromContext(ctx)
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[start reading]"))
-	}
+	sp := trace.SpanFromContext(ctx)
+	sp.AddEvent("util.ParseProtoReader[start reading]")
 	body, err := decompressRequest(buffers, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
 		return 0, err
 	}
-
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal]"), otlog.Int("size", len(body)))
-	}
+	sp.AddEvent("util.ParseProtoReader[unmarshal]", trace.WithAttributes(attribute.Int("size", len(body))))
 
 	// We re-implement proto.Unmarshal here as it calls XXX_Unmarshal first,
 	// which we can't override without upsetting golint.
@@ -172,17 +167,12 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 		err = proto.NewBuffer(body).Unmarshal(req)
 	}
 	if err != nil {
-		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"), otlog.Error(err))
-		}
-
+		sp.AddEvent("util.ParseProtoReader[unmarshal failed]")
+		sp.RecordError(err)
 		return 0, err
 	}
 
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"))
-	}
-
+	sp.AddEvent("util.ParseProtoReader[unmarshal done]")
 	return len(body), nil
 }
 
@@ -201,7 +191,7 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
+func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
 	}
@@ -235,9 +225,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}
 
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("expectedSize", expectedSize))
-	}
+	sp.AddEvent("util.ParseProtoReader[decompress]", trace.WithAttributes(attribute.Int("expectedSize", expectedSize)))
 
 	// Limit at maxSize+1 so we can tell when the size is exceeded
 	reader = io.LimitReader(reader, int64(maxSize)+1)
@@ -248,9 +236,8 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		sz += bytes.MinRead
 	}
 	buf := buffers.Get(sz)
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[started_reading]"))
-	}
+	sp.AddEvent("util.ParseProtoReader[started_reading]")
+
 	if _, err := buf.ReadFrom(reader); err != nil {
 		if compression == Gzip {
 			return nil, errors.Wrap(err, "decompress gzip")
@@ -260,9 +247,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		}
 		return nil, errors.Wrap(err, "read body")
 	}
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[finished_reading]"))
-	}
+	sp.AddEvent("util.ParseProtoReader[finished_reading]")
 
 	if compression == RawSnappy {
 		return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
@@ -274,10 +259,8 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	return buf.Bytes(), nil
 }
 
-func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, maxSize int, sp opentracing.Span) ([]byte, error) {
-	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[decompressSnappy]"), otlog.Int("size", buffer.Len()))
-	}
+func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, maxSize int, sp trace.Span) ([]byte, error) {
+	sp.AddEvent("util.ParseProtoReader[decompressSnappy]", trace.WithAttributes(attribute.Int("size", buffer.Len())))
 
 	size, err := snappy.DecodedLen(buffer.Bytes())
 	if err != nil {

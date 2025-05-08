@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/common/model"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -87,7 +86,7 @@ func initTracing() io.Closer {
 		name = "query-tee"
 	}
 
-	trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3))
+	trace, err := tracing.NewOTelFromJaegerEnv(name)
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		return nil

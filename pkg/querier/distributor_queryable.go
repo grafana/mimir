@@ -89,7 +89,7 @@ type distributorQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.Select")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.Select")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -208,7 +208,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.LabelValues")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -231,7 +231,7 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints
 }
 
 func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.LabelNames")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -288,7 +288,7 @@ type distributorExemplarQuerier struct {
 
 // Select querys for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
 func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
+	spanlog, ctx := spanlogger.New(q.ctx, q.logger, tracer, "distributorExemplarQuerier.Select")
 	defer spanlog.Finish()
 
 	spanlog.DebugLog(

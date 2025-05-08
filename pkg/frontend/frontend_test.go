@@ -27,13 +27,12 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -85,7 +84,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		require.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(nil),
 		}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -224,7 +223,7 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 				require.NoError(t, err)
 
 				client := http.Client{
-					Transport: &nethttp.Transport{},
+					Transport: otelhttp.NewTransport(nil),
 				}
 				resp, err := client.Do(req)
 				require.NoError(t, err)
@@ -289,7 +288,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(nil),
 		}
 
 		resp, err := client.Do(req)
@@ -349,7 +348,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(nil),
 		}
 
 		resp, err := client.Do(req)
@@ -396,7 +395,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	defer grpcServer.GracefulStop()
 
