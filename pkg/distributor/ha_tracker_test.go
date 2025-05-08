@@ -349,6 +349,9 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 		GetReplicaDescCodec(),
 	}
 
+	// give some room to WatchPrefix to register
+	config.NotifyInterval = 250 * time.Millisecond
+
 	memberListSvc := memberlist.NewKVInitService(
 		&config,
 		logger,
