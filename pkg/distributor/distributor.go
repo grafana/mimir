@@ -1728,6 +1728,20 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return ctx
 	}
 
+	// Create a separate context for partitions with shorter timeout when IgnoreIngestStorageError is enabled
+	partitionsRequestContextAndCancel := sync.OnceValues(func() (context.Context, context.CancelFunc) {
+		timeout := d.cfg.RemoteTimeout
+		if d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageError {
+			timeout = 500 * time.Millisecond
+		}
+		return context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	})
+
+	partitionsRequestContext := func() context.Context {
+		ctx, _ := partitionsRequestContextAndCancel()
+		return ctx
+	}
+
 	batchCleanup := func() {
 		// Notify the provided callback that it's now safe to run the cleanup because there are no
 		// more in-flight requests to the backend.
@@ -1735,6 +1749,8 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 
 		// All requests have completed, so it's now safe to cancel the requests context to release resources.
 		_, cancel := remoteRequestContextAndCancel()
+		cancel()
+		_, cancel = partitionsRequestContextAndCancel()
 		cancel()
 	}
 
@@ -1749,7 +1765,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -1773,7 +1789,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
@@ -1783,7 +1799,11 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
 	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
 	if partitionsErr != nil {
-		return partitionsErr
+		if d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageError {
+			level.Warn(d.log).Log("msg", "failed to write to ingest storage", "error", partitionsErr)
+		} else {
+			return partitionsErr
+		}
 	}
 	return ingestersErr
 }
