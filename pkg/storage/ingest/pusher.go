@@ -466,12 +466,13 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 		p.metrics.batchAge.Observe(time.Since(wr.startedAt).Seconds())
 		p.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 		processingStart := time.Now()
+		requestContents := requestContents(wr.WriteRequest)
 
 		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
 
 		// The error handler needs to determine if this is a server error or not.
 		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
-		p.metrics.processingTime.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
+		p.metrics.processingTime.WithLabelValues(requestContents).Observe(time.Since(processingStart).Seconds())
 		if p.errorHandler.IsServerError(wr.Context, err) {
 			queue.ReportError(err)
 		}
