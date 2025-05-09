@@ -1698,8 +1698,8 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 
 	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
 
-	provider := &tenantQueryLimitsProvider{
-		limits: overrides,
+	provider := &TenantQueryLimitsProvider{
+		Limits: overrides,
 	}
 
 	testCases := map[string]struct {

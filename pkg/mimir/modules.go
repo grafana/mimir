@@ -801,7 +801,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, _ := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -810,6 +810,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		engineOpts,
+		mqeOpts,
 		t.QueryFrontendTopicOffsetsReaders,
 		t.Registerer,
 	)
