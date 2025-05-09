@@ -25,7 +25,8 @@ func ContextWithEmptyStats(ctx context.Context) (*Stats, context.Context) {
 }
 
 // FromContext gets the Stats out of the Context. Returns nil if stats have not
-// been initialised in the context.
+// been initialised in the context. Note that Stats methods are safe to call with
+// a nil receiver.
 func FromContext(ctx context.Context) *Stats {
 	o := ctx.Value(ctxKey)
 	if o == nil {

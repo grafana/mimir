@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -31,13 +32,14 @@ import (
 
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockStreamingQuerierSeriesSet struct {
-	series       []labels.Labels
-	streamReader chunkStreamReader
+	series        []labels.Labels
+	streamReader  chunkStreamReader
+	memoryTracker memoryConsumptionTracker
 
 	// next response to process
 	nextSeriesIndex int
 
-	currSeries storage.Series
+	currSeries *blockStreamingQuerierSeries
 
 	// For debug logging.
 	chunkInfo     *chunkinfologger.ChunkInfoLogger
@@ -46,6 +48,11 @@ type blockStreamingQuerierSeriesSet struct {
 
 type chunkStreamReader interface {
 	GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error)
+}
+
+type memoryConsumptionTracker interface {
+	IncreaseMemoryConsumption(b uint64) error
+	DecreaseMemoryConsumption(b uint64)
 }
 
 func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
@@ -66,7 +73,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.memoryTracker, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
 
 	// Clear any labels we no longer need, to allow them to be garbage collected when they're no longer needed elsewhere.
 	clear(bqss.series[seriesIdxStart : bqss.nextSeriesIndex-1])
@@ -87,12 +94,13 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, memoryTracker memoryConsumptionTracker, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
+		memoryTracker:  memoryTracker,
 		chunkInfo:      chunkInfo,
 		lastOne:        lastOne,
 		remoteAddress:  remoteAddress,
@@ -104,10 +112,24 @@ type blockStreamingQuerierSeries struct {
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
 
+	// We track the number of bytes consumed by chunks that this series
+	// keeps in memory. We increase the bytes consumed when we fetch chunks
+	// from the stream and create an iterator over them. We decrease bytes
+	// consumed when the iterator is exhausted.
+	memoryTracker memoryConsumptionTracker
+
 	// For debug logging.
 	chunkInfo     *chunkinfologger.ChunkInfoLogger
 	lastOne       bool
 	remoteAddress string
+}
+
+func (bqs *blockStreamingQuerierSeries) increaseMemory(b uint64) error {
+	return bqs.memoryTracker.IncreaseMemoryConsumption(b)
+}
+
+func (bqs *blockStreamingQuerierSeries) decreaseMemory(b uint64) {
+	bqs.memoryTracker.DecreaseMemoryConsumption(b)
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -117,11 +139,17 @@ func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
 func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunkenc.Iterator {
 	// Fetch the chunks from the stream.
 	var allChunks []storepb.AggrChunk
+	chunkBytes := 0
+
 	for i := bqs.seriesIdxStart; i <= bqs.seriesIdxEnd; i++ {
 		chks, err := bqs.streamReader.GetChunks(uint64(i))
 		if err != nil {
 			return series.NewErrIterator(err)
 		}
+		for _, chk := range chks {
+			chunkBytes += chk.Size()
+		}
+
 		allChunks = append(allChunks, chks...)
 	}
 
@@ -136,11 +164,78 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return series.NewErrIterator(errors.New("no chunks"))
 	}
 
+	// Account for the memory used by keeping these chunks in memory as part of
+	// this iterator. We'll decrement the memory used when the returned iterator
+	// is exhausted.
+	if err := bqs.increaseMemory(uint64(chunkBytes)); err != nil {
+		return series.NewErrIterator(err)
+	}
+
 	sort.Slice(allChunks, func(i, j int) bool {
 		return allChunks[i].MinTime < allChunks[j].MinTime
 	})
 
-	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
+	return &seriesIteratorWithCallback{
+		inner: newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks),
+		callback: func() {
+			bqs.decreaseMemory(uint64(chunkBytes))
+		},
+	}
+
+}
+
+// seriesIteratorWithCallback is a wrapper around another chunkenc.Iterator that will
+// invoke a callback when the underlying iterator is exhausted. This can be used for
+// optimistic cleanup but is _not_ guaranteed to be called since the iterator is not
+// guaranteed to be entirely consumed. The callback is only called a single time.
+type seriesIteratorWithCallback struct {
+	inner    chunkenc.Iterator
+	callback func()
+}
+
+func (s *seriesIteratorWithCallback) Next() chunkenc.ValueType {
+	res := s.inner.Next()
+	if res == chunkenc.ValNone {
+		s.close()
+	}
+
+	return res
+}
+
+func (s *seriesIteratorWithCallback) Seek(t int64) chunkenc.ValueType {
+	res := s.inner.Seek(t)
+	if res == chunkenc.ValNone {
+		s.close()
+	}
+
+	return res
+}
+
+func (s *seriesIteratorWithCallback) At() (int64, float64) {
+	return s.inner.At()
+}
+
+func (s *seriesIteratorWithCallback) AtHistogram(histogram *histogram.Histogram) (int64, *histogram.Histogram) {
+	return s.inner.AtHistogram(histogram)
+}
+
+func (s *seriesIteratorWithCallback) AtFloatHistogram(histogram *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return s.inner.AtFloatHistogram(histogram)
+}
+
+func (s *seriesIteratorWithCallback) AtT() int64 {
+	return s.inner.AtT()
+}
+
+func (s *seriesIteratorWithCallback) Err() error {
+	return s.inner.Err()
+}
+
+func (s *seriesIteratorWithCallback) close() {
+	if s.callback != nil {
+		s.callback()
+		s.callback = nil
+	}
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering

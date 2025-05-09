@@ -85,6 +85,11 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 		return nil, err
 	}
 
+	// Add the memory consumption tracker to the context of this querier before performing the
+	// query so that we can keep track of memory used loading chunks. We use the context since
+	// we can't modify the Queryable/Querier interfaces and the limit is actually specific to
+	// this request (and hence a good fit for storing in the context).
+	ctx = limiting.AddToContext(ctx, s.MemoryConsumptionTracker)
 	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
 	s.series = newSeriesList(s.MemoryConsumptionTracker)
 

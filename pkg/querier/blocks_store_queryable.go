@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -754,6 +755,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
 		streams       []storegatewaypb.StoreGateway_SeriesClient
+		memoryTracker = limiting.FromContextWithFallback(ctx)
 	)
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
@@ -892,9 +894,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if chunkInfo != nil {
 					chunkInfo.SetMsg("store-gateway streaming")
 				}
+
 				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
 					series:        myStreamingSeriesLabels,
 					streamReader:  streamReader,
+					memoryTracker: memoryTracker,
 					chunkInfo:     chunkInfo,
 					remoteAddress: c.RemoteAddress(),
 				})

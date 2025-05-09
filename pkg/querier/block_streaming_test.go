@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -163,7 +164,11 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			ss := &blockStreamingQuerierSeriesSet{streamReader: &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer}}
+			memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			ss := &blockStreamingQuerierSeriesSet{
+				streamReader:  &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer},
+				memoryTracker: memoryTracker,
+			}
 			for _, s := range c.input {
 				ss.series = append(ss.series, s.lbls)
 			}
@@ -188,6 +193,7 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 			}
 			require.NoError(t, ss.Err())
 			require.Equal(t, len(c.expResult), idx)
+			require.Equal(t, 0, int(memoryTracker.CurrentEstimatedMemoryConsumptionBytes()))
 		})
 	}
 }

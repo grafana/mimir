@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -1743,6 +1744,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
+					ctx = limiting.AddToContext(ctx, limiting.NewMemoryConsumptionTracker(0, nil))
 					st, ctx := stats.ContextWithEmptyStats(ctx)
 					const tenantID = "user-1"
 					ctx = user.InjectOrgID(ctx, tenantID)
