@@ -7867,6 +7867,16 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.migration.ignore-ingest-storage-error",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingest_storage_max_wait_time",
+              "required": false,
+              "desc": "The maximum time a write request that goes through the ingest storage will wait before it times out. 0 to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.migration.ingest-storage-max-wait-time",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,

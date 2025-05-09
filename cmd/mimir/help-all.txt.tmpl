@@ -1591,6 +1591,8 @@ Usage of ./cmd/mimir/mimir:
     	When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.
   -ingest-storage.migration.ignore-ingest-storage-error
     	When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests will fail if ingest storage write fails.
+  -ingest-storage.migration.ingest-storage-max-wait-time duration
+    	The maximum time a write request that goes through the ingest storage will wait before it times out. 0 to disable the timeout.
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingester.active-series-custom-trackers value

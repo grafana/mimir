@@ -4312,6 +4312,11 @@ migration:
   # storage write fails.
   # CLI flag: -ingest-storage.migration.ignore-ingest-storage-error
   [ignore_ingest_storage_errors: <boolean> | default = false]
+
+  # The maximum time a write request that goes through the ingest storage will
+  # wait before it times out. 0 to disable the timeout.
+  # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
+  [ingest_storage_max_wait_time: <duration> | default = 0s]
 ```
 
 ### blocks_storage

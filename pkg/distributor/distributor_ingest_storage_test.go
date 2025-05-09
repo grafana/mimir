@@ -653,6 +653,7 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 		limits:                  prepareDefaultLimits(),
 		configure: func(cfg *Config) {
 			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+			cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = 200 * time.Millisecond
 		},
 	}
 
