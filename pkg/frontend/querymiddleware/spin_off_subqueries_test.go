@@ -161,10 +161,7 @@ sum by (group_1) (
 	}
 
 	queryable := setupSubquerySpinOffTestSeries(t, 2*24*time.Hour)
-	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
-		downstream := &downstreamHandler{engine: eng, queryable: queryable}
-		runSubquerySpinOffTests(t, tests, eng, downstream)
-	})
+	runSubquerySpinOffTests(t, tests, queryable)
 }
 
 func TestSubquerySpinOff_LongRangeQuery(t *testing.T) {
@@ -181,10 +178,7 @@ func TestSubquerySpinOff_LongRangeQuery(t *testing.T) {
 	}
 
 	queryable := setupSubquerySpinOffTestSeries(t, 10*24*time.Hour)
-	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
-		downstream := &downstreamHandler{engine: eng, queryable: queryable}
-		runSubquerySpinOffTests(t, tests, eng, downstream)
-	})
+	runSubquerySpinOffTests(t, tests, queryable)
 }
 
 func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
@@ -270,85 +264,87 @@ func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) stora
 	return queryable
 }
 
-func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest, engine promql.QueryEngine, downstream MetricsQueryHandler) {
+func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest, queryable storage.Queryable) {
 	t.Helper()
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
+			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+				t.Parallel()
 
-			req := &PrometheusInstantQueryRequest{
-				path:      "/query",
-				time:      util.TimeToMillis(time.Now().Add(testData.offsetQueryTime)),
-				queryExpr: parseQuery(t, testData.query),
-			}
+				downstream := &downstreamHandler{engine: eng, queryable: queryable}
+				req := &PrometheusInstantQueryRequest{
+					path:      "/query",
+					time:      util.TimeToMillis(time.Now().Add(testData.offsetQueryTime)),
+					queryExpr: parseQuery(t, testData.query),
+				}
 
-			// Run the query without subquery spin-off.
-			expectedRes, err := downstream.Do(context.Background(), req)
-			require.Nil(t, err)
-			expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
-			require.True(t, ok)
-			if !testData.expectSpecificOrder {
-				sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
-			}
+				// Run the query without subquery spin-off.
+				expectedRes, err := downstream.Do(context.Background(), req)
+				require.Nil(t, err)
+				expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+				require.True(t, ok)
+				if !testData.expectSpecificOrder {
+					sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+				}
 
-			// Ensure the query produces some results.
-			if !testData.expectEmptyResult {
-				require.NotEmpty(t, expectedPrometheusRes.Data.Result)
-				requireValidSamples(t, expectedPrometheusRes.Data.Result)
-			}
+				// Ensure the query produces some results.
+				if !testData.expectEmptyResult {
+					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+					requireValidSamples(t, expectedPrometheusRes.Data.Result)
+				}
 
-			if testData.expectedSpunOffSubqueries > 0 {
-				// Remove position information from annotations, to mirror what we expect from the sharded queries below.
-				removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
-				removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
-			}
+				if testData.expectedSpunOffSubqueries > 0 {
+					// Remove position information from annotations, to mirror what we expect from the sharded queries below.
+					removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+					removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+				}
 
-			// Create a fake middleware that tracks if it was called
-			called := false
-			fakeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-				return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-					called = true
-					return next.Do(ctx, req)
+				// Create a fake middleware that tracks if it was called
+				called := false
+				fakeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+					return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+						called = true
+						return next.Do(ctx, req)
+					})
 				})
-			})
 
-			reg := prometheus.NewPedanticRegistry()
-			spinoffMiddleware := newSpinOffSubqueriesMiddleware(
-				mockLimits{
-					subquerySpinOffEnabled: true,
-				},
-				log.NewNopLogger(),
-				engine,
-				reg,
-				fakeMiddleware,
-				defaultStepFunc,
-			)
+				reg := prometheus.NewPedanticRegistry()
+				spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+					mockLimits{
+						subquerySpinOffEnabled: true,
+					},
+					log.NewNopLogger(),
+					eng,
+					reg,
+					fakeMiddleware,
+					defaultStepFunc,
+				)
 
-			ctx := user.InjectOrgID(context.Background(), "test")
-			spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
-			require.Nil(t, err)
+				ctx := user.InjectOrgID(context.Background(), "test")
+				spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+				require.Nil(t, err)
 
-			if testData.expectedSpunOffSubqueries > 0 {
-				assert.True(t, called, "the fake range middleware should have been called")
-			} else {
-				assert.False(t, called, "the fake range middleware should not have been called")
-			}
+				if testData.expectedSpunOffSubqueries > 0 {
+					assert.True(t, called, "the fake range middleware should have been called")
+				} else {
+					assert.False(t, called, "the fake range middleware should not have been called")
+				}
 
-			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-			// if you rerun the same query twice).
-			shardedPrometheusRes, _ := spinoffRes.GetPrometheusResponse()
-			if !testData.expectSpecificOrder {
-				sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
-			}
-			approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+				// if you rerun the same query twice).
+				shardedPrometheusRes, _ := spinoffRes.GetPrometheusResponse()
+				if !testData.expectSpecificOrder {
+					sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+				}
+				approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
-			var noSubqueries int
-			if testData.expectedSkippedReason == "no-subquery" {
-				noSubqueries = 1
-			}
+				var noSubqueries int
+				if testData.expectedSkippedReason == "no-subquery" {
+					noSubqueries = 1
+				}
 
-			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 # HELP cortex_frontend_spun_off_subqueries_total Total number of subqueries that were spun off.
 # TYPE cortex_frontend_spun_off_subqueries_total counter
 cortex_frontend_spun_off_subqueries_total %d
@@ -365,10 +361,11 @@ cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queri
 # TYPE cortex_frontend_subquery_spinoff_successes_total counter
 cortex_frontend_subquery_spinoff_successes_total %d
 				`, testData.expectedSpunOffSubqueries, noSubqueries, testData.expectedSpunOffSubqueries)),
-				"cortex_frontend_subquery_spinoff_attempts_total",
-				"cortex_frontend_subquery_spinoff_successes_total",
-				"cortex_frontend_subquery_spinoff_skipped_total",
-				"cortex_frontend_spun_off_subqueries_total"))
+					"cortex_frontend_subquery_spinoff_attempts_total",
+					"cortex_frontend_subquery_spinoff_successes_total",
+					"cortex_frontend_subquery_spinoff_skipped_total",
+					"cortex_frontend_spun_off_subqueries_total"))
+			})
 		})
 	}
 }
