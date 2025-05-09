@@ -40,6 +40,7 @@
       alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
       block_builder: 'block-builder',
+      block_builder_scheduler: 'block-builder-scheduler',
       distributor: 'distributor',
       querier: 'querier',
       query_frontend: 'query-frontend',
@@ -79,6 +80,7 @@
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
       ingester_partition: ['ingester.*-partition'],  // Match exclusively temporarily partition ingesters run during the migration to ingest storage.
       block_builder: ['block-builder.*'],
+      block_builder_scheduler: ['block-builder-scheduler.*'],
       distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
       querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
@@ -119,6 +121,7 @@
       // matcher shouldn't match "mimir-write" too).
       compactor: instanceMatcher(componentNameRegexp.compactor),
       block_builder: instanceMatcher(componentNameRegexp.block_builder),
+      block_builder_scheduler: instanceMatcher(componentNameRegexp.block_builder_scheduler),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
       alertmanager_im: instanceMatcher(componentNameRegexp.alertmanager_im),
       ingester: instanceMatcher(componentNameRegexp.ingester),
@@ -160,6 +163,7 @@
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
       block_builder: componentNameRegexp.block_builder,
+      block_builder_scheduler: componentNameRegexp.block_builder_scheduler,
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
