@@ -1061,6 +1061,49 @@ func mockPreallocTimeseriesWithExemplar(metricName string) mimirpb.PreallocTimes
 	}
 }
 
+func mockPreallocTimeseriesWithAll(metricName string) mimirpb.PreallocTimeseries {
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: metricName},
+			},
+			Samples: []mimirpb.Sample{{
+				TimestampMs: 1,
+				Value:       2,
+			}},
+			Exemplars: []mimirpb.Exemplar{{
+				TimestampMs: 2,
+				Value:       14,
+				Labels: []mimirpb.LabelAdapter{
+					{Name: "trace_id", Value: metricName + "_trace"},
+				},
+			}},
+			Histograms: []mimirpb.Histogram{{
+				Count:          &mimirpb.Histogram_CountFloat{CountFloat: 2},
+				Sum:            10,
+				Schema:         1,
+				ZeroThreshold:  0.001,
+				ZeroCount:      &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: 0},
+				NegativeSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				NegativeCounts: []float64{1},
+				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}},
+				PositiveCounts: []float64{1},
+				ResetHint:      mimirpb.Histogram_UNKNOWN,
+				Timestamp:      0,
+			}},
+		},
+	}
+}
+
+func mockMetricMetadata(name string) *mimirpb.MetricMetadata {
+	return &mimirpb.MetricMetadata{
+		Type:             mimirpb.COUNTER,
+		MetricFamilyName: name,
+		Help:             fmt.Sprintf("Help for %s", name),
+		Unit:             "seconds",
+	}
+}
+
 func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 	count := 0
 
