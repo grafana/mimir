@@ -16572,11 +16572,22 @@
           "kind": "field",
           "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
           "required": false,
-          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.",
+          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration or they are receiving requests.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
           "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "grafana_alertmanager_idle_grace_period",
+          "required": false,
+          "desc": "Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {

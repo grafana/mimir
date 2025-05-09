@@ -2406,9 +2406,16 @@ sharding_ring:
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
 # (experimental) Skip starting the Alertmanager for tenants matching this suffix
-# unless they have a promoted, non-default Grafana Alertmanager configuration.
+# unless they have a promoted, non-default Grafana Alertmanager configuration or
+# they are receiving requests.
 # CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
 [grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
+
+# (experimental) Duration to wait before shutting down an idle Alertmanager for
+# a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix
+# and is using an unpromoted or default configuration.
+# CLI flag: -alertmanager.grafana-alertmanager-grace-period
+[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
