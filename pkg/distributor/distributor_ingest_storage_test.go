@@ -552,25 +552,31 @@ func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T)
 	ctx := user.InjectOrgID(context.Background(), "user")
 	now := time.Now()
 
-	ingesterErrorContext := "send data to ingesters"
-
 	tests := map[string]struct {
 		shouldFailIngester       bool
 		shouldFailIngestStorage  bool
 		ignoreIngestStorageError bool
 		expectedErrorContext     string
+		maxWaitTime              time.Duration
 	}{
 		"should give precedence to ingester error when both ingester and ingest storage errors occur and IgnoreIngestStorageError is enabled": {
 			shouldFailIngester:       true,
 			shouldFailIngestStorage:  true,
 			ignoreIngestStorageError: true,
-			expectedErrorContext:     ingesterErrorContext,
+			expectedErrorContext:     "send data to ingesters",
 		},
 		"should succeed when only ingest storage errors occur and IgnoreIngestStorageError is enabled": {
 			shouldFailIngester:       false,
 			shouldFailIngestStorage:  true,
 			ignoreIngestStorageError: true,
 			expectedErrorContext:     "",
+		},
+		"should fail with timeout from partitionErrors when ignoreIngestStorageError is disabled and IngestStorageMaxWaitTime is set": {
+			shouldFailIngester:       true,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: false,
+			expectedErrorContext:     "timeout",
+			maxWaitTime:              200 * time.Millisecond,
 		},
 	}
 
@@ -591,17 +597,23 @@ func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T)
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
 					cfg.IngestStorageConfig.Migration.IgnoreIngestStorageError = testData.ignoreIngestStorageError
+					cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = testData.maxWaitTime
 				},
 			}
 
 			distributors, ingesters, _, kafkaCluster := prepare(t, testConfig)
+
 			require.Len(t, distributors, 1)
 			require.Len(t, ingesters, 1)
+
+			releaseProduceRequest := make(chan struct{})
 
 			// Configure Kafka to return error if specified
 			if testData.shouldFailIngestStorage {
 				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 					kafkaCluster.KeepControl()
+					<-releaseProduceRequest
+					time.Sleep(time.Second)
 
 					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
 					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
@@ -609,11 +621,11 @@ func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T)
 					return res, nil, true
 				})
 			}
-
-			// Configure ingester to return error if specified
+			// Mock Kafka to return a hard error.
 			if testData.shouldFailIngester {
 				ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
 					// Release the Kafka produce request once the push to ingester has been received.
+					close(releaseProduceRequest)
 					ingesterError := httpgrpc.Errorf(http.StatusBadRequest, "ingester error")
 					return &mimirpb.WriteResponse{}, ingesterError, true
 				})
@@ -653,7 +665,7 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 		limits:                  prepareDefaultLimits(),
 		configure: func(cfg *Config) {
 			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
-			cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = 200 * time.Millisecond
+			//cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = 200 * time.Millisecond
 		},
 	}
 
