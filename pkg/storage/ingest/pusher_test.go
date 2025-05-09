@@ -39,7 +39,7 @@ func (p pusherFunc) Close() []error {
 	return nil
 }
 
-func (p pusherFunc) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+func (p pusherFunc) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	return p(ctx, request)
 }
 
@@ -587,7 +587,7 @@ type mockPusher struct {
 	mock.Mock
 }
 
-func (m *mockPusher) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+func (m *mockPusher) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	args := m.Called(ctx, request)
 	return args.Error(0)
 }
@@ -927,14 +927,14 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			upstreamPushErrsCount := 0
 			for i, req := range tc.expectedUpstreamPushes {
 				err := tc.upstreamPushErrs[i]
-				pusher.On("PushToStorage", mock.Anything, req).Return(err)
+				pusher.On("PushToStorageAndReleaseRequest", mock.Anything, req).Return(err)
 				if err != nil {
 					upstreamPushErrsCount++
 				}
 			}
 			var actualPushErrs []error
 			for _, req := range tc.requests {
-				err := shardingP.PushToStorage(context.Background(), req)
+				err := shardingP.PushToStorageAndReleaseRequest(context.Background(), req)
 				actualPushErrs = append(actualPushErrs, err)
 			}
 
@@ -957,7 +957,7 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			} else {
 				require.Empty(t, closeErr)
 			}
-			pusher.AssertNumberOfCalls(t, "PushToStorage", len(tc.expectedUpstreamPushes))
+			pusher.AssertNumberOfCalls(t, "PushToStorageAndReleaseRequest", len(tc.expectedUpstreamPushes))
 			pusher.AssertExpectations(t)
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -1094,7 +1094,7 @@ func TestParallelStoragePusher(t *testing.T) {
 			receivedPushes := make(map[string]map[mimirpb.WriteRequest_SourceEnum]int)
 			var receivedPushesMu sync.Mutex
 
-			pusher.On("PushToStorage", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			pusher.On("PushToStorageAndReleaseRequest", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 				tenantID, err := tenant.TenantID(args.Get(0).(context.Context))
 				require.NoError(t, err)
 				req := args.Get(1).(*mimirpb.WriteRequest)
@@ -1119,7 +1119,7 @@ func TestParallelStoragePusher(t *testing.T) {
 			// Process requests
 			for _, req := range tc.requests {
 				ctx := user.InjectOrgID(context.Background(), req.tenantID)
-				err := psp.PushToStorage(ctx, req.WriteRequest)
+				err := psp.PushToStorageAndReleaseRequest(ctx, req.WriteRequest)
 				require.NoError(t, err)
 			}
 
@@ -1289,7 +1289,7 @@ func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 		for _, series := range req.Timeseries {
 			requestSeriesLabelValues = append(requestSeriesLabelValues, series.Labels[0].Value)
 		}
-		if err := psp.PushToStorage(ctx, req); err == nil {
+		if err := psp.PushToStorageAndReleaseRequest(ctx, req); err == nil {
 			enqueuedTimeSeriesReqs++
 
 			// Keep track of the enqueued series. We don't keep track of it if there was an error because, in case

@@ -24,12 +24,12 @@ import (
 )
 
 type Pusher interface {
-	PushToStorage(context.Context, *mimirpb.WriteRequest) error
+	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 }
 
 type PusherCloser interface {
-	// PushToStorage pushes the write request to the storage.
-	PushToStorage(context.Context, *mimirpb.WriteRequest) error
+	// PushToStorageAndReleaseRequest pushes the write request to the storage.
+	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 	// Close tells the PusherCloser that no more records are coming and it should flush any remaining records.
 	Close() []error
 }
@@ -183,7 +183,7 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
 	ctx = user.InjectOrgID(ctx, tenantID)
 
-	err := writer.PushToStorage(ctx, req)
+	err := writer.PushToStorageAndReleaseRequest(ctx, req)
 
 	return err
 }
@@ -213,14 +213,14 @@ func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, p
 	}
 }
 
-// PushToStorage implements the PusherCloser interface.
-func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements the PusherCloser interface.
+func (ssp sequentialStoragePusher) PushToStorageAndReleaseRequest(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	ssp.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 	defer func(now time.Time) {
 		ssp.metrics.processingTime.WithLabelValues(requestContents(wr)).Observe(time.Since(now).Seconds())
 	}(time.Now())
 
-	if err := ssp.pusher.PushToStorage(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
+	if err := ssp.pusher.PushToStorageAndReleaseRequest(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
 		return err
 	}
 
@@ -270,15 +270,15 @@ func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, byte
 	}
 }
 
-// PushToStorage implements the PusherCloser interface.
-func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements the PusherCloser interface.
+func (c *parallelStoragePusher) PushToStorageAndReleaseRequest(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
 	}
 
 	shards := c.shardsFor(userID, wr.Source)
-	return shards.PushToStorage(ctx, wr)
+	return shards.PushToStorageAndReleaseRequest(ctx, wr)
 }
 
 // Close implements the PusherCloser interface.
@@ -392,10 +392,10 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 	return b, xxhash.Sum64(b)
 }
 
-// PushToStorage hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
-// PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
-// PushToStorage aborts the request if it encounters an error.
-func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
+// PushToStorageAndReleaseRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
+// PushToStorageAndReleaseRequest aborts the request if it encounters an error.
+func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	hashBuf := make([]byte, 0, 1024)
 	for i := range request.Timeseries {
 		var shard uint64
@@ -468,7 +468,7 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 		processingStart := time.Now()
 		requestContents := requestContents(wr.WriteRequest)
 
-		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
+		err := p.pusher.PushToStorageAndReleaseRequest(wr.Context, wr.WriteRequest)
 
 		// The error handler needs to determine if this is a server error or not.
 		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
