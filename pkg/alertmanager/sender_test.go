@@ -4,7 +4,6 @@ package alertmanager
 
 import (
 	"context"
-	util_net "github.com/grafana/mimir/pkg/util/net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
+	util_net "github.com/grafana/mimir/pkg/util/net"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
