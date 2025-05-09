@@ -24,12 +24,12 @@ import (
 )
 
 type Pusher interface {
-	PushToStorage(context.Context, *mimirpb.WriteRequest) error
+	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 }
 
 type PusherCloser interface {
-	// PushToStorage pushes the write request to the storage.
-	PushToStorage(context.Context, *mimirpb.WriteRequest) error
+	// PushToStorageAndReleaseRequest pushes the write request to the storage.
+	PushToStorageAndReleaseRequest(context.Context, *mimirpb.WriteRequest) error
 	// Close tells the PusherCloser that no more records are coming and it should flush any remaining records.
 	Close() []error
 }
@@ -66,7 +66,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	}(time.Now())
 
 	type parsedRecord struct {
-		*mimirpb.WriteRequest
+		*mimirpb.PreallocWriteRequest
 		// ctx holds the tracing baggage for this record/request.
 		ctx      context.Context
 		tenantID string
@@ -93,10 +93,10 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				ctx:          r.ctx,
-				tenantID:     r.tenantID,
-				WriteRequest: &mimirpb.WriteRequest{},
-				index:        index,
+				ctx:                  r.ctx,
+				tenantID:             r.tenantID,
+				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
+				index:                index,
 			}
 
 			if r.version > LatestRecordVersion {
@@ -146,7 +146,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		}
 
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
-		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest, writer)
+		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
@@ -183,7 +183,7 @@ func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.
 	ctx = user.InjectOrgID(ctx, tenantID)
 
-	err := writer.PushToStorage(ctx, req)
+	err := writer.PushToStorageAndReleaseRequest(ctx, req)
 
 	return err
 }
@@ -213,14 +213,14 @@ func newSequentialStoragePusherWithErrorHandler(metrics *storagePusherMetrics, p
 	}
 }
 
-// PushToStorage implements the PusherCloser interface.
-func (ssp sequentialStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements the PusherCloser interface.
+func (ssp sequentialStoragePusher) PushToStorageAndReleaseRequest(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	ssp.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 	defer func(now time.Time) {
 		ssp.metrics.processingTime.WithLabelValues(requestContents(wr)).Observe(time.Since(now).Seconds())
 	}(time.Now())
 
-	if err := ssp.pusher.PushToStorage(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
+	if err := ssp.pusher.PushToStorageAndReleaseRequest(ctx, wr); ssp.errorHandler.IsServerError(ctx, err) {
 		return err
 	}
 
@@ -270,15 +270,15 @@ func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, byte
 	}
 }
 
-// PushToStorage implements the PusherCloser interface.
-func (c *parallelStoragePusher) PushToStorage(ctx context.Context, wr *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements the PusherCloser interface.
+func (c *parallelStoragePusher) PushToStorageAndReleaseRequest(ctx context.Context, wr *mimirpb.WriteRequest) error {
 	userID, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
 	}
 
 	shards := c.shardsFor(userID, wr.Source)
-	return shards.PushToStorage(ctx, wr)
+	return shards.PushToStorageAndReleaseRequest(ctx, wr)
 }
 
 // Close implements the PusherCloser interface.
@@ -392,20 +392,26 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 	return b, xxhash.Sum64(b)
 }
 
-// PushToStorage hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
-// PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
-// PushToStorage aborts the request if it encounters an error.
-func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
+// PushToStorageAndReleaseRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
+// PushToStorageAndReleaseRequest aborts the request if it encounters an error.
+func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
 	hashBuf := make([]byte, 0, 1024)
-	for _, ts := range request.Timeseries {
+	for i := range request.Timeseries {
 		var shard uint64
-		hashBuf, shard = labelAdaptersHash(hashBuf, ts.Labels)
+		hashBuf, shard = labelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
 		shard = shard % uint64(p.numShards)
 
-		if err := p.shards[shard].AddToBatch(ctx, request.Source, ts); err != nil {
+		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i]); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
+		// We're transferring ownership of the timeseries to the batch, clear the slice as we go so we can reuse it.
+		request.Timeseries[i] = mimirpb.PreallocTimeseries{}
 	}
+	// The slice no longer owns any timeseries, so we can re-use it.
+	// Nil-out the slice to make any use-after-free attempts fail in an obvious way.
+	mimirpb.ReuseSliceOnly(request.Timeseries)
+	request.Timeseries = nil
 
 	// Push metadata to every shard in a round-robin fashion.
 	// Start from a random shard to avoid hotspots in the first few shards when there are not many metadata pieces in each request.
@@ -460,12 +466,13 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 		p.metrics.batchAge.Observe(time.Since(wr.startedAt).Seconds())
 		p.metrics.timeSeriesPerFlush.Observe(float64(len(wr.Timeseries)))
 		processingStart := time.Now()
+		requestContents := requestContents(wr.WriteRequest)
 
-		err := p.pusher.PushToStorage(wr.Context, wr.WriteRequest)
+		err := p.pusher.PushToStorageAndReleaseRequest(wr.Context, wr.WriteRequest)
 
 		// The error handler needs to determine if this is a server error or not.
 		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
-		p.metrics.processingTime.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
+		p.metrics.processingTime.WithLabelValues(requestContents).Observe(time.Since(processingStart).Seconds())
 		if p.errorHandler.IsServerError(wr.Context, err) {
 			queue.ReportError(err)
 		}
