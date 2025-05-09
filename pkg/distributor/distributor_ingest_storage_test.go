@@ -578,6 +578,13 @@ func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T)
 			expectedErrorContext:     "timeout",
 			maxWaitTime:              200 * time.Millisecond,
 		},
+		"should succeed when only ingest storage errors occur and IgnoreIngestStorageError is enabled with IngestStorageMaxWaitTime is set": {
+			shouldFailIngester:       false,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "",
+			maxWaitTime:              200 * time.Millisecond,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -665,7 +672,6 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 		limits:                  prepareDefaultLimits(),
 		configure: func(cfg *Config) {
 			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
-			//cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = 200 * time.Millisecond
 		},
 	}
 
