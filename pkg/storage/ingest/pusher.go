@@ -411,7 +411,9 @@ func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimi
 		request.Timeseries[i] = mimirpb.PreallocTimeseries{}
 	}
 	// The slice no longer owns any timeseries, so we can re-use it.
+	// Nil-out the slice to make any use-after-free attempts fail in an obvious way.
 	mimirpb.ReuseTimeseriesSliceDangerous(request.Timeseries)
+	request.Timeseries = nil
 
 	// Push metadata to every shard in a round-robin fashion.
 	// Start from a random shard to avoid hotspots in the first few shards when there are not many metadata pieces in each request.
