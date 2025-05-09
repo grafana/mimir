@@ -146,7 +146,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		}
 
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
-		err := c.pushToStorage(r.ctx, r.tenantID, &r.PreallocWriteRequest.WriteRequest, writer)
+		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
