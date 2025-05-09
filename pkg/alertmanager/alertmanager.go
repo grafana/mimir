@@ -618,8 +618,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 		alertingHttp.WithUserAgent(version.UserAgent()),
 	}
 
-	dialer := firewallDialer.Dialer()
-	if dialer != nil {
+	if dialer := firewallDialer.Dialer(); dialer != nil {
 		grafanaOpts = append(grafanaOpts, alertingHttp.WithDialer(*dialer))
 	}
 
@@ -701,8 +700,7 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 		alertingHttp.WithUserAgent(version.UserAgent()),
 	}
 
-	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits)).Dialer()
-	if firewallDialer != nil {
+	if firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits)).Dialer(); firewallDialer != nil {
 		opts = append(opts, alertingHttp.WithDialer(*firewallDialer))
 	}
 
