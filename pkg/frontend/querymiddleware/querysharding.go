@@ -106,13 +106,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Parse the query.
-	queryExpr, err := parser.ParseExpr(r.GetQuery())
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-
-	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
+	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, r.GetParsedQuery(), log)
 	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
 		return s.next.Do(ctx, r)
