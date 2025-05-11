@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -141,14 +140,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	defer cancel()
 	mapper := astmapper.NewSubquerySpinOffMapper(mapperCtx, s.defaultStepFunc, spanLog, mapperStats)
 
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
-		s.metrics.spinOffSkipped.WithLabelValues(subquerySpinoffSkippedReasonParsingFailed).Inc()
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-
-	spinOffQuery, err := mapper.Map(expr)
+	spinOffQuery, err := mapper.Map(req.GetParsedQuery())
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			level.Error(spanLog).Log("msg", "timeout while spinning off subqueries, please fill in a bug report with this query, falling back to try executing without spin-off", "err", err)

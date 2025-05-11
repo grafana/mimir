@@ -71,11 +71,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		return
-	}
-	for _, selectors := range parser.ExtractSelectors(expr) {
+	for _, selectors := range parser.ExtractSelectors(req.GetParsedQuery()) {
 		for _, matcher := range selectors {
 			if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
 				continue

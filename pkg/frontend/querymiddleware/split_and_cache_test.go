@@ -2029,9 +2029,11 @@ func Test_evaluateAtModifier(t *testing.T) {
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
+			expr, err := parser.ParseExpr(tt.in)
+			require.NoError(t, err)
 			expectedExpr, err := parser.ParseExpr(tt.expected)
 			require.NoError(t, err)
-			out, err := evaluateAtModifierFunction(tt.in, start, end)
+			out, err := evaluateAtModifierFunction(expr, start, end)
 			if tt.err != nil {
 				require.Equal(t, tt.err, err)
 				return
