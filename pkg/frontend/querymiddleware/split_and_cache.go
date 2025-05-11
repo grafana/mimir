@@ -696,6 +696,10 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 // For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
 // If the modifier is already a constant, it will be returned as is.
 func evaluateAtModifierFunction(expr parser.Expr, start, end int64) (string, error) {
+	expr, err := cloneExpr(expr) // Clone to avoid changing the original.
+	if err != nil {
+		return "", err
+	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		switch exprAt := n.(type) {
 		case *parser.VectorSelector:
@@ -718,6 +722,11 @@ func evaluateAtModifierFunction(expr parser.Expr, start, end int64) (string, err
 		return nil
 	})
 	return expr.String(), nil
+}
+
+// cloneExpr is a helper function to clone an expr.
+func cloneExpr(expr parser.Expr) (parser.Expr, error) {
+	return parser.ParseExpr(expr.String())
 }
 
 // Round up to the step before the next interval boundary.
