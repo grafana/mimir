@@ -188,18 +188,20 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 		queryExpr: parseQuery(t, "vector(1)"),
 	}
 
-	// Mock the downstream handler to always return error.
-	downstreamErr := errors.Errorf("some err")
-	downstream := mockHandlerWith(nil, downstreamErr)
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		// Mock the downstream handler to always return error.
+		downstreamErr := errors.Errorf("some err")
+		downstream := mockHandlerWith(nil, downstreamErr)
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), newEngine(t), nil, nil, defaultStepFunc)
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), eng, nil, nil, defaultStepFunc)
 
-	// Run the query with subquery spin-off middleware wrapping the downstream one.
-	// We expect to get the downstream error.
-	ctx := user.InjectOrgID(context.Background(), "test")
-	_, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
-	require.Error(t, err)
-	assert.Equal(t, downstreamErr, err)
+		// Run the query with subquery spin-off middleware wrapping the downstream one.
+		// We expect to get the downstream error.
+		ctx := user.InjectOrgID(context.Background(), "test")
+		_, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+		require.Error(t, err)
+		assert.Equal(t, downstreamErr, err)
+	})
 }
 
 var defaultStepFunc = func(int64) int64 {
@@ -269,6 +271,8 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				t.Parallel()
 
