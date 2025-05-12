@@ -25,8 +25,6 @@ import (
 )
 
 func TestSubquerySpinOff_Correctness(t *testing.T) {
-	t.Parallel()
-
 	tests := map[string]subquerySpinOffTest{
 		"skipped: no subquery": {
 			query: `sum(
@@ -165,8 +163,6 @@ sum by (group_1) (
 }
 
 func TestSubquerySpinOff_LongRangeQuery(t *testing.T) {
-	t.Parallel()
-
 	tests := map[string]subquerySpinOffTest{
 		"subquery max: multiple range queries": {
 			query: `max_over_time(
@@ -274,8 +270,6 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			t.Parallel()
 
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
-				t.Parallel()
-
 				downstream := &downstreamHandler{engine: eng, queryable: queryable}
 				req := &PrometheusInstantQueryRequest{
 					path:      "/query",
