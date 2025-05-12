@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,7 +29,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	}
 	tests := map[string]struct {
 		args                 args
-		expectedMetrics      *strings.Reader
+		expectedMetrics      string
 		expectedQueryDetails QueryDetails
 	}{
 		"happy path range query": {
@@ -41,7 +42,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					queryExpr: parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
 				}},
 			},
-			expectedMetrics: strings.NewReader(`
+			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
 			cortex_query_frontend_non_step_aligned_queries_total 1
@@ -51,7 +52,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 1
-			`),
+			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
@@ -72,7 +73,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					queryExpr: parseQuery(t, `sum(sum_over_time(metric{app="test",namespace=~"short"}[5m]))`),
 				}},
 			},
-			expectedMetrics: strings.NewReader(`
+			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
 			cortex_query_frontend_non_step_aligned_queries_total 1
@@ -85,7 +86,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# HELP cortex_query_frontend_queries_consistency_total Total number of queries that explicitly request a level of consistency.
 			# TYPE cortex_query_frontend_queries_consistency_total counter
 			cortex_query_frontend_queries_consistency_total{consistency="strong",user="test"} 1
-			`),
+			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
@@ -107,7 +108,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					nil,
 				)},
 			},
-			expectedMetrics: strings.NewReader(`
+			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
 			cortex_query_frontend_non_step_aligned_queries_total 0
@@ -117,7 +118,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 1
-			`),
+			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
@@ -159,7 +160,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					)),
 				},
 			},
-			expectedMetrics: strings.NewReader(`
+			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
 			cortex_query_frontend_non_step_aligned_queries_total 0
@@ -169,7 +170,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 2
-			`),
+			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
@@ -202,7 +203,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					)),
 				},
 			},
-			expectedMetrics: strings.NewReader(`
+			expectedMetrics: `
 			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
 			cortex_query_frontend_non_step_aligned_queries_total 0
@@ -212,7 +213,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 1
-			`),
+			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.Stats{},
 				Start:        start.Truncate(time.Millisecond),
@@ -224,22 +225,24 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			mw := newQueryStatsMiddleware(reg, newEngine(t))
-			ctx := context.Background()
-			if tt.args.ctx != nil {
-				ctx = tt.args.ctx
-			}
-			actualDetails, ctx := ContextWithEmptyDetails(ctx)
-			ctx = user.InjectOrgID(ctx, tenantID)
+			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+				reg := prometheus.NewPedanticRegistry()
+				mw := newQueryStatsMiddleware(reg, eng)
+				ctx := context.Background()
+				if tt.args.ctx != nil {
+					ctx = tt.args.ctx
+				}
+				actualDetails, ctx := ContextWithEmptyDetails(ctx)
+				ctx = user.InjectOrgID(ctx, tenantID)
 
-			for _, req := range tt.args.req {
-				_, err := mw.Wrap(mockHandlerWith(nil, nil)).Do(ctx, req)
-				require.NoError(t, err)
-			}
+				for _, req := range tt.args.req {
+					_, err := mw.Wrap(mockHandlerWith(nil, nil)).Do(ctx, req)
+					require.NoError(t, err)
+				}
 
-			assert.NoError(t, testutil.GatherAndCompare(reg, tt.expectedMetrics))
-			assert.Equal(t, tt.expectedQueryDetails, *actualDetails)
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tt.expectedMetrics)))
+				assert.Equal(t, tt.expectedQueryDetails, *actualDetails)
+			})
 		})
 	}
 }

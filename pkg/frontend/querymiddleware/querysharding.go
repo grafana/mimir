@@ -238,7 +238,12 @@ func newQuery(ctx context.Context, r MetricsQueryRequest, engine promql.QueryEng
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
 			util.TimeFromMillis(r.GetEnd()),
-			time.Duration(r.GetStep())*time.Millisecond,
+			// TODO(56quarters): Need to actually figure out what the Prometheus engine
+			//  does when step is 0. MQE returns an error for range queries with a 0 step.
+			// Step isn't used when executing a remote read queries but the engine doesn't
+			// allow an interval of 0 so we pass 1ms here so that the engine will not return
+			// an error when creating range query.
+			time.Millisecond,
 		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
