@@ -54,6 +54,7 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 		en.log.Debug("failed to parse external URL", "url", en.tmpl.ExternalURL.String(), "error", err.Error())
 	}
 
+	seenContent := make(map[string]string)
 	// Extend alerts data with images, if available.
 	embeddedContents := make([]receivers.EmbeddedContent, 0)
 	err = images.WithStoredImages(ctx, en.log, en.images,
@@ -61,12 +62,18 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 			if image.HasURL() {
 				data.Alerts[index].ImageURL = image.URL
 			} else {
+				if name, ok := seenContent[image.ID]; ok && image.ID != "" { // If ID is not specified, do not deduplicate.
+					data.Alerts[index].EmbeddedImage = name
+					// Don't add the same image twice.
+					return nil
+				}
 				if contents, err := image.RawData(ctx); err == nil {
 					data.Alerts[index].EmbeddedImage = contents.Name
 					embeddedContents = append(embeddedContents, receivers.EmbeddedContent{
 						Name:    contents.Name,
 						Content: contents.Content,
 					})
+					seenContent[image.ID] = contents.Name
 				} else {
 					en.log.Warn("failed to get image file for email attachment", "alert", alerts[index].String(), "error", err)
 				}

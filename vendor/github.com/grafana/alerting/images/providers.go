@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/prometheus/alertmanager/types"
+
 	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/models"
-	"github.com/prometheus/alertmanager/types"
 )
 
 // ErrImageUploadNotSupported is returned when image uploading is not supported.
@@ -38,6 +39,7 @@ func (u *URLProvider) GetImage(_ context.Context, alert types.Alert) (*Image, er
 	}
 
 	return &Image{
+		ID:  url,
 		URL: url,
 		RawData: func(_ context.Context) (ImageContent, error) {
 			// Raw images are not available for URLs provided directly by annotations as the image data is non-local.
