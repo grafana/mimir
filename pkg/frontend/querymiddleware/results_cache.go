@@ -326,14 +326,10 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
 		return true, ""
 	}
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		// We are being pessimistic in such cases.
-		return false, notCachableReasonModifiersNotCachableFailedParse
-	}
+	expr := r.GetParsedQuery()
 
 	// This resolves the start() and end() used with the @ modifier.
-	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	expr, err := promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
 	if err != nil {
 		// We are being pessimistic in such cases.
 		return false, notCachableReasonModifiersNotCachableFailedPreprocess
