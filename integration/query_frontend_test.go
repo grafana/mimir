@@ -270,11 +270,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-query-frontend.cache-results":                          "true",
-		"-query-frontend.results-cache.backend":                  "memcached",
-		"-query-frontend.results-cache.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":                    strconv.FormatBool(cfg.queryStatsEnabled),
-		"-query-frontend.instant-queries-with-subquery-spin-off": ".*",
+		"-querier.max-partial-query-length":                 "30d",
+		"-query-frontend.cache-results":                     "true",
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.subquery-spin-off-enabled":         "true",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -364,6 +365,18 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", fmt.Sprintf("user-%d", userID))
 		require.NoError(t, err)
 
+		// Do a long query to test the split and cache middleware.
+		if userID == 0 {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_split_queries_total"))
+			end := time.Now()
+			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
+			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
+			require.NoError(t, err)
+
+			// Depending on what time it is and how that aligns with midnight UTC, the query may be broken into 31 or 32 parts.
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Between(31, 32), "cortex_frontend_split_queries_total"))
+		}
+
 		// No need to repeat the test on start/end time rounding for each user.
 		if userID == 0 {
 			start := time.Unix(1595846748, 806*1e6)
@@ -397,6 +410,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Len(t, result, 0)
 		}
 
+		// Test subquery spin-off.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_spun_off_subqueries_total"))
 			result, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
@@ -422,10 +436,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	wg.Wait()
 
 	// Compute the expected number of queries.
-	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 3
+	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 4
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
+	// +1 because one split query ends up touching the ingester.
 	// +2 because the spun off subquery ends up as additional ingester queries.
-	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 2
+	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 3
 	if cfg.queryStatsEnabled {
 		expectedQueriesCount++
 		expectedIngesterQueriesCount++

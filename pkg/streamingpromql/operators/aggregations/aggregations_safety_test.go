@@ -44,7 +44,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			histograms = append(histograms, promql.HPoint{T: 4, H: h4})
 			series := types.InstantVectorSeriesData{Histograms: histograms}
 
-			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil))
+			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil, 1))
 			require.Equal(t, []promql.HPoint{{T: 0, H: nil}, {T: 1, H: nil}, {T: 2, H: nil}, {T: 4, H: nil}}, series.Histograms, "all histograms retained should be nil-ed out after accumulating series")
 
 			// Second series: all histograms that are not retained should be nil-ed out after returning.
@@ -62,7 +62,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			histograms = append(histograms, promql.HPoint{T: 4, H: h9})
 			series = types.InstantVectorSeriesData{Histograms: histograms}
 
-			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil))
+			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil, 1))
 
 			expected := []promql.HPoint{
 				{T: 0, H: h5},  // h5 not retained (added to h1)

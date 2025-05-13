@@ -9,12 +9,14 @@ title: Grafana Mimir Writes networking dashboard
 weight: 190
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Writes networking dashboard
 
 The Writes networking dashboard shows receive/transmit bandwidth, inflight requests, and TCP connections.
 The dashboard isolates each service on the write path into its own section and displays the order in which a write request flows.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
 

@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/require"

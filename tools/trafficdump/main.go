@@ -95,7 +95,7 @@ func main() {
 	assemblers := make([]*tcpassembly.Assembler, *assemblersCount)
 	for ix := uint(0); ix < *assemblersCount; ix++ {
 		assemblers[ix] = tcpassembly.NewAssembler(streamPool)
-		assemblers[ix].AssemblerOptions.MaxBufferedPagesPerConnection = *assemblersMaxPagesPerConnection
+		assemblers[ix].MaxBufferedPagesPerConnection = *assemblersMaxPagesPerConnection
 	}
 
 	log.Println("Reading packets")

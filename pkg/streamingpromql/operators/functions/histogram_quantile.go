@@ -55,9 +55,9 @@ type groupWithLabels struct {
 }
 
 type bucketGroup struct {
-	pointBuckets         []buckets       // Buckets for the grouped series at each step
-	nativeHistograms     []promql.HPoint // Histograms should only ever exist once per group
-	remainingSeriesCount uint            // The number of series remaining before this group is fully collated.
+	pointBuckets         []promql.Buckets // Buckets for the grouped series at each step
+	nativeHistograms     []promql.HPoint  // Histograms should only ever exist once per group
+	remainingSeriesCount uint             // The number of series remaining before this group is fully collated.
 
 	// All the input series should have the same Metric name (from innerSeriesMetricNames).
 	// We just need one index to determine the group name, so we take the last series, as we also use that to sort the groups by.
@@ -77,20 +77,20 @@ var bucketGroupPool = zeropool.New(func() *bucketGroup {
 })
 
 var pointBucketPool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []buckets {
-		return make([]buckets, 0, size)
+	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []promql.Buckets {
+		return make([]promql.Buckets, 0, size)
 	}),
-	uint64(unsafe.Sizeof(buckets{})),
+	uint64(unsafe.Sizeof(promql.Buckets{})),
 	true,
-	func(b buckets) buckets {
+	func(b promql.Buckets) promql.Buckets {
 		return mangleBuckets(b)
 	},
 )
 
-func mangleBuckets(b buckets) buckets {
+func mangleBuckets(b promql.Buckets) promql.Buckets {
 	for i := range b {
-		b[i].upperBound = 12345678
-		b[i].count = 12345678
+		b[i].UpperBound = 12345678
+		b[i].Count = 12345678
 	}
 	return b
 }
@@ -98,10 +98,10 @@ func mangleBuckets(b buckets) buckets {
 const maxExpectedBucketsPerHistogram = 64 // There isn't much science to this
 
 var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) []bucket {
-		return make([]bucket, 0, size)
+	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) []promql.Bucket {
+		return make([]promql.Bucket, 0, size)
 	}),
-	uint64(unsafe.Sizeof(bucket{})),
+	uint64(unsafe.Sizeof(promql.Bucket{})),
 	true,
 	nil,
 )
@@ -141,7 +141,7 @@ func (h *HistogramQuantileFunction) SeriesMetadata(ctx context.Context) ([]types
 	if err != nil {
 		return nil, err
 	}
-	defer types.PutSeriesMetadataSlice(innerSeries)
+	defer types.SeriesMetadataSlicePool.Put(innerSeries, h.memoryConsumptionTracker)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -197,7 +197,11 @@ func (h *HistogramQuantileFunction) SeriesMetadata(ctx context.Context) ([]types
 		h.seriesGroupPairs[innerIdx].classicHistogramGroup = g.group
 	}
 
-	seriesMetadata := types.GetSeriesMetadataSlice(len(groups))
+	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), h.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
 		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
@@ -315,8 +319,8 @@ func (h *HistogramQuantileFunction) saveFloatsToGroup(fPoints []promql.FPoint, l
 
 		bucketIdx := len(g.pointBuckets[pointIdx])
 		g.pointBuckets[pointIdx] = g.pointBuckets[pointIdx][:bucketIdx+1]
-		g.pointBuckets[pointIdx][bucketIdx].upperBound = upperBound
-		g.pointBuckets[pointIdx][bucketIdx].count = f.F
+		g.pointBuckets[pointIdx][bucketIdx].UpperBound = upperBound
+		g.pointBuckets[pointIdx][bucketIdx].Count = f.F
 	}
 
 	return nil
@@ -334,7 +338,7 @@ func (h *HistogramQuantileFunction) saveNativeHistogramsToGroup(hPoints []promql
 
 	// We should only ever see one set of native histograms per group.
 	if g.nativeHistograms != nil {
-		return fmt.Errorf("We should never see more than one native histogram per group")
+		return fmt.Errorf("we should never see more than one native histogram per group")
 	}
 	g.nativeHistograms = hPoints
 	return nil
@@ -349,7 +353,7 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 
 	for pointIdx := range h.timeRange.StepCount {
 		var currentHistogram *histogram.FloatHistogram
-		var thisPointBuckets buckets
+		var thisPointBuckets promql.Buckets
 
 		if g.pointBuckets != nil && len(g.pointBuckets[pointIdx]) > 0 {
 			thisPointBuckets = g.pointBuckets[pointIdx]
@@ -384,7 +388,7 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 		}
 
 		if thisPointBuckets != nil {
-			res, forcedMonotonicity, _ := bucketQuantile(ph, thisPointBuckets)
+			res, forcedMonotonicity, _ := promql.BucketQuantile(ph, thisPointBuckets)
 			if floatPoints == nil {
 				var err error
 				floatPoints, err = types.FPointSlicePool.Get(h.timeRange.StepCount-pointIdx, h.memoryConsumptionTracker)
@@ -414,7 +418,7 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			res := histogramQuantile(ph, currentHistogram)
+			res := promql.HistogramQuantile(ph, currentHistogram)
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,
@@ -438,7 +442,9 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 func (h *HistogramQuantileFunction) Close() {
 	h.inner.Close()
 	h.phArg.Close()
+
 	types.FPointSlicePool.Put(h.phValues.Samples, h.memoryConsumptionTracker)
+	h.phValues.Samples = nil
 }
 
 type bucketGroupSorter struct {

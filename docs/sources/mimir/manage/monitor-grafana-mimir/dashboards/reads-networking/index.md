@@ -9,12 +9,14 @@ title: Grafana Mimir Reads networking dashboard
 weight: 100
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Reads networking dashboard
 
 The Reads networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections.
 The dashboard isolates each service on the read path into its own section and displays the order in which a read request flows.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
 

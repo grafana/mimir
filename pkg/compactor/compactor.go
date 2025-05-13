@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -118,8 +119,7 @@ type Config struct {
 	// Compactors sharding.
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 
-	CompactionJobsOrder string        `yaml:"compaction_jobs_order" category:"advanced"`
-	MaxLookback         time.Duration `yaml:"max_lookback" category:"experimental"`
+	CompactionJobsOrder string `yaml:"compaction_jobs_order" category:"advanced"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
@@ -130,6 +130,11 @@ type Config struct {
 	// Allow downstream projects to customise the blocks compactor.
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
+
+	// Allow compactor to upload sparse-index-header files
+	UploadSparseIndexHeaders       bool               `yaml:"upload_sparse_index_headers" category:"experimental"`
+	SparseIndexHeadersSamplingRate int                `yaml:"-"`
+	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -157,7 +162,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.")
 	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
-	f.DurationVar(&cfg.MaxLookback, "compactor.max-lookback", 0*time.Second, "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
+	f.BoolVar(&cfg.UploadSparseIndexHeaders, "compactor.upload-sparse-index-headers", false, "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.")
 
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
@@ -241,6 +246,13 @@ type ConfigProvider interface {
 
 	// CompactorInMemoryTenantMetaCacheSize returns number of parsed *Meta objects that we can keep in memory for the user between compactions.
 	CompactorInMemoryTenantMetaCacheSize(userID string) int
+
+	// CompactorMaxLookback returns the duration of the compactor lookback period, blocks uploaded before the lookback period aren't
+	// considered in compactor cycles
+	CompactorMaxLookback(userID string) time.Duration
+
+	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
+	CompactorMaxPerBlockUploadConcurrency(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -519,7 +531,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	allowedTenants := util.NewAllowedTenants(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
+	allowedTenants := util.NewAllowList(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
 	c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
 
 	// Create the blocks cleaner (service).
@@ -788,7 +800,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
 	// beyond the lookback period, we don't want the compactor to skip these
-	var maxLookback = c.compactorCfg.MaxLookback
+	var maxLookback = c.cfgProvider.CompactorMaxLookback(userID)
 	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
 		maxLookback = 0
 	}
@@ -834,6 +846,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.CompactionWaitPeriod,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
+		c.compactorCfg.UploadSparseIndexHeaders,
+		c.compactorCfg.SparseIndexHeadersSamplingRate,
+		c.compactorCfg.SparseIndexHeadersConfig,
+		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")
@@ -892,13 +908,13 @@ type shardingStrategy interface {
 // Each job is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
 type splitAndMergeShardingStrategy struct {
-	allowedTenants *util.AllowedTenants
+	allowedTenants *util.AllowList
 	ring           *ring.Ring
 	ringLifecycler *ring.BasicLifecycler
 	configProvider ConfigProvider
 }
 
-func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
+func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowList, ring *ring.Ring, ringLifecycler *ring.BasicLifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
 	return &splitAndMergeShardingStrategy{
 		allowedTenants: allowedTenants,
 		ring:           ring,

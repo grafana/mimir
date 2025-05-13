@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -65,6 +64,7 @@ import (
 
 func init() {
 	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	// nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 }
 
@@ -149,8 +149,10 @@ type Distributor struct {
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
-	labelValuesWithNewlinesPerUser   *prometheus.CounterVec
 	hashCollisionCount               prometheus.Counter
+
+	// Metric for silently dropped native histogram samples
+	droppedNativeHistograms *prometheus.CounterVec
 
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
@@ -418,7 +420,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
 			Help: "The total number of requests that have come in to the distributor, including rejected or deduped requests.",
-		}, []string{"user"}),
+		}, []string{"user", "version"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_samples_in_total",
 			Help: "The total number of samples that have come in to the distributor, including rejected or deduped samples.",
@@ -462,9 +464,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
-		labelValuesWithNewlinesPerUser: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_distributor_label_values_with_newlines_total",
-			Help: "Total number of label values with newlines seen at ingestion time.",
+
+		droppedNativeHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_dropped_native_histograms_total",
+			Help: "The total number of native histograms that were silently dropped because native histograms ingestion is disabled.",
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
@@ -718,7 +721,6 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
-	d.incomingRequests.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -726,11 +728,13 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
-	d.labelValuesWithNewlinesPerUser.DeleteLabelValues(userID)
 
 	d.PushMetrics.deleteUserMetrics(userID)
 
+	d.droppedNativeHistograms.DeleteLabelValues(userID)
+
 	filter := prometheus.Labels{"user": userID}
+	d.incomingRequests.DeletePartialMatch(filter)
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
@@ -942,15 +946,6 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	}
 
 	return false, nil
-}
-func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
-	count := 0
-	for _, l := range labels {
-		if strings.IndexByte(l.Value, '\n') >= 0 {
-			count++
-		}
-	}
-	return count
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1206,11 +1201,14 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// Enforce the creation grace period on exemplars too.
 		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
 
+		// Are we going to drop native histograms? If yes, let's count and report them.
+		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
+		var droppedNativeHistograms int
+
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 
-		labelValuesWithNewlines := 0
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
 			totalExemplars += len(ts.Exemplars)
@@ -1227,6 +1225,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
+			if countDroppedNativeHistograms {
+				droppedNativeHistograms += len(ts.Histograms)
+			}
+
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
@@ -1242,14 +1244,14 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
-			labelValuesWithNewlines += d.labelValuesWithNewlines(ts.Labels)
+		}
+
+		if droppedNativeHistograms > 0 {
+			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
 		}
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
-		if labelValuesWithNewlines > 0 {
-			d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
-		}
 
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
@@ -1288,6 +1290,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+
+			// Determine whether limiter burst size was exceeded.
+			limiterBurst := d.ingestionRateLimiter.Burst(now, userID)
+			if totalN > limiterBurst {
+				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
+			}
 
 			burstSize := d.limits.IngestionBurstSize(userID)
 			if d.limits.IngestionBurstFactor(userID) > 0 {
@@ -1340,7 +1348,7 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			span.SetTag("write.metadata", len(req.Metadata))
 		}
 
-		d.incomingRequests.WithLabelValues(userID).Inc()
+		d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
@@ -1358,10 +1366,17 @@ func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
 
 		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
 		if userErr == nil {
-			// Target delay - time spent processing the middleware chain including the push.
-			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
-			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
-				d.sleep(util.DurationWithJitter(delay, 0.10))
+			if delay := d.limits.DistributorIngestionArtificialDelay(userID); delay > 0 {
+				// Target delay - time spent processing the middleware chain including the push.
+				// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+				if delay = delay - d.now().Sub(start); delay > 0 {
+					// Delay is configured but request is taking less than the delay
+					pushReq.artificialDelay = util.DurationWithJitter(delay, 0.10)
+					d.sleep(pushReq.artificialDelay)
+				} else {
+					// Delay is configured but request is already taking longer than the delay
+					pushReq.artificialDelay = 0
+				}
 			}
 			return err
 		}
@@ -1586,6 +1601,7 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	pushReq := NewParsedRequest(req)
 	pushReq.AddCleanup(func() {
+		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
@@ -1636,7 +1652,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return err
 	}
 
-	d.updateReceivedMetrics(req, userID)
+	d.updateReceivedMetrics(ctx, req, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
@@ -1867,18 +1883,21 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedExemplars, receivedMetadata int
+func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
+	var receivedSamples, receivedHistograms, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
-		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
-		receivedExemplars += len(ts.TimeSeries.Exemplars)
+		receivedSamples += len(ts.Samples)
+		receivedHistograms += len(ts.Histograms)
+		receivedExemplars += len(ts.Exemplars)
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
-	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
+
+	updateWriteResponseStatsCtx(ctx, receivedSamples, receivedHistograms, receivedExemplars)
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
@@ -2446,7 +2465,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 				return ignored{}, nil
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
-			ext.Error.Set(log.Span, true)
+			log.SetError()
 			return nil, err
 		}
 
@@ -2467,7 +2486,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 					return ignored{}, nil
 				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
-				ext.Error.Set(log.Span, true)
+				log.SetError()
 				return nil, err
 			}
 
@@ -2773,6 +2792,11 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for _, resp := range resps {
+			resp.FreeBuffer()
+		}
+	}()
 
 	metrics := map[uint64]labels.Labels{}
 respsLoop:

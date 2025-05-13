@@ -1,0 +1,102 @@
+---
+# Source: mimir-distributed/templates/provisioner/provisioner-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-enterprise-values-mimir-provisioner
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/component: provisioner
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": "post-install,post-upgrade"
+    "helm.sh/hook-weight": "20"
+  namespace: "citestns"
+spec:
+  backoffLimit: 6
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-enterprise-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: provisioner
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-values-mimir-provisioner
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: provisioner
+          image: "us-docker.pkg.dev/grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -euc
+            - |
+              /usr/bin/provisioner \
+                -bootstrap-path=/bootstrap \
+                -cluster-name=test-enterprise-values \
+                -api-url=http://test-enterprise-values-mimir-admin-api.citestns.svc:8080 \
+                -tenant=team-a \
+                -access-policy=write-team-a:team-a:metrics:write \
+                -access-policy=read-team-a:team-a:metrics:read \
+                -token=write-team-a \
+                -token=read-team-a
+              /usr/bin/provisioner \
+                -bootstrap-path=/bootstrap \
+                -cluster-name=test-enterprise-values \
+                -api-url=http://test-enterprise-values-mimir-admin-api.citestns.svc:8080 \
+                -tenant=team-b \
+                -access-policy=write-team-b:team-b:metrics:write \
+                -access-policy=read-team-b:team-b:metrics:read \
+                -token=write-team-b \
+                -token=read-team-b
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+            - name: admin-token
+              mountPath: /bootstrap/token
+              subPath: token
+      containers:
+        - name: create-secret
+          image: bitnami/kubectl:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -exuc
+            - |
+              # In case, the admin resources have already been created, the provisioner job
+              # does not write the token files to the bootstrap mount.
+              # Therefore, secrets are only created if the respective token files exist.
+              # Note: the following bash commands should always return a success status code. 
+              # Therefore, in case the token file does not exist, the first clause of the 
+              # or-operation is successful.
+              ! test -s /bootstrap/token-write-team-a || \
+                kubectl --namespace "{{ .Release.Namespace }}" create secret generic "test-enterprise-values-mimir-team-a" \
+                  --from-literal=token-write="$(cat /bootstrap/token-write-team-a)" \
+                  --from-literal=token-read="$(cat /bootstrap/token-read-team-a)"
+              ! test -s /bootstrap/token-write-team-b || \
+                kubectl --namespace "{{ .Release.Namespace }}" create secret generic "test-enterprise-values-mimir-team-b" \
+                  --from-literal=token-write="$(cat /bootstrap/token-write-team-b)" \
+                  --from-literal=token-read="$(cat /bootstrap/token-read-team-b)"
+          volumeMounts:
+            - name: bootstrap
+              mountPath: /bootstrap
+      restartPolicy: OnFailure
+      volumes:
+        - name: admin-token
+          secret:
+            secretName: admin-token
+        - name: bootstrap
+          emptyDir: {}

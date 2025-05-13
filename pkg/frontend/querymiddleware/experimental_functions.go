@@ -58,11 +58,7 @@ func (m *experimentalFunctionsMiddleware) Do(ctx context.Context, req MetricsQue
 		return m.next.Do(ctx, req)
 	}
 
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-	funcs := containedExperimentalFunctions(expr)
+	funcs := containedExperimentalFunctions(req.GetParsedQuery())
 	if len(funcs) == 0 {
 		// This query does not contain any experimental functions, so we can continue to the next middleware.
 		return m.next.Do(ctx, req)

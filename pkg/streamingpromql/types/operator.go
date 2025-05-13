@@ -18,6 +18,7 @@ type Operator interface {
 	// Close frees all resources associated with this operator.
 	// Calling SeriesMetadata or NextSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
 	// It must be safe to call Close at any time, including if SeriesMetadata or NextSeries have returned an error.
+	// It must be safe to call Close multiple times.
 	Close()
 }
 
@@ -82,4 +83,4 @@ type StringOperator interface {
 	GetValue() string
 }
 
-var EOS = errors.New("operator stream exhausted") //nolint:revive
+var EOS = errors.New("operator stream exhausted") //nolint:revive,staticcheck

@@ -14,40 +14,42 @@ import (
 )
 
 func TestActiveTracker_hasSameLabels(t *testing.T) {
-	ast := newTestManager().ActiveSeriesTracker("user1")
+	manager, _, _ := newTestManager()
+	ast := manager.ActiveSeriesTracker("user1")
 	assert.True(t, ast.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
-	ast := newTestManager().ActiveSeriesTracker("user3")
+	manager, _, _ := newTestManager()
+	ast := manager.ActiveSeriesTracker("user3")
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
 
-	ast.Increment(lbls1, time.Unix(1, 0))
+	ast.Increment(lbls1, time.Unix(1, 0), -1)
 	assert.True(t, ast.overflowSince.IsZero(), "First observation, should not overflow")
 	assert.Equal(t, 1, len(ast.observed))
 
-	ast.Decrement(lbls1)
+	ast.Decrement(lbls1, -1)
 	assert.True(t, ast.overflowSince.IsZero(), "First observation decremented, should not overflow")
 	assert.Equal(t, 0, len(ast.observed), "First observation decremented, should be removed since it reached 0")
 
-	ast.Increment(lbls1, time.Unix(2, 0))
-	ast.Increment(lbls2, time.Unix(2, 0))
+	ast.Increment(lbls1, time.Unix(2, 0), -1)
+	ast.Increment(lbls2, time.Unix(2, 0), -1)
 	assert.True(t, ast.overflowSince.IsZero(), "Second observation, should not overflow")
 	assert.Equal(t, 2, len(ast.observed))
 
-	ast.Increment(lbls3, time.Unix(3, 0))
+	ast.Increment(lbls3, time.Unix(3, 0), -1)
 	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Third observation, should overflow")
 	assert.Equal(t, 2, len(ast.observed))
 
-	ast.Increment(lbls3, time.Unix(4, 0))
+	ast.Increment(lbls3, time.Unix(4, 0), -1)
 	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fourth observation, should stay overflow")
 	assert.Equal(t, 2, len(ast.observed))
 }
 
 func TestActiveTracker_Concurrency(t *testing.T) {
-	m := newTestManager()
+	m, _, costAttributionReg := newTestManager()
 	ast := m.ActiveSeriesTracker("user1")
 
 	var wg sync.WaitGroup
@@ -57,7 +59,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 		go func(i int64) {
 			defer wg.Done()
 			lbls := labels.FromStrings("team", string(rune('A'+(i%26))))
-			ast.Increment(lbls, time.Unix(i, 0))
+			ast.Increment(lbls, time.Unix(i, 0), 2)
 		}(i)
 	}
 	wg.Wait()
@@ -68,18 +70,29 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 	assert.False(t, ast.overflowSince.IsZero(), "Expected state to be Overflow")
 
 	expectedMetrics := `
+	# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+    cortex_ingester_attributed_active_native_histogram_buckets{team="__overflow__",tenant="user1",tracker="cost-attribution"} 200
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+    cortex_ingester_attributed_active_native_histogram_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
 	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
 `
-	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	for i = 0; i < 100; i++ {
 		wg.Add(1)
 		go func(i int64) {
 			defer wg.Done()
 			lbls := labels.FromStrings("team", string(rune('A'+(i%26))))
-			ast.Decrement(lbls)
+			ast.Decrement(lbls, -1)
 		}(i)
 	}
 	wg.Wait()

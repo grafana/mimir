@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -281,85 +283,95 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 	}
 }
 
-func TestLimitsMiddleware_MaxFutureQueryWindow_RangeQueryAndRemoteRead(t *testing.T) {
+func TestLimitsMiddleware_MaxQueryLookback_TenantFederation(t *testing.T) {
+	const (
+		day        = 24 * time.Hour
+		tenDays    = 10 * 24 * time.Hour
+		twentyDays = 20 * 24 * time.Hour
+		thirtyDays = 30 * 24 * time.Hour
+		fortyDays  = 40 * 24 * time.Hour
+	)
+
+	defaults := validation.Limits{
+		MaxQueryLookback:               0,
+		CompactorBlocksRetentionPeriod: 0,
+	}
+
+	tenantLimits := map[string]*validation.Limits{
+		// tenant-a has no overrides
+
+		// Tenants with no blocks retention period configured.
+		"tenant-b": {MaxQueryLookback: model.Duration(tenDays), CompactorBlocksRetentionPeriod: 0},
+		"tenant-c": {MaxQueryLookback: model.Duration(twentyDays), CompactorBlocksRetentionPeriod: 0},
+
+		// Tenants with no max query lookback configured.
+		"tenant-d": {MaxQueryLookback: 0, CompactorBlocksRetentionPeriod: model.Duration(thirtyDays)},
+		"tenant-e": {MaxQueryLookback: 0, CompactorBlocksRetentionPeriod: model.Duration(fortyDays)},
+
+		// Tenants with both max query lookback and blocks retention period configured.
+		"tenant-f": {MaxQueryLookback: model.Duration(tenDays), CompactorBlocksRetentionPeriod: model.Duration(thirtyDays)},
+		"tenant-g": {MaxQueryLookback: model.Duration(twentyDays), CompactorBlocksRetentionPeriod: model.Duration(fortyDays)},
+	}
+
 	now := time.Now()
-	maxFutureWindow := 7 * 24 * time.Hour
-	tests := []struct {
-		name            string
-		startTime       time.Time
-		endTime         time.Time
-		maxFutureWindow time.Duration
-		expectedEndTs   time.Time
-		expectedSkipped bool
+
+	tests := map[string]struct {
+		reqTenants        []string
+		reqStartTime      time.Time
+		reqEndTime        time.Time
+		expectedStartTime time.Time
+		expectedEndTime   time.Time
 	}{
-		{
-			name:            "queries into past are not adjusted with max future window enabled",
-			startTime:       now.Add(-365 * 24 * time.Hour),
-			endTime:         now,
-			maxFutureWindow: maxFutureWindow,
-			expectedEndTs:   now,
+		"should enforce the smallest 'max query lookback' to not allow any tenant to query past their configured max lookback": {
+			reqTenants:        []string{"tenant-a", "tenant-b", "tenant-c"},
+			reqStartTime:      now.Add(-365 * day),
+			reqEndTime:        now,
+			expectedStartTime: now.Add(-tenDays),
+			expectedEndTime:   now,
 		},
-		{
-			name:            "queries exclusively past max future window are skipped",
-			startTime:       now.Add((7*24 + 1) * time.Hour),
-			endTime:         now.Add(8 * 24 * time.Hour),
-			maxFutureWindow: maxFutureWindow,
-			expectedSkipped: true,
+		"should enforce the largest 'block retention period' to allow any tenant to query up their full retention period": {
+			reqTenants:        []string{"tenant-a", "tenant-d", "tenant-e"},
+			reqStartTime:      now.Add(-365 * day),
+			reqEndTime:        now,
+			expectedStartTime: now.Add(-fortyDays),
+			expectedEndTime:   now,
 		},
-		{
-			name:            "queries partially into future are adjusted",
-			startTime:       now.Add(-24 * time.Hour),
-			endTime:         now.Add(8 * 24 * time.Hour),
-			maxFutureWindow: maxFutureWindow,
-			expectedEndTs:   now.Add(maxFutureWindow),
+		"should enforce the smallest between the 'smallest max query lookback' and 'largest block retention period'": {
+			reqTenants:        []string{"tenant-a", "tenant-f", "tenant-g"},
+			reqStartTime:      now.Add(-365 * day),
+			reqEndTime:        now,
+			expectedStartTime: now.Add(-tenDays),
+			expectedEndTime:   now,
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			reqs := map[string]MetricsQueryRequest{
-				"range query": &PrometheusRangeQueryRequest{
-					start: util.TimeToMillis(tt.startTime),
-					end:   util.TimeToMillis(tt.endTime),
-				},
-				"remote read": &remoteReadQueryRequest{
-					path: remoteReadPathSuffix,
-					query: &prompb.Query{
-						StartTimestampMs: util.TimeToMillis(tt.startTime),
-						EndTimestampMs:   util.TimeToMillis(tt.endTime),
-					},
-				},
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := validation.NewOverrides(defaults, validation.NewMockTenantLimits(tenantLimits))
+
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+			innerRes := newEmptyPrometheusResponse()
+			inner := &mockHandler{}
+			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+			ctx := user.InjectOrgID(context.Background(), tenant.JoinTenantIDs(testData.reqTenants))
+			outer := middleware.Wrap(inner)
+
+			req := &PrometheusRangeQueryRequest{
+				start: util.TimeToMillis(testData.reqStartTime),
+				end:   util.TimeToMillis(testData.reqEndTime),
 			}
 
-			for reqType, req := range reqs {
-				t.Run(reqType, func(t *testing.T) {
-					limits := mockLimits{maxFutureQueryWindow: tt.maxFutureWindow}
-					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+			_, err := outer.Do(ctx, req)
+			require.NoError(t, err)
 
-					innerRes := newEmptyPrometheusResponse()
-					inner := &mockHandler{}
-					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+			// Assert on the time range of the request passed to the inner handler (5s delta).
+			delta := float64(5000)
+			require.Len(t, inner.Calls, 1)
 
-					ctx := user.InjectOrgID(context.Background(), "test")
-					outer := middleware.Wrap(inner)
-					res, err := outer.Do(ctx, req)
-					require.NoError(t, err)
-
-					if tt.expectedSkipped {
-						// We expect an empty response, but not the one returned by the inner handler
-						// which we expect has been skipped.
-						assert.NotSame(t, innerRes, res)
-						assert.Len(t, inner.Calls, 0)
-					} else {
-						// We expect the response returned by the inner handler.
-						assert.Same(t, innerRes, res)
-
-						// Assert on the time range of the request passed to the inner handler (5s delta).
-						delta := float64(5000)
-						require.Len(t, inner.Calls, 1)
-						assert.InDelta(t, util.TimeToMillis(tt.expectedEndTs), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
-					}
-				})
-			}
+			assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetStart(), delta)
+			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
 		})
 	}
 }
@@ -600,10 +612,6 @@ func (m multiTenantMockLimits) MaxCacheFreshness(userID string) time.Duration {
 	return m.byTenant[userID].maxCacheFreshness
 }
 
-func (m multiTenantMockLimits) MaxFutureQueryWindow(userID string) time.Duration {
-	return m.byTenant[userID].maxFutureQueryWindow
-}
-
 func (m multiTenantMockLimits) QueryShardingTotalShards(userID string) int {
 	return m.byTenant[userID].totalShards
 }
@@ -668,6 +676,10 @@ func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.Block
 	return m.byTenant[userID].blockedQueries
 }
 
+func (m multiTenantMockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+	return m.byTenant[userID].limitedQueries
+}
+
 func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
 	return m.byTenant[userID].creationGracePeriod
 }
@@ -692,8 +704,8 @@ func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.Bloc
 	return m.byTenant[userID].blockedRequests
 }
 
-func (m multiTenantMockLimits) InstantQueriesWithSubquerySpinOff(userID string) []string {
-	return m.byTenant[userID].instantQueriesWithSubquerySpinOff
+func (m multiTenantMockLimits) SubquerySpinOffEnabled(userID string) bool {
+	return m.byTenant[userID].subquerySpinOffEnabled
 }
 
 type mockLimits struct {
@@ -705,7 +717,6 @@ type mockLimits struct {
 	maxQueryParallelism                  int
 	maxShardedQueries                    int
 	maxRegexpSizeBytes                   int
-	maxFutureQueryWindow                 time.Duration
 	splitInstantQueriesInterval          time.Duration
 	totalShards                          int
 	compactorShards                      int
@@ -722,11 +733,12 @@ type mockLimits struct {
 	enabledPromQLExperimentalFunctions   []string
 	prom2RangeCompat                     bool
 	blockedQueries                       []*validation.BlockedQuery
+	limitedQueries                       []*validation.LimitedQuery
 	blockedRequests                      []*validation.BlockedRequest
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
-	instantQueriesWithSubquerySpinOff    []string
+	subquerySpinOffEnabled               bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -753,10 +765,6 @@ func (m mockLimits) MaxQueryParallelism(string) int {
 
 func (m mockLimits) MaxCacheFreshness(string) time.Duration {
 	return m.maxCacheFreshness
-}
-
-func (m mockLimits) MaxFutureQueryWindow(string) time.Duration {
-	return m.maxFutureQueryWindow
 }
 
 func (m mockLimits) QueryShardingTotalShards(string) int {
@@ -807,6 +815,10 @@ func (m mockLimits) BlockedQueries(string) []*validation.BlockedQuery {
 	return m.blockedQueries
 }
 
+func (m mockLimits) LimitedQueries(userID string) []*validation.LimitedQuery {
+	return m.limitedQueries
+}
+
 func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {
 	return m.resultsCacheTTLForLabelsQuery
 }
@@ -847,8 +859,8 @@ func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
 	return m.blockedRequests
 }
 
-func (m mockLimits) InstantQueriesWithSubquerySpinOff(string) []string {
-	return m.instantQueriesWithSubquerySpinOff
+func (m mockLimits) SubquerySpinOffEnabled(string) bool {
+	return m.subquerySpinOffEnabled
 }
 
 type mockHandler struct {

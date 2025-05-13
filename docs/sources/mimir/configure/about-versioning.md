@@ -49,9 +49,8 @@ The following features are currently experimental:
 - Cost attribution
   - Configure labels for cost attribution
     - `-validation.cost-attribution-labels`
-  - Configure cost attribution limits, such as label cardinality and the maximum number of cost attribution labels
-    - `-validation.max-cost-attribution-labels-per-user`
-    - `-validation.max-cost-attribution-cardinality-per-user`
+  - Configure cost attribution limits, such as cardinality:
+    - `-validation.max-cost-attribution-cardinality`
   - Configure cooldown periods and eviction intervals for cost attribution
     - `-validation.cost-attribution-cooldown`
     - `-cost-attribution.eviction-interval`
@@ -71,6 +70,8 @@ The following features are currently experimental:
     - `-compactor.in-memory-tenant-meta-cache-size`
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
+  - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
+    - `-compactor.upload-sparse-index-headers`
 - Ruler
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
@@ -86,8 +87,6 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
-  - Cache rule group contents.
-    - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -111,6 +110,8 @@ The following features are currently experimental:
     - `-distributor.ha-tracker.kvstore.store`
   - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
     - `-distributor.otel-keep-identifying-resource-attributes`
+  - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
+    - `-distributor.otel-convert-histograms-to-nhcb`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -131,8 +132,7 @@ The following features are currently experimental:
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Out-of-order samples ingestion (`-ingester.ooo-native-histograms-ingestion-enabled`)
-  - Out-of-order native histogram samples ingestion (`-ingester.out-of-order-time-window`)
+  - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
@@ -212,10 +212,12 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
-  - Caching of non-transient error responses (`-query-frontend.cache-errors`, `-query-frontend.results-cache-ttl-for-errors`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
-  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.instant-queries-with-subquery-spin-off` and the `instant_queries_with_subquery_spin_off` per-tenant limit)
+  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.subquery-spin-off-enabled` and the `subquery_spin_off_enabled` per-tenant limit)
   - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
+  - Support for cluster validation via `-query-frontend.client-cluster-validation.label` or `-common.client-cluster-validation.label`.
+    Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
+  - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -243,6 +245,8 @@ The following features are currently experimental:
   - Customise write and read buffer size
     - `-<prefix>.memcached.write-buffer-size-bytes`
     - `-<prefix>.memcached.read-buffer-size-bytes`
+  - Alternate DNS service discovery backend
+    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -253,10 +257,19 @@ The following features are currently experimental:
 - Server
   - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
     - `-server.proxy-protocol-enabled`
-  - Cross-cluster validation support for gRPC communications
+  - Cross-cluster validation support for gRPC and HTTP communication
     - `-server.cluster-validation.label`
     - `-server.cluster-validation.grpc.enabled`
     - `-server.cluster-validation.grpc.soft-validation`
+    - `-server.cluster-validation.http.enabled`
+    - `-server.cluster-validation.http.soft-validation`
+    - `-server.cluster-validation.http.excluded-paths`
+    - Requests with invalid cluster validation labels are tracked via the `cortex_server_invalid_cluster_validation_label_requests_total` metric.
+- gRPC clients
+  - Cross-cluster validation support for gRPC communication:
+    - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
+    - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
+    - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Kafka-based ingest storage
   - `-ingest-storage.*`
   - `-ingester.partition-ring.*`
@@ -264,7 +277,7 @@ The following features are currently experimental:
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle](../configuration-parameters/#parameter-lifecycle).
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 

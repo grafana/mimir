@@ -234,15 +234,16 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
 		lifecyclerConfig := cfg.ToLifecyclerConfig()
-		if testData.expectedResultStrategy == tokenGenerationRandom {
+		switch testData.expectedResultStrategy {
+		case tokenGenerationRandom:
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.RandomTokenGenerator)
 			assert.True(t, ok)
 			assert.NotNil(t, tokenGenerator)
-		} else if testData.expectedResultStrategy == tokenGenerationSpreadMinimizing {
+		case tokenGenerationSpreadMinimizing:
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.SpreadMinimizingTokenGenerator)
 			assert.True(t, ok)
 			assert.NotNil(t, tokenGenerator)
-		} else {
+		default:
 			assert.Nil(t, lifecyclerConfig.RingTokenGenerator)
 		}
 	}

@@ -125,6 +125,8 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
+	// GetParsedQuery returns the query, parsed into an AST.
+	GetParsedQuery() parser.Expr
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64
@@ -198,6 +200,9 @@ type Response interface {
 	proto.Message
 	// GetHeaders returns the HTTP headers in the response.
 	GetHeaders() []*PrometheusHeader
+	// GetPrometheusResponse is a helper for where multiple types implement a PrometheusResponse
+	GetPrometheusResponse() (*PrometheusResponse, bool)
+	Close()
 }
 
 type prometheusCodecMetrics struct {
@@ -272,12 +277,16 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
+	promCloses := make([]func(), 0, len(responses))
 	promWarningsMap := make(map[string]struct{}, 0)
 	promInfosMap := make(map[string]struct{}, 0)
 	var present struct{}
 
 	for _, res := range responses {
-		pr := res.(*PrometheusResponse)
+		pr, ok := res.GetPrometheusResponse()
+		if !ok {
+			return nil, fmt.Errorf("error invalid response type: %T, expected a Prometheus response", res)
+		}
 		if pr.Status != statusSuccess {
 			return nil, fmt.Errorf("can't merge an unsuccessful response")
 		} else if pr.Data == nil {
@@ -293,6 +302,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		for _, info := range pr.Infos {
 			promInfosMap[info] = present
 		}
+		promCloses = append(promCloses, res.Close)
 	}
 
 	var promWarnings []string
@@ -308,14 +318,21 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	// Merge the responses.
 	sort.Sort(byFirstTime(promResponses))
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: model.ValMatrix.String(),
-			Result:     matrixMerge(promResponses),
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: model.ValMatrix.String(),
+				Result:     matrixMerge(promResponses),
+			},
+			Warnings: promWarnings,
+			Infos:    promInfos,
 		},
-		Warnings: promWarnings,
-		Infos:    promInfos,
+		finalizer: func() {
+			for _, close := range promCloses {
+				close()
+			}
+		},
 	}, nil
 }
 
@@ -483,7 +500,7 @@ func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 			}
 			return 0, nil
 		}
-		return 0, apierror.New(apierror.TypeBadData, fmt.Sprintf("missing required parameter %q", p.timeType))
+		return 0, apierror.New(apierror.TypeBadData, fmt.Sprintf("missing required parameter %q", p.paramName))
 	}
 
 	var t int64
@@ -1008,7 +1025,7 @@ func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *ht
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
 
-	a, ok := res.(*PrometheusResponse)
+	a, ok := res.GetPrometheusResponse()
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
@@ -1039,11 +1056,27 @@ func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *ht
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
+		Body: &prometheusReadCloser{
+			Reader:    bytes.NewBuffer(b),
+			finalizer: res.Close,
+		},
 		StatusCode:    http.StatusOK,
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
+}
+
+// prometheusReadCloser wraps an io.Reader and executes finalizer on Close
+type prometheusReadCloser struct {
+	io.Reader
+	finalizer func()
+}
+
+func (prc *prometheusReadCloser) Close() error {
+	if prc.finalizer != nil {
+		prc.finalizer()
+	}
+	return nil
 }
 
 func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {

@@ -5,14 +5,18 @@ package blockbuilder
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type blockBuilderMetrics struct {
 	consumeCycleDuration     prometheus.Histogram
+	consumeJobDuration       *prometheus.HistogramVec
 	processPartitionDuration *prometheus.HistogramVec
 	fetchErrors              *prometheus.CounterVec
 	consumerLagRecords       *prometheus.GaugeVec
 	blockCounts              *prometheus.CounterVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
@@ -24,6 +28,13 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 
 		NativeHistogramBucketFactor: 1.1,
 	})
+
+	m.consumeJobDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name: "cortex_blockbuilder_consume_job_duration_seconds",
+		Help: "Time spent consuming a job.",
+
+		NativeHistogramBucketFactor: 1.1,
+	}, []string{"success"})
 
 	m.processPartitionDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:                        "cortex_blockbuilder_process_partition_duration_seconds",
@@ -49,6 +60,7 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
 	}, []string{"block_time"})
 
+	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder-scheduler", util.GRPCProtocol)
 	return m
 }
 

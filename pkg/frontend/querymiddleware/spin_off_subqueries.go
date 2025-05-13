@@ -11,15 +11,14 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -119,7 +118,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	// For now, the feature is completely opt-in
 	// So we check that the given query is allowed to be spun off
@@ -128,29 +127,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	matched := false
-	for _, tenantID := range tenantIDs {
-		patterns := s.limits.InstantQueriesWithSubquerySpinOff(tenantID)
-
-		for _, pattern := range patterns {
-			matcher, err := labels.NewFastRegexMatcher(pattern)
-			if err != nil {
-				return nil, apierror.New(apierror.TypeBadData, err.Error())
-			}
-
-			if matcher.MatchString(req.GetQuery()) {
-				matched = true
-				break
-			}
-		}
-
-		if matched {
-			break
-		}
-	}
-
-	if !matched {
-		spanLog.DebugLog("msg", "expression did not match any configured subquery spin-off patterns, so subquery spin-off is disabled for this query")
+	if !validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.SubquerySpinOffEnabled) {
+		spanLog.DebugLog("msg", "subquery spin-off is disabled for a tenant", "tenant_ids", tenantIDs)
 		return s.next.Do(ctx, req)
 	}
 
@@ -162,14 +140,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	defer cancel()
 	mapper := astmapper.NewSubquerySpinOffMapper(mapperCtx, s.defaultStepFunc, spanLog, mapperStats)
 
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
-		s.metrics.spinOffSkipped.WithLabelValues(subquerySpinoffSkippedReasonParsingFailed).Inc()
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-
-	spinOffQuery, err := mapper.Map(expr)
+	spinOffQuery, err := mapper.Map(req.GetParsedQuery())
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			level.Error(spanLog).Log("msg", "timeout while spinning off subqueries, please fill in a bug report with this query, falling back to try executing without spin-off", "err", err)
@@ -243,14 +214,17 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	warn = removeDuplicates(warn)
 	info = removeDuplicates(info)
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  queryable.getResponseHeaders(),
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  queryable.getResponseHeaders(),
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
 }

@@ -1,13 +1,13 @@
 ---
 aliases:
   - ../../operators-guide/architecture/deployment-modes/
-description:
-  You can deploy Grafana Mimir in either monolithic mode or microservices
-  mode.
+description: You can deploy Grafana Mimir in either monolithic mode or microservices mode.
 menuTitle: Deployment modes
 title: Grafana Mimir deployment modes
 weight: 20
 ---
+
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
 # Grafana Mimir deployment modes
 
@@ -40,7 +40,7 @@ Monolithic mode can be horizontally scaled out by deploying multiple Grafana Mim
 
 In microservices mode, components are deployed in distinct processes. Scaling is per component, which allows for greater flexibility in scaling and more granular failure domains. Microservices mode is the preferred method for a production deployment, but it is also the most complex.
 
-In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Architecture]({{< relref ".." >}}).
+In microservices mode, each Grafana Mimir process is invoked with its `-target` parameter set to a specific Grafana Mimir component (for example, `-target=ingester` or `-target=distributor`). To get a working Grafana Mimir instance, you must deploy every required component. For more information about each of the Grafana Mimir components, refer to [Architecture](../).
 
 If you are interested in deploying Grafana Mimir in microservices mode, we recommend that you use [Kubernetes](https://kubernetes.io/) and the [mimir-distributed Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed).
 
@@ -78,4 +78,4 @@ Similar to the other modes, each Grafana Mimir process is invoked with its `-tar
 
 ![Mimir's read-write deployment mode](read-write-mode.svg)
 
-Read-write mode is only available in [Jsonnet]({{< relref "../../../set-up/jsonnet/deploy" >}}).
+Read-write mode is only available in [Jsonnet](../../../set-up/jsonnet/deploy/).

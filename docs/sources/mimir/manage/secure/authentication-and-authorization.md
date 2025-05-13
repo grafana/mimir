@@ -8,6 +8,8 @@ title: Grafana Mimir authentication and authorization
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir authentication and authorization
 
 Grafana Mimir is a multi-tenant system where tenants can query metrics and alerts that include their tenant ID.
@@ -71,5 +73,5 @@ To set an alternative tenant ID, use the `-auth.no-auth-tenant` flag.
 
 {{< admonition type="note" >}}
 Not all tenant IDs are valid.
-For more information about tenant ID restrictions, refer to [About tenant IDs]({{< relref "../../configure/about-tenant-ids" >}}).
+For more information about tenant ID restrictions, refer to [About tenant IDs](../../../configure/about-tenant-ids/).
 {{< /admonition >}}

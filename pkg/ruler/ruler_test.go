@@ -44,7 +44,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -250,7 +249,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
 	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil, options.limits)
 	require.NoError(t, err)
 
 	return manager
@@ -273,9 +272,12 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 
 	// We create an empty rule store so that the ruler will not load any rule from it.
 	cfg := defaultRulerConfig(t)
-	cfg.AlertmanagerURL = ts.URL
+	overrides := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		*defaults = *validation.MockDefaultLimits()
+		defaults.RulerAlertmanagerClientConfig.AlertmanagerURL = ts.URL
+	})
 
-	manager := prepareRulerManager(t, cfg)
+	manager := prepareRulerManager(t, cfg, withLimits(overrides))
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")
@@ -429,6 +431,74 @@ func TestRuler_ExcludeAlerts(t *testing.T) {
 	}
 }
 
+func TestRuler_Rules_TenantHasEvaluationDisabled(t *testing.T) {
+	testRules := map[string]rulespb.RuleGroupList{
+		"user1": {
+			&rulespb.RuleGroupDesc{
+				Name:      "group1",
+				Namespace: "namespace1",
+				User:      "user1",
+				Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+				Interval:  interval,
+			},
+		},
+		"user2": {
+			&rulespb.RuleGroupDesc{
+				Name:      "group1",
+				Namespace: "namespace1",
+				User:      "user2",
+				Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")},
+				Interval:  interval,
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		mockRules   map[string]rulespb.RuleGroupList
+		userID      string
+		limits      RulesLimits
+		expectedErr error
+	}{
+		"rules - user1": {
+			userID:    "user1",
+			mockRules: testRules,
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits["user1"].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expectedErr: errTenantRuleEvaluationDisabled,
+		},
+		"rules - user2": {
+			userID:    "user2",
+			mockRules: testRules,
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["another-user"] = validation.MockDefaultLimits()
+				tenantLimits["another-user"].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits["another-user"].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expectedErr: nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultRulerConfig(t)
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withLimits(tc.limits), withStart())
+
+			ctx := user.InjectOrgID(context.Background(), tc.userID)
+
+			rls, err := r.Rules(ctx, &RulesRequest{})
+			if tc.expectedErr == nil {
+				require.NoError(t, err)
+				require.Len(t, rls.Groups, len(mockRules[tc.userID]))
+			} else {
+				require.ErrorIs(t, err, tc.expectedErr)
+			}
+		})
+	}
+}
+
 func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDesc, got *GroupStateDesc) {
 	t.Helper()
 
@@ -563,7 +633,7 @@ func TestGetRules(t *testing.T) {
 				for _, r := range rulerAddrMap {
 					rules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
 					require.NoError(t, err)
-					require.Equal(t, len(allRulesByUser[u]), len(rules))
+					require.Equal(t, len(allRulesByUser[u]), len(rules.Groups))
 
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 					if tc.shuffleShardSize > 0 {
@@ -1144,9 +1214,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the per-tenant rules manager gets started asynchronously.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
-						return len(actualRuleGroups)
+						return len(list.Groups)
 					})
 				}
 			})
@@ -1167,9 +1237,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// We use test.Poll() because the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups-1, func() interface{} {
-						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
-						return len(actualRuleGroups)
+						return len(list.Groups)
 					})
 				}
 			})
@@ -1190,9 +1260,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, 0, func() interface{} {
-						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
-						return len(actualRuleGroups)
+						return len(list.Groups)
 					})
 				}
 			})
@@ -1253,9 +1323,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 		rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
-		limits, err := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
-		require.NoError(t, err)
-
+		limits := validation.NewOverrides(*validation.MockDefaultLimits(), validation.NewMockTenantLimits(tenantLimits))
 		regs[i] = prometheus.NewPedanticRegistry()
 		rulers[i] = prepareRuler(t, rulerCfg, store, withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withLimits(limits), withStart(), withPrometheusRegisterer(regs[i]))
 	}
@@ -1291,9 +1359,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the per-tenant rules manager gets started asynchronously.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
-			return len(actualRuleGroups)
+			return len(list.Groups)
 		})
 	}
 
@@ -1330,9 +1398,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the rule syncing is asynchronous in each ruler.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
-			return len(actualRuleGroups)
+			return len(list.Groups)
 		})
 	}
 
@@ -1441,9 +1509,9 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// GetRules() should return no configured rule groups, because no re-sync happened.
 	for _, ruler := range rulers {
-		actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+		list, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
-		require.Empty(t, actualRuleGroups)
+		require.Empty(t, list.Groups)
 	}
 }
 
@@ -1476,10 +1544,10 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 
 	// "upload" rule groups
 	for _, key := range ruleGroups {
-		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.RuleNode{
+		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.Rule{
 			{
-				Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-				Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+				Record: "up",
+				Expr:   "up==1",
 			},
 		}})
 		require.NoError(t, rs.SetRuleGroup(context.Background(), key.user, key.namespace, desc))
@@ -1586,7 +1654,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 			list, _, err := r.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 
-			return len(list) == 0
+			return len(list.Groups) == 0
 		})
 	})
 }

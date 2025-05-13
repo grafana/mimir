@@ -16,11 +16,12 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
-	list := newSeriesList()
+	list := newSeriesList(limiting.NewMemoryConsumptionTracker(0, nil))
 	require.Equal(t, 0, list.Len())
 
 	series1 := mockSeries{labels.FromStrings("series", "1")}
@@ -56,7 +57,7 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 
 	for _, seriesCount := range cases {
 		t.Run(fmt.Sprintf("N=%v", seriesCount), func(t *testing.T) {
-			list := newSeriesList()
+			list := newSeriesList(limiting.NewMemoryConsumptionTracker(0, nil))
 
 			seriesAdded := make([]storage.Series, 0, seriesCount)
 
@@ -87,7 +88,10 @@ func requireSeriesListContents(t *testing.T, list *seriesList, series ...storage
 		expectedMetadata = append(expectedMetadata, types.SeriesMetadata{Labels: s.Labels()})
 	}
 
-	require.Equal(t, expectedMetadata, list.ToSeriesMetadata())
+	metadata, err := list.ToSeriesMetadata()
+	require.NoError(t, err)
+
+	require.Equal(t, expectedMetadata, metadata)
 }
 
 type mockSeries struct {
@@ -111,9 +115,10 @@ func TestSelector_QueryRanges(t *testing.T) {
 		queryable := &mockQueryable{}
 		lookbackDelta := 5 * time.Minute
 		s := &Selector{
-			Queryable:     queryable,
-			TimeRange:     timeRange,
-			LookbackDelta: lookbackDelta,
+			Queryable:                queryable,
+			TimeRange:                timeRange,
+			LookbackDelta:            lookbackDelta,
+			MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 		}
 
 		_, err := s.SeriesMetadata(context.Background())
@@ -131,9 +136,10 @@ func TestSelector_QueryRanges(t *testing.T) {
 		queryable := &mockQueryable{}
 		selectorRange := 15 * time.Minute
 		s := &Selector{
-			Queryable: queryable,
-			TimeRange: timeRange,
-			Range:     selectorRange,
+			Queryable:                queryable,
+			TimeRange:                timeRange,
+			Range:                    selectorRange,
+			MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 		}
 
 		_, err := s.SeriesMetadata(context.Background())

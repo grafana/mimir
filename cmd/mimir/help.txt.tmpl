@@ -423,6 +423,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
   -ingest-storage.kafka.fetch-concurrency-max int
     	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
+  -ingest-storage.kafka.fetch-max-wait duration
+    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
   -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
@@ -508,7 +510,7 @@ Usage of ./cmd/mimir/mimir:
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
   -memberlist.abort-if-join-fails
-    	If this node fails to join memberlist cluster, abort.
+    	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.advertise-addr string
     	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
   -memberlist.advertise-port int
@@ -563,12 +565,16 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.max-series-query-limit int
+    	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
+  -query-frontend.cache-errors
+    	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
   -query-frontend.log-queries-longer-than duration
@@ -593,6 +599,8 @@ Usage of ./cmd/mimir/mimir:
     	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
   -query-frontend.results-cache-ttl-for-cardinality-query duration
     	Time to live duration for cached cardinality query results. The value 0 disables the cache.
+  -query-frontend.results-cache-ttl-for-errors duration
+    	Time to live duration for cached non-transient errors (default 5m)
   -query-frontend.results-cache-ttl-for-labels-query duration
     	Time to live duration for cached label names and label values query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
@@ -837,6 +845,8 @@ Usage of ./cmd/mimir/mimir:
     	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
     	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
+  -tests.client.cluster-validation.label string
+    	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
   -tests.read-endpoint string

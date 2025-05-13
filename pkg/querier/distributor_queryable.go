@@ -82,6 +82,8 @@ type distributorQuerier struct {
 	mint, maxt   int64
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
+
+	streamReaders []*client.SeriesChunksStreamReader
 }
 
 // Select implements storage.Querier interface.
@@ -122,7 +124,6 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
-
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -193,6 +194,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
+	// Store the stream readers so we can free their buffers when we're done using this Querier.
+	q.streamReaders = append(q.streamReaders, results.StreamReaders...)
+
 	if len(sets) == 0 {
 		return storage.EmptySeriesSet()
 	}
@@ -205,7 +209,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -228,7 +232,7 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints
 
 func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -249,6 +253,10 @@ func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 }
 
 func (q *distributorQuerier) Close() error {
+	for _, r := range q.streamReaders {
+		r.FreeBuffer()
+	}
+
 	return nil
 }
 

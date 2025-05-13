@@ -60,8 +60,9 @@ type Writer struct {
 
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
-	writersMx sync.RWMutex
-	writers   []*KafkaProducer
+	writersMx  sync.RWMutex
+	writers    []*KafkaProducer
+	serializer recordSerializer
 
 	// Metrics.
 	writeLatency      prometheus.Histogram
@@ -78,6 +79,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		logger:                     logger,
 		registerer:                 reg,
 		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
+		serializer:                 recordSerializerFromCfg(kafkaCfg),
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
@@ -139,7 +141,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	records, err := w.serializer.ToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
 	if err != nil {
 		return err
 	}

@@ -284,9 +284,10 @@ func TestNewMockShardedQueryable(t *testing.T) {
 				samples := 0
 				histograms := 0
 				for valType := iter.Next(); valType != chunkenc.ValNone; valType = iter.Next() {
-					if valType == chunkenc.ValFloat {
+					switch valType {
+					case chunkenc.ValFloat:
 						samples++
-					} else if valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
+					case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 						histograms++
 					}
 				}

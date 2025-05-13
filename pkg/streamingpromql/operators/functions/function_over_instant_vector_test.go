@@ -29,6 +29,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
+		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 	}
 
 	metadataFuncCalled := false
@@ -74,6 +75,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
+		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
 	}
 
 	scalarOperator1 := &testScalarOperator{

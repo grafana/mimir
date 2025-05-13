@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -38,8 +39,9 @@ type EmailSenderConfig struct {
 }
 
 type defaultEmailSender struct {
-	cfg  EmailSenderConfig
-	tmpl *template.Template
+	cfg    EmailSenderConfig
+	tmpl   *template.Template
+	dialFn func(*defaultEmailSender) (gomail.SendCloser, error)
 }
 
 // NewEmailSenderFactory takes a configuration and returns a new EmailSender factory function.
@@ -57,6 +59,9 @@ func NewEmailSenderFactory(cfg EmailSenderConfig) func(Metadata) (EmailSender, e
 		return &defaultEmailSender{
 			cfg:  cfg,
 			tmpl: tmpl,
+			dialFn: func(s *defaultEmailSender) (gomail.SendCloser, error) {
+				return s.dial()
+			},
 		}, nil
 	}
 }
@@ -143,24 +148,53 @@ func (s *defaultEmailSender) setDefaultTemplateData(data map[string]any) {
 
 func (s *defaultEmailSender) Send(messages ...*Message) (int, error) {
 	sentEmailsCount := 0
-	dialer, err := s.createDialer()
+
+	sender, err := s.dialFn(s)
 	if err != nil {
-		return sentEmailsCount, err
+		return sentEmailsCount, fmt.Errorf("failed to dial SMTP server: %w", err)
 	}
+	defer sender.Close()
+
+	var errs error
 
 	for _, msg := range messages {
-		m := s.buildEmail(msg)
-
-		innerError := dialer.DialAndSend(m)
-		if innerError != nil {
-			err = fmt.Errorf("failed to send notification to email addresses: %s: %w", strings.Join(msg.To, ";"), innerError)
-			continue
+		for _, m := range s.expandMsg(msg) {
+			if err := gomail.Send(sender, m); err != nil {
+				errs = errors.Join(errs, fmt.Errorf("failed to send notification to email addresses: %s: %w", strings.Join(msg.To, ";"), err))
+			} else {
+				sentEmailsCount++
+			}
 		}
-
-		sentEmailsCount++
 	}
 
-	return sentEmailsCount, err
+	return sentEmailsCount, errs
+}
+
+// expandMsg expands the message to a list of messages, one for each recipient
+// if SingleEmail is false, otherwise it returns a single message.
+func (s *defaultEmailSender) expandMsg(msg *Message) []*gomail.Message {
+	if msg.SingleEmail {
+		return []*gomail.Message{s.buildEmail(msg)}
+	}
+
+	result := make([]*gomail.Message, 0, len(msg.To))
+
+	for _, recipient := range msg.To {
+		msgCopy := *msg
+		msgCopy.To = []string{recipient}
+		m := s.buildEmail(&msgCopy)
+		result = append(result, m)
+	}
+
+	return result
+}
+
+func (s *defaultEmailSender) dial() (gomail.SendCloser, error) {
+	dialer, err := s.createDialer()
+	if err != nil {
+		return nil, err
+	}
+	return dialer.Dial()
 }
 
 func (s *defaultEmailSender) createDialer() (*gomail.Dialer, error) {

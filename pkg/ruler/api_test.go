@@ -437,6 +437,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 		expectedStatusCode int
 		expectedErrorType  v1.ErrorType
 		expectedRules      []*RuleGroup
+		expectedWarnings   []string
 		queryParams        string
 	}{
 		"should load and evaluate the configured rules": {
@@ -506,6 +507,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval: 60,
 				},
 			},
+			expectedWarnings: []string{errAlertingRulesEvaluationDisabled},
 		},
 		"should load and evaluate only alerting rules if recording rules evaluation is disabled for the tenant": {
 			configuredRules: rulespb.RuleGroupList{
@@ -540,6 +542,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 					Interval: 60,
 				},
 			},
+			expectedWarnings: []string{errRulesEvaluationDisabled},
 		},
 		"should load and evaluate no rules if rules evaluation is disabled for the tenant": {
 			configuredRules: rulespb.RuleGroupList{
@@ -557,7 +560,9 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
 			}),
-			expectedRules: []*RuleGroup{},
+			expectedStatusCode: http.StatusUnprocessableEntity,
+			expectedErrorType:  v1.ErrExec,
+			expectedRules:      []*RuleGroup{},
 		},
 		"should load and evaluate the configured rules with special characters": {
 			configuredRules: rulespb.RuleGroupList{
@@ -1182,11 +1187,14 @@ func TestRuler_PrometheusRules(t *testing.T) {
 
 			r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrAutomaticMapping(), withLimits(tc.limits), withStart())
 
-			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
-			// has been synched.
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups has been synched.
 			test.Poll(t, 5*time.Second, tc.expectedConfigured, func() interface{} {
 				ctx := user.InjectOrgID(context.Background(), userID)
-				rls, _ := r.Rules(ctx, &RulesRequest{})
+				rls, err := r.Rules(ctx, &RulesRequest{})
+				if err != nil {
+					// The test checks for the actual error below.
+					return 0
+				}
 				return len(rls.Groups)
 			})
 
@@ -1221,8 +1229,8 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				Data: &RuleDiscovery{
 					RuleGroups: tc.expectedRules,
 				},
+				Warnings: tc.expectedWarnings,
 			})
-
 			require.NoError(t, err)
 			require.Equal(t, string(expectedResponse), string(body))
 		})
@@ -1646,7 +1654,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	test.Poll(t, time.Second, 2, func() interface{} {
 		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
-		return len(actualRuleGroups)
+		return len(actualRuleGroups.Groups)
 	})
 
 	// Delete group-1.
@@ -1664,7 +1672,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	test.Poll(t, time.Second, 1, func() interface{} {
 		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
-		return len(actualRuleGroups)
+		return len(actualRuleGroups.Groups)
 	})
 }
 

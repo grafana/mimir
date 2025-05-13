@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
@@ -398,7 +398,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Initialize dynamic replication if enabled
-			var dynamicReplication DynamicReplication = NewNopDynamicReplication()
+			var dynamicReplication DynamicReplication = NewNopDynamicReplication(testData.replicationFactor)
 			if testData.dynamicReplication {
 				dynamicReplication = NewMaxTimeDynamicReplication(Config{
 					ShardingRing: RingConfig{ReplicationFactor: testData.replicationFactor},

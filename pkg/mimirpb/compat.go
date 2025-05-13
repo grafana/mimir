@@ -218,6 +218,7 @@ func FromHistogramProtoToHistogram(hp *Histogram) *histogram.Histogram {
 		PositiveBuckets:  hp.GetPositiveDeltas(),
 		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeDeltas(),
+		CustomValues:     hp.GetCustomValues(),
 	}
 }
 
@@ -239,6 +240,7 @@ func FromHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHistogram
 		PositiveBuckets:  deltasToCounts(hp.GetPositiveDeltas()),
 		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  deltasToCounts(hp.GetNegativeDeltas()),
+		CustomValues:     hp.GetCustomValues(),
 	}
 }
 
@@ -270,6 +272,7 @@ func FromFloatHistogramProtoToFloatHistogram(hp *Histogram) *histogram.FloatHist
 		PositiveBuckets:  hp.GetPositiveCounts(),
 		NegativeSpans:    fromSpansProtoToSpans(hp.GetNegativeSpans()),
 		NegativeBuckets:  hp.GetNegativeCounts(),
+		CustomValues:     hp.GetCustomValues(),
 	}
 }
 
@@ -307,8 +310,9 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
 		PositiveDeltas: h.PositiveBuckets,
 		// PositiveCounts: nil,  not relevant for integer Histogram
-		ResetHint: Histogram_ResetHint(h.CounterResetHint),
-		Timestamp: timestamp,
+		ResetHint:    Histogram_ResetHint(h.CounterResetHint),
+		Timestamp:    timestamp,
+		CustomValues: h.CustomValues,
 	}
 }
 
@@ -317,6 +321,10 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")
 	}
+	// NOTE(jhesketh): fromSpansToSpansProto is not a deepcopy, slices are referenced. This could
+	// potentially cause issues where other Histograms using the same Spans are mutated. However,
+	// since https://github.com/prometheus/prometheus/pull/14771 change each Histogram should have
+	// its own Spans.
 	return Histogram{
 		Count:         &Histogram_CountFloat{CountFloat: fh.Count},
 		Sum:           fh.Sum,
@@ -331,6 +339,7 @@ func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHist
 		PositiveCounts: fh.PositiveBuckets,
 		ResetHint:      Histogram_ResetHint(fh.CounterResetHint),
 		Timestamp:      timestamp,
+		CustomValues:   fh.CustomValues,
 	}
 }
 

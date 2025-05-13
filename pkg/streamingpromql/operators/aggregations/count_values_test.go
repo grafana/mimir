@@ -218,6 +218,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 				Data: []types.InstantVectorSeriesData{
 					{Floats: floats},
 				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			labelName := operators.NewStringLiteral("value", posrange.PositionRange{})

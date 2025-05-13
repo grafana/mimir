@@ -203,7 +203,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	downstreamErr := errors.Errorf("some err")
 	downstream := mockHandlerWith(nil, downstreamErr)
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{subquerySpinOffEnabled: true}, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
 
 	// Run the query with subquery spin-off middleware wrapping the downstream one.
 	// We expect to get the downstream error.
@@ -291,7 +291,8 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			// Run the query without subquery spin-off.
 			expectedRes, err := downstream.Do(context.Background(), req)
 			require.Nil(t, err)
-			expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+			expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+			require.True(t, ok)
 			if !testData.expectSpecificOrder {
 				sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
 			}
@@ -320,7 +321,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			reg := prometheus.NewPedanticRegistry()
 			spinoffMiddleware := newSpinOffSubqueriesMiddleware(
 				mockLimits{
-					instantQueriesWithSubquerySpinOff: []string{".*"},
+					subquerySpinOffEnabled: true,
 				},
 				log.NewNopLogger(),
 				engine,
@@ -341,7 +342,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 
 			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
 			// if you rerun the same query twice).
-			shardedPrometheusRes := spinoffRes.(*PrometheusResponse)
+			shardedPrometheusRes, _ := spinoffRes.GetPrometheusResponse()
 			if !testData.expectSpecificOrder {
 				sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
 			}

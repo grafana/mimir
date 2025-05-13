@@ -1,9 +1,7 @@
 ---
 aliases:
   - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery/
-description:
-  Learn how to migrate query-scheduler from DNS-based to ring-based service
-  discovery
+description: Learn how to migrate query-scheduler from DNS-based to ring-based service discovery
 menuTitle: Migrate query-scheduler to ring-based service discovery
 title: Migrate query-scheduler from DNS-based to ring-based service discovery
 weight: 50
@@ -13,8 +11,8 @@ weight: 50
 
 The query-scheduler supports two service discovery mechanisms:
 
-- [DNS-based service discovery]({{< relref "../../references/architecture/components/query-scheduler#dns-based-service-discovery" >}})
-- [Ring-based service discovery]({{< relref "../../references/architecture/components/query-scheduler#ring-based-service-discovery" >}})
+- [DNS-based service discovery](../../../references/architecture/components/query-scheduler/#dns-based-service-discovery)
+- [Ring-based service discovery](../../../references/architecture/components/query-scheduler/#ring-based-service-discovery)
 
 To migrate the query-scheduler from DNS-based to ring-based service discovery when your Mimir cluster is deployed using Jsonnet:
 
@@ -28,7 +26,7 @@ To migrate the query-scheduler from DNS-based to ring-based service discovery wh
    }
    ```
 1. Wait until query-scheduler changes have been applied.
-1. Open the [query-scheduler ring status]({{< relref "../../references/http-api#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
+1. Open the [query-scheduler ring status](../../../references/http-api/#query-scheduler-ring-status) page and ensure all query-scheduler instances are registered to the ring.
 1. Configure query-frontend and querier instances to discover query-schedulers via the ring:
    ```jsonnet
    {

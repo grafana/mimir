@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -125,6 +126,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
+	rulesCmd.Flag("enable-experimental-functions", "If set, enables parsing experimental PromQL functions.").BoolVar(&parser.EnableExperimentalFunctions)
 	r.ClientConfig.ExtraHeaders = map[string]string{}
 	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
@@ -154,7 +156,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		Command("prepare", "Modify a set of rules by including an specific label in aggregations.").
 		Action(r.prepare)
 	lintCmd := rulesCmd.
-		Command("lint", "Format a set of rule files. Keys are sorted alphabetically, with 4 spaces as indentantion, and PromQL expressions are formatted to a single line.").
+		Command("lint", "Format a set of rule files. Keys are sorted alphabetically, with 4 spaces as indentation, and PromQL expressions are formatted to a single line.").
 		Action(r.lint)
 	checkCmd := rulesCmd.
 		Command("check", "Run various best practice checks against rules.").
@@ -295,14 +297,12 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
 	r.ruleLoadTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_timestamp_seconds",
-		Help:      "The timestamp of the last rule load.",
+		Name: "cortex_last_rule_load_timestamp_seconds",
+		Help: "The timestamp of the last rule load.",
 	})
 	r.ruleLoadSuccessTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_success_timestamp_seconds",
-		Help:      "The timestamp of the last successful rule load.",
+		Name: "cortex_last_rule_load_success_timestamp_seconds",
+		Help: "The timestamp of the last successful rule load.",
 	})
 
 	cli, err := client.New(r.ClientConfig)
@@ -726,7 +726,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 	}
 
 	// Do not apply the aggregation label to excluded rule groups.
-	applyTo := func(group rwrulefmt.RuleGroup, _ rulefmt.RuleNode) bool {
+	applyTo := func(group rwrulefmt.RuleGroup, _ rulefmt.Rule) bool {
 		_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
 		return !excluded
 	}
@@ -862,11 +862,11 @@ func checkDuplicates(groups []rwrulefmt.RuleGroup) []compareRuleType {
 	return duplicates
 }
 
-func ruleMetric(rule rulefmt.RuleNode) string {
-	if rule.Alert.Value != "" {
-		return rule.Alert.Value
+func ruleMetric(rule rulefmt.Rule) string {
+	if rule.Alert != "" {
+		return rule.Alert
 	}
-	return rule.Record.Value
+	return rule.Record
 }
 
 // End taken from https://github.com/prometheus/prometheus/blob/8c8de46003d1800c9d40121b4a5e5de8582ef6e1/cmd/promtool/main.go#L403

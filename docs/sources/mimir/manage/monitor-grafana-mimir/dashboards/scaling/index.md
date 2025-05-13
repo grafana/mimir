@@ -9,6 +9,8 @@ title: Grafana Mimir scaling dashboard
 weight: 140
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir scaling dashboard
 
 The scaling dashboard displays services that you can optionally scale up, in the event of a failure that is caused by one or more specific reasons.

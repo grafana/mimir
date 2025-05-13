@@ -36,6 +36,7 @@ type ringBufferView[T any] interface {
 	Count() int
 	Any() bool
 	First() T
+	PointAt(i int) T
 }
 
 func TestRingBuffer(t *testing.T) {
@@ -423,6 +424,11 @@ func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected 
 	} else {
 		require.True(t, present)
 		require.Equal(t, expected[len(expected)-1], end)
+	}
+
+	for idx, expectedPoint := range expected {
+		actualPoint := view.PointAt(idx)
+		require.Equal(t, expectedPoint, actualPoint)
 	}
 }
 

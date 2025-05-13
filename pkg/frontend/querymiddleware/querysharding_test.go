@@ -721,7 +721,8 @@ func TestQuerySharding_Correctness(t *testing.T) {
 					// Run the query without sharding.
 					expectedRes, err := downstream.Do(context.Background(), req)
 					require.Nil(t, err)
-					expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+					expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+					require.True(t, ok)
 					if !testData.expectSpecificOrder {
 						sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
 					}
@@ -753,7 +754,8 @@ func TestQuerySharding_Correctness(t *testing.T) {
 
 							// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
 							// if you rerun the same query twice).
-							shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+							shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+							require.True(t, ok)
 							if !testData.expectSpecificOrder {
 								sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
 							}
@@ -824,7 +826,8 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 			expectedRes, err := downstream.Do(context.Background(), req)
 			require.Nil(t, err)
 
-			expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+			expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+			require.True(t, ok)
 			sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
 
 			// Ensure the query produces some results.
@@ -851,7 +854,8 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 
 					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
 					// if you rerun the same query twice).
-					shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+					shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+					require.True(t, ok)
 					sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
 					approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
@@ -934,7 +938,8 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 		require.NoError(t, err)
 
-		shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+		shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+		require.True(t, ok)
 
 		sampleStreams, err := ResponseToSamples(shardedPrometheusRes)
 		require.NoError(t, err)
@@ -993,8 +998,6 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "increase", rangeQuery: true},
 		{fn: "rate", rangeQuery: true},
 		{fn: "resets", rangeQuery: true},
-		{fn: "sort"},
-		{fn: "sort_desc"},
 		{fn: "sort_by_label"},
 		{fn: "sort_by_label_desc"},
 		{fn: "last_over_time", rangeQuery: true},
@@ -1029,6 +1032,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "minute"},
 		{fn: "month"},
 		{fn: "round", args: []string{"20"}},
+		{fn: "sort"},
+		{fn: "sort_desc"},
 		{fn: "sqrt"},
 		{fn: "deg"},
 		{fn: "asinh"},
@@ -1097,18 +1102,18 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		if tpl == "" {
 			tpl = `(<fn>(bar1{}<args>))`
 		}
-		result := strings.Replace(tpl, "<fn>", fn, -1)
+		result := strings.ReplaceAll(tpl, "<fn>", fn)
 
 		if testMatrix {
 			// turn selectors into ranges
-			result = strings.Replace(result, "}", "}[1m]", -1)
+			result = strings.ReplaceAll(result, "}", "}[1m]")
 		}
 
 		if len(fArgs) > 0 {
 			args := "," + strings.Join(fArgs, ",")
-			result = strings.Replace(result, "<args>", args, -1)
+			result = strings.ReplaceAll(result, "<args>", args)
 		} else {
-			result = strings.Replace(result, "<args>", "", -1)
+			result = strings.ReplaceAll(result, "<args>", "")
 		}
 
 		return []string{
@@ -1148,17 +1153,21 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 				// Run the query without sharding.
 				expectedRes, err := downstream.Do(context.Background(), req)
 				require.Nil(t, err)
+				expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+				require.True(t, ok)
 
 				// Ensure the query produces some results.
-				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+				require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 
 				// Run the query with sharding.
 				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 				require.Nil(t, err)
+				shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+				require.True(t, ok)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
 				// if you rerun the same query twice).
-				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+				approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 			})
 		}
 	}
@@ -1208,7 +1217,10 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 
 	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
-	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+	shardedPrometheusRes, ok := res.GetPrometheusResponse()
+	require.True(t, ok)
+
+	assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
 	// Ensure we get the same request downstream. No sharding
 	downstream.AssertCalled(t, "Do", mock.Anything, req)
 	downstream.AssertNumberOfCalls(t, "Do", 1)
@@ -1237,7 +1249,10 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 
 	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
-	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+	shardedPrometheusRes, ok := res.GetPrometheusResponse()
+	require.True(t, ok)
+
+	assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
 	// we expect 128 calls to the downstream handler and not the original 16.
 	downstream.AssertNumberOfCalls(t, "Do", 128)
@@ -1245,112 +1260,160 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 
 func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 	tests := map[string]struct {
-		query             string
-		hints             *Hints
-		totalShards       int
-		maxShardedQueries int
-		nativeHistograms  bool
-		expectedShards    int
-		compactorShards   int
+		query                         string
+		hints                         *Hints
+		totalShards                   int
+		maxShardedQueries             int
+		nativeHistograms              bool
+		expectedShardsPerPartialQuery int
+		compactorShards               int
 	}{
 		"query is not shardable": {
-			query:             "metric",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    1,
+			query:                         "metric",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 1,
 		},
 		"single splitted query, query has 1 shardable leg": {
-			query:             "sum(metric)",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    16,
+			query:                         "sum(metric)",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 16,
 		},
 		"single splitted query, query has many shardable legs": {
-			query:             "sum(metric_1) + sum(metric_2) + sum(metric_3) + sum(metric_4)",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       16,
-			maxShardedQueries: 16,
-			expectedShards:    4,
+			query:                         "sum(metric_1) + sum(metric_2) + sum(metric_3) + sum(metric_4)",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   16,
+			maxShardedQueries:             16,
+			expectedShardsPerPartialQuery: 4,
 		},
 		"multiple splitted queries, query has 1 shardable leg": {
-			query:             "sum(metric)",
-			hints:             &Hints{TotalQueries: 10},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    6,
+			query:                         "sum(metric)",
+			hints:                         &Hints{TotalQueries: 10},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 6,
 		},
 		"multiple splitted queries, query has 2 shardable legs": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 10},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			expectedShards:    3,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 10},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 3,
 		},
 		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   0,
-			expectedShards:    10,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               0,
+			expectedShardsPerPartialQuery: 10,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   3,
-			expectedShards:    9,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               3,
+			expectedShardsPerPartialQuery: 9,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   4,
-			expectedShards:    8,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               4,
+			expectedShardsPerPartialQuery: 8,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   10,
-			expectedShards:    10,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               10,
+			expectedShardsPerPartialQuery: 10,
 		},
 		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   11,
-			expectedShards:    10, // cannot be adjusted to make 11 multiple or divisible, keep original.
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               11,
+			expectedShardsPerPartialQuery: 10, // cannot be adjusted to make 11 multiple or divisible, keep original.
 		},
 		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			compactorShards:   14,
-			expectedShards:    7, // 7 divides 14
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			compactorShards:               14,
+			expectedShardsPerPartialQuery: 7, // 7 divides 14
 		},
 		"query sharding is disabled": {
-			query:             "sum(metric)",
-			hints:             &Hints{TotalQueries: 1},
-			totalShards:       0, // Disabled.
-			maxShardedQueries: 64,
-			expectedShards:    1,
+			query:                         "sum(metric)",
+			hints:                         &Hints{TotalQueries: 1},
+			totalShards:                   0, // Disabled.
+			maxShardedQueries:             64,
+			expectedShardsPerPartialQuery: 1,
 		},
 		"native histograms accepted": {
-			query:             "sum(metric) / count(metric)",
-			hints:             &Hints{TotalQueries: 3},
-			totalShards:       16,
-			maxShardedQueries: 64,
-			nativeHistograms:  true,
-			compactorShards:   10,
-			expectedShards:    10,
+			query:                         "sum(metric) / count(metric)",
+			hints:                         &Hints{TotalQueries: 3},
+			totalShards:                   16,
+			maxShardedQueries:             64,
+			nativeHistograms:              true,
+			compactorShards:               10,
+			expectedShardsPerPartialQuery: 10,
+		},
+		"hints are missing, query has 1 shardable leg": {
+			query:                         "count(metric)",
+			hints:                         nil,
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16,
+		},
+		"hints are missing, query has 2 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2)",
+			hints:                         nil,
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16, // 2 legs * 16 shards per query = 32 max sharded queries
+		},
+		"hints are missing, query has 4 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
+			hints:                         nil,
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 8, // 4 legs * 8 shards per query = 32 max sharded queries
+		},
+		"total queries number is missing in hints, query has 1 shardable leg": {
+			query:                         "count(metric)",
+			hints:                         &Hints{},
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16,
+		},
+		"total queries number is missing in hints, query has 2 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2)",
+			hints:                         &Hints{},
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 16, // 2 legs * 16 shards per query = 32 max sharded queries
+		},
+		"total queries number is missing in hints, query has 4 shardable legs": {
+			query:                         "count(metric_1) or count(metric_2) or count(metric_3) or count(metric_4)",
+			hints:                         &Hints{},
+			totalShards:                   16,
+			maxShardedQueries:             32,
+			compactorShards:               8,
+			expectedShardsPerPartialQuery: 8, // 4 legs * 8 shards per query = 32 max sharded queries
 		},
 	}
 
@@ -1393,8 +1456,11 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 
 			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 			require.NoError(t, err)
-			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
-			assert.Equal(t, testData.expectedShards, len(uniqueShards))
+			shardedPrometheusRes, ok := res.GetPrometheusResponse()
+			require.True(t, ok)
+
+			assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
+			assert.Equal(t, testData.expectedShardsPerPartialQuery, len(uniqueShards))
 		})
 	}
 }
@@ -1486,7 +1552,10 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 
 			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 			require.NoError(t, err)
-			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+			shardedPrometheusRes, ok := res.GetPrometheusResponse()
+			require.True(t, ok)
+
+			assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
 			assert.Equal(t, testData.expectedShards, len(uniqueShards))
 		})
 	}
@@ -1742,7 +1811,10 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 
 			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), tt.req)
 			require.NoError(t, err)
-			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+			shardedPrometheusRes, ok := res.GetPrometheusResponse()
+			require.True(t, ok)
+
+			assert.Equal(t, statusSuccess, shardedPrometheusRes.GetStatus())
 			downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
 			downstream.AssertNumberOfCalls(t, "Do", tt.expectedCalls)
 		})
@@ -1851,33 +1923,38 @@ func TestQuerySharding_Annotations(t *testing.T) {
 			// Run the query without sharding.
 			expectedRes, err := downstream.Do(injectedContext, req)
 			require.Nil(t, err)
-			expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+			expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+			require.True(t, ok)
 
 			// Ensure the query produces some results.
-			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+			require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 
 			// Run the query with sharding.
 			shardedRes, err := shardingware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
+			shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+			require.True(t, ok)
 
 			// Ensure the query produces some results.
-			require.NotEmpty(t, shardedRes.(*PrometheusResponse).Data.Result)
+			require.NotEmpty(t, shardedPrometheusRes.Data.Result)
 
 			// Run the query with splitting.
 			splitRes, err := splitware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
+			splitPrometheusRes, ok := splitRes.GetPrometheusResponse()
+			require.True(t, ok)
 
 			// Ensure the query produces some results.
-			require.NotEmpty(t, splitRes.(*PrometheusResponse).Data.Result)
+			require.NotEmpty(t, splitPrometheusRes.Data.Result)
 
 			expected := expectedPrometheusRes.Infos
-			actualSharded := shardedRes.(*PrometheusResponse).Infos
-			actualSplit := splitRes.(*PrometheusResponse).Infos
+			actualSharded := shardedPrometheusRes.Infos
+			actualSplit := splitPrometheusRes.Infos
 
 			if template.isWarning {
 				expected = expectedPrometheusRes.Warnings
-				actualSharded = shardedRes.(*PrometheusResponse).Warnings
-				actualSplit = splitRes.(*PrometheusResponse).Warnings
+				actualSharded = shardedPrometheusRes.Warnings
+				actualSplit = splitPrometheusRes.Warnings
 			}
 
 			require.NotEmpty(t, expected)
@@ -2633,6 +2710,14 @@ func TestMapEngineError(t *testing.T) {
 		"context canceled wrapped": {
 			err:      fmt.Errorf("%w: oh no", context.Canceled),
 			expected: apierror.New(apierror.TypeCanceled, "context canceled"),
+		},
+		"deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
+		},
+		"deadline exceeded wrapped": {
+			err:      fmt.Errorf("%w: oh no", context.DeadlineExceeded),
+			expected: apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
 		},
 		"promql canceled": {
 			err:      promql.ErrQueryCanceled("something"),

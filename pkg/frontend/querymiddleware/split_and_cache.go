@@ -31,9 +31,11 @@ import (
 )
 
 const (
-	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
-	notCachableReasonTooNew               = "too-new"
-	notCachableReasonModifiersNotCachable = "has-modifiers"
+	notCachableReasonUnalignedTimeRange                   = "unaligned-time-range"
+	notCachableReasonTooNew                               = "too-new"
+	notCachableReasonModifiersNotCachable                 = "has-modifiers"
+	notCachableReasonModifiersNotCachableFailedParse      = "has-modifiers-failed-parse"
+	notCachableReasonModifiersNotCachableFailedPreprocess = "has-modifiers-failed-preprocess"
 )
 
 var (
@@ -187,9 +189,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			requests, responses, samplesProcessed, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
 			if err != nil {
 				return nil, err
+			}
+
+			// Track samples processed from cache in metrics
+			if details := QueryDetailsFromContext(ctx); details != nil {
+				details.SamplesProcessedFromCache += samplesProcessed
 			}
 
 			if len(requests) == 0 {
@@ -262,11 +269,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
+				downstreamStats := splitReq.downstreamStatistics[downstreamIdx]
 				if !isResponseCachable(downstreamRes) {
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime)
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessed())
 				if err != nil {
 					return nil, err
 				}
@@ -486,6 +494,8 @@ type splitRequest struct {
 	// response is stored at the same index.
 	downstreamRequests  []MetricsQueryRequest
 	downstreamResponses []Response
+	// Query statistics for each downstream request, stored at the same index too.
+	downstreamStatistics []*stats.Stats
 }
 
 // splitRequests holds a list of splitRequest.
@@ -552,6 +562,7 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 
 		execReqs = append(execReqs, splitReq.downstreamRequests...)
 		splitReq.downstreamResponses = make([]Response, len(splitReq.downstreamRequests))
+		splitReq.downstreamStatistics = make([]*stats.Stats, len(splitReq.downstreamRequests))
 	}
 
 	return execReqs, nil
@@ -562,6 +573,7 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 // that any downstream request got its response associated.
 func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
+	execStatsByID := make(map[int64]*stats.Stats, len(responses))
 
 	// Map responses by (unique) request IDs.
 	for _, resp := range responses {
@@ -572,6 +584,7 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 		}
 
 		execRespsByID[resp.Request.GetID()] = resp.Response
+		execStatsByID[resp.Request.GetID()] = resp.Stats
 	}
 
 	mappedDownstreamRequests := 0
@@ -583,8 +596,14 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 				// Should never happen unless a bug.
 				return errors.New("consistency check failed: missing downstream response")
 			}
+			downstreamStats, ok := execStatsByID[downstreamReq.GetID()]
+			if !ok {
+				// Should never happen unless a bug.
+				return errors.New("consistency check failed: missing downstream stats")
+			}
 
 			splitReq.downstreamResponses[downstreamIdx] = downstreamRes
+			splitReq.downstreamStatistics[downstreamIdx] = downstreamStats
 			mappedDownstreamRequests++
 		}
 	}
@@ -597,10 +616,11 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 	return nil
 }
 
-// requestResponse contains a request response and the respective request that was used.
+// requestResponse contains a request response, respective request that was used and its stats.
 type requestResponse struct {
 	Request  MetricsQueryRequest
 	Response Response
+	Stats    *stats.Stats
 }
 
 // doRequests executes a list of requests in parallel.
@@ -627,7 +647,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			}
 
 			mtx.Lock()
-			resps = append(resps, requestResponse{req, resp})
+			resps = append(resps, requestResponse{req, resp, partialStats})
 			mtx.Unlock()
 
 			return nil
@@ -640,7 +660,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := evaluateAtModifierFunction(req.GetQuery(), req.GetStart(), req.GetEnd())
+	query, err := evaluateAtModifierFunction(req.GetParsedQuery(), req.GetStart(), req.GetEnd())
 	if err != nil {
 		return nil, err
 	}
@@ -675,10 +695,10 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 // evaluateAtModifierFunction parse the query and evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
 // For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
 // If the modifier is already a constant, it will be returned as is.
-func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
-	expr, err := parser.ParseExpr(query)
+func evaluateAtModifierFunction(expr parser.Expr, start, end int64) (string, error) {
+	expr, err := cloneExpr(expr) // Clone to avoid changing the original.
 	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
+		return "", err
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		switch exprAt := n.(type) {
@@ -702,6 +722,11 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 		return nil
 	})
 	return expr.String(), nil
+}
+
+// cloneExpr is a helper function to clone an expr.
+func cloneExpr(expr parser.Expr) (parser.Expr, error) {
+	return parser.ParseExpr(expr.String())
 }
 
 // Round up to the step before the next interval boundary.

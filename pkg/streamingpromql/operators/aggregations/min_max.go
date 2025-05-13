@@ -51,7 +51,7 @@ func (g *MinMaxAggregationGroup) minAccumulatePoint(idx int64, f float64) {
 	}
 }
 
-func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
 	// Native histograms are ignored for min and max.
 	if len(data.Histograms) > 0 {
 		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
@@ -90,7 +90,7 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 	return nil
 }
 
-func (g *MinMaxAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *MinMaxAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, p := range g.floatPresent {
 		if p {
@@ -114,8 +114,13 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRa
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *MinMaxAggregationGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
+	g.floatValues = nil
+
+	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
+	g.floatPresent = nil
 }

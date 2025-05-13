@@ -3,9 +3,7 @@ aliases:
   - ../../operators-guide/deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
   - migrating-from-consul-to-memberlist/
   - ../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-from-consul-to-memberlist/
-description:
-  Learn how to migrate from using Consul as KV store for hash rings to
-  using memberlist without any downtime.
+description: Learn how to migrate from using Consul as KV store for hash rings to using memberlist without any downtime.
 menuTitle: Migrate from Consul to memberlist
 title: Migrate from Consul to memberlist KV store for hash rings without downtime
 weight: 40
@@ -40,7 +38,7 @@ If you are running Mimir hash rings with Consul and would like to migrate to mem
 
 Step 1 configures components to use `multi` KV store, with `consul` as primary and memberlist as secondary stores.
 This step requires rollout of all Mimir components.
-After applying this step all Mimir components will expose [`/memberlist`]({{< relref "../../references/http-api#memberlist-cluster" >}}) page on HTTP admin interface, which can be used to check health of memberlist cluster.
+After applying this step all Mimir components will expose [`/memberlist`](../../../references/http-api/#memberlist-cluster) page on HTTP admin interface, which can be used to check health of memberlist cluster.
 
 ## Step 2: Enable KV store mirroring
 
@@ -63,8 +61,8 @@ You can monitor following metrics to check if mirroring was enabled on all compo
 - `rate(cortex_multikv_mirror_writes_total[1m])` – shows rate of writes to secondary KV store in writes per second.
 - `rate(cortex_multikv_mirror_write_errors_total[1m])` – shows rate of write errors to secondary KV store, in errors per second.
 
-After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information]({{< relref "../../references/http-api#memberlist-cluster" >}}) admin page.
-See [list of components that use hash ring]({{< relref "../../references/architecture/hash-ring" >}}).
+After mirroring is enabled, you should see a key for each Mimir hash ring in the [Memberlist cluster information](../../../references/http-api/#memberlist-cluster) admin page.
+See [list of components that use hash ring](../../../references/architecture/hash-ring/).
 
 ## Step 3: Switch Primary and Secondary store
 
