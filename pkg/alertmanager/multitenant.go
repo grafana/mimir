@@ -677,7 +677,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 		cfg, startAM, err := am.computeConfig(cfgs)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
-			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
+			level.Warn(am.logger).Log("msg", "error computing config", "err", err, "user", user)
 			continue
 		}
 
