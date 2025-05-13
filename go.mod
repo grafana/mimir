@@ -352,3 +352,7 @@ replace cloud.google.com/go/auth => cloud.google.com/go/auth v0.15.0
 
 // Temporarily exclude v1.72 until we've fully tested the unpinning of v1.65 and upgrade to v1.71
 exclude google.golang.org/grpc v1.72.0
+
+// Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
+// while allowing Mimir to move at a more conservative pace.
+replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
