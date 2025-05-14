@@ -16,12 +16,14 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -297,5 +299,32 @@ func TestNewMockShardedQueryable(t *testing.T) {
 
 		}
 		require.Equal(t, expectedSeries, seriesCt)
+	}
+}
+
+func runForEngines(t *testing.T, run func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine)) {
+	t.Helper()
+
+	promOpts, promEngine := newEngineForTesting(t, querier.PrometheusEngine)
+	mqeOpts, mqeEngine := newEngineForTesting(t, querier.MimirEngine)
+
+	engines := map[string]struct {
+		engine  promql.QueryEngine
+		options promql.EngineOpts
+	}{
+		querier.PrometheusEngine: {
+			engine:  promEngine,
+			options: promOpts,
+		},
+		querier.MimirEngine: {
+			engine:  mqeEngine,
+			options: mqeOpts,
+		},
+	}
+
+	for name, tc := range engines {
+		t.Run(fmt.Sprintf("engine=%s", name), func(t *testing.T) {
+			run(t, tc.options, tc.engine)
+		})
 	}
 }
