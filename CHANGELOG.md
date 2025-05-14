@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.16.1 / unreleased
+
+### Grafana Mimir
+
+* [BUGFIX] Query-frontend: Fix a panic in monolithic mode caused by a clash in labels of the `cortex_client_invalid_cluster_validation_label_requests_total` metric definition. #11455
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
 ## 2.16.0
 
 ### Grafana Mimir
