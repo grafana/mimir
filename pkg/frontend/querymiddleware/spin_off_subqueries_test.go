@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -364,31 +363,6 @@ cortex_frontend_subquery_spinoff_successes_total %d
 					"cortex_frontend_subquery_spinoff_skipped_total",
 					"cortex_frontend_spun_off_subqueries_total"))
 			})
-		})
-	}
-}
-
-func runForEngines(t *testing.T, run func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine)) {
-	promOpts, promEngine := newEngineForTesting(t, querier.PrometheusEngine)
-	mqeOpts, mqeEngine := newEngineForTesting(t, querier.MimirEngine)
-
-	engines := map[string]struct {
-		engine  promql.QueryEngine
-		options promql.EngineOpts
-	}{
-		querier.PrometheusEngine: {
-			engine:  promEngine,
-			options: promOpts,
-		},
-		querier.MimirEngine: {
-			engine:  mqeEngine,
-			options: mqeOpts,
-		},
-	}
-
-	for name, tc := range engines {
-		t.Run(fmt.Sprintf("engine=%s", name), func(t *testing.T) {
-			run(t, tc.options, tc.engine)
 		})
 	}
 }
