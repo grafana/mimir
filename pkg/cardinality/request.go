@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type CountMethod string
@@ -65,16 +67,21 @@ func (r *LabelNamesRequest) String() string {
 
 // DecodeLabelNamesRequest decodes the input http.Request into a LabelNamesRequest.
 // The input http.Request can either be a GET or POST with URL-encoded parameters.
-func DecodeLabelNamesRequest(r *http.Request) (*LabelNamesRequest, error) {
+func DecodeLabelNamesRequest(r *http.Request, userID string, overrides *validation.Overrides) (*LabelNamesRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
 
-	return DecodeLabelNamesRequestFromValues(r.Form)
+	return DecodeLabelNamesRequestFromValuesWithUser(r.Form, userID, overrides)
 }
 
 // DecodeLabelNamesRequestFromValues is like DecodeLabelNamesRequest but takes url.Values in input.
 func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, error) {
+	return DecodeLabelNamesRequestFromValuesWithUser(values, "", nil)
+}
+
+// DecodeLabelNamesRequestFromValuesWithUser is like DecodeLabelNamesRequestFromValues but also accepts the userID and overrides.
+func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, userID string, overrides *validation.Overrides) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
 		err    error
@@ -85,7 +92,7 @@ func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, e
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values)
+	parsed.Limit, err = extractLimit(values, userID, overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -140,16 +147,21 @@ func (r *LabelValuesRequest) String() string {
 
 // DecodeLabelValuesRequest decodes the input http.Request into a LabelValuesRequest.
 // The input http.Request can either be a GET or POST with URL-encoded parameters.
-func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
+func DecodeLabelValuesRequest(r *http.Request, userID string, overrides *validation.Overrides) (*LabelValuesRequest, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
 
-	return DecodeLabelValuesRequestFromValues(r.Form)
+	return DecodeLabelValuesRequestFromValuesWithUser(r.Form, userID, overrides)
 }
 
 // DecodeLabelValuesRequestFromValues is like DecodeLabelValuesRequest but takes url.Values in input.
 func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest, error) {
+	return DecodeLabelValuesRequestFromValuesWithUser(values, "", nil)
+}
+
+// DecodeLabelValuesRequestFromValuesWithUser is like DecodeLabelValuesRequestFromValues but also accepts the userID and overrides.
+func DecodeLabelValuesRequestFromValuesWithUser(values url.Values, userID string, overrides *validation.Overrides) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}
 		err    error
@@ -165,7 +177,7 @@ func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest,
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values)
+	parsed.Limit, err = extractLimit(values, userID, overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +228,7 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 }
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
-func extractLimit(values url.Values) (limit int, err error) {
+func extractLimit(values url.Values, userID string, overrides *validation.Overrides) (limit int, err error) {
 	limitParams := values["limit"]
 	if len(limitParams) == 0 {
 		return defaultLimit, nil
@@ -231,8 +243,15 @@ func extractLimit(values url.Values) (limit int, err error) {
 	if limit < minLimit {
 		return 0, fmt.Errorf("'limit' param cannot be less than '%v'", minLimit)
 	}
-	if limit > maxLimit {
-		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", maxLimit)
+
+	// Use the tenant-specific limit from Overrides if available
+	maxLimitForTenant := maxLimit
+	if overrides != nil {
+		maxLimitForTenant = overrides.CardinalityAPIMaxSeriesLimit(userID)
+	}
+
+	if limit > maxLimitForTenant {
+		return 0, fmt.Errorf("'limit' param cannot be greater than '%v'", maxLimitForTenant)
 	}
 	return limit, nil
 }
