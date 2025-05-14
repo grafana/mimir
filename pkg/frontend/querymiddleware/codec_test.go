@@ -1408,7 +1408,7 @@ func TestMergeAPIResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := codec.MergeResponse(tc.input...)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, output)
+			requireEqualPrometheusResponse(t, tc.expected, output)
 		})
 	}
 
@@ -1453,6 +1453,14 @@ func TestMergeAPIResponses(t *testing.T) {
 		_, err := codec.MergeResponse(matrixResponse, vectorResponse)
 		require.Error(t, err)
 	})
+}
+
+func requireEqualPrometheusResponse(t *testing.T, expected, actual Response) {
+	prometheusResponse, ok := expected.GetPrometheusResponse()
+	require.True(t, ok)
+	prometheusResponseActual, ok := actual.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, prometheusResponse, prometheusResponseActual)
 }
 
 func mustParse(t *testing.T, response string) Response {

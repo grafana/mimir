@@ -1028,13 +1028,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
-			planner := NewQueryPlanner(opts)
+			planner := NewQueryPlannerWithoutOptimizationPasses(opts)
 
 			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
-{stage="Original plan", stage_type="plan"} 1
+{stage="Original plan", stage_type="Plan"} 1
 {stage="Parsing", stage_type="AST"} 1
 {stage="Pre-processing", stage_type="AST"} 1
 			`)
@@ -1310,7 +1310,7 @@ func TestAnalysisHandler(t *testing.T) {
 		},
 	}
 
-	planner := NewQueryPlanner(NewTestEngineOpts())
+	planner := NewQueryPlannerWithoutOptimizationPasses(NewTestEngineOpts())
 	handler := AnalysisHandler(planner)
 
 	for name, testCase := range testCases {

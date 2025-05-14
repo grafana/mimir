@@ -8,7 +8,6 @@ package ruler
 import (
 	"context"
 	"errors"
-	"flag"
 	"net/url"
 	"strings"
 	"sync"
@@ -17,15 +16,13 @@ import (
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/crypto/tls"
-	"github.com/grafana/dskit/flagext"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
 
-	"github.com/grafana/mimir/pkg/util"
+	mimirnotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -33,45 +30,6 @@ var (
 	errRulerNotifierStopped               = cancellation.NewErrorf("rulerNotifier stopped")
 	errRulerSimultaneousBasicAuthAndOAuth = errors.New("cannot use both Basic Auth and OAuth2 simultaneously")
 )
-
-type NotifierConfig struct {
-	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
-	TLS        tls.ClientConfig `yaml:",inline"`
-	BasicAuth  util.BasicAuth   `yaml:",inline"`
-	OAuth2     OAuth2Config     `yaml:"oauth2"`
-	ProxyURL   string           `yaml:"proxy_url" category:"advanced"`
-}
-
-func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.TLSEnabled, "ruler.alertmanager-client.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
-	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
-	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
-	cfg.OAuth2.RegisterFlagsWithPrefix("ruler.alertmanager-client.oauth.", f)
-	f.StringVar(&cfg.ProxyURL, "ruler.alertmanager-client.proxy-url", "", "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.")
-}
-
-type OAuth2Config struct {
-	ClientID       string                    `yaml:"client_id"`
-	ClientSecret   flagext.Secret            `yaml:"client_secret"`
-	TokenURL       string                    `yaml:"token_url"`
-	Scopes         flagext.StringSliceCSV    `yaml:"scopes,omitempty"`
-	EndpointParams flagext.LimitsMap[string] `yaml:"endpoint_params" category:"advanced"`
-}
-
-func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.ClientID, prefix+"client_id", "", "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.")
-	f.Var(&cfg.ClientSecret, prefix+"client_secret", "OAuth2 client secret.")
-	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token.")
-	f.Var(&cfg.Scopes, prefix+"scopes", "Optional scopes to include with the token request.")
-	if !cfg.EndpointParams.IsInitialized() {
-		cfg.EndpointParams = flagext.NewLimitsMap[string](nil)
-	}
-	f.Var(&cfg.EndpointParams, prefix+"endpoint-params", "Optional additional URL parameters to send to the token URL.")
-}
-
-func (cfg *OAuth2Config) IsEnabled() bool {
-	return cfg.ClientID != "" || cfg.TokenURL != ""
-}
 
 // rulerNotifier bundles a notifier.Manager together with an associated
 // Alertmanager service discovery manager and handles the lifecycle
@@ -143,7 +101,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(amURL string, notifierCfg NotifierConfig, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+func buildNotifierConfig(amURL string, notifierCfg mimirnotifier.Config, resolver AddressProvider, notificationTimeout, refreshInterval time.Duration, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
 	if amURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -181,7 +139,7 @@ func buildNotifierConfig(amURL string, notifierCfg NotifierConfig, resolver Addr
 	return promConfig, nil
 }
 
-func amConfigWithSD(notifierCfg NotifierConfig, notificationTimeout time.Duration, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
+func amConfigWithSD(notifierCfg mimirnotifier.Config, notificationTimeout time.Duration, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              config.AlertmanagerAPIVersionV2,
 		Scheme:                  url.Scheme,

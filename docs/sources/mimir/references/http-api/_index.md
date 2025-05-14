@@ -890,6 +890,8 @@ The `group_limit` and `group_next_token` parameters are optional. If `group_limi
 This can be passed into subsequent requests via `group_next_token` to paginate over the remaining groups. The final response will not contain a token.
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
+If both alerting and recording rule evaluation are disabled for the tenant, the endpoint returns an error with HTTP status code `422`. If either alerting or recording rule evaluation is disabled for the tenant, the successful response includes `warnings`, that indicate that.
+
 Requires [authentication](#authentication).
 
 ### List Prometheus alerts
@@ -898,7 +900,7 @@ Requires [authentication](#authentication).
 GET <prometheus-http-prefix>/api/v1/alerts
 ```
 
-Prometheus-compatible rules endpoint to list of all active alerts.
+Prometheus-compatible rules endpoint to list all active alerts.
 
 For more information, refer to Prometheus [alerts](https://prometheus.io/docs/prometheus/latest/querying/api/#alerts) documentation.
 

@@ -1383,19 +1383,19 @@ How to **investigate**:
 
 ### MimirIngestedDataTooFarInTheFuture
 
-This alert fires when Mimir ingester accepts a sample with timestamp that is too far in the future.
+This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
 This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
 
 How it **works**:
 
-- The metric exported by ingester computes maximum timestamp from all TSDBs open in ingester.
-- Alert checks this exported metric and fires if maximum timestamp is more than 1h in the future.
+- The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
+- The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
 
 How to **investigate**
 
-- Find the tenant with bad sample on ingester's tenants list, where a warning "TSDB Head max timestamp too far in the future" is displayed.
-- Flush tenant's data to blocks storage.
-- Remove tenant's directory on disk and restart ingester.
+- Find the tenant with a bad sample on an affected ingester's tenants list (obtained via the `/ingester/tenants` endpoint), where a warning "TSDB Head max timestamp too far in the future" is displayed.
+- Flush the tenant's data to blocks storage.
+- Remove the tenant's directory on disk and the restart ingester.
 
 ### MimirStoreGatewayTooManyFailedOperations
 

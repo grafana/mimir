@@ -341,7 +341,7 @@ func TestInitVault(t *testing.T) {
 	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader)
-	require.NotNil(t, mimir.Cfg.Frontend.QueryMiddleware.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Frontend.QueryMiddleware.ResultsCache.Redis.TLS.Reader)
 
 	// Check GRPC Clients
 	require.NotNil(t, mimir.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader)
@@ -350,7 +350,7 @@ func TestInitVault(t *testing.T) {
 	require.NotNil(t, mimir.Cfg.Querier.StoreGatewayClient.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.ClientTLSConfig.TLS.Reader)
-	require.NotNil(t, mimir.Cfg.Ruler.Notifier.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.DeprecatedNotifier.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader)

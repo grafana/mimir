@@ -23,8 +23,12 @@ func TestQueryMiddleware_Errors(t *testing.T) {
 			expectedErrorMsg: "the raw query size in bytes exceeds the limit (query size: 10, limit: 20) (err-mimir-max-query-expression-size-bytes). To adjust the related per-tenant limit, configure -query-frontend.max-query-expression-size-bytes, or contact your service administrator.",
 		},
 		"err-mimir-query-blocked has a correct message": {
-			err:              newQueryBlockedError(),
+			err:              newQueryBlockedError(""),
 			expectedErrorMsg: "the request has been blocked by the cluster administrator (err-mimir-query-blocked)",
+		},
+		"err-mimir-query-blocked has a correct message with reason": {
+			err:              newQueryBlockedError("because the query appears to be misconfigured"),
+			expectedErrorMsg: "the request has been blocked by the cluster administrator because the query appears to be misconfigured (err-mimir-query-blocked)",
 		},
 	}
 	for testName, testData := range tests {

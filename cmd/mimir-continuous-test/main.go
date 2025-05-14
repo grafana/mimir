@@ -65,7 +65,7 @@ func main() {
 	}
 
 	// Init the client used to write/read to/from Mimir.
-	client, err := continuoustest.NewClient(cfg.Client, logger)
+	client, err := continuoustest.NewClient(cfg.Client, logger, registry)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to initialize client", "err", err.Error())
 		util_log.Flush()

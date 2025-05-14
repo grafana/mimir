@@ -802,3 +802,17 @@ func preallocSliceIfNeeded[T any](size int) []T {
 	}
 	return nil
 }
+
+// MakeReferencesSafeToRetain converts all of ts' unsafe references to safe copies.
+func (ts *TimeSeries) MakeReferencesSafeToRetain() {
+	for i, l := range ts.Labels {
+		ts.Labels[i].Name = strings.Clone(l.Name)
+		ts.Labels[i].Value = strings.Clone(l.Value)
+	}
+	for i, e := range ts.Exemplars {
+		for j, l := range e.Labels {
+			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
+			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+		}
+	}
+}

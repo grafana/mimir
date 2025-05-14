@@ -1,0 +1,22 @@
+diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
+index 23cdf0292..763f925f0 100644
+--- a/pkg/storegateway/storepb/rpc.pb.go
++++ b/pkg/storegateway/storepb/rpc.pb.go
+@@ -8,7 +8,6 @@ import (
+ 	_ "github.com/gogo/protobuf/gogoproto"
+ 	proto "github.com/gogo/protobuf/proto"
+ 	types "github.com/gogo/protobuf/types"
+-	"github.com/grafana/mimir/pkg/mimirpb"
+ 	io "io"
+ 	math "math"
+ 	math_bits "math/bits"
+@@ -121,9 +120,6 @@ func (m *Stats) XXX_DiscardUnknown() {
+ var xxx_messageInfo_Stats proto.InternalMessageInfo
+ 
+ type SeriesResponse struct {
+-	// Keep reference to buffer for unsafe references.
+-	mimirpb.BufferHolder
+-
+ 	// Types that are valid to be assigned to Result:
+ 	//	*SeriesResponse_Series
+ 	//	*SeriesResponse_Warning

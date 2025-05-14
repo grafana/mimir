@@ -242,7 +242,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.grafana-alertmanager-compatibility-enabled
     	[experimental] Enable routes to support the migration and operation of the Grafana Alertmanager.
   -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix string
-    	[experimental] Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.
+    	[experimental] Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration or they are receiving requests.
+  -alertmanager.grafana-alertmanager-grace-period duration
+    	[experimental] Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration. (default 5m0s)
   -alertmanager.log-parsing-label-matchers
     	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int
@@ -2197,6 +2199,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
+  -querier.mimir-query-engine.enable-common-subexpression-elimination
+    	[experimental] Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled. (default true)
   -querier.mimir-query-engine.use-query-planning
     	[experimental] Use query planner when evaluating queries.
   -querier.minimize-ingester-requests
@@ -3425,6 +3429,8 @@ Usage of ./cmd/mimir/mimir:
     	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
     	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
+  -tests.client.cluster-validation.label string
+    	Optionally define the cluster validation label.
   -tests.client.user-agent string
     	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
   -tests.read-endpoint string
