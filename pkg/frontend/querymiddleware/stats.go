@@ -20,7 +20,7 @@ import (
 )
 
 type queryStatsMiddleware struct {
-	engine                      *promql.Engine
+	engine                      promql.QueryEngine
 	regexpMatcherCount          prometheus.Counter
 	regexpMatcherOptimizedCount prometheus.Counter
 	consistencyCounter          *prometheus.CounterVec

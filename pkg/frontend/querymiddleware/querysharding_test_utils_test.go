@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,8 +25,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -302,6 +305,51 @@ func TestNewMockShardedQueryable(t *testing.T) {
 	}
 }
 
+type engineOpt func(o *streamingpromql.EngineOpts)
+
+func withTimeout(timeout time.Duration) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.CommonOpts.Timeout = timeout
+	}
+}
+
+func withMaxSamples(samples int) engineOpt {
+	return func(o *streamingpromql.EngineOpts) {
+		o.CommonOpts.MaxSamples = samples
+	}
+}
+
+func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql.EngineOpts, promql.QueryEngine) {
+	t.Helper()
+
+	mqeOpts := streamingpromql.NewTestEngineOpts()
+	for _, o := range opts {
+		o(&mqeOpts)
+	}
+
+	promOpts := mqeOpts.CommonOpts
+
+	switch engine {
+	case querier.PrometheusEngine:
+		return promOpts, promql.NewEngine(promOpts)
+	case querier.MimirEngine:
+		limits := streamingpromql.NewStaticQueryLimitsProvider(0)
+		metrics := stats.NewQueryMetrics(promOpts.Reg)
+		logger := log.NewNopLogger()
+		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, nil, logger)
+		if err != nil {
+			t.Fatalf("error creating MQE engine for testing: %s", err)
+		}
+
+		return promOpts, eng
+	default:
+		t.Fatalf("invalid promql engine: %v", engine)
+	}
+
+	panic("unreachable")
+}
+
+// runForEngines runs the provided test closure with the Prometheus Engine and Mimir Query Engine.
 func runForEngines(t *testing.T, run func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine)) {
 	t.Helper()
 

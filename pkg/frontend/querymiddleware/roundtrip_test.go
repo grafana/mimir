@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -40,36 +39,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
-	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
-
-func newEngineForTesting(t *testing.T, engine string) (promql.EngineOpts, promql.QueryEngine) {
-	mqeOpts := streamingpromql.NewTestEngineOpts()
-	promOpts := mqeOpts.CommonOpts
-
-	switch engine {
-	case querier.PrometheusEngine:
-		return promOpts, promql.NewEngine(promOpts)
-	case querier.MimirEngine:
-		limits := streamingpromql.NewStaticQueryLimitsProvider(0)
-		metrics := stats.NewQueryMetrics(promOpts.Reg)
-		logger := log.NewNopLogger()
-		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, nil, logger)
-		if err != nil {
-			t.Fatalf("error creating MQE engine for testing: %s", err)
-		}
-
-		return promOpts, eng
-	default:
-		t.Fatalf("invalid promql engine: %v", engine)
-	}
-
-	panic("unreachable")
-}
 
 func TestTripperware_RangeQuery(t *testing.T) {
 	var (

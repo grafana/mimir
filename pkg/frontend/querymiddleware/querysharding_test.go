@@ -1620,36 +1620,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 }
 
 func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
-	// TODO(56quarters): How do we test this?
-
 	var (
-		engine        = newEngine(t)
-		engineTimeout = promql.NewEngine(promql.EngineOpts{
-			Logger:               promslog.NewNopLogger(),
-			Reg:                  nil,
-			MaxSamples:           10e6,
-			Timeout:              50 * time.Millisecond,
-			ActiveQueryTracker:   nil,
-			LookbackDelta:        lookbackDelta,
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
-			NoStepSubqueryIntervalFn: func(int64) int64 {
-				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
-			},
-		})
-		engineSampleLimit = promql.NewEngine(promql.EngineOpts{
-			Logger:               promslog.NewNopLogger(),
-			Reg:                  nil,
-			MaxSamples:           1,
-			Timeout:              time.Hour,
-			ActiveQueryTracker:   nil,
-			LookbackDelta:        lookbackDelta,
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
-			NoStepSubqueryIntervalFn: func(int64) int64 {
-				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
-			},
-		})
 		queryableInternalErr = storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 			return nil, apierror.New(apierror.TypeInternal, "some internal error")
 		})
@@ -1669,48 +1640,83 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	)
 
 	for _, tc := range []struct {
-		name             string
-		engineDownstream promql.QueryEngine
-		engineSharding   promql.QueryEngine
-		expError         error
-		queryable        storage.Queryable
+		name                 string
+		engineType           string
+		engineDownstreamOpts []engineOpt
+		engineShardingOpts   []engineOpt
+		expError             error
+		queryable            storage.Queryable
 	}{
+		// Prometheus engine tests.
+
 		{
-			name:             "downstream - timeout",
-			engineDownstream: engineTimeout,
-			engineSharding:   engine,
-			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
-			queryable:        queryableSlow,
+			name:                 "downstream - timeout",
+			engineType:           querier.PrometheusEngine,
+			engineDownstreamOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
+			expError:             apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
+			queryable:            queryableSlow,
 		},
 		{
-			name:             "sharding - sample limit",
-			engineDownstream: engineSampleLimit,
-			engineSharding:   engine,
-			expError:         apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in query execution"),
+			name:                 "downstream - sample limit",
+			engineType:           querier.PrometheusEngine,
+			engineDownstreamOpts: []engineOpt{withMaxSamples(1)},
+			expError:             apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in query execution"),
 		},
 		{
-			name:             "sharding - timeout",
-			engineDownstream: engine,
-			engineSharding:   engineTimeout,
-			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
-			queryable:        queryableSlow,
+			name:               "sharding - timeout",
+			engineType:         querier.PrometheusEngine,
+			engineShardingOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
+			expError:           apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
+			queryable:          queryableSlow,
 		},
 		{
-			name:             "downstream - storage internal error",
-			engineDownstream: engine,
-			engineSharding:   engineSampleLimit,
-			queryable:        queryableInternalErr,
-			expError:         apierror.New(apierror.TypeInternal, "some internal error"),
+			name:               "downstream - storage internal error",
+			engineType:         querier.PrometheusEngine,
+			engineShardingOpts: []engineOpt{withMaxSamples(1)},
+			queryable:          queryableInternalErr,
+			expError:           apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
-			name:             "downstream - storage prometheus execution error",
-			engineDownstream: engine,
-			engineSharding:   engineSampleLimit,
-			queryable:        queryablePrometheusExecErr,
-			expError:         apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
+			name:               "downstream - storage prometheus execution error",
+			engineType:         querier.PrometheusEngine,
+			engineShardingOpts: []engineOpt{withMaxSamples(1)},
+			queryable:          queryablePrometheusExecErr,
+			expError:           apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
+		},
+
+		// MQE equivalents when applicable. For example, MQE doesn't have a sample limit
+		// and returns different error messages for timeouts when executing a query.
+
+		{
+			name:                 "downstream - timeout",
+			engineType:           querier.MimirEngine,
+			engineDownstreamOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
+			expError:             apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
+			queryable:            queryableSlow,
+		},
+		{
+			name:               "sharding - timeout",
+			engineType:         querier.MimirEngine,
+			engineShardingOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
+			expError:           apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
+			queryable:          queryableSlow,
+		},
+		{
+			name:               "downstream - storage internal error",
+			engineType:         querier.MimirEngine,
+			engineShardingOpts: []engineOpt{withMaxSamples(1)},
+			queryable:          queryableInternalErr,
+			expError:           apierror.New(apierror.TypeInternal, "some internal error"),
+		},
+		{
+			name:               "downstream - storage prometheus execution error",
+			engineType:         querier.MimirEngine,
+			engineShardingOpts: []engineOpt{withMaxSamples(1)},
+			queryable:          queryablePrometheusExecErr,
+			expError:           apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s engine=%s", tc.name, tc.engineType), func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
 				path:      "/query_range",
 				start:     util.TimeToMillis(start),
@@ -1719,14 +1725,17 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				queryExpr: parseQuery(t, "sum(bar1)"),
 			}
 
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, 0, nil)
+			_, engineSharding := newEngineForTesting(t, tc.engineType, tc.engineShardingOpts...)
+			_, engineDownstream := newEngineForTesting(t, tc.engineType, tc.engineDownstreamOpts...)
+
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engineSharding, mockLimits{totalShards: 3}, 0, nil)
 
 			if tc.queryable == nil {
 				tc.queryable = queryable
 			}
 
 			downstream := &downstreamHandler{
-				engine:    tc.engineDownstream,
+				engine:    engineDownstream,
 				queryable: tc.queryable,
 			}
 
@@ -1749,6 +1758,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				assert.Equal(t, expResp.GetCode(), gotResp.GetCode())
 				assert.JSONEq(t, string(expResp.GetBody()), string(gotResp.GetBody()))
 			}
+
 		})
 	}
 }
@@ -2688,8 +2698,6 @@ func (ssi *ThreadSafeStorageSeriesIterator) Next() chunkenc.ValueType {
 func (ssi *ThreadSafeStorageSeriesIterator) Err() error {
 	return nil
 }
-
-// TODO(56quarters): Add tests with MQE here
 
 // newEngine creates and return a new promql.Engine used for testing.
 func newEngine(t *testing.T) promql.QueryEngine {
