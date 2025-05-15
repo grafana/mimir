@@ -327,8 +327,8 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64, match
 	// If we didn't encounter any errors, store any created queriers here so that
 	// we can make sure to close them when this querier is eventually closed. This
 	// is required since they may be lazy queriers and not allocate any resources
-	// when methods are initially called: we need to wait until the caller of this
-	// querier closes it.
+	// when methods are initially called: we need to wait until the results are
+	// consumed and the caller of this querier closes it.
 	mq.storeQueriers(queriers)
 	return ctx, queriers, minT, maxT, nil
 }
