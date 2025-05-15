@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -229,7 +230,7 @@ func newQueryable(
 	logger log.Logger,
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
-		return multiQuerier{
+		return &multiQuerier{
 			queryables:   queryables,
 			queryMetrics: queryMetrics,
 			cfg:          cfg,
@@ -265,13 +266,17 @@ type multiQuerier struct {
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
 	minT, maxT   int64
+	queriers     []storage.Querier
+	queriersMtx  sync.Mutex
 
 	limits *validation.Overrides
 
 	logger log.Logger
 }
 
-func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matcher) (context.Context, []storage.Querier, error) {
+// getQueriers returns a context with per-tenant query limits applied, queriers applicable to the provided
+// time range, and the possibly adjusted min and max times.
+func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64, matchers ...*labels.Matcher) (context.Context, []storage.Querier, int64, int64, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "multiQuerier.getQueriers")
 	defer spanLog.Finish()
 
@@ -279,7 +284,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, 0, err
 	}
 
 	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(
@@ -290,9 +295,9 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 		mq.queryMetrics,
 	))
 
-	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, spanlogger.FromContext(ctx, mq.logger))
+	minT, maxT, err = validateQueryTimeRange(tenantID, minT, maxT, now.UnixMilli(), mq.limits, spanlogger.FromContext(ctx, mq.logger))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, 0, err
 	}
 
 	var queriers []storage.Querier
@@ -306,12 +311,12 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 			}
 		}
 
-		isApplicable := queryable.IsApplicable(ctx, tenantID, now, mq.minT, mq.maxT, mq.logger, matchers...)
+		isApplicable := queryable.IsApplicable(ctx, tenantID, now, minT, maxT, mq.logger, matchers...)
 		level.Debug(spanLog).Log("queryable_name", queryable.StorageName, "use_queryable", true, "is_applicable", isApplicable)
 		if isApplicable {
-			q, err := queryable.Querier(mq.minT, mq.maxT)
+			q, err := queryable.Querier(minT, maxT)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, 0, 0, err
 			}
 
 			queriers = append(queriers, q)
@@ -319,16 +324,22 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 		}
 	}
 
-	return ctx, queriers, nil
+	// If we didn't encounter any errors, store any created queriers here so that
+	// we can make sure to close them when this querier is eventually closed. This
+	// is required since they may be lazy queriers and not allocate any resources
+	// when methods are initially called: we need to wait until the results are
+	// consumed and the caller of this querier closes it.
+	mq.storeQueriers(queriers)
+	return ctx, queriers, minT, maxT, nil
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series are always sorted.
-func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
+func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Finish()
 
-	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
+	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.EmptySeriesSet()
 	}
@@ -338,8 +349,8 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 
 	if sp == nil {
 		sp = &storage.SelectHints{
-			Start: mq.minT,
-			End:   mq.maxT,
+			Start: minT,
+			End:   maxT,
 		}
 	} else {
 		// Make a copy, to avoid changing shared SelectHints.
@@ -489,8 +500,8 @@ func clampToMaxSeriesQueryLimit(spanLog *spanlogger.SpanLogger, limit, maxSeries
 }
 
 // LabelValues implements storage.Querier.
-func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
+func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}
@@ -534,8 +545,8 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *stor
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
+func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}
@@ -579,11 +590,27 @@ func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (multiQuerier) Close() error {
-	return nil
+// storeQueriers stores the created queriers so they can be cleaned up when this querier is eventually cleaned up.
+func (mq *multiQuerier) storeQueriers(queriers []storage.Querier) {
+	mq.queriersMtx.Lock()
+	mq.queriers = append(mq.queriers, queriers...)
+	mq.queriersMtx.Unlock()
 }
 
-func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
+func (mq *multiQuerier) Close() error {
+	mq.queriersMtx.Lock()
+	defer mq.queriersMtx.Unlock()
+
+	me := multierror.New()
+	for _, c := range mq.queriers {
+		me.Add(c.Close())
+	}
+
+	mq.queriers = nil
+	return me.Err()
+}
+
+func (mq *multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
 	// Here we deal with sets that are based on chunks and build single set from them.
 	// Remaining sets are merged with chunks-based one using storage.NewMergeSeriesSet
 

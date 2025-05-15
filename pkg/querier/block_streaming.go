@@ -143,6 +143,11 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 }
 
+type memoryConsumptionTracker interface {
+	IncreaseMemoryConsumption(b uint64) error
+	DecreaseMemoryConsumption(b uint64)
+}
+
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
 // chunks in memory until they are consumed by the PromQL engine.
 type storeGatewayStreamReader struct {
@@ -150,6 +155,7 @@ type storeGatewayStreamReader struct {
 	client              storegatewaypb.StoreGateway_SeriesClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
+	memoryTracker       memoryConsumptionTracker
 	stats               *stats.Stats
 	metrics             *blocksStoreQueryableMetrics
 	log                 log.Logger
@@ -162,12 +168,13 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, stats *stats.Stats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
 		ctx:                 ctx,
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
+		memoryTracker:       memoryTracker,
 		stats:               stats,
 		metrics:             metrics,
 		log:                 log,
@@ -189,9 +196,25 @@ func (s *storeGatewayStreamReader) Close() {
 // It is safe to call FreeBuffer multiple times, or to alternate GetChunks and FreeBuffer calls.
 func (s *storeGatewayStreamReader) FreeBuffer() {
 	if s.lastMessage != nil {
+		s.memoryTracker.DecreaseMemoryConsumption(uint64(s.lastMessage.Size()))
 		s.lastMessage.FreeBuffer()
 		s.lastMessage = nil
 	}
+}
+
+func (s *storeGatewayStreamReader) setLastMessage(msg *storepb.SeriesResponse) error {
+	// We should only attempt to store a message if there is no previous message or, we have
+	// already cleaned up the previous message. Return an error to make it obvious that this
+	// is a bug in Mimir.
+	if s.lastMessage != nil {
+		return fmt.Errorf("must call FreeBuffer() before storing the next message - this indicates a bug")
+	}
+
+	if err := s.memoryTracker.IncreaseMemoryConsumption(uint64(msg.Size())); err != nil {
+		return err
+	}
+	s.lastMessage = msg
+	return nil
 }
 
 // StartBuffering begins streaming series' chunks from the storegateway associated with
@@ -414,13 +437,10 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) (_ []storepb.Ag
 }
 
 func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
-	if s.lastMessage != nil {
-		s.lastMessage.FreeBuffer()
-		s.lastMessage = nil
-	}
+	// Discard the last message we read and release any resources.
+	s.FreeBuffer()
 
 	msg, channelOpen := <-s.seriesMessageChan
-
 	if !channelOpen {
 		// If there's an error, report it.
 		select {
@@ -437,7 +457,12 @@ func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
 		return fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 	}
 
-	s.lastMessage = msg
+	// It's possible that loading this batch of chunks has put us over the memory limit
+	// for this query. Return the error in that case.
+	if err := s.setLastMessage(msg); err != nil {
+		return err
+	}
+
 	s.chunksBatch = msg.GetStreamingChunks().Series
 	return nil
 }
