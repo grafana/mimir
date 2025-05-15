@@ -357,7 +357,7 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
-			level.Warn(h.logger).Log("msg", "failed to process value while watching for changes", "key", key)
+			level.Error(h.logger).Log("msg", "failed to process value", "return type", fmt.Sprintf("%T", value), "key", key)
 			return true
 		}
 		h.processKVStoreEntry(key, replica)
