@@ -3,6 +3,7 @@
 package limiting
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -16,6 +17,37 @@ import (
 )
 
 const rejectedQueriesMetricName = "rejected_queries"
+
+func TestFromContextWithFallback(t *testing.T) {
+	t.Run("does not exist", func(t *testing.T) {
+		ctx := context.Background()
+		tracker := FromContextWithFallback(ctx)
+		require.NotNil(t, tracker)
+		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	})
+
+	t.Run("exists", func(t *testing.T) {
+		ctx := context.Background()
+		existing := NewMemoryConsumptionTracker(0, nil)
+		require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512)))
+
+		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
+		stored := FromContextWithFallback(ctx)
+		require.Equal(t, existing, stored)
+		require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
+	})
+}
+
+func TestAddToContext(t *testing.T) {
+	ctx := context.Background()
+	existing := NewMemoryConsumptionTracker(0, nil)
+	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512)))
+
+	ctx = AddToContext(ctx, existing)
+	stored := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
+	require.Equal(t, existing, stored)
+	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
+}
 
 func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 	reg, metric := createRejectedMetric()

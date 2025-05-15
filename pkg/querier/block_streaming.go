@@ -203,6 +203,13 @@ func (s *storeGatewayStreamReader) FreeBuffer() {
 }
 
 func (s *storeGatewayStreamReader) setLastMessage(msg *storepb.SeriesResponse) error {
+	// We should only attempt to store a message if there is no previous message or, we have
+	// already cleaned up the previous message. Return an error to make it obvious that this
+	// is a bug in Mimir.
+	if s.lastMessage != nil {
+		return fmt.Errorf("must call FreeBuffer() before storing the next message - this indicates a bug")
+	}
+
 	if err := s.memoryTracker.IncreaseMemoryConsumption(uint64(msg.Size())); err != nil {
 		return err
 	}
