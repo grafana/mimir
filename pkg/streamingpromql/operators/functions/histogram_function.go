@@ -22,9 +22,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/zeropool"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -35,7 +35,7 @@ type HistogramFunction struct {
 	f                        histogramFunction
 	inner                    types.InstantVectorOperator
 	currentInnerSeriesIndex  int
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	timeRange                types.QueryTimeRange
 
 	annotations            *annotations.Annotations
@@ -106,7 +106,7 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 func NewHistogramQuantileFunction(
 	phArg types.ScalarOperator,
 	inner types.InstantVectorOperator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -134,7 +134,7 @@ func NewHistogramFractionFunction(
 	lower types.ScalarOperator,
 	upper types.ScalarOperator,
 	inner types.InstantVectorOperator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -489,7 +489,7 @@ type histogramQuantile struct {
 	phArg    types.ScalarOperator
 	phValues types.ScalarData
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	innerSeriesMetricNames   *operators.MetricNames
 	innerExpressionPosition  posrange.PositionRange
@@ -546,7 +546,7 @@ type histogramFraction struct {
 	lowerValues types.ScalarData
 	upperValues types.ScalarData
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 func (f *histogramFraction) LoadArguments(ctx context.Context) error {

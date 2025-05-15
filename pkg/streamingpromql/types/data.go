@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type SeriesMetadata struct {
@@ -33,7 +33,7 @@ type InstantVectorSeriesData struct {
 	Histograms []promql.HPoint
 }
 
-func (d InstantVectorSeriesData) Clone(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (InstantVectorSeriesData, error) {
+func (d InstantVectorSeriesData) Clone(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (InstantVectorSeriesData, error) {
 	clone := InstantVectorSeriesData{}
 
 	var err error

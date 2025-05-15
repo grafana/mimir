@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestInstantVectorSeriesData_Clone(t *testing.T) {
@@ -27,7 +27,7 @@ func TestInstantVectorSeriesData_Clone(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	cloned, err := original.Clone(memoryConsumptionTracker)
 
 	require.NoError(t, err)

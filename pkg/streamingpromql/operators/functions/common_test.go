@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestDropSeriesName(t *testing.T) {
@@ -25,7 +25,7 @@ func TestDropSeriesName(t *testing.T) {
 		{Labels: labels.FromStrings("label2", "value2")},
 	}
 
-	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, limiting.NewMemoryConsumptionTracker(0, nil))
+	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, limiter.NewMemoryConsumptionTracker(0, nil))
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedMetadata)
 }
@@ -33,7 +33,7 @@ func TestDropSeriesName(t *testing.T) {
 func TestFloatTransformationFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := floatTransformationFunc(transform)
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -66,7 +66,7 @@ func TestFloatTransformationFunc(t *testing.T) {
 func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := FloatTransformationDropHistogramsFunc(transform)
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{

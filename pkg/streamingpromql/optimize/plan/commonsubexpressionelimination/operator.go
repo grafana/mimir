@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // DuplicationBuffer buffers the results of an inner operator that is used by multiple consuming operators.
@@ -17,7 +17,7 @@ import (
 // DuplicationBuffer is not thread-safe.
 type DuplicationBuffer struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	consumerCount int
 
@@ -28,7 +28,7 @@ type DuplicationBuffer struct {
 	buffer          *SeriesDataRingBuffer
 }
 
-func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *DuplicationBuffer {
+func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DuplicationBuffer {
 	return &DuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,

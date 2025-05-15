@@ -15,11 +15,11 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
@@ -50,7 +50,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					for name, readSeries := range map[string]bool{"read one series": true, "read no series": false} {
 						t.Run(name, func(t *testing.T) {
-							memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+							memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 
 							inner := &operators.TestOperator{
 								Series: inputSeries,
@@ -103,7 +103,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 	}
 }
 
-func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) types.InstantVectorSeriesData {
+func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
 	d := types.InstantVectorSeriesData{}
 
 	if histograms {

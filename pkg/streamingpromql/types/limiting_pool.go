@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -174,7 +174,7 @@ func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], elem
 // If the capacity of the returned slice would cause the max memory consumption limit to be exceeded, then an error is returned.
 //
 // Note that the capacity of the returned slice may be significantly larger than size, depending on the configuration of the underlying bucketed pool.
-func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsumptionTracker) (S, error) {
+func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiter.MemoryConsumptionTracker) (S, error) {
 	// We don't bother checking the limit before we get the slice for a couple of reasons:
 	// - we prefer to enforce the limit based on the capacity of the returned slices, not the requested size, to more accurately capture the true memory utilisation
 	// - we expect that the vast majority of the time, the limit won't be hit, so the extra caution just slows things down
@@ -199,7 +199,7 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiting.MemoryConsu
 }
 
 // Put returns a slice of E to the pool and updates the current memory consumption.
-func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptionTracker) {
+func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumptionTracker) {
 	if s == nil {
 		return
 	}
@@ -215,7 +215,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiting.MemoryConsumptio
 }
 
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
-func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiting.MemoryConsumptionTracker) {
+func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiter.MemoryConsumptionTracker) {
 	FPointSlicePool.Put(d.Floats, tracker)
 	HPointSlicePool.Put(d.Histograms, tracker)
 }
