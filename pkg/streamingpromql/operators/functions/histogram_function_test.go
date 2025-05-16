@@ -19,7 +19,7 @@ import (
 //
 // The output sorting behaviour is impossible to test through these scripts, so we instead test it here.
 
-func TestHistogramQuantileFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
+func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	testCases := map[string]struct {
 		inputSeries               []labels.Labels
 		expectedOutputSeriesOrder []labels.Labels
@@ -114,8 +114,10 @@ func TestHistogramQuantileFunction_ReturnsGroupsFinishedFirstEarliest(t *testing
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-			hOp := &HistogramQuantileFunction{
-				phArg:                    &testScalarOperator{},
+			hOp := &HistogramFunction{
+				f: &histogramQuantile{
+					phArg: &testScalarOperator{},
+				},
 				inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
 				innerSeriesMetricNames:   &operators.MetricNames{},
 				memoryConsumptionTracker: memoryConsumptionTracker,

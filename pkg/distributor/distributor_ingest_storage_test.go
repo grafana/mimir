@@ -249,7 +249,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	ctx := user.InjectOrgID(context.Background(), "user")
 	now := time.Now()
 
-	hugeLabelValueLength := 100 * 1024 * 1024
+	hugeLabelValueLength := (1 << 24) - 1 // This is one character less than the maximum label length allowed by Prometheus.
 
 	createWriteRequest := func() *mimirpb.WriteRequest {
 		return &mimirpb.WriteRequest{

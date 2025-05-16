@@ -47,6 +47,7 @@ type Settings struct {
 	PromoteResourceAttributes         []string
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
+	AllowDeltaTemporality             bool
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
@@ -108,8 +109,18 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 
 				metric := metricSlice.At(k)
 				mostRecentTimestamp = max(mostRecentTimestamp, mostRecentTimestampInMetric(metric))
+				temporality, hasTemporality, err := aggregationTemporality(metric)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
 
-				if !isValidAggregationTemporality(metric) {
+				if hasTemporality &&
+					// Cumulative temporality is always valid.
+					// Delta temporality is also valid if AllowDeltaTemporality is true.
+					// All other temporality values are invalid.
+					(temporality != pmetric.AggregationTemporalityCumulative &&
+						(!settings.AllowDeltaTemporality || temporality != pmetric.AggregationTemporalityDelta)) {
 					errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
@@ -161,7 +172,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						break
 					}
 					if settings.ConvertHistogramsToNHCB {
-						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName)
+						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName, temporality)
 						annots.Merge(ws)
 						if err != nil {
 							errs = multierr.Append(errs, err)
@@ -189,6 +200,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						resource,
 						settings,
 						promName,
+						temporality,
 					)
 					annots.Merge(ws)
 					if err != nil {
