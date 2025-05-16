@@ -732,7 +732,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 	setOffsetForAtModifier(timeMilliseconds(s.Start), s.Expr)
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
-	if s.Start == s.End && s.Interval == 0 {
+	if s.Start.Equal(s.End) && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
 			startTimestamp:           start,
@@ -1203,7 +1203,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
-	for _, sample := range enh.nativeHistogramSamples {
+	for idx, sample := range enh.nativeHistogramSamples {
 		// We have to reconstruct the exact same signature as above for
 		// a classic histogram, just ignoring any le label.
 		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
@@ -1213,6 +1213,7 @@ func (enh *EvalNodeHelper) resetHistograms(inVec Vector, arg parser.Expr) annota
 			// labels. Do not evaluate anything.
 			annos.Add(annotations.NewMixedClassicNativeHistogramsWarning(sample.Metric.Get(labels.MetricName), arg.PositionRange()))
 			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
+			enh.nativeHistogramSamples[idx].H = nil
 			continue
 		}
 	}
