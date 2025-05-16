@@ -213,7 +213,7 @@ func (b *InMemBucket) Attributes(_ context.Context, name string) (ObjectAttribut
 }
 
 // Upload writes the file specified in src to into the memory.
-func (b *InMemBucket) Upload(_ context.Context, name string, r io.Reader) error {
+func (b *InMemBucket) Upload(_ context.Context, name string, r io.Reader, _ ...ObjectUploadOption) error {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 	body, err := io.ReadAll(r)
