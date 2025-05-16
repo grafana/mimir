@@ -33,7 +33,7 @@ type splitInstantQueryByIntervalMiddleware struct {
 	limits Limits
 	logger log.Logger
 
-	engine *promql.Engine
+	engine promql.QueryEngine
 
 	metrics instantQuerySplittingMetrics
 }
@@ -84,7 +84,7 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 func newSplitInstantQueryByIntervalMiddleware(
 	limits Limits,
 	logger log.Logger,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	registerer prometheus.Registerer) MetricsQueryMiddleware {
 	metrics := newInstantQuerySplittingMetrics(registerer)
 
