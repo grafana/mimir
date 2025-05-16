@@ -293,7 +293,7 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		}),
 		replicasDescFailedTypeAssertions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_replica_desc_failed_type_assertions_total",
-			Help: "Number of failed assertions in the HA tracker.",
+			Help: "Number of failed replicaDesc type assertions in the HA tracker.",
 		}),
 	}
 	client, err := kv.NewClient(
