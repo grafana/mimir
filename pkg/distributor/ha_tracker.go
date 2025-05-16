@@ -212,10 +212,11 @@ type defaultHaTracker struct {
 	electedReplicaPropagationTime prometheus.Histogram
 	kvCASCalls                    *prometheus.CounterVec
 
-	cleanupRuns               prometheus.Counter
-	replicasMarkedForDeletion prometheus.Counter
-	deletedReplicas           prometheus.Counter
-	markingForDeletionsFailed prometheus.Counter
+	cleanupRuns                      prometheus.Counter
+	replicasMarkedForDeletion        prometheus.Counter
+	deletedReplicas                  prometheus.Counter
+	markingForDeletionsFailed        prometheus.Counter
+	replicasDescFailedTypeAssertions prometheus.Counter
 }
 
 // For one cluster, the information we need to do ha-tracking.
@@ -290,6 +291,10 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Name: "cortex_ha_tracker_replicas_cleanup_delete_failed_total",
 			Help: "Number of elected replicas that failed to be marked for deletion, or deleted.",
 		}),
+		replicasDescFailedTypeAssertions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ha_tracker_replica_desc_failed_type_assertions_total",
+			Help: "Number of failed replicaDesc type assertions in the HA tracker.",
+		}),
 	}
 	client, err := kv.NewClient(
 		cfg.KVStore,
@@ -359,6 +364,7 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 		if !ok {
 			// Always return true to ensure WatchPrefix() is never interrupted, otherwise the HA tracker stops to receive updates.
 			level.Error(h.logger).Log("msg", "unexpected data type receive when watching for HA tracker updates", "return type", fmt.Sprintf("%T", value), "key", key)
+			h.replicasDescFailedTypeAssertions.Inc()
 			return true
 		}
 		h.processKVStoreEntry(key, replica)
