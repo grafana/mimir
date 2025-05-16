@@ -57,35 +57,39 @@ func (s *stepAlignMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Re
 	start := (r.GetStart() / r.GetStep()) * r.GetStep()
 	end := (r.GetEnd() / r.GetStep()) * r.GetStep()
 	stepAligned := start == r.GetStart() && end == r.GetEnd()
-	if !stepAligned {
-		s.notAligned.Inc()
+
+	// Request is already step aligned, nothing to do.
+	if stepAligned {
+		return s.next.Do(ctx, r)
 	}
 
-	if !stepAligned && validation.AllTrueBooleansPerTenant(tenants, s.limits.AlignQueriesWithStep) {
-		for _, id := range tenants {
-			s.adjusted.WithLabelValues(id).Inc()
-		}
-
-		spanlog := spanlogger.FromContext(ctx, s.logger)
-		spanlog.DebugLog(
-			"msg", "query start or end has been adjusted to be step-aligned",
-			spanlogger.TenantIDsTagName, tenants,
-			"original_start", r.GetStart(),
-			"original_end", r.GetEnd(),
-			"adjusted_start", start,
-			"adjusted_end", end,
-			"step", r.GetStep(),
-		)
-
-		updatedReq, err := r.WithStartEnd(start, end)
-		if err != nil {
-			return nil, err
-		}
-
-		return s.next.Do(ctx, updatedReq)
+	s.notAligned.Inc()
+	// If any tenant doesn't have the setting to force alignment enabled, just run the next handler.
+	if !validation.AllTrueBooleansPerTenant(tenants, s.limits.AlignQueriesWithStep) {
+		return s.next.Do(ctx, r)
 	}
 
-	return s.next.Do(ctx, r)
+	for _, id := range tenants {
+		s.adjusted.WithLabelValues(id).Inc()
+	}
+
+	spanlog := spanlogger.FromContext(ctx, s.logger)
+	spanlog.DebugLog(
+		"msg", "query start or end has been adjusted to be step-aligned",
+		spanlogger.TenantIDsTagName, tenants,
+		"original_start", r.GetStart(),
+		"original_end", r.GetEnd(),
+		"adjusted_start", start,
+		"adjusted_end", end,
+		"step", r.GetStep(),
+	)
+
+	updatedReq, err := r.WithStartEnd(start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.next.Do(ctx, updatedReq)
 }
 
 // isRequestStepAligned returns whether the MetricsQueryRequest start and end timestamps are aligned
