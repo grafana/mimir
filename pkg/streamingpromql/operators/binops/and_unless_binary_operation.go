@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // AndUnlessBinaryOperation represents a logical 'and' or 'unless' between two vectors.
@@ -17,7 +17,7 @@ type AndUnlessBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	VectorMatching           parser.VectorMatching
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	IsUnless                 bool // If true, this operator represents an 'unless', if false, this operator represents an 'and'
 
 	timeRange                  types.QueryTimeRange
@@ -36,7 +36,7 @@ func NewAndUnlessBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	isUnless bool,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
@@ -289,7 +289,7 @@ type andGroup struct {
 }
 
 // AccumulateRightSeriesPresence records the presence of samples on the right-hand side.
-func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
+func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
 	if g.rightSamplePresence == nil {
 		var err error
 		g.rightSamplePresence, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
@@ -314,11 +314,11 @@ func (g *andGroup) AccumulateRightSeriesPresence(data types.InstantVectorSeriesD
 
 // FilterLeftSeries returns leftData filtered based on samples seen for the right-hand side.
 // The return value reuses the slices from leftData, and returns any unused slices to the pool.
-func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange, isUnless bool) (types.InstantVectorSeriesData, error) {
+func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange, isUnless bool) (types.InstantVectorSeriesData, error) {
 	return filterSeries(leftData, g.rightSamplePresence, !isUnless, memoryConsumptionTracker, timeRange)
 }
 
-func (g *andGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+func (g *andGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
 	g.rightSamplePresence = nil
 }

@@ -10,15 +10,15 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type ScalarScalarBinaryOperation struct {
 	Left                     types.ScalarOperator
 	Right                    types.ScalarOperator
 	Op                       parser.ItemType
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	opFunc             binaryOperationFunc
 	expressionPosition posrange.PositionRange
@@ -29,7 +29,7 @@ var _ types.ScalarOperator = &ScalarScalarBinaryOperation{}
 func NewScalarScalarBinaryOperation(
 	left, right types.ScalarOperator,
 	op parser.ItemType,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) (*ScalarScalarBinaryOperation, error) {
 	s := &ScalarScalarBinaryOperation{

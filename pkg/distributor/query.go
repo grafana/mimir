@@ -26,7 +26,6 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -218,7 +217,7 @@ type ingesterQueryResult struct {
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
 func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
-	memoryTracker := limiting.FromContextWithFallback(ctx)
+	memoryTracker := limiter.MemoryTrackerFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required

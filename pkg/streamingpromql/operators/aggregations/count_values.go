@@ -17,8 +17,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type CountValues struct {
@@ -27,7 +27,7 @@ type CountValues struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, NewCountValues will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 
@@ -49,7 +49,7 @@ func NewCountValues(
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
 	if without {
@@ -213,7 +213,7 @@ func (c *CountValues) computeOutputLabels(seriesLabels labels.Labels, value stri
 	return c.labelsBuilder.Labels()
 }
 
-func (s *countValuesSeries) toPoints(memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) ([]promql.FPoint, error) {
+func (s *countValuesSeries) toPoints(memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) ([]promql.FPoint, error) {
 	p, err := types.FPointSlicePool.Get(s.outputPointCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err

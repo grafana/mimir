@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
@@ -186,7 +186,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			startTime := time.Unix(0, 0)
 			endTime := startTime.Add(time.Duration(testCase.stepCount-1) * time.Minute)
 
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -232,7 +232,7 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			startTime := timeZero.Add(time.Duration(startT) * time.Minute)
 			endTime := timeZero.Add(7 * time.Minute)
 
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,

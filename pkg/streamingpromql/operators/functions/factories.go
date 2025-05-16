@@ -9,16 +9,16 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type InstantVectorFunctionOperatorFactory func(
 	args []types.Operator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -26,7 +26,7 @@ type InstantVectorFunctionOperatorFactory func(
 
 type ScalarFunctionOperatorFactory func(
 	args []types.Operator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
@@ -39,7 +39,7 @@ type ScalarFunctionOperatorFactory func(
 //   - name: The name of the function
 //   - f: The function implementation
 func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstantVectorDefinition) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -82,7 +82,7 @@ func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc Insta
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		var inner types.InstantVectorOperator
 		if len(args) == 0 {
 			// if the argument is not provided, it will default to vector(time())
@@ -136,7 +136,7 @@ func FunctionOverRangeVectorOperatorFactory(
 	name string,
 	f FunctionOverRangeVectorDefinition,
 ) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", name, len(args))
@@ -158,7 +158,7 @@ func FunctionOverRangeVectorOperatorFactory(
 	}
 }
 
-func PredictLinearFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func PredictLinearFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	f := PredictLinear
 
 	if len(args) != 2 {
@@ -187,7 +187,7 @@ func PredictLinearFactory(args []types.Operator, memoryConsumptionTracker *limit
 	return o, nil
 }
 
-func QuantileOverTimeFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func QuantileOverTimeFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	f := QuantileOverTime
 
 	if len(args) != 2 {
@@ -216,7 +216,7 @@ func QuantileOverTimeFactory(args []types.Operator, memoryConsumptionTracker *li
 	return o, nil
 }
 
-func scalarToInstantVectorOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func scalarToInstantVectorOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for vector, got %v", len(args))
@@ -231,7 +231,7 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, memoryConsumpti
 	return scalars.NewScalarToInstantVector(inner, expressionPosition, memoryConsumptionTracker), nil
 }
 
-func LabelJoinFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func LabelJoinFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	// It is valid for label_join to have no source label names. ie, only 3 arguments are actually required.
 	if len(args) < 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -279,7 +279,7 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 5 arguments for label_replace, got %v", len(args))
@@ -328,7 +328,7 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptio
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func ClampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func ClampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for clamp, got %v", len(args))
@@ -362,7 +362,7 @@ func ClampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracke
 }
 
 func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) InstantVectorFunctionOperatorFactory {
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 2 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 2 arguments for %s, got %v", functionName, len(args))
@@ -390,7 +390,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Instant
 	}
 }
 
-func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 && len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected 1 or 2 arguments for round, got %v", len(args))
@@ -422,7 +422,7 @@ func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracke
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 2 arguments for histogram_quantile, got %v", len(args))
@@ -444,7 +444,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsu
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for histogram_fraction, got %v", len(args))
@@ -472,7 +472,7 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsu
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
-func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for timestamp, got %v", len(args))
@@ -503,7 +503,7 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 		functionName = "sort_desc"
 	}
 
-	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	return func(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
 			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
@@ -629,7 +629,7 @@ func RegisterScalarFunctionOperatorFactory(functionName string, factory ScalarFu
 	return nil
 }
 
-func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for pi, got %v", len(args))
@@ -638,7 +638,7 @@ func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting
 	return scalars.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if len(args) != 0 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 0 arguments for time, got %v", len(args))
@@ -647,7 +647,7 @@ func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiti
 	return operators.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for scalar, got %v", len(args))
@@ -662,7 +662,7 @@ func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumpti
 	return scalars.NewInstantVectorToScalar(inner, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
-func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.InstantVectorOperator {
+func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) types.InstantVectorOperator {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         UnaryNegation,
 		SeriesMetadataFunction: DropSeriesName,
@@ -672,7 +672,7 @@ func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
 
-func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	f := DoubleExponentialSmoothing
 
 	functionName := "double_exponential_smoothing"

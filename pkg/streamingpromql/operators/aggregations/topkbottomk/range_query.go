@@ -18,9 +18,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -31,7 +31,7 @@ type RangeQuery struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange
@@ -450,7 +450,7 @@ type rangeQuerySeries struct {
 	values            []float64 // One entry per timestamp with value for that timestamp (entry only guaranteed to be populated if value at that timestamp might be returned)
 }
 
-func (s *rangeQuerySeries) ensureSlicesPopulated(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+func (s *rangeQuerySeries) ensureSlicesPopulated(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
 	if s.shouldReturnPoint != nil {
 		// Slices are already populated, nothing to do.
 		return nil

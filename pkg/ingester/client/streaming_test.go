@@ -20,7 +20,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -81,7 +80,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
 			queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-			memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			reader := NewSeriesChunksStreamReader(ctx, mockClient, "ingester", 5, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
@@ -124,7 +123,7 @@ func TestSeriesChunksStreamReader_AbortsWhenParentContextCancelled(t *testing.T)
 
 	parentCtx, cancel := context.WithCancel(context.Background())
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	reader := NewSeriesChunksStreamReader(parentCtx, mockClient, "ingester", 3, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
@@ -171,7 +170,7 @@ func TestSeriesChunksStreamReader_DoesNotAbortWhenStreamContextCancelled(t *test
 
 	parentCtx := context.Background()
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	reader := NewSeriesChunksStreamReader(parentCtx, mockClient, "ingester", 3, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
@@ -196,7 +195,7 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 	cleanup := func() {}
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	reader := NewSeriesChunksStreamReader(ctx, mockClient, "ingester", 1, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -224,7 +223,7 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 	cleanup := func() {}
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	reader := NewSeriesChunksStreamReader(ctx, mockClient, "ingester", 1, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -257,7 +256,7 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 	queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-	memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	reader := NewSeriesChunksStreamReader(ctx, mockClient, "ingester", 3, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
@@ -307,7 +306,7 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
 			queryLimiter := limiter.NewQueryLimiter(0, 0, 0, 0, nil)
-			memoryTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			reader := NewSeriesChunksStreamReader(ctx, mockClient, "ingester", 1, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
@@ -381,7 +380,7 @@ func TestSeriesChunksStreamReader_QueryAndChunksLimits(t *testing.T) {
 			})
 
 			queryLimiter := limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics)
-			memoryTracker := limiting.NewMemoryConsumptionTracker(uint64(testCase.maxEstimatedMemory), rejectionCount)
+			memoryTracker := limiter.NewMemoryConsumptionTracker(uint64(testCase.maxEstimatedMemory), rejectionCount)
 			reader := NewSeriesChunksStreamReader(ctx, mockClient, "ingester", 1, queryLimiter, memoryTracker, cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 

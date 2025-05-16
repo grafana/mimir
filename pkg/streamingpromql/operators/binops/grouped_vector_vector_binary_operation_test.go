@@ -15,10 +15,10 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
@@ -296,7 +296,7 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 
@@ -466,7 +466,7 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}, Card: parser.CardOneToMany}
@@ -562,7 +562,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			ts := int64(0)
 			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(ts))
 

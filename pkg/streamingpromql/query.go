@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
@@ -33,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -51,7 +51,7 @@ type Query struct {
 	originalExpression string
 
 	cancel                   context.CancelCauseFunc
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
 	lookbackDelta            time.Duration
@@ -84,7 +84,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 	q := &Query{
 		queryable:                queryable,
 		engine:                   e,
-		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		memoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
 		annotations:              annotations.New(),
 		stats:                    &types.QueryStats{},
 		topLevelQueryTimeRange:   timeRange,
@@ -561,7 +561,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	// Add the memory consumption tracker to the context of this query before executing it so
 	// that we can pass it to the rest of the read path and keep track of memory used loading
 	// chunks from store-gateways or ingesters.
-	ctx = limiting.AddToContext(ctx, q.memoryConsumptionTracker)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, q.memoryConsumptionTracker)
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	q.cancel = cancel

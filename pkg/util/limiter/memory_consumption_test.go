@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package limiting
+package limiter
 
 import (
 	"context"
@@ -21,7 +21,7 @@ const rejectedQueriesMetricName = "rejected_queries"
 func TestFromContextWithFallback(t *testing.T) {
 	t.Run("does not exist", func(t *testing.T) {
 		ctx := context.Background()
-		tracker := FromContextWithFallback(ctx)
+		tracker := MemoryTrackerFromContextWithFallback(ctx)
 		require.NotNil(t, tracker)
 		require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
 	})
@@ -32,7 +32,7 @@ func TestFromContextWithFallback(t *testing.T) {
 		require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512)))
 
 		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
-		stored := FromContextWithFallback(ctx)
+		stored := MemoryTrackerFromContextWithFallback(ctx)
 		require.Equal(t, existing, stored)
 		require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
 	})
@@ -43,7 +43,7 @@ func TestAddToContext(t *testing.T) {
 	existing := NewMemoryConsumptionTracker(0, nil)
 	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512)))
 
-	ctx = AddToContext(ctx, existing)
+	ctx = AddMemoryTrackerToContext(ctx, existing)
 	stored := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	require.Equal(t, existing, stored)
 	require.Equal(t, uint64(512), stored.CurrentEstimatedMemoryConsumptionBytes())
