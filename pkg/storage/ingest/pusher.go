@@ -66,7 +66,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	}(time.Now())
 
 	type parsedRecord struct {
-		*mimirpb.WriteRequest
+		*mimirpb.PreallocWriteRequest
 		// ctx holds the tracing baggage for this record/request.
 		ctx      context.Context
 		tenantID string
@@ -93,10 +93,10 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			parsed := parsedRecord{
-				ctx:          r.ctx,
-				tenantID:     r.tenantID,
-				WriteRequest: &mimirpb.WriteRequest{},
-				index:        index,
+				ctx:                  r.ctx,
+				tenantID:             r.tenantID,
+				PreallocWriteRequest: &mimirpb.PreallocWriteRequest{},
+				index:                index,
 			}
 
 			if r.version > LatestRecordVersion {
@@ -104,7 +104,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := parsed.Unmarshal(r.content)
+			err := DeserializeRecordContent(r.content, parsed.PreallocWriteRequest, r.version)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}
@@ -146,7 +146,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 		}
 
 		// If we get an error at any point, we need to stop processing the records. They will be retried at some point.
-		err := c.pushToStorage(r.ctx, r.tenantID, r.WriteRequest, writer)
+		err := c.pushToStorage(r.ctx, r.tenantID, &r.WriteRequest, writer)
 		if err != nil {
 			cancel(cancellation.NewErrorf("error while pushing to storage")) // Stop the unmarshalling goroutine.
 			return fmt.Errorf("consuming record at index %d for tenant %s: %w", r.index, r.tenantID, err)
@@ -396,6 +396,10 @@ func labelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorage ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorage aborts the request if it encounters an error.
 func (p *parallelStorageShards) PushToStorage(ctx context.Context, request *mimirpb.WriteRequest) error {
+	// We're moving Timeseries into batches, each batch has a fresh timeseries slice.
+	// We're done with the slice in the request here, the contents will live on in the batch and be freed when the batch is freed.
+	defer mimirpb.ReuseTimeseriesSliceDangerous(request.Timeseries)
+
 	hashBuf := make([]byte, 0, 1024)
 	for _, ts := range request.Timeseries {
 		var shard uint64

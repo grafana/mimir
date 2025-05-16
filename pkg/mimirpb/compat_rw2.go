@@ -32,8 +32,9 @@ const rw2SymbolPageSize = 16
 // mechanism, we would have to allocate a large amount of memory
 // or do reallocation. This is a compromise between the two.
 type rw2PagedSymbols struct {
-	count uint32
-	pages []*[]string
+	count  uint32
+	pages  []*[]string
+	offset uint32
 }
 
 func (ps *rw2PagedSymbols) append(symbol string) {
@@ -55,6 +56,7 @@ func (ps *rw2PagedSymbols) releasePages() {
 }
 
 func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
+	ref = ref - ps.offset
 	if ref < ps.count {
 		page := ps.pages[ref>>rw2SymbolPageSize]
 		return (*page)[ref&((1<<rw2SymbolPageSize)-1)], nil
