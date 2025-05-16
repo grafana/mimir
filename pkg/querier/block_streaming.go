@@ -209,7 +209,6 @@ func (s *storeGatewayStreamReader) setLastMessage(msg *storepb.SeriesResponse) e
 	if s.lastMessage != nil {
 		return fmt.Errorf("must call FreeBuffer() before storing the next message - this indicates a bug")
 	}
-
 	if err := s.memoryTracker.IncreaseMemoryConsumption(uint64(msg.Size())); err != nil {
 		return err
 	}
