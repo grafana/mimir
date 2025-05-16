@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -70,7 +71,13 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	s.series = newSeriesList(s.MemoryConsumptionTracker)
 
 	for s.seriesSet.Next() {
-		s.series.Add(s.seriesSet.At())
+		series := s.seriesSet.At()
+
+		if s.SkipHistogramBuckets {
+			series = &skipHistogramBucketsSeries{series}
+		}
+
+		s.series.Add(series)
 	}
 
 	metadata, err := s.series.ToSeriesMetadata()
@@ -277,4 +284,16 @@ func putSeriesBatch(b *seriesBatch) {
 	b.series = b.series[:0]
 	b.next = nil
 	seriesBatchPool.Put(b)
+}
+
+type skipHistogramBucketsSeries struct {
+	series storage.Series
+}
+
+func (s *skipHistogramBucketsSeries) Labels() labels.Labels {
+	return s.series.Labels()
+}
+
+func (s *skipHistogramBucketsSeries) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	return promql.NewHistogramStatsIterator(s.series.Iterator(iterator))
 }

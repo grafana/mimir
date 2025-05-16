@@ -134,6 +134,19 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
+		// Histogram functions that are eligible to skip native histogram buckets.
+		{
+			Expr: `histogram_count(sum(rate(nh_X[2m])))`,
+		},
+		{
+			Expr: `histogram_count(sum(rate(nh_X[20m])))`,
+		},
+		{
+			Expr: `histogram_sum(sum(rate(nh_X[2m])))`,
+		},
+		{
+			Expr: `histogram_sum(sum(rate(nh_X[20m])))`,
+		},
 		// Subqueries.
 		{
 			Expr: "sum_over_time(a_X[10m:3m])",
