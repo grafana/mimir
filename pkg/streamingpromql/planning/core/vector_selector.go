@@ -19,10 +19,10 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
 
 	if v.ReturnSampleTimestamps {
-		return d + " (return sample timestamps)"
+		return d + ", return sample timestamps"
 	}
 
 	return d
@@ -55,7 +55,8 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
-		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
+		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
@@ -75,6 +76,7 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		LookbackDelta:            params.LookbackDelta,
 		Matchers:                 matchers,
 		EagerLoad:                params.EagerLoadSelectors,
+		SkipHistogramBuckets:     v.SkipHistogramBuckets,
 		ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}

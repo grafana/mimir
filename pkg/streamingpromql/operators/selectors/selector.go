@@ -18,12 +18,13 @@ import (
 )
 
 type Selector struct {
-	Queryable storage.Queryable
-	TimeRange types.QueryTimeRange
-	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
-	Offset    int64  // In milliseconds
-	Matchers  []*labels.Matcher
-	EagerLoad bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
+	Queryable            storage.Queryable
+	TimeRange            types.QueryTimeRange
+	Timestamp            *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
+	Offset               int64  // In milliseconds
+	Matchers             []*labels.Matcher
+	EagerLoad            bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
+	SkipHistogramBuckets bool
 
 	ExpressionPosition posrange.PositionRange
 
