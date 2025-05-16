@@ -29,6 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	mimirsync "github.com/grafana/mimir/pkg/util/sync"
 )
 
 var (
@@ -349,7 +350,7 @@ func (h *defaultHaTracker) syncHATrackerStateOnStart(ctx context.Context) error 
 // Follows pattern used by ring for WatchKey.
 func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Start cleanup loop. It will stop when context is done.
-	wg := sync.WaitGroup{}
+	wg := mimirsync.ContextWaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -371,7 +372,12 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 		return true
 	})
 
-	wg.Wait()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if err := wg.WaitWithContext(ctx); err != nil {
+		level.Error(h.logger).Log("msg", "wait group was not done after 10m but we expected it to be done in a few milliseconds", "err", err)
+		return fmt.Errorf("waiting for updateKVLoop to be done: %w", err)
+	}
 	return nil
 }
 
