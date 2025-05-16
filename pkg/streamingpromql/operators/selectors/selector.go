@@ -295,5 +295,11 @@ func (s *skipHistogramBucketsSeries) Labels() labels.Labels {
 }
 
 func (s *skipHistogramBucketsSeries) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	// Try to reuse the iterator if we can.
+	if statsIterator, ok := iterator.(*promql.HistogramStatsIterator); ok {
+		statsIterator.Reset(s.series.Iterator(statsIterator.Iterator))
+		return statsIterator
+	}
+
 	return promql.NewHistogramStatsIterator(s.series.Iterator(iterator))
 }
