@@ -28,11 +28,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: grafana/writers-toolkit/publish-technical-documentation@3717bf82fc1f56afaae06d4b5b94bcc905bc88a5 # publish-technical-documentation/v1.2.0
+      - uses: grafana/writers-toolkit/publish-technical-documentation@39cdc38767184996e25d611923f8ce697e33bc70 # publish-technical-documentation/v1.2.0
         with:
           source_directory: docs/sources/mimir
           website_directory: content/docs/mimir/next
-      - uses: grafana/writers-toolkit/publish-technical-documentation@3717bf82fc1f56afaae06d4b5b94bcc905bc88a5 # publish-technical-documentation/v1.2.0
+      - uses: grafana/writers-toolkit/publish-technical-documentation@39cdc38767184996e25d611923f8ce697e33bc70 # publish-technical-documentation/v1.2.0
         with:
           source_directory: docs/sources/helm-charts/mimir-distributed
           website_directory: content/docs/helm-charts/mimir-distributed/next
