@@ -558,6 +558,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		defer q.root.Close()
 	}
 
+	// Add the memory consumption tracker to the context of this query before executing it so
+	// that we can pass it to the rest of the read path and keep track of memory used loading
+	// chunks from store-gateways or ingesters.
+	ctx = limiting.AddToContext(ctx, q.memoryConsumptionTracker)
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	q.cancel = cancel
 
