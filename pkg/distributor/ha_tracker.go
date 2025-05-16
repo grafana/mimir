@@ -372,7 +372,7 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 		return true
 	})
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	if err := wg.WaitWithContext(ctx); err != nil {
 		level.Error(h.logger).Log("msg", "wait group was not done after 10m but we expected it to be done in a few milliseconds", "err", err)
