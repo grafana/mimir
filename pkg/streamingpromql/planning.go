@@ -213,10 +213,11 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
 			VectorSelectorDetails: &core.VectorSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
-				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
-				Offset:             expr.OriginalOffset,
-				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Matchers:             core.LabelMatchersFrom(expr.LabelMatchers),
+				Timestamp:            core.TimeFromTimestamp(expr.Timestamp),
+				Offset:               expr.OriginalOffset,
+				ExpressionPosition:   core.PositionRangeFrom(expr.PositionRange()),
+				SkipHistogramBuckets: expr.SkipHistogramBuckets,
 			},
 		}, nil
 
@@ -228,11 +229,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 
 		return &core.MatrixSelector{
 			MatrixSelectorDetails: &core.MatrixSelectorDetails{
-				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
-				Timestamp:          core.TimeFromTimestamp(vs.Timestamp),
-				Offset:             vs.OriginalOffset,
-				Range:              expr.Range,
-				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Matchers:             core.LabelMatchersFrom(vs.LabelMatchers),
+				Timestamp:            core.TimeFromTimestamp(vs.Timestamp),
+				Offset:               vs.OriginalOffset,
+				Range:                expr.Range,
+				ExpressionPosition:   core.PositionRangeFrom(expr.PositionRange()),
+				SkipHistogramBuckets: vs.SkipHistogramBuckets,
 			},
 		}, nil
 

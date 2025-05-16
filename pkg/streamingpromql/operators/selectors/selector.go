@@ -18,11 +18,12 @@ import (
 )
 
 type Selector struct {
-	Queryable storage.Queryable
-	TimeRange types.QueryTimeRange
-	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
-	Offset    int64  // In milliseconds
-	Matchers  []*labels.Matcher
+	Queryable            storage.Queryable
+	TimeRange            types.QueryTimeRange
+	Timestamp            *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
+	Offset               int64  // In milliseconds
+	Matchers             []*labels.Matcher
+	SkipHistogramBuckets bool
 
 	ExpressionPosition posrange.PositionRange
 
