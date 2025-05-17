@@ -11,10 +11,10 @@ import (
 )
 
 type ForkedSender struct {
-	cli receivers.WebhookSender
+	cli *Client
 }
 
-func NewForkedSender(cli receivers.WebhookSender) *ForkedSender {
+func NewForkedSender(cli *Client) *ForkedSender {
 	return &ForkedSender{cli: cli}
 }
 
@@ -43,7 +43,7 @@ func (f ForkedSender) SendWebhook(ctx context.Context, cmd *receivers.SendWebhoo
 		request.Header.Set(k, v)
 	}
 
-	resp, err := NewTLSClient(cmd.TLSConfig).Do(request)
+	resp, err := NewTLSClient(cmd.TLSConfig, f.cli.cfg.dialer.DialContext).Do(request)
 	if err != nil {
 		return redactURL(err)
 	}

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/benbjohnson/clock"
 
@@ -18,23 +20,50 @@ import (
 
 var ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 
-type ClientConfiguration struct {
-	UserAgent string
+type clientConfiguration struct {
+	userAgent string
+	dialer    net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
 }
 
-var DefaultClientConfiguration = ClientConfiguration{
-	UserAgent: "Grafana",
-}
+// defaultDialTimeout is the default timeout for the dialer, 30 seconds to match http.DefaultTransport.
+const defaultDialTimeout = 30 * time.Second
 
 type Client struct {
-	log   logging.Logger
-	agent string
+	log logging.Logger
+	cfg clientConfiguration
 }
 
-func NewClient(log logging.Logger, cfg ClientConfiguration) *Client {
+func NewClient(log logging.Logger, opts ...ClientOption) *Client {
+	cfg := clientConfiguration{
+		userAgent: "Grafana",
+		dialer:    net.Dialer{},
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	if cfg.dialer.Timeout == 0 {
+		// Mostly defensive to ensure that timeout semantics don't change when given a custom dialer without a timeout.
+		cfg.dialer.Timeout = defaultDialTimeout
+	}
 	return &Client{
-		log:   log,
-		agent: cfg.UserAgent,
+		log: log,
+		cfg: cfg,
+	}
+}
+
+type ClientOption func(*clientConfiguration)
+
+func WithUserAgent(userAgent string) ClientOption {
+	return func(c *clientConfiguration) {
+		c.userAgent = userAgent
+	}
+}
+
+func WithDialer(dialer net.Dialer) ClientOption {
+	return func(c *clientConfiguration) {
+		c.dialer = dialer
 	}
 }
 
@@ -64,7 +93,7 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 	}
 
 	request.Header.Set("Content-Type", webhook.ContentType)
-	request.Header.Set("User-Agent", ns.agent)
+	request.Header.Set("User-Agent", ns.cfg.userAgent)
 
 	if webhook.User != "" && webhook.Password != "" {
 		request.Header.Set("Authorization", GetBasicAuthHeader(webhook.User, webhook.Password))
@@ -74,7 +103,7 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 		request.Header.Set(k, v)
 	}
 
-	client := NewTLSClient(webhook.TLSConfig)
+	client := NewTLSClient(webhook.TLSConfig, ns.cfg.dialer.DialContext)
 
 	if webhook.HMACConfig != nil {
 		ns.log.Debug("Adding HMAC roundtripper to client")

@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/grafana/alerting/logging"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
+
+	"github.com/grafana/alerting/logging"
 
 	"github.com/grafana/alerting/models"
 )
@@ -31,6 +32,10 @@ func NewFakeProviderWithFile(t *testing.T, n int) Provider {
 	return NewTokenProvider(NewFakeTokenStoreWithFile(t, n), &logging.FakeLogger{})
 }
 
+func NewFakeProviderWithStore(s TokenStore) Provider {
+	return NewTokenProvider(s, &logging.FakeLogger{})
+}
+
 func NewFakeTokenStoreFromImages(images map[string]*Image) *FakeTokenStore {
 	return &FakeTokenStore{Images: images}
 }
@@ -45,6 +50,7 @@ func NewFakeTokenStore(n int) *FakeTokenStore {
 	for i := 1; i <= n; i++ {
 		token := fmt.Sprintf("test-image-%d", i)
 		p.Images[token] = &Image{
+			ID:  token,
 			URL: fmt.Sprintf("https://www.example.com/test-image-%d.jpg", i),
 			RawData: func(_ context.Context) (ImageContent, error) {
 				return ImageContent{}, ErrImagesUnavailable
@@ -70,7 +76,7 @@ func NewFakeTokenStoreWithFile(t *testing.T, n int) *FakeTokenStore {
 	for i := 1; i <= n; i++ {
 		token := fmt.Sprintf("test-image-%d", i)
 		p.Images[token] = &Image{
-			URL: fmt.Sprintf("https://www.example.com/test-image-%d", i),
+			ID: token,
 			RawData: func(_ context.Context) (ImageContent, error) {
 				return ImageContent{
 					Name:    fmt.Sprintf("test-image-%d.jpg", i),

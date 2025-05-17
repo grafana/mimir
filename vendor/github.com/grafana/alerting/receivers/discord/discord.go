@@ -215,8 +215,9 @@ func (d Notifier) SendResolved() bool {
 	return !d.GetDisableResolveMessage()
 }
 
-func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Alert, embedQuota int) []discordAttachment {
-	attachments := make([]discordAttachment, 0, embedQuota)
+func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Alert, embedQuota int) []*discordAttachment {
+	attachments := make([]*discordAttachment, 0, embedQuota)
+	seenName := make(map[string]*discordAttachment)
 	err := images.WithStoredImages(ctx, d.log, d.images,
 		func(index int, image images.Image) error {
 			// Check if the image limit has been reached at the start of each iteration.
@@ -226,6 +227,12 @@ func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Aler
 			}
 
 			alert := alerts[index]
+			if att, ok := seenName[alert.Name()]; ok { // skip attachments for the same alert name
+				if att.state != alert.Status() && att.state == model.AlertResolved { // change to firing if attachment state is firing
+					att.state = alert.Status()
+				}
+				return nil
+			}
 			attachment, err := d.getAttachment(ctx, alert, image)
 			if err != nil {
 				d.log.Error("failed to create an attachment for Discord", "alert", alert, "error", err)
@@ -233,7 +240,8 @@ func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Aler
 			}
 
 			// We got an attachment, either using the image URL or bytes.
-			attachments = append(attachments, *attachment)
+			attachments = append(attachments, attachment)
+			seenName[alert.Name()] = attachment
 			return nil
 		}, alerts...)
 	if err != nil {
@@ -269,7 +277,7 @@ func (d Notifier) getAttachment(ctx context.Context, alert *types.Alert, image i
 	}, nil
 }
 
-func (d Notifier) buildRequest(url string, body []byte, attachments []discordAttachment) (*receivers.SendWebhookSettings, error) {
+func (d Notifier) buildRequest(url string, body []byte, attachments []*discordAttachment) (*receivers.SendWebhookSettings, error) {
 	cmd := &receivers.SendWebhookSettings{
 		URL:        url,
 		HTTPMethod: "POST",
