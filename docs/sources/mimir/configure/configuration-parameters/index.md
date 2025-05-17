@@ -3706,7 +3706,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 
-# Maximum number of series that can be requested in a single cardinality API
+# Maximum number of series that you can request in a single cardinality API
 # request.
 # CLI flag: -querier.cardinality-api-max-series-limit
 [cardinality_api_max_series_limit: <int> | default = 500]
