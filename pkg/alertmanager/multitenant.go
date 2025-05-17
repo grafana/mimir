@@ -98,6 +98,11 @@ type MultitenantAlertmanagerConfig struct {
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
 
+	// StrictInitialization is an experimental feature that allows the multi-tenant Alertmanager
+	// to skip starting Alertmanagers for tenants without a non-default, non-empty configuration.
+	// For Grafana Alertmanager tenants, configurations must also be marked as "promoted".
+	StrictInitialization bool `yaml:"strict_initialization" category:"experimental"`
+
 	// Enable UTF-8 strict mode. When enabled, Alertmanager uses the new UTF-8 parser
 	// when parsing label matchers in tenant configurations and HTTP requests, instead
 	// of the old regular expression parser, referred to as classic mode.
@@ -144,6 +149,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	cfg.ShardingRing.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
+
+	f.BoolVar(&cfg.StrictInitialization, "alertmanager.strict-initialization-enabled", false, "Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.")
 
 	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
 	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
@@ -812,9 +819,11 @@ func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
 	return cfg.Promoted && !cfg.Default && cfg.RawConfig != ""
 }
 
-// canSkipTenant returns true if the tenant can be skipped (Grafana suffix matching).
+// canSkipTenant returns true if the tenant can be skipped, either because strict initialization is enabled,
+// or because the tenant ID matches the provided Grafana tenant suffix.
 func (am *MultitenantAlertmanager) canSkipTenant(userID string) bool {
-	return am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(userID, am.cfg.GrafanaAlertmanagerTenantSuffix)
+	return am.cfg.StrictInitialization ||
+		am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(userID, am.cfg.GrafanaAlertmanagerTenantSuffix)
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
