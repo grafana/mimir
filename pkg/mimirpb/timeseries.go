@@ -515,6 +515,13 @@ func ReuseSlice(ts []PreallocTimeseries) {
 		ReusePreallocTimeseries(&ts[i])
 	}
 
+	ReuseSliceOnly(ts)
+}
+
+// ReuseSliceOnly reuses the slice of timeseries, but not its contents.
+// Only use this if you have another means of reusing the individual timeseries contained within.
+// Most times, you want to use ReuseSlice instead.
+func ReuseSliceOnly(ts []PreallocTimeseries) {
 	preallocTimeseriesSlicePool.Put(ts[:0])
 }
 
