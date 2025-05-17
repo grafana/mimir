@@ -71,7 +71,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 6),
 		}, []string{"operation", "status_code"}),
 
-		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-frontend", util.GRPCProtocol),
+		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-scheduler-processor", util.GRPCProtocol),
 	}
 
 	frontendClientsGauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
