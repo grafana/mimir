@@ -357,7 +357,9 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
-			return false
+			// Always return true to ensure WatchPrefix() is never interrupted, otherwise the HA tracker stops to receive updates.
+			level.Error(h.logger).Log("msg", "unexpected data type receive when watching for HA tracker updates", "return type", fmt.Sprintf("%T", value), "key", key)
+			return true
 		}
 		h.processKVStoreEntry(key, replica)
 		return true
