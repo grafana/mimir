@@ -2582,6 +2582,12 @@ alertmanager_client:
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
 
+# (experimental) Skip initializing Alertmanagers for tenants without a
+# non-default, non-empty configuration. For Grafana Alertmanager tenants,
+# configurations not marked as 'promoted' will also be skipped.
+# CLI flag: -alertmanager.strict-initialization-enabled
+[strict_initialization: <boolean> | default = false]
+
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
 # alerts. It is recommended that all tenants run the `migrate-utf8` command in
