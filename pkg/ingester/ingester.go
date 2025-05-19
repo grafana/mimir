@@ -3976,8 +3976,8 @@ func (i *Ingester) checkAvailableForPush() error {
 	return newUnavailableError(ingesterState)
 }
 
-// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
-func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.
+func (i *Ingester) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
@@ -3994,7 +3994,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, errPushGrpcDisabled
 	}
 
-	err := i.PushToStorage(ctx, req)
+	err := i.PushToStorageAndReleaseRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}

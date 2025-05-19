@@ -7116,8 +7116,8 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 	}
 }
 
-// PushToStorage implements ingest.Pusher.
-func (c *mockIngesterPusherAdapter) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	_, err := c.ingester.Push(ctx, req)
 	return err
 }
