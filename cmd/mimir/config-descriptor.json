@@ -2284,6 +2284,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_skipping_histogram_decoding",
+              "required": false,
+              "desc": "Enable skipping histogram decoding when evaluating queries. Only applies if query planner is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

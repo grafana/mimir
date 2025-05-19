@@ -1633,6 +1633,11 @@ mimir_query_engine:
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
+
+  # (experimental) Enable skipping histogram decoding when evaluating queries.
+  # Only applies if query planner is enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
+  [enable_skipping_histogram_decoding: <boolean> | default = true]
 ```
 
 ### frontend
