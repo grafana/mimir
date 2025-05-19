@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 )
 
@@ -46,7 +47,7 @@ func (b *bReadAt) ReadAt(p []byte, off int64) (n int, err error) {
 	}
 	defer func() { _ = rc.Close() }()
 	n, err = rc.Read(p)
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
 	return

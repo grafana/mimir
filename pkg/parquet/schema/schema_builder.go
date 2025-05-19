@@ -3,16 +3,14 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors.
 
-
 package schema
 
 import (
 	"fmt"
 	"strconv"
 
-	"github.com/efficientgo/core/errors"
-
 	"github.com/parquet-go/parquet-go"
+	"github.com/pkg/errors"
 )
 
 type Builder struct {

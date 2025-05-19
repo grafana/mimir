@@ -466,7 +466,7 @@ func (vi *valuesIterator) Next() bool {
 
 	if vi.currentBufferIndex == len(vi.buffer) {
 		n, err := vi.vr.ReadValues(vi.buffer[:cap(vi.buffer)])
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			vi.err = err
 		}
 		vi.buffer = vi.buffer[:n]

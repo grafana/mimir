@@ -15,6 +15,7 @@ import (
 	"sort"
 
 	"github.com/dennwc/varint"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -198,7 +199,7 @@ func (e *PrometheusParquetChunksDecoder) Decode(data []byte, mint, maxt int64) (
 
 	for {
 		chkEnc, err := binary.ReadUvarint(b)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
