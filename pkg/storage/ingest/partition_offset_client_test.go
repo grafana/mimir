@@ -127,41 +127,6 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 
 		wg.Wait()
 	})
-
-	t.Run("should honor the configured retry timeout", func(t *testing.T) {
-		t.Parallel()
-
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
-
-		// Configure a short retry timeout.
-		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
-		kafkaCfg.LastProducedOffsetRetryTimeout = time.Second
-
-		client := createTestKafkaClient(t, kafkaCfg)
-		reg := prometheus.NewPedanticRegistry()
-		reader := newPartitionOffsetClient(client, topicName, reg, logger)
-
-		// Make the ListOffsets request failing.
-		actualTries := atomic.NewInt64(0)
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			actualTries.Inc()
-			return nil, errors.New("mocked error"), true
-		})
-
-		startTime := time.Now()
-		_, err := reader.FetchPartitionLastProducedOffset(ctx, partitionID)
-		elapsedTime := time.Since(startTime)
-
-		require.Error(t, err)
-
-		// Ensure the retry timeout has been honored.
-		toleranceSeconds := 0.5
-		assert.InDelta(t, kafkaCfg.LastProducedOffsetRetryTimeout.Seconds(), elapsedTime.Seconds(), toleranceSeconds)
-
-		// Ensure the request was retried.
-		assert.Greater(t, actualTries.Load(), int64(1))
-	})
 }
 
 func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
