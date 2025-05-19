@@ -871,7 +871,11 @@ distributor:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1324,7 +1328,11 @@ ruler:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1579,7 +1587,11 @@ ruler_query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1930,7 +1942,11 @@ query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -3412,7 +3428,11 @@ gateway:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
+    # -- Target CPU utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the CPU utilization autoscaling.
     targetCPUUtilizationPercentage: 70
+    # -- Target memory utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the memory utilization autoscaling.
     targetMemoryUtilizationPercentage: 70
 
   # -- Deployment strategy. See `kubectl explain deployment.spec.strategy` for more,
