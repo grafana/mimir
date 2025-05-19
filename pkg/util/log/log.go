@@ -54,6 +54,17 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	return logger
 }
 
+// MakeLeveledLogger makes a logger wrapped with the same level filter used in the global logger.
+// Intended for use in tests that don't set the global logger.
+func MakeLeveledLogger(writer io.Writer, level string) log.Logger {
+	var logLevel dslog.Level
+	if err := logLevel.Set(level); err != nil {
+		panic(err)
+	}
+	logger := log.NewLogfmtLogger(writer)
+	return newFilter(logger, logLevel)
+}
+
 type logLevel int
 
 const (
