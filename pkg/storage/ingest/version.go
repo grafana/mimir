@@ -89,7 +89,7 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
 	switch version {
 	case 0:
-		// V0 is body-comptaible with V1.
+		// V0 is body-compatible with V1.
 		fallthrough
 	case 1:
 		return deserializeRecordContentV1(content, wr)
