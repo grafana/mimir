@@ -19,7 +19,6 @@ import (
 	"io"
 	"runtime"
 	"slices"
-	"sort"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/parquet-go/parquet-go"
@@ -80,9 +79,17 @@ func (m *Materializer) Materialize(ctx context.Context, rgi int, mint, maxt int6
 
 	results := make([]prom_storage.ChunkSeries, len(sLbls))
 	for i, s := range sLbls {
-		sort.Sort(s)
+		sortFunc := func(a, b labels.Label) int {
+			if a.Name < b.Name {
+				return -1
+			} else if a.Name > b.Name {
+				return 1
+			}
+			return 0
+		}
+		slices.SortFunc(s, sortFunc)
 		results[i] = &concreteChunksSeries{
-			lbls: s,
+			lbls: labels.New(s...),
 		}
 	}
 
@@ -197,7 +204,7 @@ func (m *Materializer) MaterializeAllLabelValues(ctx context.Context, name strin
 	return r, nil
 }
 
-func (m *Materializer) materializeAllLabels(ctx context.Context, rgi int, rr []RowRange) ([]labels.Labels, error) {
+func (m *Materializer) materializeAllLabels(ctx context.Context, rgi int, rr []RowRange) ([][]labels.Label, error) {
 	labelsRg := m.b.LabelsFile().RowGroups()[rgi]
 	cc := labelsRg.ColumnChunks()[m.colIdx]
 	colsIdxs, err := m.materializeColumn(ctx, m.b.LabelsFile(), labelsRg, cc, rr)
@@ -206,7 +213,7 @@ func (m *Materializer) materializeAllLabels(ctx context.Context, rgi int, rr []R
 	}
 
 	colsMap := make(map[int]*[]parquet.Value, 10)
-	results := make([]labels.Labels, len(colsIdxs))
+	results := make([][]labels.Label, len(colsIdxs))
 
 	for _, colsIdx := range colsIdxs {
 		idxs, err := schema.DecodeUintSlice(colsIdx.ByteArray())
