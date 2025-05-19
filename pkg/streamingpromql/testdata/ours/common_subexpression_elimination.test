@@ -90,3 +90,18 @@ eval instant at 0 label_replace(float_metric, "lhs", "$1", "idx", "(.*)") or (la
   float_metric{rhs="3", idx="3"} 3
   float_metric{rhs="4", idx="4"} 4
   float_metric{rhs="5", idx="5"} 5
+
+clear
+
+# Test interaction between common subexpression elimination and skipping histogram decoding.
+load 1m
+  some_metric {{count:3 sum:5 buckets:[1 1 1]}} {{count:4 sum:6 buckets:[1 2 1]}} {{count:6 sum:7 buckets:[3 2 1]}}
+
+eval range from 0 to 2m step 1m histogram_count(some_metric) * histogram_quantile(0.5, some_metric)
+  {} 4.24264 5.65685 6
+
+eval range from 0 to 2m step 1m histogram_quantile(0.5, some_metric) * histogram_count(some_metric)
+  {} 4.24264 5.65685 6
+
+eval range from 0 to 2m step 1m histogram_count(some_metric) * histogram_sum(some_metric)
+  {} 15 24 42
