@@ -2333,9 +2333,7 @@ func (g *groupConsumer) getUncommittedLocked(head, dirty bool) map[string]map[in
 	return uncommitted
 }
 
-type commitContextFnT struct{}
-
-var commitContextFn commitContextFnT
+var commitContextFn = func() *string { s := "commit_ctx"; return &s }()
 
 // PreCommitFnContext attaches fn to the context through WithValue. Using the
 // context while committing allows fn to be called just before the commit is
@@ -2346,9 +2344,7 @@ func PreCommitFnContext(ctx context.Context, fn func(*kmsg.OffsetCommitRequest) 
 	return context.WithValue(ctx, commitContextFn, fn)
 }
 
-type txnCommitContextFnT struct{}
-
-var txnCommitContextFn txnCommitContextFnT
+var txnCommitContextFn = func() *string { s := "txn_commit_ctx"; return &s }()
 
 // PreTxnCommitFnContext attaches fn to the context through WithValue. Using
 // the context while committing a transaction allows fn to be called just
