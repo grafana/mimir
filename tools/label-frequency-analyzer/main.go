@@ -10,9 +10,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -23,6 +25,8 @@ type config struct {
 	PortForwardPort int
 	TenantIDs       flagext.StringSliceCSV
 	NumWorkers      int
+	BatchSize       int
+	TopN            int
 }
 
 type labelValuesResponse struct {
@@ -47,7 +51,9 @@ func main() {
 	cfg.TenantIDs = flagext.StringSliceCSV{}
 	flag.IntVar(&cfg.PortForwardPort, "port", 0, "Port number of the port-forward to cortex-gw-internal")
 	flag.Var(&cfg.TenantIDs, "tenants", "Comma-separated list of tenant IDs to analyze")
-	flag.IntVar(&cfg.NumWorkers, "workers", 2, "Number of worker goroutines to use for fetching active series")
+	flag.IntVar(&cfg.NumWorkers, "workers", 10, "Number of worker goroutines to use for fetching active series")
+	flag.IntVar(&cfg.BatchSize, "batch-size", 50, "Number of series names to process in each batch")
+	flag.IntVar(&cfg.TopN, "top-n", 200, "Number of most common strings to display")
 
 	// Parse CLI flags.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -64,6 +70,14 @@ func main() {
 
 	if cfg.NumWorkers <= 0 {
 		log.Fatalln("number of workers must be positive")
+	}
+
+	if cfg.BatchSize <= 0 {
+		log.Fatalln("batch size must be positive")
+	}
+
+	if cfg.TopN <= 0 {
+		log.Fatalln("top-n must be positive")
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
@@ -109,15 +123,17 @@ func fetchSeriesNames(ctx context.Context, port int, tenantID string) ([]string,
 	return result.Data, nil
 }
 
-func fetchActiveSeries(ctx context.Context, port int, tenantID, seriesName string) (*activeSeriesResponse, error) {
+func fetchActiveSeries(ctx context.Context, port int, tenantID string, seriesNames []string) (*activeSeriesResponse, error) {
 	client := &http.Client{}
-	url := fmt.Sprintf("http://localhost:%d/prometheus/api/v1/cardinality/active_series?selector=%s", port, seriesName)
+	// Create regex selector for the batch of series names
+	selector := fmt.Sprintf(`{__name__=~"%s"}`, strings.Join(seriesNames, "|"))
+	url := fmt.Sprintf("http://localhost:%d/prometheus/api/v1/cardinality/active_series?selector=%s", port, url.QueryEscape(selector))
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("X-Scope-OrgID", tenantID)
-	req.Header.Set("Sharding-Control", "4")
+	req.Header.Set("Sharding-Control", "32")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -148,45 +164,63 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 
 	log.Printf("Found %d series names for tenant %s", len(seriesNames), tenantID)
 
-	// Create a channel for series names
-	seriesChan := make(chan string)
+	// Create a channel for batches of series names
+	seriesChan := make(chan []string)
 	var wg sync.WaitGroup
 
 	// Channel to collect worker results
 	resultChan := make(chan map[string]uint64)
 
+	// Calculate total number of batches
+	totalBatches := (len(seriesNames) + cfg.BatchSize - 1) / cfg.BatchSize   // Ceiling division
+	batchesPerWorker := (totalBatches + cfg.NumWorkers - 1) / cfg.NumWorkers // Ceiling division
+
 	// Start worker goroutines
 	for i := 0; i < cfg.NumWorkers; i++ {
 		wg.Add(1)
+		workerID := i // Capture worker ID for logging
 		go func() {
 			defer wg.Done()
-			// Each worker has its own map
+			// Each worker has its own map for final counts
 			workerCounts := make(map[string]uint64)
+			batchCount := 0
 
 			for {
 				select {
-				case seriesName, ok := <-seriesChan:
+				case batch, ok := <-seriesChan:
 					if !ok {
 						// Channel closed, send results and exit
 						resultChan <- workerCounts
 						return
 					}
 
-					result, err := fetchActiveSeries(ctx, cfg.PortForwardPort, tenantID, seriesName)
+					batchCount++
+					result, err := fetchActiveSeries(ctx, cfg.PortForwardPort, tenantID, batch)
 					if err != nil {
-						log.Printf("Failed to fetch active series for %s: %v", seriesName, err)
+						log.Printf("Worker %d: Failed to fetch active series (batch %d/%d): %v", workerID, batchCount, batchesPerWorker, err)
 						continue
 					}
 
-					// Count every string in the response using worker's local map
+					// First count strings within this batch only
+					batchCounts := make(map[string]uint64)
 					for _, series := range result.Data {
 						for name, value := range series {
-							workerCounts[name]++
-							workerCounts[value]++
+							batchCounts[name]++
+							batchCounts[value]++
 						}
 					}
 
-					log.Printf("Found %d active series for %s", len(result.Data), seriesName)
+					// Only keep strings that appear 10 or more times in this batch
+					keptStrings := 0
+					for str, count := range batchCounts {
+						if count >= 10 {
+							workerCounts[str] += count
+							keptStrings++
+						}
+					}
+
+					log.Printf("Worker %d: Found %d active series (batch %d/%d), kept %d/%d strings (appearing ≥10 times)",
+						workerID, len(result.Data), batchCount, batchesPerWorker, keptStrings, len(batchCounts))
 
 				case <-ctx.Done():
 					// Context cancelled, send partial results and exit
@@ -197,12 +231,17 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 		}()
 	}
 
-	// Send series names to workers
+	// Send batches of series names to workers
 	go func() {
 		defer close(seriesChan)
-		for _, seriesName := range seriesNames {
+		for i := 0; i < len(seriesNames); i += cfg.BatchSize {
+			end := i + cfg.BatchSize
+			if end > len(seriesNames) {
+				end = len(seriesNames)
+			}
+			batch := seriesNames[i:end]
 			select {
-			case seriesChan <- seriesName:
+			case seriesChan <- batch:
 			case <-ctx.Done():
 				return
 			}
@@ -239,13 +278,13 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 		return counts[i].count > counts[j].count
 	})
 
-	// Print top 500
-	log.Printf("\nTop 500 most common strings for tenant %s:", tenantID)
+	// Print top N most common strings
+	log.Printf("\nTop %d most common strings for tenant %s:", cfg.TopN, tenantID)
 	for i, sc := range counts {
-		if i >= 500 {
+		if i >= cfg.TopN {
 			break
 		}
-		log.Printf("%d: %s (count: %d)", i+1, sc.str, sc.count)
+		log.Printf("%d. %s: %d", i+1, sc.str, sc.count)
 	}
 
 	return nil
