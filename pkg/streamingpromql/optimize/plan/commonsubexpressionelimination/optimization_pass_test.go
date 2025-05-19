@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -286,6 +287,31 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 			expectedDuplicateNodes: 1,
 		},
+		"duplicate expression where 'skip histogram decoding' applies to one expression": {
+			expr: `histogram_count(some_metric) * histogram_quantile(0.5, some_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: FunctionCall: histogram_count(...)
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: FunctionCall: histogram_quantile(...)
+						- param 0: NumberLiteral: 0.5
+						- param 1: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"duplicate expression where 'skip histogram decoding' applies to both expressions": {
+			expr: `histogram_count(some_metric) * histogram_sum(some_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: FunctionCall: histogram_count(...)
+						- ref#1 Duplicate
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: FunctionCall: histogram_sum(...)
+						- ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
 	}
 
 	ctx := context.Background()
@@ -312,7 +338,7 @@ func TestOptimizationPass(t *testing.T) {
 			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
 			require.NoError(t, err)
 			actual := p.String()
-			require.Equal(t, trimIndent(testCase.expectedPlan), actual)
+			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 
 			requireDuplicateNodeCount(t, reg, testCase.expectedDuplicateNodes)
 		})
@@ -328,41 +354,4 @@ func requireDuplicateNodeCount(t *testing.T, g prometheus.Gatherer, expected int
 `, metricName, metricName, metricName, expected)
 
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricName))
-}
-
-func trimIndent(s string) string {
-	lines := strings.Split(s, "\n")
-
-	// Remove leading empty lines
-	for len(lines) > 0 && isEmpty(lines[0]) {
-		lines = lines[1:]
-	}
-
-	// Remove trailing empty lines
-	for len(lines) > 0 && isEmpty(lines[len(lines)-1]) {
-		lines = lines[:len(lines)-1]
-	}
-
-	if len(lines) == 0 {
-		return ""
-	}
-
-	// Identify the indentation applied to the first line, and remove it from all lines.
-	indentation := ""
-	for _, char := range lines[0] {
-		if char != '\t' {
-			break
-		}
-		indentation += string(char)
-	}
-
-	for i, line := range lines {
-		lines[i] = strings.TrimPrefix(line, indentation)
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-func isEmpty(s string) bool {
-	return strings.TrimSpace(s) == ""
 }
