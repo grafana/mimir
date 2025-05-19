@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/cancellation"
 	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -147,8 +148,8 @@ func TestParquetWriter(t *testing.T) {
 }
 
 func Test_ShouldRespectContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(cancellation.NewErrorf("test cancellation"))
 	bkt, err := filesystem.NewBucket(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = bkt.Close() })

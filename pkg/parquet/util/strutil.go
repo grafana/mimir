@@ -6,7 +6,7 @@
 package util
 
 import (
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -29,8 +29,8 @@ func MergeSlices(limit int, a ...[]string) []string {
 // If limit is set, only the first limit results will be returned. 0 to disable.
 func MergeUnsortedSlices(limit int, a ...[]string) []string {
 	for _, s := range a {
-		if !sort.StringsAreSorted(s) {
-			sort.Strings(s)
+		if !slices.IsSorted(s) {
+			slices.Sort(s)
 		}
 	}
 	return MergeSlices(limit, a...)

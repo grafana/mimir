@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/cancellation"
 	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_storage "github.com/prometheus/prometheus/storage"
@@ -123,8 +124,8 @@ func TestMaterializeE2E(t *testing.T) {
 		m, err := NewMaterializer(s, d, shard)
 		require.NoError(t, err)
 		rr := []RowRange{{from: int64(0), count: shard.LabelsFile().RowGroups()[0].NumRows()}}
-		ctx, cancel := context.WithCancel(ctx)
-		cancel()
+		ctx, cancel := context.WithCancelCause(ctx)
+		cancel(cancellation.NewErrorf("test cancellation"))
 		_, err = m.Materialize(ctx, 0, data.minTime, data.maxTime, false, rr)
 		require.ErrorContains(t, err, "context canceled")
 	})

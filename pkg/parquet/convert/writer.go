@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/grafana/dskit/cancellation"
 	"github.com/hashicorp/go-multierror"
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
@@ -85,8 +86,8 @@ func (c *ShardedWriter) convertShard(ctx context.Context) (bool, error) {
 }
 
 func (c *ShardedWriter) writeFile(ctx context.Context, schema *schema.TSDBSchema, rowsToWrite int) (int64, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(cancellation.NewErrorf("error while writing file"))
 
 	fileOpts := []parquet.WriterOption{
 		parquet.SortingWriterConfig(

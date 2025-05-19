@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/dskit/cancellation"
 	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -152,8 +153,8 @@ func TestContextCancelled(t *testing.T) {
 		}
 
 		for _, rg := range sfile.RowGroups() {
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
+			ctx, cancel := context.WithCancelCause(context.Background())
+			cancel(cancellation.NewErrorf("test cancellation"))
 			_, err := Filter(ctx, rg, c)
 			require.ErrorContains(t, err, "context canceled")
 		}
