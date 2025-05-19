@@ -2584,7 +2584,7 @@ alertmanager_client:
 
 # (experimental) Skip initializing Alertmanagers for tenants without a
 # non-default, non-empty configuration. For Grafana Alertmanager tenants,
-# configurations not marked as 'promoted' are also skipped.
+# configurations not marked as 'promoted' will also be skipped.
 # CLI flag: -alertmanager.strict-initialization-enabled
 [strict_initialization: <boolean> | default = false]
 
