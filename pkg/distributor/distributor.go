@@ -1731,7 +1731,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	var partitionsRequestContext func() context.Context
 	var partitionsRequestContextAndCancel func() (context.Context, context.CancelFunc)
 
-	if d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime > 0 {
+	if d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled && d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime > 0 {
 		// Create a separate context for partitions with shorter timeout during migration
 		partitionsRequestContextAndCancel = sync.OnceValues(func() (context.Context, context.CancelFunc) {
 			timeout := d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime
@@ -1805,7 +1805,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
 	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
 	if partitionsErr != nil {
-		if d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageError {
+		if d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled && d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageErrors {
 			level.Warn(d.log).Log("msg", "failed to write to ingest storage", "error", partitionsErr)
 		} else {
 			return partitionsErr

@@ -278,7 +278,7 @@ func (cfg *KafkaConfig) GetConsumerGroup(instanceID string, partitionID int32) s
 // set for any other reason.
 type MigrationConfig struct {
 	DistributorSendToIngestersEnabled bool          `yaml:"distributor_send_to_ingesters_enabled"`
-	IgnoreIngestStorageError          bool          `yaml:"ignore_ingest_storage_errors"`
+	IgnoreIngestStorageErrors         bool          `yaml:"ignore_ingest_storage_errors"`
 	IngestStorageMaxWaitTime          time.Duration `yaml:"ingest_storage_max_wait_time"`
 }
 
@@ -288,6 +288,6 @@ func (cfg *MigrationConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *MigrationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.DistributorSendToIngestersEnabled, prefix+"distributor-send-to-ingesters-enabled", false, "When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.")
-	f.BoolVar(&cfg.IgnoreIngestStorageError, prefix+"ignore-ingest-storage-error", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests will fail if ingest storage write fails.")
-	f.DurationVar(&cfg.IngestStorageMaxWaitTime, prefix+"ingest-storage-max-wait-time", 0, "The maximum time a write request that goes through the ingest storage will wait before it times out. 0 to disable the timeout.")
+	f.BoolVar(&cfg.IgnoreIngestStorageErrors, prefix+"ignore-ingest-storage-errors", false, "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.")
+	f.DurationVar(&cfg.IngestStorageMaxWaitTime, prefix+"ingest-storage-max-wait-time", 0, "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.")
 }

@@ -603,7 +603,7 @@ func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T)
 				limits:                  prepareDefaultLimits(),
 				configure: func(cfg *Config) {
 					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
-					cfg.IngestStorageConfig.Migration.IgnoreIngestStorageError = testData.ignoreIngestStorageError
+					cfg.IngestStorageConfig.Migration.IgnoreIngestStorageErrors = testData.ignoreIngestStorageError
 					cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = testData.maxWaitTime
 				},
 			}
