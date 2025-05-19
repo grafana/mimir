@@ -350,7 +350,7 @@ func (h *defaultHaTracker) syncHATrackerStateOnStart(ctx context.Context) error 
 // Follows pattern used by ring for WatchKey.
 func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Start cleanup loop. It will stop when context is done.
-	wg := mimirsync.ContextWaitGroup{}
+	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -360,6 +360,7 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Request callbacks from KVStore when data changes.
 	// The KVStore config we gave when creating h should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass an empty string here.
+	// WatchPrefix blocks until ctx is done or the function provided returns false.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
@@ -372,12 +373,11 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 		return true
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	if err := wg.WaitWithContext(ctx); err != nil {
+	if err := mimirsync.WaitWithTimeout(&wg, 10*time.Minute); err != nil {
 		level.Error(h.logger).Log("msg", "wait group was not done after 10m but we expected it to be done in a few milliseconds", "err", err)
 		return fmt.Errorf("waiting for updateKVLoop to be done: %w", err)
 	}
+
 	return nil
 }
 
