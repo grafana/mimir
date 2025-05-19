@@ -62,7 +62,7 @@ type Bucket interface {
 
 	// Upload the contents of the reader as an object into the bucket.
 	// Upload should be idempotent.
-	Upload(ctx context.Context, name string, r io.Reader, opts ...ObjectUploadOption) error
+	Upload(ctx context.Context, name string, r io.Reader) error
 
 	// Delete removes the object with the given name.
 	// If object does not exist in the moment of deletion, Delete should throw error.
@@ -192,26 +192,6 @@ func ApplyIterOptions(options ...IterOption) IterParams {
 	out := IterParams{}
 	for _, opt := range options {
 		opt.Apply(&out)
-	}
-	return out
-}
-
-type UploadObjectParams struct {
-	ContentType string
-}
-
-type ObjectUploadOption func(f *UploadObjectParams)
-
-func WithContentType(contentType string) ObjectUploadOption {
-	return func(f *UploadObjectParams) {
-		f.ContentType = contentType
-	}
-}
-
-func ApplyObjectUploadOptions(opts ...ObjectUploadOption) UploadObjectParams {
-	out := UploadObjectParams{}
-	for _, opt := range opts {
-		opt(&out)
 	}
 	return out
 }
@@ -767,7 +747,7 @@ func (b *metricBucket) Exists(ctx context.Context, name string) (bool, error) {
 	return ok, nil
 }
 
-func (b *metricBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...ObjectUploadOption) error {
+func (b *metricBucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	const op = OpUpload
 	b.metrics.ops.WithLabelValues(op).Inc()
 
@@ -785,7 +765,7 @@ func (b *metricBucket) Upload(ctx context.Context, name string, r io.Reader, opt
 		b.metrics.opsTransferredBytes,
 	)
 	defer trc.Close()
-	err := b.bkt.Upload(ctx, name, trc, opts...)
+	err := b.bkt.Upload(ctx, name, trc)
 	if err != nil {
 		if !b.metrics.isOpFailureExpected(err) && ctx.Err() != context.Canceled {
 			b.metrics.opsFailures.WithLabelValues(op).Inc()

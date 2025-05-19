@@ -367,3 +367,6 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
+
+// Breaking changes to thanos/objstore.Bucket interface which we do not satisfy yet
+replace github.com/thanos-io/objstore => github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79

@@ -532,7 +532,7 @@ func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
 }
 
 // Upload the contents of the reader as an object into the bucket.
-func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	sse, err := b.getServerSideEncryption(ctx)
 	if err != nil {
 		return err
@@ -556,8 +556,6 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader, opts ...o
 		userMetadata[k] = v
 	}
 
-	uploadOpts := objstore.ApplyObjectUploadOptions(opts...)
-
 	if _, err := b.client.PutObject(
 		ctx,
 		b.name,
@@ -574,8 +572,7 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader, opts ...o
 			// 4 is what minio-go have as the default. To be certain we do micro benchmark before any changes we
 			// ensure we pin this number to four.
 			// TODO(bwplotka): Consider adjusting this number to GOMAXPROCS or to expose this in config if it becomes bottleneck.
-			NumThreads:  4,
-			ContentType: uploadOpts.ContentType,
+			NumThreads: 4,
 		},
 	); err != nil {
 		return errors.Wrap(err, "upload s3 object")
