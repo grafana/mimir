@@ -739,12 +739,18 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return nil
 				})
 
-				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 					listOffsetsRequestsCount.Inc()
 
 					if listOffsetsShouldFail.Load() {
-						return nil, errors.New("mocked error"), true
+						req := kreq.(*kmsg.ListOffsetsRequest)
+						res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+						res.Default()
+						res.Topics = []kmsg.ListOffsetsResponseTopic{
+							{Topic: topicName, Partitions: []kmsg.ListOffsetsResponseTopicPartition{{ErrorCode: kerr.NotLeaderForPartition.Code}}},
+						}
+						return res, nil, true
 					}
 
 					return nil, nil, false
@@ -778,7 +784,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Since the mocked Kafka cluster is configured to fail any ListOffsets request we expect the reader hasn't
 				// catched up yet, and it's still in Starting state.
-				assert.Equal(t, services.Starting, reader.State())
+				assert.Equal(t, services.Starting.String(), reader.State().String())
 				assert.Equal(t, int64(0), consumedRecordsCount.Load())
 
 				// Unblock the ListOffsets requests. Now they will succeed.
