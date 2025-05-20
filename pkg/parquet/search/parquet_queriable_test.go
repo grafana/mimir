@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -28,8 +29,8 @@ import (
 )
 
 func TestPromQLAcceptance(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping, because 'short' flag was set")
+	if os.Getenv("RUN_PARQUET_PROMQL_ACCEPTANCE") != "true" {
+		t.SkipNow()
 	}
 
 	opts := promql.EngineOpts{
