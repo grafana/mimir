@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
@@ -52,9 +53,19 @@ var (
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
 	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	prometheusCodecPropagateHeadersMetrics = []string{compat.ForceFallbackHeaderName, chunkinfologger.ChunkInfoLoggingHeader, api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	prometheusCodecPropagateHeadersMetrics = []string{
+		compat.ForceFallbackHeaderName,
+		chunkinfologger.ChunkInfoLoggingHeader,
+		api.ReadConsistencyOffsetsHeader,
+		querier.FilterQueryablesHeader,
+		clusterutil.ClusterValidationLabelHeader,
+	}
 	// api.ReadConsistencyHeader is propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.
-	prometheusCodecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader, querier.FilterQueryablesHeader}
+	prometheusCodecPropagateHeadersLabels = []string{
+		api.ReadConsistencyOffsetsHeader,
+		querier.FilterQueryablesHeader,
+		clusterutil.ClusterValidationLabelHeader,
+	}
 )
 
 const maxResolutionPoints = 11000
