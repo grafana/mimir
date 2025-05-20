@@ -69,9 +69,9 @@ type Config struct {
 // RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
-	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.")
+	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be converted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
-	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
+	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts.")
 }
 
 type ParquetConverter struct {
@@ -289,18 +289,18 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 
 					level.Info(c.logger).Log("msg", "scanning User", "user", u)
 
-					ownedBlocks, totalBlocks := c.findNextBlockToCompact(ctx, uBucket, idx, pIdx)
+					ownedBlocks, totalBlocks := c.findNextBlockToConvert(ctx, uBucket, idx, pIdx)
 					if len(ownedBlocks) == 0 {
-						level.Info(c.logger).Log("msg", "no owned blocks to compact", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
+						level.Info(c.logger).Log("msg", "no owned blocks to convert", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
 						break
 					}
 
 					b := ownedBlocks[0]
 
-					if err := os.RemoveAll(c.compactRootDir()); err != nil {
-						level.Error(c.logger).Log("msg", "failed to remove compaction work directory", "path", c.compactRootDir(), "err", err)
+					if err := os.RemoveAll(c.rootDir()); err != nil {
+						level.Error(c.logger).Log("msg", "failed to remove conversion work directory", "path", c.rootDir(), "err", err)
 					}
-					bdir := filepath.Join(c.compactDirForUser(u), b.ID.String())
+					bdir := filepath.Join(c.dirForUser(u), b.ID.String())
 					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
 					if err := block.Download(ctx, c.logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
 						level.Error(c.logger).Log("msg", "error downloading block", "err", err)
@@ -418,7 +418,7 @@ func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *buc
 //	}
 //}
 
-func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
+func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
 	deleted := map[ulid.ULID]struct{}{}
 	result := make([]*bucketindex.Block, 0, len(idx.Blocks))
 	totalBlocks := 0
@@ -428,19 +428,16 @@ func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket o
 	}
 
 	for _, b := range idx.Blocks {
-		// Do not compact if deleted
 		if _, ok := deleted[b.ID]; ok {
 			continue
 		}
 
-		// Do not compact if is already compacted
 		if _, ok := pIdx.Blocks[b.ID]; ok {
 			continue
 		}
 
 		totalBlocks++
 
-		// Do not compact block if is not owned
 		if ok, err := c.own(b.ID.String()); err != nil || !ok {
 			continue
 		}
@@ -473,13 +470,13 @@ func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) 
 	return users, err
 }
 
-// compactDirForUser returns the directory to be used to download and compact the blocks for a user
-func (c *ParquetConverter) compactDirForUser(userID string) string {
-	return filepath.Join(c.compactRootDir(), userID)
+// dirForUser returns the directory to be used to download and convert the blocks for a user
+func (c *ParquetConverter) dirForUser(userID string) string {
+	return filepath.Join(c.rootDir(), userID)
 }
 
-func (c *ParquetConverter) compactRootDir() string {
-	return filepath.Join(c.Cfg.DataDir, "compact")
+func (c *ParquetConverter) rootDir() string {
+	return filepath.Join(c.Cfg.DataDir, "convert")
 }
 
 func (c *ParquetConverter) own(id string) (bool, error) {
