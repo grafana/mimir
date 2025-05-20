@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -29,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/parquet/convert"
 	"github.com/grafana/mimir/pkg/parquet/schema"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -54,6 +54,8 @@ const (
 )
 
 var (
+	errInvalidBlockRanges = "parquet-converter block range periods should be divisible by the previous one, but %s is not divisible by %s"
+
 	RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
@@ -61,12 +63,41 @@ type Config struct {
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
 	allowedTenants  *util.AllowList
+
+	DataDir string `yaml:"data_dir"`
+
+	BlockRanges  mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	ShardingRing RingConfig              `yaml:"sharding_ring"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.ShardingRing.RegisterFlags(f, logger)
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
+	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
+
+	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
+	f.Var(&cfg.BlockRanges, "parquet-converter.block-ranges", "List of conversion time ranges.")
+}
+
+func (cfg *Config) Validate(logger log.Logger) error {
+	// Mimir assumes that smaller blocks are eventually compacted to 24h blocks in
+	// various places on the read path (cache TTLs, query splitting). Warn when this
+	// isn't the case since it may affect performance.
+	if len(cfg.BlockRanges) > 0 {
+		if maxRange := slices.Max(cfg.BlockRanges); 24*time.Hour > maxRange {
+			level.Warn(logger).Log("msg", "Largest block range is not 24h. This may result in degraded query performance", "range", maxRange)
+		}
+	}
+
+	// Each block range period should be divisible by the previous one.
+	for i := 1; i < len(cfg.BlockRanges); i++ {
+		if cfg.BlockRanges[i]%cfg.BlockRanges[i-1] != 0 {
+			return errors.Errorf(errInvalidBlockRanges, cfg.BlockRanges[i].String(), cfg.BlockRanges[i-1].String())
+		}
+	}
+	return nil
 }
 
 type ParquetConverter struct {
@@ -74,13 +105,12 @@ type ParquetConverter struct {
 
 	bucket objstore.InstrumentedBucket // TODO (jesus.vazquez) Compactor is using objstore.Bucket instead
 
-	loader       *bucketindex.Loader
-	Cfg          Config
-	CompactorCfg compactor.Config
-	registerer   prometheus.Registerer
-	logger       log.Logger
-	limits       *validation.Overrides
-	blockRanges  []int64
+	loader      *bucketindex.Loader
+	Cfg         Config
+	registerer  prometheus.Registerer
+	logger      log.Logger
+	limits      *validation.Overrides
+	blockRanges []int64
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -92,7 +122,7 @@ type ParquetConverter struct {
 	subservicesWatcher *services.FailureWatcher
 }
 
-func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
+func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, registerer)
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 
@@ -115,14 +145,13 @@ func NewParquetConverter(cfg Config, compactorCfg compactor.Config, storageCfg m
 	}
 
 	c := &ParquetConverter{
-		Cfg:          cfg,
-		CompactorCfg: compactorCfg,
-		bucket:       bucketClient,
-		loader:       loader,
-		logger:       log.With(logger, "component", "parquet-converter"),
-		registerer:   registerer,
-		blockRanges:  compactorCfg.BlockRanges.ToMilliseconds(),
-		limits:       limits,
+		Cfg:         cfg,
+		bucket:      bucketClient,
+		loader:      loader,
+		logger:      log.With(logger, "component", "parquet-converter"),
+		registerer:  registerer,
+		blockRanges: cfg.BlockRanges.ToMilliseconds(),
+		limits:      limits,
 
 		subservices:        manager,
 		subservicesWatcher: services.NewFailureWatcher(),
@@ -136,7 +165,7 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	var err error
 
 	// Initialize the parquet-converters ring if sharding is enabled.
-	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.CompactorCfg.ShardingRing, c.logger, c.registerer)
+	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.Cfg.ShardingRing, c.logger, c.registerer)
 	if err != nil {
 		return err
 	}
@@ -152,7 +181,7 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start parquet-converter ring dependencies")
 	}
 
-	ctxTimeout, cancel := context.WithTimeout(ctx, c.CompactorCfg.ShardingRing.WaitActiveInstanceTimeout)
+	ctxTimeout, cancel := context.WithTimeout(ctx, c.Cfg.ShardingRing.WaitActiveInstanceTimeout)
 	defer cancel()
 	if err = c.ringSubservices.AwaitHealthy(ctxTimeout); err != nil {
 		return errors.Wrap(err, "unable to start parquet-converter ring dependencies")
@@ -172,9 +201,9 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	// time, we may end up in a situation where each new parquet-converter instance starts at a slightly
 	// different time and thus each one starts with a different state of the ring. It's better
 	// to just wait a short time for ring stability.
-	if c.CompactorCfg.ShardingRing.WaitStabilityMinDuration > 0 {
-		minWaiting := c.CompactorCfg.ShardingRing.WaitStabilityMinDuration
-		maxWaiting := c.CompactorCfg.ShardingRing.WaitStabilityMaxDuration
+	if c.Cfg.ShardingRing.WaitStabilityMinDuration > 0 {
+		minWaiting := c.Cfg.ShardingRing.WaitStabilityMinDuration
+		maxWaiting := c.Cfg.ShardingRing.WaitStabilityMaxDuration
 
 		level.Info(c.logger).Log("msg", "waiting until parquet-converter ring topology is stable", "min_waiting", minWaiting.String(), "max_waiting", maxWaiting.String())
 		if err := ring.WaitRingStability(ctx, c.ring, RingOp, minWaiting, maxWaiting); err != nil {
@@ -193,7 +222,7 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 	return nil
 }
 
-func newRingAndLifecycler(cfg compactor.RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.Common.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "parquet-converter-lifecycler"), logger)
 	if err != nil {
@@ -493,7 +522,7 @@ func (c *ParquetConverter) compactDirForUser(userID string) string {
 }
 
 func (c *ParquetConverter) compactRootDir() string {
-	return filepath.Join(c.CompactorCfg.DataDir, "compact")
+	return filepath.Join(c.Cfg.DataDir, "compact")
 }
 
 func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
