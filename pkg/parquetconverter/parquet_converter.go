@@ -239,7 +239,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 		case <-updateIndexTicker.C:
 			users, err := c.discoverUsers(ctx)
 			if err != nil {
-				level.Error(c.logger).Log("msg", "Error scanning users", "err", err)
+				level.Error(c.logger).Log("msg", "error scanning users", "err", err)
 				break
 			}
 			for _, u := range users {
@@ -251,14 +251,14 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 				}
 				err := c.updateParquetIndex(ctx, u)
 				if err != nil {
-					level.Error(c.logger).Log("msg", "Error updating index", "err", err)
+					level.Error(c.logger).Log("msg", "error updating index", "err", err)
 				}
 			}
 
 		case <-convertBlocksTicker.C:
 			u, err := c.discoverUsers(ctx)
 			if err != nil {
-				level.Error(c.logger).Log("msg", "Error scanning users", "err", err)
+				level.Error(c.logger).Log("msg", "error scanning users", "err", err)
 				return err
 			}
 
@@ -270,28 +270,28 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 
 				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, c.logger)
 				if err != nil {
-					level.Error(c.logger).Log("msg", "Error loading index", "err", err)
+					level.Error(c.logger).Log("msg", "error loading index", "err", err)
 					break
 				}
-				level.Info(c.logger).Log("msg", "Loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
+				level.Info(c.logger).Log("msg", "loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
 
 				idx, err := c.loader.GetIndex(ctx, u)
 				if err != nil {
-					level.Error(c.logger).Log("msg", "Error loading index", "err", err)
+					level.Error(c.logger).Log("msg", "error loading index", "err", err)
 					break
 				}
-				level.Info(c.logger).Log("msg", "Loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
+				level.Info(c.logger).Log("msg", "loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
 
 				for {
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
 
-					level.Info(c.logger).Log("msg", "Scanning User", "user", u)
+					level.Info(c.logger).Log("msg", "scanning User", "user", u)
 
 					ownedBlocks, totalBlocks := c.findNextBlockToCompact(ctx, uBucket, idx, pIdx)
 					if len(ownedBlocks) == 0 {
-						level.Info(c.logger).Log("msg", "No owned blocks to compact", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
+						level.Info(c.logger).Log("msg", "no owned blocks to compact", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
 						break
 					}
 
@@ -301,9 +301,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						level.Error(c.logger).Log("msg", "failed to remove compaction work directory", "path", c.compactRootDir(), "err", err)
 					}
 					bdir := filepath.Join(c.compactDirForUser(u), b.ID.String())
-					level.Info(c.logger).Log("msg", "Downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
+					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
 					if err := block.Download(ctx, c.logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
-						level.Error(c.logger).Log("msg", "Error downloading block", "err", err)
+						level.Error(c.logger).Log("msg", "error downloading block", "err", err)
 						continue
 					}
 
@@ -339,7 +339,7 @@ func (c *ParquetConverter) stopping(_ error) error {
 }
 
 func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) error {
-	level.Info(c.logger).Log("msg", "Updating index", "user", u)
+	level.Info(c.logger).Log("msg", "updating index", "user", u)
 	uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 	deleted := map[ulid.ULID]struct{}{}
 	idx, err := c.loader.GetIndex(ctx, u)
