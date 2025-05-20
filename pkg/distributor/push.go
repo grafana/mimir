@@ -23,9 +23,10 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	promRemote "github.com/prometheus/prometheus/storage/remote"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -390,10 +391,11 @@ func addErrorHeaders(w http.ResponseWriter, err error, r *http.Request, response
 			retryAttemptHeader := r.Header.Get("Retry-Attempt")
 			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.MinBackoff, retryCfg.MaxBackoff)
 			w.Header().Set("Retry-After", retrySeconds)
-			if sp := opentracing.SpanFromContext(r.Context()); sp != nil {
-				sp.SetTag("retry-after", retrySeconds)
-				sp.SetTag("retry-attempt", retryAttemptHeader)
-			}
+			sp := trace.SpanFromContext(r.Context())
+			sp.SetAttributes(
+				attribute.String("retry-after", retrySeconds),
+				attribute.String("retry-attempt", retryAttemptHeader),
+			)
 		}
 	}
 }

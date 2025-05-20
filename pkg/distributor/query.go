@@ -18,10 +18,11 @@ import (
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -73,9 +74,8 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 
 		result = mergeExemplarQueryResponses(results)
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV("series", len(result.Timeseries))
-		}
+		s := trace.SpanFromContext(ctx)
+		s.SetAttributes(attribute.Int("series", len(result.Timeseries)))
 		return nil
 	})
 	return result, err
@@ -101,13 +101,12 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		if s := opentracing.SpanFromContext(ctx); s != nil {
-			s.LogKV(
-				"chunk-series", len(result.Chunkseries),
-				"time-series", len(result.Timeseries),
-				"streaming-series", len(result.StreamingSeries),
-			)
-		}
+		s := trace.SpanFromContext(ctx)
+		s.SetAttributes(
+			attribute.Int("chunk-series", len(result.Chunkseries)),
+			attribute.Int("time-series", len(result.Timeseries)),
+			attribute.Int("streaming-series", len(result.StreamingSeries)),
+		)
 		return nil
 	})
 
@@ -223,7 +222,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
 	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
-		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
+		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Finish()
 			cancelContext(errStreamClosed)

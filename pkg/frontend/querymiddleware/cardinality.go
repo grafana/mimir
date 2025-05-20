@@ -14,7 +14,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -72,7 +71,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 	}
 
 	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
-	spanLog.LogFields(otlog.String("cache key", k))
+	spanLog.LogKV("cache key", k)
 
 	estimatedCardinality, estimateAvailable := c.lookupCardinalityForKey(ctx, k)
 	if estimateAvailable {
@@ -81,12 +80,12 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 			return c.next.Do(ctx, request)
 		}
 		request = newRequest
-		spanLog.LogFields(
-			otlog.Bool("estimate available", true),
-			otlog.Uint64("estimated cardinality", estimatedCardinality),
+		spanLog.LogKV(
+			"estimate available", true,
+			"estimated cardinality", estimatedCardinality,
 		)
 	} else {
-		spanLog.LogFields(otlog.Bool("estimate available", false))
+		spanLog.LogKV("estimate available", false)
 	}
 
 	res, err := c.next.Do(ctx, request)
@@ -96,18 +95,18 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 
 	statistics := stats.FromContext(ctx)
 	actualCardinality := statistics.GetFetchedSeriesCount()
-	spanLog.LogFields(otlog.Uint64("actual cardinality", actualCardinality))
+	spanLog.LogKV("actual cardinality", actualCardinality)
 
 	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
 		c.storeCardinalityForKey(k, actualCardinality)
-		spanLog.LogFields(otlog.Bool("cache updated", true))
+		spanLog.LogKV("cache updated", true)
 	}
 
 	if estimateAvailable {
 		estimationError := math.Abs(float64(actualCardinality) - float64(estimatedCardinality))
 		c.estimationError.Observe(estimationError)
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
-		spanLog.LogFields(otlog.Float64("estimation error", estimationError))
+		spanLog.LogKV("estimation error", estimationError)
 	}
 
 	return res, nil

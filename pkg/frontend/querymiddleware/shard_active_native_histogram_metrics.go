@@ -34,7 +34,7 @@ func newShardActiveNativeHistogramMetricsMiddleware(upstream http.RoundTripper, 
 }
 
 func (s *shardActiveNativeHistogramMetricsMiddleware) RoundTrip(r *http.Request) (*http.Response, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(r.Context(), s.logger, "shardActiveNativeHistogramMetrics.RoundTrip")
+	spanLog, ctx := spanlogger.New(r.Context(), s.logger, tracer, "shardActiveNativeHistogramMetrics.RoundTrip")
 	defer spanLog.Finish()
 
 	resp, err := s.shardBySeriesSelector(ctx, spanLog, r, s.mergeResponses)

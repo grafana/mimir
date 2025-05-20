@@ -228,7 +228,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 	s.chunkCountEstimateChan = make(chan int, 1)
 
 	go func() {
-		log, _ := spanlogger.NewWithLogger(s.client.Context(), s.log, "storeGatewayStreamReader.StartBuffering")
+		log, _ := spanlogger.New(s.client.Context(), s.log, tracer, "storeGatewayStreamReader.StartBuffering")
 
 		defer func() {
 			s.Close()

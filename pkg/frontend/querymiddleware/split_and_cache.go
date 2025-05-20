@@ -16,12 +16,12 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -342,7 +342,7 @@ func (s *splitAndCacheMiddleware) splitRequestByInterval(req MetricsQueryRequest
 // the returned extents are empty.
 // Extents created from queries that outlived current configured TTL are filtered out.
 func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now time.Time, tenantIDs []string, keys []string) [][]Extent {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.logger, "fetchCacheExtents")
+	spanLog, ctx := spanlogger.New(ctx, s.logger, tracer, "fetchCacheExtents")
 	defer spanLog.Finish()
 
 	// Fast path.
@@ -635,10 +635,10 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			// partialStats are the statistics for this partial query, which we'll need to
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
-			var span opentracing.Span
-			span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
+			var span trace.Span
+			childCtx, span = tracer.Start(childCtx, "doRequests")
 			req.AddSpanTags(span)
-			defer span.Finish()
+			defer span.End()
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)
