@@ -23,22 +23,10 @@ const (
 	parquetIndexCompressedName = parquetIndex + ".gz"
 )
 
-type BlockWithExtension struct {
-	*Block
-	Extensions Extensions `json:"extensions,omitempty"` // TODO: not being used
-}
-
 type ParquetIndex struct {
-	Blocks map[ulid.ULID]BlockWithExtension `json:"blocks"`
-}
-
-type Extensions struct {
-	PartitionInfo PartitionInfo `json:"partition_info"`
-}
-
-type PartitionInfo struct {
-	MetricNamePartitionCount int `json:"metric_name_partition_count"`
-	MetricNamePartitionID    int `json:"metric_name_partition_id"`
+	// TODO(npazosmendez): add versionsing
+	// TODO(npazosmendez): should we make this a slice?
+	Blocks map[ulid.ULID]*Block `json:"blocks"`
 }
 
 func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, logger log.Logger) (*ParquetIndex, error) {
@@ -46,7 +34,7 @@ func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 	reader, err := userBkt.WithExpectedErrs(func(err error) bool { return userBkt.IsAccessDeniedErr(err) && userBkt.IsObjNotFoundErr(err) }).Get(ctx, parquetIndexCompressedName)
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
-			return &ParquetIndex{Blocks: map[ulid.ULID]BlockWithExtension{}}, nil
+			return &ParquetIndex{Blocks: map[ulid.ULID]*Block{}}, nil
 		}
 
 		return nil, err
