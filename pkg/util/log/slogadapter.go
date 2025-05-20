@@ -13,10 +13,11 @@ import (
 func SlogFromGoKit(logger log.Logger) *slog.Logger {
 	var sl slog.Level
 	x := privateLevelDetector{
-		string:   "This struct is expected to be used with levelLogger only",
+		string:   "internal message: if you see this, probably log initialization has gone wrong",
 		logLevel: debugLevel,
 	}
-	logger.Log("test", &x)
+	// This is a probing message; it should reach levelFilter.Log() no matter how many levels of wrapper are around logger.
+	logger.Log("probe", &x)
 	switch x.logLevel {
 	case infoLevel:
 		sl = slog.LevelInfo
