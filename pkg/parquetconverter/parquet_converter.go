@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -54,8 +53,6 @@ const (
 )
 
 var (
-	errInvalidBlockRanges = "parquet-converter block range periods should be divisible by the previous one, but %s is not divisible by %s"
-
 	RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
@@ -66,8 +63,7 @@ type Config struct {
 
 	DataDir string `yaml:"data_dir"`
 
-	BlockRanges  mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	ShardingRing RingConfig              `yaml:"sharding_ring"`
+	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -76,28 +72,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.")
-
-	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-	f.Var(&cfg.BlockRanges, "parquet-converter.block-ranges", "List of conversion time ranges.")
-}
-
-func (cfg *Config) Validate(logger log.Logger) error {
-	// Mimir assumes that smaller blocks are eventually compacted to 24h blocks in
-	// various places on the read path (cache TTLs, query splitting). Warn when this
-	// isn't the case since it may affect performance.
-	if len(cfg.BlockRanges) > 0 {
-		if maxRange := slices.Max(cfg.BlockRanges); 24*time.Hour > maxRange {
-			level.Warn(logger).Log("msg", "Largest block range is not 24h. This may result in degraded query performance", "range", maxRange)
-		}
-	}
-
-	// Each block range period should be divisible by the previous one.
-	for i := 1; i < len(cfg.BlockRanges); i++ {
-		if cfg.BlockRanges[i]%cfg.BlockRanges[i-1] != 0 {
-			return errors.Errorf(errInvalidBlockRanges, cfg.BlockRanges[i].String(), cfg.BlockRanges[i-1].String())
-		}
-	}
-	return nil
 }
 
 type ParquetConverter struct {
@@ -105,12 +79,11 @@ type ParquetConverter struct {
 
 	bucket objstore.InstrumentedBucket // TODO (jesus.vazquez) Compactor is using objstore.Bucket instead
 
-	loader      *bucketindex.Loader
-	Cfg         Config
-	registerer  prometheus.Registerer
-	logger      log.Logger
-	limits      *validation.Overrides
-	blockRanges []int64
+	loader     *bucketindex.Loader
+	Cfg        Config
+	registerer prometheus.Registerer
+	logger     log.Logger
+	limits     *validation.Overrides
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -145,13 +118,12 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	}
 
 	c := &ParquetConverter{
-		Cfg:         cfg,
-		bucket:      bucketClient,
-		loader:      loader,
-		logger:      log.With(logger, "component", "parquet-converter"),
-		registerer:  registerer,
-		blockRanges: cfg.BlockRanges.ToMilliseconds(),
-		limits:      limits,
+		Cfg:        cfg,
+		bucket:     bucketClient,
+		loader:     loader,
+		logger:     log.With(logger, "component", "parquet-converter"),
+		registerer: registerer,
+		limits:     limits,
 
 		subservices:        manager,
 		subservicesWatcher: services.NewFailureWatcher(),
@@ -476,11 +448,6 @@ func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket o
 			continue
 		}
 
-		// Don't try to compact 2h block. Compact 12h and 24h.
-		if getBlockTimeRange(b, c.blockRanges) == c.blockRanges[0] {
-			continue
-		}
-
 		totalBlocks++
 
 		// Do not compact block if is not owned
@@ -597,30 +564,4 @@ func TSDBBlockToParquetDualFile(
 	labelsFileName = schema.LabelsPfileNameForShard(dualFileBlockName, 0)
 	chunksFileName = schema.ChunksPfileNameForShard(dualFileBlockName, 0)
 	return labelsFileName, chunksFileName, nil
-}
-
-func getBlockTimeRange(b *bucketindex.Block, timeRanges []int64) int64 {
-	timeRange := int64(0)
-	// fallback logic to guess block time range based
-	// on MaxTime and MinTime
-	blockRange := b.MaxTime - b.MinTime
-	for _, tr := range timeRanges {
-		rangeStart := getStart(b.MinTime, tr)
-		rangeEnd := rangeStart + tr
-		if tr >= blockRange && rangeEnd >= b.MaxTime {
-			timeRange = tr
-			break
-		}
-	}
-	return timeRange
-}
-
-func getStart(mint int64, tr int64) int64 {
-	// Compute start of aligned time range of size tr closest to the current block's start.
-	// This code has been copied from TSDB.
-	if mint >= 0 {
-		return tr * (mint / tr)
-	}
-
-	return tr * ((mint - tr + 1) / tr)
 }
