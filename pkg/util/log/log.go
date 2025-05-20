@@ -39,12 +39,12 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	logger := dslog.NewGoKitWithWriter(logFormat, writer)
 
 	if rateLimitedCfg.Enabled {
-		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(6))
+		// use UTC timestamps and skip 7 stack frames if rate limited logger is needed.
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(7))
 		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsBurstSize, rateLimitedCfg.Registry)
 	} else {
-		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(5))
+		// use UTC timestamps and skip 6 stack frames if no rate limited logger is needed.
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(6))
 	}
 	// Must put the level filter last for efficiency.
 	logger = newFilter(logger, logLevel)
