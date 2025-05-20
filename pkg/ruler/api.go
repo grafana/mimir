@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -37,6 +38,18 @@ var (
 	// errTenantRuleEvaluationDisabled is returned when all rule evaluation types are disabled for the tenant.
 	errTenantRuleEvaluationDisabled = errors.New("all rule evaluation is disabled for user")
 )
+
+func isErrTenantRuleEvaluationDisabled(err error) bool {
+	if errors.Is(err, errTenantRuleEvaluationDisabled) {
+		return true
+	}
+	if s, ok := grpcutil.ErrorToStatus(err); ok {
+		if s.Message() == errTenantRuleEvaluationDisabled.Error() {
+			return true
+		}
+	}
+	return false
+}
 
 // In order to reimplement the prometheus rules API, a large amount of code was copied over
 // This is required because the prometheus api implementation does not allow us to return errors
@@ -229,11 +242,11 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	rulesResp, token, err := a.ruler.GetRules(ctx, rulesReq)
-	if errors.Is(err, errTenantRuleEvaluationDisabled) {
-		respondUnprocessableRequest(logger, w, err.Error())
-		return
-	}
 	if err != nil {
+		if isErrTenantRuleEvaluationDisabled(err) {
+			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
@@ -336,11 +349,11 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	rulesResp, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
-	if errors.Is(err, errTenantRuleEvaluationDisabled) {
-		respondUnprocessableRequest(logger, w, err.Error())
-		return
-	}
 	if err != nil {
+		if isErrTenantRuleEvaluationDisabled(err) {
+			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
