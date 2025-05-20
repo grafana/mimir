@@ -320,7 +320,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						)
 					}
 
-					// Add the blocks
 					pIdx.Blocks[b.ID] = b
 				}
 			}
