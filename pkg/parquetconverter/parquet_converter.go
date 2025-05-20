@@ -273,6 +273,14 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					level.Error(c.logger).Log("msg", "Error loading index", "err", err)
 					break
 				}
+				level.Info(c.logger).Log("msg", "Loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
+
+				idx, err := c.loader.GetIndex(ctx, u)
+				if err != nil {
+					level.Error(c.logger).Log("msg", "Error loading index", "err", err)
+					break
+				}
+				level.Info(c.logger).Log("msg", "Loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
 
 				for {
 					if ctx.Err() != nil {
@@ -280,16 +288,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					}
 
 					level.Info(c.logger).Log("msg", "Scanning User", "user", u)
-
-					idx, err := c.loader.GetIndex(ctx, u)
-					if err != nil {
-						level.Error(c.logger).Log("msg", "Error loading index", "err", err)
-						break
-					}
-
-					level.Info(c.logger).Log("msg", "Loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
-
-					level.Info(c.logger).Log("msg", "Loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
 
 					ownedBlocks, totalBlocks := c.findNextBlockToCompact(ctx, uBucket, idx, pIdx)
 					if len(ownedBlocks) == 0 {
