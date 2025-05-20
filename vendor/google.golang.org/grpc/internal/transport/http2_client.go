@@ -176,7 +176,7 @@ func dial(ctx context.Context, fn func(context.Context, string) (net.Conn, error
 		return fn(ctx, address)
 	}
 	if !ok {
-		networkType, address = ParseDialTarget(address)
+		networkType, address = parseDialTarget(address)
 	}
 	if opts, present := proxyattributes.Get(addr); present {
 		return proxyDial(ctx, addr, grpcUA, opts)
@@ -1242,8 +1242,7 @@ func (t *http2Client) handleRSTStream(f *http2.RSTStreamFrame) {
 			statusCode = codes.DeadlineExceeded
 		}
 	}
-	st := status.Newf(statusCode, "stream terminated by RST_STREAM with error code: %v", f.ErrCode)
-	t.closeStream(s, st.Err(), false, http2.ErrCodeNo, st, nil, false)
+	t.closeStream(s, io.EOF, false, http2.ErrCodeNo, status.Newf(statusCode, "stream terminated by RST_STREAM with error code: %v", f.ErrCode), nil, false)
 }
 
 func (t *http2Client) handleSettings(f *http2.SettingsFrame, isFirst bool) {
