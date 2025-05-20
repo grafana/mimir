@@ -243,13 +243,15 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 				break
 			}
 			for _, u := range users {
-				if c.Cfg.allowedTenants.IsAllowed(u) {
-					if ok, _ := c.ownBlock(u); ok {
-						err := c.updateParquetIndex(ctx, u)
-						if err != nil {
-							level.Error(c.logger).Log("msg", "Error updating index", "err", err)
-						}
-					}
+				if !c.Cfg.allowedTenants.IsAllowed(u) {
+					continue
+				}
+				if ok, _ := c.own(u); !ok {
+					continue
+				}
+				err := c.updateParquetIndex(ctx, u)
+				if err != nil {
+					level.Error(c.logger).Log("msg", "Error updating index", "err", err)
 				}
 			}
 
@@ -441,7 +443,7 @@ func (c *ParquetConverter) findNextBlockToCompact(ctx context.Context, uBucket o
 		totalBlocks++
 
 		// Do not compact block if is not owned
-		if ok, err := c.ownBlock(b.ID.String()); err != nil || !ok {
+		if ok, err := c.own(b.ID.String()); err != nil || !ok {
 			continue
 		}
 
@@ -482,10 +484,9 @@ func (c *ParquetConverter) compactRootDir() string {
 	return filepath.Join(c.Cfg.DataDir, "compact")
 }
 
-func (c *ParquetConverter) ownBlock(userID string) (bool, error) {
-	// Hash the user ID.
+func (c *ParquetConverter) own(id string) (bool, error) {
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(userID))
+	_, _ = hasher.Write([]byte(id))
 	userHash := hasher.Sum32()
 
 	rs, err := c.ring.Get(userHash, RingOp, nil, nil, nil)
