@@ -321,7 +321,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					}
 
 					// Add the blocks
-					pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b}
+					pIdx.Blocks[b.ID] = b
 				}
 			}
 		}
@@ -373,17 +373,7 @@ func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) err
 		}
 
 		if marker.Version == CurrentVersion {
-			// m, err := block.DownloadMeta(ctx, c.logger, uBucket, b.ID)
-			// if err != nil {
-			// 	level.Error(c.logger).Log("msg", "failed to download block", "block", b.ID, "err", err)
-			// }
-			extensions := bucketindex.Extensions{}
-			// TODO
-			// _, err = metadata.ConvertExtensions(m.Thanos.Extensions, &extensions)
-			// if err != nil {
-			// 	level.Error(c.logger).Log("msg", "failed to convert extensions", "err", err)
-			// }
-			pIdx.Blocks[b.ID] = bucketindex.BlockWithExtension{Block: b, Extensions: extensions}
+			pIdx.Blocks[b.ID] = b
 		}
 	}
 	c.removeDeletedBlocks(idx, pIdx)
