@@ -546,6 +546,115 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 	}
 }
 
+func TestDistributor_Push_IgnoreIngestStorageErrorsDuringMigration(t *testing.T) {
+	t.Parallel()
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	tests := map[string]struct {
+		shouldFailIngester       bool
+		shouldFailIngestStorage  bool
+		ignoreIngestStorageError bool
+		expectedErrorContext     string
+		maxWaitTime              time.Duration
+	}{
+		"should give precedence to ingester error when both ingester and ingest storage errors occur and IgnoreIngestStorageError is enabled": {
+			shouldFailIngester:       true,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "send data to ingesters",
+		},
+		"should succeed when only ingest storage errors occur and IgnoreIngestStorageError is enabled": {
+			shouldFailIngester:       false,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "",
+		},
+		"should fail with timeout from partitionErrors when ignoreIngestStorageError is disabled and IngestStorageMaxWaitTime is set": {
+			shouldFailIngester:       true,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: false,
+			expectedErrorContext:     "timeout",
+			maxWaitTime:              200 * time.Millisecond,
+		},
+		"should succeed when only ingest storage errors occur and IgnoreIngestStorageError is enabled with IngestStorageMaxWaitTime is set": {
+			shouldFailIngester:       false,
+			shouldFailIngestStorage:  true,
+			ignoreIngestStorageError: true,
+			expectedErrorContext:     "",
+			maxWaitTime:              200 * time.Millisecond,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			// Setup test configuration
+			testConfig := prepConfig{
+				numDistributors:         1,
+				numIngesters:            1,
+				happyIngesters:          1,
+				replicationFactor:       1,
+				ingesterIngestionType:   ingesterIngestionTypeGRPC,
+				ingestStorageEnabled:    true,
+				ingestStoragePartitions: 1,
+				limits:                  prepareDefaultLimits(),
+				configure: func(cfg *Config) {
+					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+					cfg.IngestStorageConfig.Migration.IgnoreIngestStorageErrors = testData.ignoreIngestStorageError
+					cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime = testData.maxWaitTime
+				},
+			}
+
+			distributors, ingesters, _, kafkaCluster := prepare(t, testConfig)
+
+			require.Len(t, distributors, 1)
+			require.Len(t, ingesters, 1)
+
+			releaseProduceRequest := make(chan struct{})
+
+			// Configure Kafka to return error if specified
+			if testData.shouldFailIngestStorage {
+				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+					kafkaCluster.KeepControl()
+					<-releaseProduceRequest
+					time.Sleep(time.Second)
+
+					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+
+					return res, nil, true
+				})
+			}
+			// Mock Kafka to return a hard error.
+			if testData.shouldFailIngester {
+				ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+					// Release the Kafka produce request once the push to ingester has been received.
+					close(releaseProduceRequest)
+					ingesterError := httpgrpc.Errorf(http.StatusBadRequest, "ingester error")
+					return &mimirpb.WriteResponse{}, ingesterError, true
+				})
+			}
+
+			// Send write request
+			_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
+				Timeseries: []mimirpb.PreallocTimeseries{
+					makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, nil),
+				},
+			})
+
+			if testData.expectedErrorContext != "" {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, testData.expectedErrorContext)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothToIngestersAndPartitions(t *testing.T) {
 	t.Parallel()
 
@@ -571,7 +680,7 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 	require.Len(t, ingesters, 1)
 	require.Len(t, regs, 1)
 
-	// Mock Kafka to return an hard error.
+	// Mock Kafka to return a hard error.
 	releaseProduceRequest := make(chan struct{})
 	kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
 		kafkaCluster.KeepControl()

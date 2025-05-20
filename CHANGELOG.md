@@ -29,6 +29,9 @@
 * [ENHANCEMENT] Query-frontend: Add experimental support to include the cluster validation label in HTTP request headers. When cluster validation is enabled on the HTTP server side, cluster validation labels from HTTP request headers are compared with the HTTP server's cluster validation label. #11010 #11145
   * By setting `-query-frontend.client-cluster-validation.label`, you configure the query-frontend's client cluster validation label.
   * The flag `-common.client-cluster-validation.label`, if set, provides the default for `-query-frontend.client-cluster-validation.label`.
+* [ENHANCEMENT] Distributor: Add  `ignore_ingest_storage_errors` and `ingest_storage_max_wait_time` flags to control error handling and timeout behavior during ingest storage migration. #11291
+  * `-ingest-storage.migration.ignore-ingest-storage-errors`
+  * `-ingest-storage.migration.ingest-storage-max-wait-time`
 * [ENHANCEMENT] Memberlist: Add `-memberlist.abort-if-fast-join-fails` support and retries on DNS resolution. #11067
 * [ENHANCEMENT] Querier: Allow configuring all gRPC options for store-gateway client, similar to other gRPC clients. #11074
 * [ENHANCEMENT] Ruler: Log the number of series returned for each query as `result_series_count` as part of `query stats` log lines. #11081

@@ -1593,6 +1593,10 @@ Usage of ./cmd/mimir/mimir:
     	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
   -ingest-storage.migration.distributor-send-to-ingesters-enabled
     	When both this option and ingest storage are enabled, distributors write to both Kafka and ingesters. A write request is considered successful only when written to both backends.
+  -ingest-storage.migration.ignore-ingest-storage-errors
+    	When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.
+  -ingest-storage.migration.ingest-storage-max-wait-time duration
+    	The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingester.active-series-custom-trackers value

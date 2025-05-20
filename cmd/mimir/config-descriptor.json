@@ -7857,6 +7857,26 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.migration.distributor-send-to-ingesters-enabled",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ignore_ingest_storage_errors",
+              "required": false,
+              "desc": "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.migration.ignore-ingest-storage-errors",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingest_storage_max_wait_time",
+              "required": false,
+              "desc": "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.migration.ingest-storage-max-wait-time",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,

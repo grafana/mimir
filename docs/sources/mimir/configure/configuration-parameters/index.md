@@ -4319,6 +4319,17 @@ migration:
   # written to both backends.
   # CLI flag: -ingest-storage.migration.distributor-send-to-ingesters-enabled
   [distributor_send_to_ingesters_enabled: <boolean> | default = false]
+
+  # When enabled, errors writing to ingest storage are logged but do not affect
+  # write success or quorum. When disabled, write requests fail if ingest
+  # storage write fails.
+  # CLI flag: -ingest-storage.migration.ignore-ingest-storage-errors
+  [ignore_ingest_storage_errors: <boolean> | default = false]
+
+  # The maximum time a write request that goes through the ingest storage waits
+  # before it times out. Set to `0` to disable the timeout.
+  # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
+  [ingest_storage_max_wait_time: <duration> | default = 0s]
 ```
 
 ### blocks_storage
