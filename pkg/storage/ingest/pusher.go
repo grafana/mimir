@@ -177,7 +177,7 @@ func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 }
 
 func (c pusherConsumer) pushToStorage(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, writer PusherCloser) error {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "pusherConsumer.pushToStorage")
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "pusherConsumer.pushToStorage")
 	defer spanLog.Finish()
 
 	// Note that the implementation of the Pusher expects the tenantID to be in the context.

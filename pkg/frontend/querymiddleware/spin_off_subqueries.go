@@ -118,7 +118,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "spinOffSubqueriesMiddleware.Do")
 	defer spanLog.Finish()
 
 	// For now, the feature is completely opt-in
