@@ -1090,10 +1090,9 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initParquetConverter() (serv services.Service, err error) {
-	// TODO The converter relies on the compactor sharding configuration for now
-	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.ParquetConverter.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.Compactor, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
+	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
 		return
 	}
