@@ -14,6 +14,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 )
@@ -27,9 +28,6 @@ type CompactionMark struct {
 	Version int `json:"version"`
 }
 
-// TODO this function sets off the linter as it is not used yet
-//func (m *CompactionMark) markerFilename() string { return ParquetCompactionMakerFileName }
-
 func ReadCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket, logger log.Logger) (*CompactionMark, error) {
 	markerPath := path.Join(id.String(), ParquetCompactionMakerFileName)
 	reader, err := userBkt.WithExpectedErrs(func(e error) bool {
@@ -42,8 +40,8 @@ func ReadCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.Instrum
 
 		return &CompactionMark{}, err
 	}
-	// TODO
-	// defer runutil.CloseWithLogOnErr(logger, reader, "close bucket index reader")
+
+	defer runutil.CloseWithLogOnErr(logger, reader, "close bucket index reader")
 
 	metaContent, err := io.ReadAll(reader)
 	if err != nil {

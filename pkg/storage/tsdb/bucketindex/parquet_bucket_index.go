@@ -30,7 +30,6 @@ type ParquetIndex struct {
 }
 
 func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, logger log.Logger) (*ParquetIndex, error) {
-	// Get the bucket index.
 	reader, err := userBkt.WithExpectedErrs(func(err error) bool { return userBkt.IsAccessDeniedErr(err) && userBkt.IsObjNotFoundErr(err) }).Get(ctx, parquetIndexCompressedName)
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
@@ -47,7 +46,6 @@ func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 		}
 	}()
 
-	// Read all the content.
 	gzipReader, err := gzip.NewReader(reader)
 	if err != nil {
 		return nil, ErrIndexCorrupted
@@ -60,7 +58,6 @@ func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 		}
 	}()
 
-	// Deserialize it.
 	index := &ParquetIndex{}
 	d := json.NewDecoder(gzipReader)
 	if err := d.Decode(index); err != nil {
@@ -70,13 +67,11 @@ func ReadParquetIndex(ctx context.Context, userBkt objstore.InstrumentedBucket, 
 }
 
 func WriteParquetIndex(ctx context.Context, bkt objstore.Bucket, idx *ParquetIndex) error {
-	// Marshal the index.
 	content, err := json.Marshal(idx)
 	if err != nil {
 		return errors.Wrap(err, "marshal bucket index")
 	}
 
-	// Compress it.
 	var gzipContent bytes.Buffer
 	gzip := gzip.NewWriter(&gzipContent)
 	gzip.Name = parquetIndex
@@ -88,7 +83,6 @@ func WriteParquetIndex(ctx context.Context, bkt objstore.Bucket, idx *ParquetInd
 		return errors.Wrap(err, "close gzip bucket index")
 	}
 
-	// Upload the index to the storage.
 	if err := bkt.Upload(ctx, parquetIndexCompressedName, bytes.NewReader(gzipContent.Bytes())); err != nil {
 		return errors.Wrap(err, "upload bucket index")
 	}
