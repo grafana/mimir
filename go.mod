@@ -50,7 +50,7 @@ require (
 	golang.org/x/net v0.40.0
 	golang.org/x/sync v0.14.0
 	golang.org/x/time v0.11.0
-	google.golang.org/grpc v1.71.1
+	google.golang.org/grpc v1.72.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -346,9 +346,6 @@ replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc
 
 // Replacing prometheus/alertmanager with our fork.
 replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
-
-// Temporarily exclude v1.72 until we've fully tested the unpinning of v1.65 and upgrade to v1.71
-exclude google.golang.org/grpc v1.72.0
 
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
