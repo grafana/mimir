@@ -52,7 +52,7 @@ func TestParquetConverter(t *testing.T) {
 	c, _ := prepare(t, cfg, objstore.WithNoopInstr(bucketClient))
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
-	defer services.StopAndAwaitTerminated(context.Background(), c)
+	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
 
 	test.Poll(t, 10*time.Second, true, func() interface{} {
 		parquetFiles := 0
