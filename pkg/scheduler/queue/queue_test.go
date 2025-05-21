@@ -366,7 +366,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// Enqueue a request from a user which would NOT be assigned to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers
-	reqNotSharderToQuerier1 := &SchedulerRequest{
+	reqNotShardedToQuerier1 := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
@@ -375,7 +375,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// but we need a request in the queue tree to reach the code path
 	// in QuerierWorkerQueuePriorityAlgo.setup where the panic condition is created
 	// by setting the currentNodeOrderIndex to -1.
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotSharderToQuerier1, 1, nil))
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
 
 	// Querier-1 submits a request to dequeue;
 	// it will not receive anything as the only request in the queue is not sharded to querier-1.
@@ -402,7 +402,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	}()
 
 	// Enqueue another request from a user which would NOT be assigned to querier-1.
-	reqNotSharderToQuerier1 = &SchedulerRequest{
+	reqNotShardedToQuerier1 = &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
 		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
@@ -412,9 +412,8 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	//
 	// The dequeue request at the front of that list will be associated with the disconnected worker conn,
 	// which now has a workerID set to unregisteredWorkerID = -1.
-	// Without any check in place to bail out before dequeuing for a workerID with -1,
-	// the QuerierWorkerQueuePriorityAlgo.dequeueSelectNode would panic with index out of range [-1].
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotSharderToQuerier1, 1, nil))
+	// Attempting to dequeue a request from the tree for an unregisteredWorkerID should fail, but not panic.
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
 
 	// The dequeue request should be dropped from the waiting list due to the error.
 	assert.Eventually(
