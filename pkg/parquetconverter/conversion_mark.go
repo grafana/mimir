@@ -20,47 +20,47 @@ import (
 )
 
 const (
-	ParquetCompactionMakerFileName = "parquet-compaction-mark.json"
-	CurrentVersion                 = 6
+	ParquetConversionMarkFileName = "parquet-conversion-mark.json"
+	CurrentVersion                = 6
 )
 
-type CompactionMark struct {
+type ConversionMark struct {
 	Version int `json:"version"`
 }
 
-func ReadCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket, logger log.Logger) (*CompactionMark, error) {
-	markerPath := path.Join(id.String(), ParquetCompactionMakerFileName)
+func ReadConversionMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket, logger log.Logger) (*ConversionMark, error) {
+	markPath := path.Join(id.String(), ParquetConversionMarkFileName)
 	reader, err := userBkt.WithExpectedErrs(func(e error) bool {
 		return userBkt.IsAccessDeniedErr(e) && userBkt.IsObjNotFoundErr(e)
-	}).Get(ctx, markerPath)
+	}).Get(ctx, markPath)
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
-			return &CompactionMark{}, nil
+			return &ConversionMark{}, nil
 		}
 
-		return &CompactionMark{}, err
+		return &ConversionMark{}, err
 	}
 
 	defer runutil.CloseWithLogOnErr(logger, reader, "close bucket index reader")
 
 	metaContent, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, errors.Wrapf(err, "read file: %s", ParquetCompactionMakerFileName)
+		return nil, errors.Wrapf(err, "read file: %s", ParquetConversionMarkFileName)
 	}
 
-	marker := CompactionMark{}
-	err = json.Unmarshal(metaContent, &marker)
-	return &marker, err
+	mark := ConversionMark{}
+	err = json.Unmarshal(metaContent, &mark)
+	return &mark, err
 }
 
-func WriteCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket) error {
-	marker := CompactionMark{
+func WriteConversionMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket) error {
+	mark := ConversionMark{
 		Version: CurrentVersion,
 	}
-	markerPath := path.Join(id.String(), ParquetCompactionMakerFileName)
-	b, err := json.Marshal(marker)
+	markPath := path.Join(id.String(), ParquetConversionMarkFileName)
+	b, err := json.Marshal(mark)
 	if err != nil {
 		return err
 	}
-	return userBkt.Upload(ctx, markerPath, bytes.NewReader(b))
+	return userBkt.Upload(ctx, markPath, bytes.NewReader(b))
 }

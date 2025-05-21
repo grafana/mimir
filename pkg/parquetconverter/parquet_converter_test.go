@@ -46,7 +46,7 @@ func TestParquetConverter(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := prepareConfig(t)
-	cfg.ShardingRing.Common.InstanceID = "compactor-1"
+	cfg.ShardingRing.Common.InstanceID = "converters-1"
 	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.Common.KVStore.Mock = ringStore
 
@@ -64,7 +64,7 @@ func TestParquetConverter(t *testing.T) {
 			return nil
 		})
 		require.NoError(t, err)
-		mark, err := ReadCompactMark(ctx, bid, uBucket, log.NewNopLogger())
+		mark, err := ReadConversionMark(ctx, bid, uBucket, log.NewNopLogger())
 		require.NoError(t, err)
 		return parquetFiles == 2 && mark.Version == CurrentVersion
 	})
@@ -76,10 +76,7 @@ func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetCo
 	flagext.DefaultValues(&limits)
 	overrides := validation.NewOverrides(limits, nil)
 
-	// Create a temporary directory for compactor data.
-	dataDir := t.TempDir()
-
-	cfg.DataDir = dataDir
+	cfg.DataDir = t.TempDir()
 
 	logs := &concurrency.SyncBuffer{}
 	registry := prometheus.NewRegistry()
@@ -101,7 +98,7 @@ func prepareConfig(t *testing.T) Config {
 	cfg.ShardingRing.WaitStabilityMinDuration = 0
 	cfg.ShardingRing.WaitStabilityMaxDuration = 0
 
-	// Set lower timeout for waiting on compactor to become ACTIVE in the ring for unit tests
+	// Set lower timeout for waiting on converter to become ACTIVE in the ring for unit tests
 	cfg.ShardingRing.WaitActiveInstanceTimeout = 5 * time.Second
 
 	// Inject default KV store. Must be overridden if "real" sharding is required.

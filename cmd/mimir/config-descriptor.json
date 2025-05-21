@@ -19840,7 +19840,7 @@
           "desc": "The frequency at which the conversion runs",
           "fieldValue": null,
           "fieldDefaultValue": 60000000000,
-          "fieldFlag": "parquet-converter.compaction-interval",
+          "fieldFlag": "parquet-converter.conversion-interval",
           "fieldType": "duration"
         },
         {

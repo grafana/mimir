@@ -62,12 +62,12 @@ type Config struct {
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
 
-// RegisterFlags registers the MultitenantCompactor flags.
+// RegisterFlags registers the ParquetConverter flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be converted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
-	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.compaction-interval", time.Minute, "The frequency at which the conversion runs")
+	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts.")
 }
 
@@ -261,13 +261,13 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						continue
 					}
 
-					marker, err := ReadCompactMark(ctx, m.ULID, uBucket, ulogger)
+					mark, err := ReadConversionMark(ctx, m.ULID, uBucket, ulogger)
 					if err != nil {
-						level.Error(ulogger).Log("msg", "failed to read compact mark, skipping", "err", err, "block", m.ULID.String())
+						level.Error(ulogger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", m.ULID.String())
 						continue
 					}
 
-					if marker.Version == CurrentVersion {
+					if mark.Version == CurrentVersion {
 						continue
 					}
 
@@ -288,9 +288,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					} else {
 						level.Info(ulogger).Log("msg", "converted block", "block", m.ULID.String())
 					}
-					err = WriteCompactMark(ctx, m.ULID, uBucket)
+					err = WriteConversionMark(ctx, m.ULID, uBucket)
 					if err != nil {
-						level.Error(ulogger).Log("msg", "failed to write compact mark", "block", m.ULID.String(), "err", err)
+						level.Error(ulogger).Log("msg", "failed to write conversion mark", "block", m.ULID.String(), "err", err)
 					}
 				}
 			}

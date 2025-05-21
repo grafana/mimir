@@ -469,7 +469,7 @@ parquet_converter:
   [data_dir: <string> | default = "./data-parquet-converter/"]
 
   # The frequency at which the conversion runs
-  # CLI flag: -parquet-converter.compaction-interval
+  # CLI flag: -parquet-converter.conversion-interval
   [conversion_interval: <duration> | default = 1m]
 
   sharding_ring:
