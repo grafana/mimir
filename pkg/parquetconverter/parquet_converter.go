@@ -57,6 +57,8 @@ type Config struct {
 
 	DataDir string `yaml:"data_dir"`
 
+	ConversionInterval time.Duration `yaml:"conversion_interval"`
+
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
 
@@ -65,18 +67,20 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be converted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.")
+	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.compaction-interval", time.Minute, "The frequency at which the conversion runs")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts.")
 }
 
 type ParquetConverter struct {
 	services.Service
 
-	bucket objstore.InstrumentedBucket // TODO (jesus.vazquez) Compactor is using objstore.Bucket instead
+	Cfg                 Config
+	registerer          prometheus.Registerer
+	logger              log.Logger
+	limits              *validation.Overrides
+	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error)
 
-	Cfg        Config
-	registerer prometheus.Registerer
-	logger     log.Logger
-	limits     *validation.Overrides
+	bucketClient objstore.Bucket
 
 	ringLifecycler         *ring.BasicLifecycler
 	ring                   *ring.Ring
@@ -85,18 +89,25 @@ type ParquetConverter struct {
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "parquet-converter", logger, registerer)
-	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
-
-	if err != nil {
-		return nil, err
+	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
+		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
+	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits)
+}
+func newParquetConverter(
+	cfg Config,
+	logger log.Logger,
+	registerer prometheus.Registerer,
+	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
+	limits *validation.Overrides,
+) (*ParquetConverter, error) {
+	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 	c := &ParquetConverter{
-		Cfg:        cfg,
-		bucket:     bucketClient,
-		logger:     log.With(logger, "component", "parquet-converter"),
-		registerer: registerer,
-		limits:     limits,
+		Cfg:                 cfg,
+		bucketClientFactory: bucketClientFactory,
+		logger:              log.With(logger, "component", "parquet-converter"),
+		registerer:          registerer,
+		limits:              limits,
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -105,6 +116,10 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 
 func (c *ParquetConverter) starting(ctx context.Context) error {
 	var err error
+	c.bucketClient, err = c.bucketClientFactory(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to create bucket client")
+	}
 
 	// Initialize the parquet-converters ring if sharding is enabled.
 	c.ring, c.ringLifecycler, err = newRingAndLifecycler(c.Cfg.ShardingRing, c.logger, c.registerer)
@@ -180,7 +195,7 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converter' lifecycler")
 	}
 
-	parquetConvertersRing, err := ring.New(cfg.Common.ToRingConfig(), "parquet-converter", ringKey, logger, reg)
+	parquetConvertersRing, err := ring.New(cfg.toRingConfig(), "parquet-converter", ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize parquet-converter' parquetConvertersRing client")
 	}
@@ -189,7 +204,7 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 }
 
 func (c *ParquetConverter) running(ctx context.Context) error {
-	convertBlocksTicker := time.NewTicker(time.Second * 10)
+	convertBlocksTicker := time.NewTicker(c.Cfg.ConversionInterval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -209,7 +224,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					continue
 				}
 				ulogger := util_log.WithUserID(u, c.logger)
-				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
+				uBucket := bucket.NewUserBucketClient(u, c.bucketClient, c.limits)
 
 				fetcher, err := block.NewMetaFetcher(
 					ulogger,
@@ -295,7 +310,7 @@ func (c *ParquetConverter) stopping(_ error) error {
 func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
 	var users []string
 
-	err := c.bucket.Iter(ctx, "", func(entry string) error {
+	err := c.bucketClient.Iter(ctx, "", func(entry string) error {
 		u := strings.TrimSuffix(entry, "/")
 		users = append(users, u)
 		return nil
@@ -353,6 +368,7 @@ func convertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, b
 		meta.MinTime,
 		meta.MaxTime,
 		[]convert.Convertible{tsdbBlock},
+		convert.WithName(meta.ULID.String()),
 	)
 	return err
 }
