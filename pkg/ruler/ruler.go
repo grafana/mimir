@@ -958,7 +958,11 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 	return filtered
 }
 
-// GetRules retrieves the running rules from this ruler and all running rulers in the ring.
+// GetRules retrieves the running rules from all healthy rulers in the ring.
+// It is possible for a partial set of results to be returned if queried during ring state transitions - some rules
+// might temporarily appear to be missing until the ring state converges and rule rebalancing completes.
+// The same eventual consistency model applies to rule evaluation - rules may miss evaluations during ring state
+// transitions (e.g. when a ruler leave the ring, it takes a while for its rules to be moved to other rulers).
 func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse, string, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -982,9 +986,9 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 		warnings []string
 	)
 
-	// Concurrently fetch rules from all rulers. Since rules are not replicated,
+	// Concurrently fetch rules from all healthy rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	err = r.forEachRulerInTheRing(ctx, rr, RuleEvalRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
+	err = r.forEachHealthyRulerInTheRing(ctx, rr, RuleEvalRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		// Fail if we have not been able to get the client for a ruler.
 		if rulerClientErr != nil {
 			return err
@@ -1479,7 +1483,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, _ *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
+	errs.Add(r.forEachHealthyRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, _ *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		var err error
 
 		if rulerClientErr != nil {
@@ -1503,12 +1507,17 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	}
 }
 
-// forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
+// forEachHealthyRulerInTheRing calls f() for each healthy ruler in the ring based on the input op.
+// It checks there is at least one healthy ruler (aligning with ignoreUnhealthyInstancesReplicationStrategy). Any
+// unhealthy rulers are ignored.
 // The execution breaks on first error returned by f().
-func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
-	rulers, err := ring.GetReplicationSetForOperation(op)
+func (r *Ruler) forEachHealthyRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
+	rulers, err := ring.GetAllHealthy(op)
 	if err != nil {
 		return err
+	}
+	if len(rulers.Instances) == 0 {
+		return errors.New("no healthy ruler instances found")
 	}
 
 	// The execution breaks on first error encountered.
