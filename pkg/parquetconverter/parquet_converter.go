@@ -39,11 +39,10 @@ import (
 )
 
 const (
-	batchSize                = 50000
-	batchStreamBufferSize    = 10
-	parquetFileName          = "block.parquet"
-	ringKey                  = "parquet-converter"
-	maxParquetIndexSizeLimit = 100
+	batchSize             = 50000
+	batchStreamBufferSize = 10
+	parquetFileName       = "block.parquet"
+	ringKey               = "parquet-converter"
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
@@ -223,7 +222,6 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 }
 
 func (c *ParquetConverter) running(ctx context.Context) error {
-	updateIndexTicker := time.NewTicker(time.Second * 60)
 	convertBlocksTicker := time.NewTicker(time.Second * 10)
 	for {
 		select {
@@ -233,25 +231,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			return errors.Wrap(err, "parquet-converter ring subservice failed")
 		case err := <-c.subservicesWatcher.Chan():
 			return errors.Wrap(err, "parquet-converter subservice failed")
-
-		case <-updateIndexTicker.C:
-			users, err := c.discoverUsers(ctx)
-			if err != nil {
-				level.Error(c.logger).Log("msg", "error scanning users", "err", err)
-				break
-			}
-			for _, u := range users {
-				if !c.Cfg.allowedTenants.IsAllowed(u) {
-					continue
-				}
-				if ok, _ := c.own(u); !ok {
-					continue
-				}
-				err := c.updateParquetIndex(ctx, u)
-				if err != nil {
-					level.Error(c.logger).Log("msg", "error updating index", "err", err)
-				}
-			}
 
 		case <-convertBlocksTicker.C:
 			u, err := c.discoverUsers(ctx)
@@ -265,13 +244,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					continue
 				}
 				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
-
-				pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, c.logger)
-				if err != nil {
-					level.Error(c.logger).Log("msg", "error loading index", "err", err)
-					break
-				}
-				level.Info(c.logger).Log("msg", "loaded Parquet index", "user", u, "totalBlocks", len(pIdx.Blocks))
 
 				idx, err := c.loader.GetIndex(ctx, u)
 				if err != nil {
@@ -287,9 +259,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 
 					level.Info(c.logger).Log("msg", "scanning User", "user", u)
 
-					ownedBlocks, remainingBlocks := c.findNextBlockToConvert(ctx, uBucket, idx, pIdx)
+					ownedBlocks, remainingBlocks := c.findNextBlockToConvert(ctx, uBucket, idx)
 					if len(ownedBlocks) == 0 {
-						level.Info(c.logger).Log("msg", "no blocks to convert found", "numBlocks", len(pIdx.Blocks), "remainingBlocks", remainingBlocks)
+						level.Info(c.logger).Log("msg", "no blocks to convert found", "remainingBlocks", remainingBlocks)
 						break
 					}
 
@@ -316,8 +288,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					if err != nil {
 						level.Error(c.logger).Log("msg", "failed to write compact mark", "block", b.String(), "err", err)
 					}
-
-					pIdx.Blocks[b.ID] = b
 				}
 			}
 		}
@@ -334,87 +304,7 @@ func (c *ParquetConverter) stopping(_ error) error {
 	return nil
 }
 
-func (c *ParquetConverter) updateParquetIndex(ctx context.Context, u string) error {
-	level.Info(c.logger).Log("msg", "updating index", "user", u)
-	uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
-	deleted := map[ulid.ULID]struct{}{}
-	idx, err := c.loader.GetIndex(ctx, u)
-
-	if err != nil {
-		return err
-	}
-
-	for _, b := range idx.BlockDeletionMarks {
-		deleted[b.ID] = struct{}{}
-	}
-
-	pIdx, err := bucketindex.ReadParquetIndex(ctx, uBucket, c.logger)
-	if err != nil {
-		return errors.Wrap(err, "failed to read parquet index")
-	}
-
-	for _, b := range idx.Blocks {
-		if _, ok := deleted[b.ID]; ok {
-			continue
-		}
-
-		if _, ok := pIdx.Blocks[b.ID]; ok {
-			continue
-		}
-
-		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
-		if err != nil {
-			level.Error(c.logger).Log("msg", "failed to check if file exists", "err", err)
-			continue
-		}
-
-		if marker.Version == CurrentVersion {
-			pIdx.Blocks[b.ID] = b
-		}
-	}
-	c.removeDeletedBlocks(idx, pIdx)
-	//// Remove block from bucket index if marker version is outdated.
-	//c.removeOutdatedBlocks(ctx, uBucket, pIdx)
-	return bucketindex.WriteParquetIndex(ctx, uBucket, pIdx)
-}
-
-func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) {
-	blocks := map[ulid.ULID]struct{}{}
-	deleted := map[ulid.ULID]struct{}{}
-
-	for _, b := range idx.BlockDeletionMarks {
-		deleted[b.ID] = struct{}{}
-	}
-
-	for _, b := range idx.Blocks {
-		if _, ok := deleted[b.ID]; !ok {
-			blocks[b.ID] = struct{}{}
-		}
-	}
-
-	for _, b := range pIdx.Blocks {
-		if _, ok := blocks[b.ID]; !ok {
-			delete(pIdx.Blocks, b.ID)
-		}
-	}
-}
-
-// TODO this function sets off the linter as it is not used yet
-//func (c *ParquetConverter) removeOutdatedBlocks(ctx context.Context, uBucket objstore.InstrumentedBucket, pIdx *bucketindex.ParquetIndex) {
-//	for _, b := range pIdx.Blocks {
-//		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
-//		if err != nil {
-//			level.Error(c.logger).Log("msg", "failed to check if file exists", "err", err)
-//			continue
-//		}
-//
-//		if marker.Version < CurrentVersion {
-//			delete(pIdx.Blocks, b.ID)
-//		}
-//	}
-//}
-
-func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) (owned []*bucketindex.Block, remaining int) {
+func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index) (owned []*bucketindex.Block, remaining int) {
 	deleted := map[ulid.ULID]struct{}{}
 	owned = make([]*bucketindex.Block, 0, len(idx.Blocks))
 
@@ -424,10 +314,6 @@ func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket o
 
 	for _, b := range idx.Blocks {
 		if _, ok := deleted[b.ID]; ok {
-			continue
-		}
-
-		if _, ok := pIdx.Blocks[b.ID]; ok {
 			continue
 		}
 
