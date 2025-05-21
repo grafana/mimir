@@ -27,10 +27,11 @@ const (
 )
 
 var (
-	ErrInvalidTenantID     = errors.New("invalid tenant id")
-	ErrTooManyRequests     = errors.New("too many outstanding requests")
-	ErrStopped             = errors.New("queue is stopped")
-	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
+	ErrInvalidTenantID           = errors.New("invalid tenant id")
+	ErrTooManyRequests           = errors.New("too many outstanding requests")
+	ErrStopped                   = errors.New("queue is stopped")
+	ErrQuerierShuttingDown       = errors.New("querier has informed the scheduler it is shutting down")
+	ErrQuerierWorkerDisconnected = errors.New("querier worker has disconnected")
 )
 
 type RequestKey struct {

@@ -329,6 +329,124 @@ func queueConsume(
 	return lastTenantIdx, err
 }
 
+func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.T) {
+	const forgetDelay = 2 * time.Second
+	const testTimeout = 10 * time.Second
+
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		2,
+		forgetDelay,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+	)
+	require.NoError(t, err)
+
+	// Start the queue service.
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+	// Two queriers connect, allowing us to enqueue requests sharded to only one of the two.
+	querier1Ctx, querier1CtxCancel := context.WithCancelCause(context.Background())
+	querier1Conn := NewUnregisteredQuerierWorkerConn(querier1Ctx, "querier-1")
+	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
+	querier2Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
+	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn))
+
+	t.Cleanup(func() {
+		// if the test has failed and the queue does not get cleared,
+		// we must send a shutdown signal for the remaining connected querier
+		// or else StopAndAwaitTerminated will never complete.
+		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+	})
+
+	// Enqueue a request from a user which would NOT be assigned to querier-1.
+	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
+	// when there are only one or two queriers in the sorted list of connected queriers
+	reqNotSharderToQuerier1 := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
+	}
+	// This will sit in the queue as querier-2 is not await a request yet,
+	// but we need a request in the queue tree to reach the code path
+	// in QuerierWorkerQueuePriorityAlgo.setup where the panic condition is created
+	// by setting the currentNodeOrderIndex to -1.
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotSharderToQuerier1, 1, nil))
+
+	// Querier-1 submits a request to dequeue;
+	// it will not receive anything as the only request in the queue is not sharded to querier-1.
+	querier1SubmitDequeueReqWG := sync.WaitGroup{}
+	querier1SubmitDequeueReqWG.Add(1)
+	querier1DequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
+	go func() {
+		defer querier1SubmitDequeueReqWG.Done()
+		_, _, err = queue.AwaitRequestForQuerier(querier1DequeueReq)
+		// This receives one of two errors, it's a race between a context cancel and ErrQuerierWorkerDisconnected
+		require.Error(t, err)
+	}()
+
+	querier1CrashWG := sync.WaitGroup{}
+	querier1CrashWG.Add(1)
+	go func() {
+		defer querier1CrashWG.Done()
+		for queue.waitingDequeueRequestsToDispatch.Len() < 1 {
+			time.Sleep(time.Millisecond * 1)
+		}
+		// Simulate a crash of querier-1 (no graceful shutdown notification).
+		querier1CtxCancel(errors.New("crash"))
+		queue.SubmitUnregisterQuerierWorkerConn(querier1Conn) // normally done in the defers of the grpc loop
+	}()
+
+	// Enqueue another request from a user which would NOT be assigned to querier-1.
+	reqNotSharderToQuerier1 = &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
+	}
+	// The enqueuing of any new request triggers an attempt to dispatch requests
+	// to the items in waitingDequeueRequestsToDispatch list and their associated worker conns.
+	//
+	// The dequeue request at the front of that list will be associated with the disconnected worker conn,
+	// which now has a workerID set to unregisteredWorkerID = -1.
+	// Without any check in place to bail out before dequeuing for a workerID with -1,
+	// the QuerierWorkerQueuePriorityAlgo.dequeueSelectNode would panic with index out of range [-1].
+	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotSharderToQuerier1, 1, nil))
+
+	// The dequeue request should be dropped from the waiting list due to the error.
+	assert.Eventually(
+		t,
+		func() bool { return queue.waitingDequeueRequestsToDispatch.Len() == 0 },
+		testTimeout,
+		1*time.Second,
+	)
+
+	// Allow Querier-2 to clear the queue after the disconnected querier-1 is forgotten and a reshard occurs.
+	querier2SubmitDequeueReqWG := sync.WaitGroup{}
+	querier2SubmitDequeueReqWG.Add(1)
+	go func() {
+		defer querier2SubmitDequeueReqWG.Done()
+
+		req, nextTenantIdx, err := queue.AwaitRequestForQuerier(NewQuerierWorkerDequeueRequest(querier2Conn, FirstTenant()))
+		require.NoError(t, err)
+		require.NotNil(t, req)
+
+		req, _, err = queue.AwaitRequestForQuerier(NewQuerierWorkerDequeueRequest(querier2Conn, nextTenantIdx))
+		require.NoError(t, err)
+		require.NotNil(t, req)
+	}()
+
+	querier2SubmitDequeueReqWG.Wait()
+	assert.True(t, queue.queueBroker.isEmpty())
+
+	// These should be long gone but ensure we have no hanging goroutines
+	querier1SubmitDequeueReqWG.Wait()
+	querier1CrashWG.Wait()
+}
+
 func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 
