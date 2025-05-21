@@ -45,11 +45,11 @@ func BuildReceiverIntegrations(
 	tmpl *templates.Template,
 	img images.Provider,
 	logger logging.LoggerFactory,
-	httpClientConfiguration http.ClientConfiguration,
 	newEmailSender func(n receivers.Metadata) (receivers.EmailSender, error),
 	wrapNotifier WrapNotifierFunc,
 	orgID int64,
 	version string,
+	httpClientOptions ...http.ClientOption,
 ) ([]*Integration, error) {
 	type notificationChannel interface {
 		notify.Notifier
@@ -66,8 +66,8 @@ func BuildReceiverIntegrations(
 			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name)
 			integrations = append(integrations, i)
 		}
-		nw = func(cfg receivers.Metadata) receivers.WebhookSender {
-			return http.NewClient(logger("ngalert.notifier."+cfg.Type+".client", "notifierUID", cfg.UID), httpClientConfiguration)
+		nw = func(cfg receivers.Metadata) *http.Client {
+			return http.NewClient(logger("ngalert.notifier."+cfg.Type+".client", "notifierUID", cfg.UID), httpClientOptions...)
 		}
 	)
 	// Range through each notification channel in the receiver and create an integration for it.

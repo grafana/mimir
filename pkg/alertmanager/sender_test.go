@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
+	util_net "github.com/grafana/mimir/pkg/util/net"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
@@ -27,7 +28,7 @@ func TestSendWebhook(t *testing.T) {
 		got = r
 		w.WriteHeader(http.StatusOK)
 	}))
-	s := alertingHttp.NewClient(alertingLogging.FakeLogger{}, alertingHttp.ClientConfiguration{UserAgent: version.UserAgent()})
+	s := alertingHttp.NewClient(alertingLogging.FakeLogger{}, alertingHttp.WithUserAgent(version.UserAgent()))
 
 	// The method should be either POST or PUT.
 	cmd := alertingReceivers.SendWebhookSettings{
@@ -92,4 +93,17 @@ func TestSendWebhook(t *testing.T) {
 		URL: server.URL + "/error",
 	}
 	require.Error(t, s.SendWebhook(context.Background(), &cmd))
+
+	// Firewall dialer should prevent local connections.
+	limits := &mockAlertManagerLimits{
+		receiversBlockPrivateAddresses: true,
+	}
+	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider("test", limits))
+	cmd = alertingReceivers.SendWebhookSettings{
+		URL: server.URL,
+	}
+	s = alertingHttp.NewClient(alertingLogging.FakeLogger{}, alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
+	err := s.SendWebhook(context.Background(), &cmd)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "blocked address")
 }
