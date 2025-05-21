@@ -21,7 +21,7 @@ import (
 
 const (
 	ParquetConversionMarkFileName = "parquet-conversion-mark.json"
-	CurrentVersion                = 6
+	CurrentVersion                = 1
 )
 
 type ConversionMark struct {
