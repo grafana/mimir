@@ -148,7 +148,7 @@ type Config struct {
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
-	ParquetConverter    parquetconverter.Config                    `yaml:"parquet_converter"`
+	ParquetConverter    parquetconverter.Config                    `yaml:"parquet_converter" category:"experimental"`
 
 	Common CommonConfig `yaml:"common"`
 
