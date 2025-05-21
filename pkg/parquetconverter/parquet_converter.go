@@ -12,7 +12,6 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,7 +21,6 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
@@ -233,60 +231,84 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			return errors.Wrap(err, "parquet-converter subservice failed")
 
 		case <-convertBlocksTicker.C:
-			u, err := c.discoverUsers(ctx)
+			users, err := c.discoverUsers(ctx)
 			if err != nil {
 				level.Error(c.logger).Log("msg", "error scanning users", "err", err)
 				return err
 			}
 
-			for _, u := range u {
+			for _, u := range users {
 				if !c.Cfg.allowedTenants.IsAllowed(u) {
 					continue
 				}
+				ulogger := util_log.WithUserID(u, c.logger)
 				uBucket := bucket.NewUserBucketClient(u, c.bucket, c.limits)
 
-				idx, err := c.loader.GetIndex(ctx, u)
+				fetcher, err := block.NewMetaFetcher(
+					ulogger,
+					20,
+					uBucket,
+					c.metaSyncDirForUser(u),
+					prometheus.NewRegistry(), // TODO: we are discarding metrics for now
+					[]block.MetadataFilter{},
+					nil, // TODO: No Meta cache for now
+					0,   // No lookback limit, we take all blocks
+				)
 				if err != nil {
-					level.Error(c.logger).Log("msg", "error loading index", "err", err)
-					break
+					level.Error(ulogger).Log("msg", "error creating meta fetcher", "err", err)
+					continue
 				}
-				level.Info(c.logger).Log("msg", "loaded index", "user", u, "totalBlocks", len(idx.Blocks), "deleteBlocks", len(idx.BlockDeletionMarks))
 
-				for {
+				metas, _, err := fetcher.Fetch(ctx)
+				if err != nil {
+					level.Error(ulogger).Log("msg", "error fetching metas", "err", err)
+					continue
+				}
+
+				for _, m := range metas {
 					if ctx.Err() != nil {
 						return ctx.Err()
 					}
 
-					level.Info(c.logger).Log("msg", "scanning User", "user", u)
-
-					ownedBlocks, remainingBlocks := c.findNextBlockToConvert(ctx, uBucket, idx)
-					if len(ownedBlocks) == 0 {
-						level.Info(c.logger).Log("msg", "no blocks to convert found", "remainingBlocks", remainingBlocks)
-						break
+					ok, err := c.ownBlock(m.ULID.String())
+					if err != nil {
+						level.Error(ulogger).Log("msg", "error checking if block is owned", "err", err)
+						continue
 					}
-
-					b := ownedBlocks[0]
-
-					if err := os.RemoveAll(c.rootDir()); err != nil {
-						level.Error(c.logger).Log("msg", "failed to remove conversion work directory", "path", c.rootDir(), "err", err)
-					}
-
-					bdir := filepath.Join(c.dirForUser(u), b.ID.String())
-					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "ownedBlocks", len(ownedBlocks), "remainingBlocks", remainingBlocks)
-					if err := block.Download(ctx, c.logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
-						level.Error(c.logger).Log("msg", "error downloading block", "err", err)
+					if !ok {
 						continue
 					}
 
-					err := convertBlock(ctx, b, bdir, uBucket, c.logger)
+					marker, err := ReadCompactMark(ctx, m.ULID, uBucket, ulogger)
 					if err != nil {
-						level.Error(c.logger).Log("msg", "failed to convert block", "block", b.String(), "err", err)
-					} else {
-						level.Info(c.logger).Log("msg", "converted block", "block", b.String())
+						level.Error(ulogger).Log("msg", "failed to read compact mark, skipping", "err", err, "block", m.ULID.String())
+						continue
 					}
-					err = WriteCompactMark(ctx, b.ID, uBucket)
+
+					if marker.Version == CurrentVersion {
+						continue
+					}
+
+					if err := os.RemoveAll(c.rootDir()); err != nil {
+						level.Error(ulogger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+					}
+
+					bdir := filepath.Join(c.dirForUser(u), m.ULID.String())
+					level.Info(ulogger).Log("msg", "downloading block", "block", m.ULID.String(), "maxTime", m.MaxTime)
+					if err := block.Download(ctx, ulogger, uBucket, m.ULID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
+						level.Error(ulogger).Log("msg", "error downloading block", "err", err)
+						continue
+					}
+
+					err = convertBlock(ctx, m, bdir, uBucket, ulogger)
 					if err != nil {
-						level.Error(c.logger).Log("msg", "failed to write compact mark", "block", b.String(), "err", err)
+						level.Error(ulogger).Log("msg", "failed to convert block", "block", m.ULID.String(), "err", err)
+					} else {
+						level.Info(ulogger).Log("msg", "converted block", "block", m.ULID.String())
+					}
+					err = WriteCompactMark(ctx, m.ULID, uBucket)
+					if err != nil {
+						level.Error(ulogger).Log("msg", "failed to write compact mark", "block", m.ULID.String(), "err", err)
 					}
 				}
 			}
@@ -302,45 +324,6 @@ func (c *ParquetConverter) stopping(_ error) error {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
 	}
 	return nil
-}
-
-func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index) (owned []*bucketindex.Block, remaining int) {
-	deleted := map[ulid.ULID]struct{}{}
-	owned = make([]*bucketindex.Block, 0, len(idx.Blocks))
-
-	for _, b := range idx.BlockDeletionMarks {
-		deleted[b.ID] = struct{}{}
-	}
-
-	for _, b := range idx.Blocks {
-		if _, ok := deleted[b.ID]; ok {
-			continue
-		}
-
-		remaining++
-
-		if ok, err := c.own(b.ID.String()); err != nil || !ok {
-			continue
-		}
-
-		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
-		if err != nil {
-			level.Error(c.logger).Log("msg", "failed to read compact mark, skipping", "err", err, "block", b.ID.String())
-			continue
-		}
-
-		if marker.Version == CurrentVersion {
-			continue
-		}
-
-		owned = append(owned, b)
-	}
-
-	sort.Slice(owned, func(i, j int) bool {
-		return owned[i].MinTime > owned[j].MinTime
-	})
-
-	return owned, remaining
 }
 
 func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
@@ -364,12 +347,21 @@ func (c *ParquetConverter) rootDir() string {
 	return filepath.Join(c.Cfg.DataDir, "convert")
 }
 
-func (c *ParquetConverter) own(id string) (bool, error) {
+const metaPrefix = "parq-conv-meta-"
+
+// metaSyncDirForUser returns directory to store cached meta files. The fetcher
+// stores cached metas in the "meta-syncer/" sub directory, but we prefix it
+// with "parq-conv-meta-" in order to guarantee no clashing with the
+// directory used by the Thanos Syncer or Compactor, whatever is the user ID.
+func (c *ParquetConverter) metaSyncDirForUser(userID string) string {
+	return filepath.Join(c.Cfg.DataDir, metaPrefix+userID)
+
+}
+
+func (c *ParquetConverter) ownBlock(id string) (bool, error) {
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(id))
-	userHash := hasher.Sum32()
-
-	rs, err := c.ring.Get(userHash, RingOp, nil, nil, nil)
+	rs, err := c.ring.Get(hasher.Sum32(), RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}
@@ -381,7 +373,7 @@ func (c *ParquetConverter) own(id string) (bool, error) {
 	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
 }
 
-func convertBlock(ctx context.Context, bucketIdxBlock *bucketindex.Block, localBlockDir string, bkt objstore.Bucket, logger log.Logger) (err error) {
+func convertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) (err error) {
 	tsdbBlock, err := tsdb.OpenBlock(
 		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
 	)
@@ -392,8 +384,8 @@ func convertBlock(ctx context.Context, bucketIdxBlock *bucketindex.Block, localB
 	_, err = convert.ConvertTSDBBlock(
 		ctx,
 		bkt,
-		bucketIdxBlock.MinTime,
-		bucketIdxBlock.MaxTime,
+		meta.MinTime,
+		meta.MaxTime,
 		[]convert.Convertible{tsdbBlock},
 	)
 	return err
