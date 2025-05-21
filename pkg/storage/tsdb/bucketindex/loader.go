@@ -7,7 +7,6 @@ package bucketindex
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 )
 
 type LoaderConfig struct {
-	ExtraMetricsPrefix    string
 	CheckInterval         time.Duration
 	UpdateOnStaleInterval time.Duration
 	UpdateOnErrorInterval time.Duration
@@ -63,22 +61,22 @@ func NewLoader(cfg LoaderConfig, bucketClient objstore.Bucket, cfgProvider bucke
 		indexes:     map[string]*cachedIndex{},
 
 		loadAttempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("cortex_%sbucket_index_loads_total", cfg.ExtraMetricsPrefix),
+			Name: "cortex_bucket_index_loads_total",
 			Help: "Total number of bucket index loading attempts.",
 		}),
 		loadFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: fmt.Sprintf("cortex_%sbucket_index_load_failures_total", cfg.ExtraMetricsPrefix),
+			Name: "cortex_bucket_index_load_failures_total",
 			Help: "Total number of bucket index loading failures.",
 		}),
 		loadDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    fmt.Sprintf("cortex_%sbucket_index_load_duration_seconds", cfg.ExtraMetricsPrefix),
+			Name:    "cortex_bucket_index_load_duration_seconds",
 			Help:    "Duration of the a single bucket index loading operation in seconds.",
 			Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 1, 10},
 		}),
 	}
 
 	l.loaded = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: fmt.Sprintf("cortex_%sbucket_index_loaded", cfg.ExtraMetricsPrefix),
+		Name: "cortex_bucket_index_loaded",
 		Help: "Number of bucket indexes currently loaded in-memory.",
 	}, l.countLoadedIndexesMetric)
 
