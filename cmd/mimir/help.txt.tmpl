@@ -544,7 +544,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -parquet-converter.data-dir string
-    	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-parquet-converter/")
+    	Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts. (default "./data-parquet-converter/")
   -parquet-converter.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -parquet-converter.ring.etcd.endpoints string

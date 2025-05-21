@@ -19805,7 +19805,7 @@
           "kind": "field",
           "name": "enabled_tenants",
           "required": false,
-          "desc": "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be compacted. Subject to sharding.",
+          "desc": "Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be converted. Subject to sharding.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "parquet-converter.enabled-tenants",
@@ -19827,22 +19827,11 @@
           "kind": "field",
           "name": "data_dir",
           "required": false,
-          "desc": "Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts.",
+          "desc": "Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts.",
           "fieldValue": null,
           "fieldDefaultValue": "./data-parquet-converter/",
           "fieldFlag": "parquet-converter.data-dir",
           "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "block_ranges",
-          "required": false,
-          "desc": "List of conversion time ranges.",
-          "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldFlag": "parquet-converter.block-ranges",
-          "fieldType": "list of durations",
-          "fieldCategory": "advanced"
         },
         {
           "kind": "block",
