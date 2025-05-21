@@ -289,9 +289,9 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 
 					level.Info(c.logger).Log("msg", "scanning User", "user", u)
 
-					ownedBlocks, totalBlocks := c.findNextBlockToConvert(ctx, uBucket, idx, pIdx)
+					ownedBlocks, remainingBlocks := c.findNextBlockToConvert(ctx, uBucket, idx, pIdx)
 					if len(ownedBlocks) == 0 {
-						level.Info(c.logger).Log("msg", "no owned blocks to convert", "numBlocks", len(pIdx.Blocks), "totalBlocks", totalBlocks)
+						level.Info(c.logger).Log("msg", "no blocks to convert found", "numBlocks", len(pIdx.Blocks), "remainingBlocks", remainingBlocks)
 						break
 					}
 
@@ -301,7 +301,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						level.Error(c.logger).Log("msg", "failed to remove conversion work directory", "path", c.rootDir(), "err", err)
 					}
 					bdir := filepath.Join(c.dirForUser(u), b.ID.String())
-					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "totalBlocks", totalBlocks)
+					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "remainingBlocks", remainingBlocks)
 					if err := block.Download(ctx, c.logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
 						level.Error(c.logger).Log("msg", "error downloading block", "err", err)
 						continue
@@ -417,10 +417,9 @@ func (c *ParquetConverter) removeDeletedBlocks(idx *bucketindex.Index, pIdx *buc
 //	}
 //}
 
-func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) ([]*bucketindex.Block, int) {
+func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket objstore.InstrumentedBucket, idx *bucketindex.Index, pIdx *bucketindex.ParquetIndex) (owned []*bucketindex.Block, remaining int) {
 	deleted := map[ulid.ULID]struct{}{}
-	result := make([]*bucketindex.Block, 0, len(idx.Blocks))
-	totalBlocks := 0
+	owned = make([]*bucketindex.Block, 0, len(idx.Blocks))
 
 	for _, b := range idx.BlockDeletionMarks {
 		deleted[b.ID] = struct{}{}
@@ -435,26 +434,30 @@ func (c *ParquetConverter) findNextBlockToConvert(ctx context.Context, uBucket o
 			continue
 		}
 
-		totalBlocks++
+		remaining++
 
 		if ok, err := c.own(b.ID.String()); err != nil || !ok {
 			continue
 		}
 
 		marker, err := ReadCompactMark(ctx, b.ID, uBucket, c.logger)
-
-		if err == nil && marker.Version == CurrentVersion {
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to read compact mark, skipping", "err", err, "block", b.ID.String())
 			continue
 		}
 
-		result = append(result, b)
+		if marker.Version == CurrentVersion {
+			continue
+		}
+
+		owned = append(owned, b)
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].MinTime > result[j].MinTime
+	sort.Slice(owned, func(i, j int) bool {
+		return owned[i].MinTime > owned[j].MinTime
 	})
 
-	return result, totalBlocks
+	return owned, remaining
 }
 
 func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
