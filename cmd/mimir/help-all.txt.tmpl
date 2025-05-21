@@ -2111,6 +2111,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway. (default 5m0s)
   -overrides-exporter.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
+  -parquet-converter.compaction-interval duration
+    	The frequency at which the conversion runs (default 1m0s)
   -parquet-converter.data-dir string
     	Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts. (default "./data-parquet-converter/")
   -parquet-converter.disabled-tenants comma-separated-list-of-strings

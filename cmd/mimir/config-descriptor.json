@@ -19834,6 +19834,16 @@
           "fieldType": "string"
         },
         {
+          "kind": "field",
+          "name": "conversion_interval",
+          "required": false,
+          "desc": "The frequency at which the conversion runs",
+          "fieldValue": null,
+          "fieldDefaultValue": 60000000000,
+          "fieldFlag": "parquet-converter.compaction-interval",
+          "fieldType": "duration"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,
