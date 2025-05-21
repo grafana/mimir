@@ -543,7 +543,7 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -overrides-exporter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -parquet-converter.compaction-interval duration
+  -parquet-converter.conversion-interval duration
     	The frequency at which the conversion runs (default 1m0s)
   -parquet-converter.data-dir string
     	Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts. (default "./data-parquet-converter/")
