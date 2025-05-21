@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -74,7 +73,6 @@ type ParquetConverter struct {
 
 	bucket objstore.InstrumentedBucket // TODO (jesus.vazquez) Compactor is using objstore.Bucket instead
 
-	loader     *bucketindex.Loader
 	Cfg        Config
 	registerer prometheus.Registerer
 	logger     log.Logger
@@ -84,10 +82,6 @@ type ParquetConverter struct {
 	ring                   *ring.Ring
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
-
-	//Subservices manager.
-	subservices        *services.Manager
-	subservicesWatcher *services.FailureWatcher
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -97,31 +91,12 @@ func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, 
 	if err != nil {
 		return nil, err
 	}
-	indexLoaderConfig := bucketindex.LoaderConfig{
-		ExtraMetricsPrefix:    "parquet_",
-		CheckInterval:         time.Minute,
-		UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
-		UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
-		IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
-	}
-
-	loader := bucketindex.NewLoader(indexLoaderConfig, bucketClient, limits, logger, registerer)
-
-	manager, err := services.NewManager(loader)
-	if err != nil {
-		return nil, errors.Wrap(err, "register parquet-converter subservices")
-	}
-
 	c := &ParquetConverter{
 		Cfg:        cfg,
 		bucket:     bucketClient,
-		loader:     loader,
 		logger:     log.With(logger, "component", "parquet-converter"),
 		registerer: registerer,
 		limits:     limits,
-
-		subservices:        manager,
-		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -180,12 +155,6 @@ func (c *ParquetConverter) starting(ctx context.Context) error {
 		}
 	}
 
-	c.subservicesWatcher.WatchManager(c.subservices)
-
-	if err := services.StartManagerAndAwaitHealthy(context.Background(), c.subservices); err != nil {
-		return errors.Wrap(err, "unable to start parquet-converter subservices")
-	}
-
 	return nil
 }
 
@@ -227,8 +196,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			return nil
 		case err := <-c.ringSubservicesWatcher.Chan():
 			return errors.Wrap(err, "parquet-converter ring subservice failed")
-		case err := <-c.subservicesWatcher.Chan():
-			return errors.Wrap(err, "parquet-converter subservice failed")
 
 		case <-convertBlocksTicker.C:
 			users, err := c.discoverUsers(ctx)
@@ -319,7 +286,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 func (c *ParquetConverter) stopping(_ error) error {
 	ctx := context.Background()
 
-	services.StopAndAwaitTerminated(ctx, c.loader) //nolint:errcheck
 	if c.ringSubservices != nil {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
 	}
