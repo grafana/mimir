@@ -53,7 +53,7 @@ func ReadCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.Instrum
 	return &marker, err
 }
 
-func WriteCompactMark(ctx context.Context, id ulid.ULID, uploader Uploader) error {
+func WriteCompactMark(ctx context.Context, id ulid.ULID, userBkt objstore.InstrumentedBucket) error {
 	marker := CompactionMark{
 		Version: CurrentVersion,
 	}
@@ -62,5 +62,5 @@ func WriteCompactMark(ctx context.Context, id ulid.ULID, uploader Uploader) erro
 	if err != nil {
 		return err
 	}
-	return uploader.Upload(ctx, markerPath, bytes.NewReader(b))
+	return userBkt.Upload(ctx, markerPath, bytes.NewReader(b))
 }
