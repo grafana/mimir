@@ -331,7 +331,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
-	//TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
+	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
 }
 
@@ -715,21 +715,22 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		return nil, err
 	}
 
-	integrations, err := alertingNotify.BuildReceiverIntegrations(
+	emailSender, err := alertingReceivers.NewEmailSender(emailCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	integrations := alertingNotify.BuildReceiverIntegrations(
 		rCfg,
 		tmpl,
 		&images.URLProvider{},
-		newLoggerFactory(logger),
-		alertingReceivers.NewEmailSenderFactory(emailCfg),
+		logger,
+		emailSender,
 		wrapper,
 		1, // orgID is always 1.
 		version.Version,
 		opts...,
 	)
-	if err != nil {
-		return nil, err
-	}
-
 	return integrations, nil
 }
 

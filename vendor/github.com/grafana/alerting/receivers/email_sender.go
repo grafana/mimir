@@ -44,26 +44,24 @@ type defaultEmailSender struct {
 	dialFn func(*defaultEmailSender) (gomail.SendCloser, error)
 }
 
-// NewEmailSenderFactory takes a configuration and returns a new EmailSender factory function.
-func NewEmailSenderFactory(cfg EmailSenderConfig) func(Metadata) (EmailSender, error) {
-	return func(_ Metadata) (EmailSender, error) {
-		tmpl, err := template.New("templates").
-			Funcs(template.FuncMap{
-				"Subject":                 subjectTemplateFunc,
-				"__dangerouslyInjectHTML": __dangerouslyInjectHTML,
-			}).Funcs(sprig.FuncMap()).
-			ParseFS(defaultEmailTemplate, "templates/*")
-		if err != nil {
-			return nil, err
-		}
-		return &defaultEmailSender{
-			cfg:  cfg,
-			tmpl: tmpl,
-			dialFn: func(s *defaultEmailSender) (gomail.SendCloser, error) {
-				return s.dial()
-			},
-		}, nil
+// NewEmailSender takes a configuration and returns a new EmailSender.
+func NewEmailSender(cfg EmailSenderConfig) (EmailSender, error) {
+	tmpl, err := template.New("templates").
+		Funcs(template.FuncMap{
+			"Subject":                 subjectTemplateFunc,
+			"__dangerouslyInjectHTML": __dangerouslyInjectHTML,
+		}).Funcs(sprig.FuncMap()).
+		ParseFS(defaultEmailTemplate, "templates/*")
+	if err != nil {
+		return nil, err
 	}
+	return &defaultEmailSender{
+		cfg:  cfg,
+		tmpl: tmpl,
+		dialFn: func(s *defaultEmailSender) (gomail.SendCloser, error) {
+			return s.dial()
+		},
+	}, nil
 }
 
 // Message representats an email message.

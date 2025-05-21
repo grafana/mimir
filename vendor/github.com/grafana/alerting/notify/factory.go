@@ -1,14 +1,11 @@
 package notify
 
 import (
-	"fmt"
-
+	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/notify"
-	"github.com/prometheus/alertmanager/types"
 
 	"github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/receivers/alertmanager"
 	"github.com/grafana/alerting/receivers/dinding"
@@ -44,109 +41,95 @@ func BuildReceiverIntegrations(
 	receiver GrafanaReceiverConfig,
 	tmpl *templates.Template,
 	img images.Provider,
-	logger logging.LoggerFactory,
-	newEmailSender func(n receivers.Metadata) (receivers.EmailSender, error),
+	logger log.Logger,
+	emailSender receivers.EmailSender,
 	wrapNotifier WrapNotifierFunc,
 	orgID int64,
 	version string,
 	httpClientOptions ...http.ClientOption,
-) ([]*Integration, error) {
+) []*Integration {
 	type notificationChannel interface {
 		notify.Notifier
 		notify.ResolvedSender
 	}
 	var (
 		integrations []*Integration
-		errors       types.MultiError
-		nl           = func(meta receivers.Metadata) logging.Logger {
-			return logger("ngalert.notifier."+meta.Type, "notifierUID", meta.UID)
-		}
-		ci = func(idx int, cfg receivers.Metadata, n notificationChannel) {
+		ci           = func(idx int, cfg receivers.Metadata, n notificationChannel) {
 			notify := wrapNotifier(cfg.Name, n)
 			i := NewIntegration(notify, n, cfg.Type, idx, cfg.Name)
 			integrations = append(integrations, i)
 		}
-		nw = func(cfg receivers.Metadata) *http.Client {
-			return http.NewClient(logger("ngalert.notifier."+cfg.Type+".client", "notifierUID", cfg.UID), httpClientOptions...)
-		}
+		cli = http.NewClient(httpClientOptions...)
 	)
 	// Range through each notification channel in the receiver and create an integration for it.
 	for i, cfg := range receiver.AlertmanagerConfigs {
-		ci(i, cfg.Metadata, alertmanager.New(cfg.Settings, cfg.Metadata, img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, alertmanager.New(cfg.Settings, cfg.Metadata, img, logger))
 	}
 	for i, cfg := range receiver.DingdingConfigs {
-		ci(i, cfg.Metadata, dinding.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, dinding.New(cfg.Settings, cfg.Metadata, tmpl, cli, logger))
 	}
 	for i, cfg := range receiver.DiscordConfigs {
-		ci(i, cfg.Metadata, discord.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
+		ci(i, cfg.Metadata, discord.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, version))
 	}
 	for i, cfg := range receiver.EmailConfigs {
-		mailCli, e := newEmailSender(cfg.Metadata)
-		if e != nil {
-			errors.Add(fmt.Errorf("unable to build email client for %s notifier %s (UID: %s): %w ", cfg.Type, cfg.Name, cfg.UID, e))
-			continue
-		}
-		ci(i, cfg.Metadata, email.New(cfg.Settings, cfg.Metadata, tmpl, mailCli, img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, email.New(cfg.Settings, cfg.Metadata, tmpl, emailSender, img, logger))
 	}
 	for i, cfg := range receiver.GooglechatConfigs {
-		ci(i, cfg.Metadata, googlechat.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
+		ci(i, cfg.Metadata, googlechat.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, version))
 	}
 	for i, cfg := range receiver.JiraConfigs {
-		ci(i, cfg.Metadata, jira.New(cfg.Settings, cfg.Metadata, tmpl, http.NewForkedSender(nw(cfg.Metadata)), nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, jira.New(cfg.Settings, cfg.Metadata, tmpl, http.NewForkedSender(cli), logger))
 	}
 	for i, cfg := range receiver.KafkaConfigs {
-		ci(i, cfg.Metadata, kafka.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, kafka.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.LineConfigs {
-		ci(i, cfg.Metadata, line.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, line.New(cfg.Settings, cfg.Metadata, tmpl, cli, logger))
 	}
 	for i, cfg := range receiver.MqttConfigs {
-		ci(i, cfg.Metadata, mqtt.New(cfg.Settings, cfg.Metadata, tmpl, nl(cfg.Metadata), nil))
+		ci(i, cfg.Metadata, mqtt.New(cfg.Settings, cfg.Metadata, tmpl, logger, nil))
 	}
 	for i, cfg := range receiver.OnCallConfigs {
-		ci(i, cfg.Metadata, oncall.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), orgID))
+		ci(i, cfg.Metadata, oncall.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, orgID))
 	}
 	for i, cfg := range receiver.OpsgenieConfigs {
-		ci(i, cfg.Metadata, opsgenie.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, opsgenie.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.PagerdutyConfigs {
-		ci(i, cfg.Metadata, pagerduty.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, pagerduty.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.PushoverConfigs {
-		ci(i, cfg.Metadata, pushover.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, pushover.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.SensugoConfigs {
-		ci(i, cfg.Metadata, sensugo.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, sensugo.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.SNSConfigs {
-		ci(i, cfg.Metadata, sns.New(cfg.Settings, cfg.Metadata, tmpl, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, sns.New(cfg.Settings, cfg.Metadata, tmpl, logger))
 	}
 	for i, cfg := range receiver.SlackConfigs {
-		ci(i, cfg.Metadata, slack.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
+		ci(i, cfg.Metadata, slack.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, version))
 	}
 	for i, cfg := range receiver.TeamsConfigs {
-		ci(i, cfg.Metadata, teams.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, teams.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.TelegramConfigs {
-		ci(i, cfg.Metadata, telegram.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, telegram.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.ThreemaConfigs {
-		ci(i, cfg.Metadata, threema.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, threema.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger))
 	}
 	for i, cfg := range receiver.VictoropsConfigs {
-		ci(i, cfg.Metadata, victorops.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
+		ci(i, cfg.Metadata, victorops.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, version))
 	}
 	for i, cfg := range receiver.WebhookConfigs {
-		ci(i, cfg.Metadata, webhook.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), orgID))
+		ci(i, cfg.Metadata, webhook.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, orgID))
 	}
 	for i, cfg := range receiver.WecomConfigs {
-		ci(i, cfg.Metadata, wecom.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), nl(cfg.Metadata)))
+		ci(i, cfg.Metadata, wecom.New(cfg.Settings, cfg.Metadata, tmpl, cli, logger))
 	}
 	for i, cfg := range receiver.WebexConfigs {
-		ci(i, cfg.Metadata, webex.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), orgID))
+		ci(i, cfg.Metadata, webex.New(cfg.Settings, cfg.Metadata, tmpl, cli, img, logger, orgID))
 	}
-	if errors.Len() > 0 {
-		return nil, &errors
-	}
-	return integrations, nil
+	return integrations
 }

@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-kit/log"
 	alertingHttp "github.com/grafana/alerting/http"
-	alertingLogging "github.com/grafana/alerting/logging"
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -28,14 +28,14 @@ func TestSendWebhook(t *testing.T) {
 		got = r
 		w.WriteHeader(http.StatusOK)
 	}))
-	s := alertingHttp.NewClient(alertingLogging.FakeLogger{}, alertingHttp.WithUserAgent(version.UserAgent()))
+	s := alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()))
 
 	// The method should be either POST or PUT.
 	cmd := alertingReceivers.SendWebhookSettings{
 		HTTPMethod: http.MethodGet,
 		URL:        server.URL,
 	}
-	require.ErrorIs(t, s.SendWebhook(context.Background(), &cmd), alertingHttp.ErrInvalidMethod)
+	require.ErrorIs(t, s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd), alertingHttp.ErrInvalidMethod)
 
 	// If the method is not specified, it should default to POST.
 	// Content type should default to application/json.
@@ -48,7 +48,7 @@ func TestSendWebhook(t *testing.T) {
 		URL:        server.URL,
 		HTTPHeader: testHeaders,
 	}
-	require.NoError(t, s.SendWebhook(context.Background(), &cmd))
+	require.NoError(t, s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd))
 	require.Equal(t, http.MethodPost, got.Method)
 	require.Equal(t, "application/json", got.Header.Get("Content-Type"))
 
@@ -73,7 +73,7 @@ func TestSendWebhook(t *testing.T) {
 		Password: testPassword,
 	}
 
-	require.NoError(t, s.SendWebhook(context.Background(), &cmd))
+	require.NoError(t, s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd))
 	user, password, ok := got.BasicAuth()
 	require.True(t, ok)
 	require.Equal(t, testUser, user)
@@ -86,13 +86,13 @@ func TestSendWebhook(t *testing.T) {
 		Validation: func([]byte, int) error { return testErr },
 	}
 
-	require.ErrorIs(t, s.SendWebhook(context.Background(), &cmd), testErr)
+	require.ErrorIs(t, s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd), testErr)
 
 	// A non-200 status code should cause an error.
 	cmd = alertingReceivers.SendWebhookSettings{
 		URL: server.URL + "/error",
 	}
-	require.Error(t, s.SendWebhook(context.Background(), &cmd))
+	require.Error(t, s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd))
 
 	// Firewall dialer should prevent local connections.
 	limits := &mockAlertManagerLimits{
@@ -102,8 +102,8 @@ func TestSendWebhook(t *testing.T) {
 	cmd = alertingReceivers.SendWebhookSettings{
 		URL: server.URL,
 	}
-	s = alertingHttp.NewClient(alertingLogging.FakeLogger{}, alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
-	err := s.SendWebhook(context.Background(), &cmd)
+	s = alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
+	err := s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "blocked address")
 }
