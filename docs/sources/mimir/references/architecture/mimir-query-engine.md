@@ -72,7 +72,7 @@ has no impact if MQE is disabled or if the query falls back to Prometheus' engin
 
 The following are known differences between MQE and Prometheus' engine:
 
-### Binary operations that produces no series
+### Binary operations that produce no series
 
 If MQE can determine that a binary operation such as `+`, `-`, `/` or `and` produce no series
 based on the series labels on both sides, it skips evaluating both sides.
