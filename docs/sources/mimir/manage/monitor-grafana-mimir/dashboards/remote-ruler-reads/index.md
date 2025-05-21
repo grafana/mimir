@@ -17,6 +17,12 @@ The Remote ruler reads dashboard shows health metrics for the ruler read path wh
 
 The dashboard isolates each service on the ruler read path into its own section and displays the order in which a read request flows.
 
+Use this dashboard for the following use cases:
+
+- Isolate each service involved in the ruler's read path, such as the ruler-query-frontend, ruler-query-scheduler, and ruler-querier, to identify where delays or failures are occurring.
+- Identify specific services that are experiencing errors or performance issues.
+- Monitor performance of the ruler's read operations to assess whether the remote evaluation mode is functioning optimally.
+
 ## Example
 
 The following example shows a Remote ruler reads dashboard from a demo cluster.
