@@ -1066,7 +1066,7 @@ groups:
                 -
                 sum by (cluster, namespace, pod) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[5m]))
               )
-            ) * 100) > 12
+            ) * 100) > 10
 
             # Alert only for namespaces with Mimir clusters.
             and (count by (cluster, namespace) (mimir_build_info) > 0)
