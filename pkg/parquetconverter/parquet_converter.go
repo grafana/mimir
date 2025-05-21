@@ -30,7 +30,6 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/parquet/convert"
-	"github.com/grafana/mimir/pkg/parquet/schema"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -300,24 +299,19 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					if err := os.RemoveAll(c.rootDir()); err != nil {
 						level.Error(c.logger).Log("msg", "failed to remove conversion work directory", "path", c.rootDir(), "err", err)
 					}
+
 					bdir := filepath.Join(c.dirForUser(u), b.ID.String())
-					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "dir", bdir, "ownedBlocks", len(ownedBlocks), "remainingBlocks", remainingBlocks)
+					level.Info(c.logger).Log("msg", "downloading block", "block", b.ID.String(), "maxTime", b.MaxTime, "ownedBlocks", len(ownedBlocks), "remainingBlocks", remainingBlocks)
 					if err := block.Download(ctx, c.logger, uBucket, b.ID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
 						level.Error(c.logger).Log("msg", "error downloading block", "err", err)
 						continue
 					}
 
-					labelsFileName, chunksFileName, err := TSDBBlockToParquetDualFile(
-						ctx, b, bdir, uBucket, c.logger,
-					)
+					err := convertBlock(ctx, b, bdir, uBucket, c.logger)
 					if err != nil {
-						level.Error(c.logger).Log("msg", "failed to convert block to dual-file parquet format", "block", b.String(), "err", err)
+						level.Error(c.logger).Log("msg", "failed to convert block", "block", b.String(), "err", err)
 					} else {
-						level.Info(c.logger).Log(
-							"msg", "converted block to to dual-file parquet format",
-							"labelsFile", labelsFileName,
-							"chunksFile", chunksFileName,
-						)
+						level.Info(c.logger).Log("msg", "converted block", "block", b.String())
 					}
 
 					pIdx.Blocks[b.ID] = b
@@ -521,21 +515,18 @@ func (i *InDiskUploader) Upload(ctx context.Context, path string, r io.Reader) e
 	return err
 }
 
-const dualFileBlockName = "block.parquet.prom-common"
-
-func TSDBBlockToParquetDualFile(
+func convertBlock(
 	ctx context.Context,
 	bucketIdxBlock *bucketindex.Block,
 	localBlockDir string,
 	bkt objstore.Bucket,
 	logger log.Logger,
-) (labelsFileName, chunksFileName string, err error) {
-
+) (err error) {
 	tsdbBlock, err := tsdb.OpenBlock(
 		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
 	)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
 	_, err = convert.ConvertTSDBBlock(
@@ -545,11 +536,5 @@ func TSDBBlockToParquetDualFile(
 		bucketIdxBlock.MaxTime,
 		[]convert.Convertible{tsdbBlock},
 	)
-	if err != nil {
-		return "", "", err
-	}
-
-	labelsFileName = schema.LabelsPfileNameForShard(dualFileBlockName, 0)
-	chunksFileName = schema.ChunksPfileNameForShard(dualFileBlockName, 0)
-	return labelsFileName, chunksFileName, nil
+	return err
 }
