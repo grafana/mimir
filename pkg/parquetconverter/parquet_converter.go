@@ -312,6 +312,10 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 					} else {
 						level.Info(c.logger).Log("msg", "converted block", "block", b.String())
 					}
+					err = WriteCompactMark(ctx, b.ID, uBucket)
+					if err != nil {
+						level.Error(c.logger).Log("msg", "failed to write compact mark", "block", b.String(), "err", err)
+					}
 
 					pIdx.Blocks[b.ID] = b
 				}
