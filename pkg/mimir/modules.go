@@ -1306,11 +1306,11 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:                   {Overrides, MemberlistKV},
 		TenantFederation:                 {Queryable},
 
-		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter, ParquetConverter},
+		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		Read:    {QueryFrontend, Querier},
 		Write:   {Distributor, Ingester},
 
-		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor, ParquetConverter},
+		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {
