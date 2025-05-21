@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -492,36 +491,7 @@ func (c *ParquetConverter) own(id string) (bool, error) {
 	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
 }
 
-type Uploader interface {
-	Upload(ctx context.Context, path string, r io.Reader) error
-}
-
-type InDiskUploader struct {
-	Dir string
-}
-
-func (i *InDiskUploader) Upload(ctx context.Context, path string, r io.Reader) error {
-	if err := os.MkdirAll(filepath.Join(i.Dir, filepath.Dir(path)), os.ModePerm); err != nil {
-		return err
-	}
-
-	f, err := os.Create(filepath.Join(i.Dir, path))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, r)
-	return err
-}
-
-func convertBlock(
-	ctx context.Context,
-	bucketIdxBlock *bucketindex.Block,
-	localBlockDir string,
-	bkt objstore.Bucket,
-	logger log.Logger,
-) (err error) {
+func convertBlock(ctx context.Context, bucketIdxBlock *bucketindex.Block, localBlockDir string, bkt objstore.Bucket, logger log.Logger) (err error) {
 	tsdbBlock, err := tsdb.OpenBlock(
 		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
 	)
