@@ -202,7 +202,7 @@ func (sn *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 				}
 				return images.ErrImagesDone
 			}
-			comment := initialCommentForImage(data.Alerts[index])
+			title, text := initialCommentForImage(data.Alerts[index])
 			// settings.Recipient can be either a channel name or ID. However, file upload v2 requires channel ID only.
 			// chat.postMessage API returns channel ID in slackResp.Channel, so we use it when it exists as a more
 			// reliable source of the channel ID.
@@ -210,7 +210,49 @@ func (sn *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 			if slackResp.Channel != "" {
 				channelID = slackResp.Channel
 			}
-			return sn.uploadImage(ctx, image, channelID, comment, slackResp.Ts, l)
+			err := sn.uploadImage(ctx, image, channelID, fmt.Sprintf("%s, %s", title, text), slackResp.Ts, l)
+			if err == nil {
+				return nil
+			}
+
+			// Failed to upload image. This could either be due to the raw image not being available or an error
+			// in the upload process. If the image provider doesn't support uploading we attempt to fallback to
+			// a normal reply with attached image URL.
+			if !errors.Is(err, images.ErrImageUploadNotSupported) {
+				return err
+			}
+			if image.URL == "" {
+				return nil
+			}
+			var tmplErr error
+			tmpl, _ := templates.TmplText(ctx, sn.tmpl, alerts, l, &tmplErr)
+			imageMessage := &slackMessage{
+				Channel:   channelID,
+				Username:  m.Username,
+				IconEmoji: m.IconEmoji,
+				IconURL:   m.IconURL,
+				ThreadTs:  slackResp.Ts,
+				Attachments: []attachment{
+					{
+						Color:      tmpl(templates.DefaultMessageColor),
+						Title:      title,
+						Fallback:   text,
+						Footer:     "Grafana v" + sn.appVersion,
+						FooterIcon: footerIconURL,
+						Ts:         time.Now().Unix(),
+						ImageURL:   image.URL,
+						Text:       text,
+					},
+				},
+			}
+			if tmplErr != nil {
+				level.Warn(l).Log("msg", "failed to template Slack message color", "err", tmplErr.Error())
+			}
+
+			if _, err := sn.sendSlackMessage(ctx, imageMessage, l); err != nil {
+				return fmt.Errorf("failed to send fallback image message: %w", err)
+			}
+			return nil
 		}, alerts...); err != nil {
 			// Do not return an error here as we might have exceeded the rate limit for uploading files
 			level.Error(l).Log("msg", "Failed to upload image", "err", err)
@@ -508,30 +550,30 @@ func (sn *Notifier) SendResolved() bool {
 //	Resolved|Firing: AlertName, Labels: A=B, C=D
 //
 // where Resolved|Firing and Labels is in bold text.
-func initialCommentForImage(alert templates.ExtendedAlert) string {
-	sb := strings.Builder{}
+func initialCommentForImage(alert templates.ExtendedAlert) (string, string) {
+	titleBuilder := strings.Builder{}
 
 	if alert.Status == string(model.AlertResolved) {
-		sb.WriteString("*Resolved*:")
+		titleBuilder.WriteString("*Resolved*:")
 	} else {
-		sb.WriteString("*Firing*:")
+		titleBuilder.WriteString("*Firing*:")
 	}
 
-	sb.WriteString(" ")
+	titleBuilder.WriteString(" ")
 	if alert.Labels != nil {
-		sb.WriteString(string(alert.Labels[model.AlertNameLabel]))
+		titleBuilder.WriteString(string(alert.Labels[model.AlertNameLabel]))
 	}
-	sb.WriteString(", ")
 
-	sb.WriteString("*Labels*: ")
+	textBuilder := strings.Builder{}
+	textBuilder.WriteString("*Labels*: ")
 	if len(alert.Labels) == 0 {
-		sb.WriteString("None")
+		textBuilder.WriteString("None")
 	} else {
 		// Write all labels except the first one, which is the alert name.
-		sb.WriteString(alert.Labels.SortedPairs()[1:].String())
+		textBuilder.WriteString(alert.Labels.SortedPairs()[1:].String())
 	}
 
-	return sb.String()
+	return titleBuilder.String(), textBuilder.String()
 }
 
 func errorForStatusCode(logger log.Logger, statusCode int) error {
