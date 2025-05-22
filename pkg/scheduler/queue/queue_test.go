@@ -351,11 +351,11 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 	// Two queriers connect, allowing us to enqueue requests sharded to only one of the two.
 	querier1Ctx, querier1CtxCancel := context.WithCancelCause(context.Background())
 	querier1Conn := NewUnregisteredQuerierWorkerConn(querier1Ctx, "querier-1")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
+	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier1Conn))
 	querier2Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-2")
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn))
+	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier2Conn))
 
-	// To be registered later to trigger request dispatch
+	// A third querier to be registered later to trigger request dispatch
 	querier3Conn := NewUnregisteredQuerierWorkerConn(context.Background(), "querier-3")
 
 	t.Cleanup(func() {
@@ -364,7 +364,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		// or else StopAndAwaitTerminated will never complete.
 		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
 		queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
 	assertControlFlowError := func(t *testing.T, err error) {
@@ -372,26 +372,31 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		// * ErrQuerierWorkerDisconnected: the waiting conn was crashed or otherwise deregistered but the whole querier is not yet deregistered
 		// * context.Canceled: context cancellation also propagates on waiting conn crash/deregister and races with ErrQuerierWorkerDisconnected
 		// * ErrQuerierShuttingDown: querier has initiated shutdown or all conns deregistered
-		// * ErrStopped: The scheduler has received a shutdown signal and cleared its queue
+		// * ErrStopped: The scheduler has received a shutdown signal and cleared its queue or lost all querier connections.
 		assert.True(t, errors.Is(err, ErrQuerierWorkerDisconnected) || errors.Is(err, context.Canceled) || errors.Is(err, ErrQuerierShuttingDown) || errors.Is(err, ErrStopped))
 	}
 
-	// Enqueue a request from a user which would NOT be assigned to querier-1.
+	// Enqueue requests from a user which would NOT be sharded to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
-	// when there are only one or two queriers in the sorted list of connected queriers
+	// when there are only one or two queriers in the sorted list of connected queriers.
+	//
+	// These will sit in the queue as user-1's sharded querier, querier-2 is not awaiting a request yet.
+	// Two different additional queue dimensions must exist in the queue tree to create the potential panic condition.
 	reqNotShardedToQuerier1 := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-		AdditionalQueueDimensions: randAdditionalQueueDimension(""),
+		AdditionalQueueDimensions: []string{"ingester"},
 	}
-	// This will sit in the queue as querier-2 is not await a request yet,
-	// but we need a request in the queue tree to reach the code path
-	// in QuerierWorkerQueuePriorityAlgo.setup where the panic condition is created
-	// by setting the currentNodeOrderIndex to -1.
-	require.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
+	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
+	reqNotShardedToQuerier1 = &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: []string{"store-gateway"},
+	}
+	assert.NoError(t, queue.SubmitRequestToEnqueue("user-2", reqNotShardedToQuerier1, 1, nil))
 
 	// Querier-1 submits a request to dequeue;
-	// it will not receive anything as the only request in the queue is not sharded to querier-1.
+	// it will not receive anything as the only requests in the queue are not sharded to querier-1.
 	querier1SubmitDequeueReqWG := sync.WaitGroup{}
 	querier1SubmitDequeueReqWG.Add(1)
 	querier1DequeueReq := NewQuerierWorkerDequeueRequest(querier1Conn, FirstTenant())
@@ -403,52 +408,39 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		assertControlFlowError(t, err)
 	}()
 
-	querier1CrashWG := sync.WaitGroup{}
-	querier1CrashWG.Add(1)
-	go func() {
-		defer querier1CrashWG.Done()
-		// Allow time for waiting querier dispatch request to be enqueued internally;
-		// we cannot check the queue length without triggering races but this is more than enough time.
-		time.Sleep(time.Millisecond * 100)
+	// Wait for the waiting dequeue request to be enqueued internally.
+	for queue.waitingDequeueRequestsToDispatchCount.Load() < 1 {
+		time.Sleep(1 * time.Millisecond)
+	}
 
-		// Simulate a crash of querier-1's only worker connection (no graceful shutdown notification).
-		querier1CtxCancel(errors.New("crash"))
-		queue.SubmitUnregisterQuerierWorkerConn(querier1Conn) // normally done in the defers of the grpc loop
-	}()
+	// Simulate a crash of querier-1's only connection, with no graceful shutdown notification from the querier.
+	// The entire querier is not removed until forgetDelay passes, but the individual connection is marked as unregistered.
+	// A waiting dequeue request must have its connection ID set to -1 to complete the potential panic condition.
+	querier1CtxCancel(errors.New("crash"))
+	queue.SubmitUnregisterQuerierWorkerConn(querier1Conn) // normally done in the defers of the grpc loop
+
+	// Wait for the queue to process the de-registration of the querier-1 connection.
+	for queue.connectedQuerierWorkers.Load() > 1 {
+		time.Sleep(1 * time.Millisecond)
+	}
 
 	// Register another querier to trigger a re-shard and ensure we attempt to dispatch the requests.
 	// The queue will first try to dispatch a queue item to its internally-queued waiting dequeue requests.
 	// The first waiting dequeue request in that list is from the crashed and deregistered querier-1 -
 	// This test is to ensure that is handled gracefully.
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier3Conn))
-	querier3SubmitDequeueReqWG := sync.WaitGroup{}
-	querier3SubmitDequeueReqWG.Add(1)
-	go func() {
-		defer querier3SubmitDequeueReqWG.Done()
-		// This blocks until it receives one of the control flow errors;
-		// it will not receive a request as those in the queue are still only sharded to querier-2.
-		_, _, err := queue.AwaitRequestForQuerier(NewQuerierWorkerDequeueRequest(querier3Conn, FirstTenant()))
-		assertControlFlowError(t, err)
-	}()
+	assert.NoError(t, queue.AwaitRegisterQuerierWorkerConn(querier3Conn))
 
-	// Deregister all remaining querier-workers to allow graceful shutdown without needing to clear queue.
-	queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
-	queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
-	// Shut down the queue so we can assert on its waiting dispatch requests without a data race
-	require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
-
-	// The dequeue request should have beeen dropped from the waiting list due to the error.
-	require.Eventually(
+	// The dequeue request should have been dropped from the waiting list
+	// when the queue received an error from the queue broker's dequeueRequestForQuerier.
+	assert.Eventually(
 		t,
-		func() bool { return queue.waitingDequeueRequestsToDispatch.Len() == 0 },
+		func() bool { return queue.waitingDequeueRequestsToDispatchCount.Load() == 0 },
 		testTimeout,
 		1*time.Second,
 	)
 
-	// These should be long gone but ensure we have no hanging goroutines
+	// This should be long gone but ensure we have no hanging goroutines
 	querier1SubmitDequeueReqWG.Wait()
-	querier1CrashWG.Wait()
-	querier3SubmitDequeueReqWG.Wait()
 }
 
 func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T) {
