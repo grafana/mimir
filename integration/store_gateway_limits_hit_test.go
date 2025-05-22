@@ -80,6 +80,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		}
 
 		// Wait until the TSDB head is shipped to storage and removed from the ingester.
+		// We assume that the other two ingesters are doing the same in lockstep.
 		require.NoError(t, ingester1.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ingester_shipper_uploads_total"))
 		require.NoError(t, ingester1.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
 	}
@@ -156,7 +157,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "test")
 			require.NoError(t, err)
 
-			// Verify we cannot successfully query timeseries
+			// Verify we cannot successfully query timeseries because of the series/chunks limit.
 			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1.Add(-time.Second), timeStamp3.Add(time.Second), time.Second)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode, string(rangeResultBody))
