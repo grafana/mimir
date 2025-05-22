@@ -1279,11 +1279,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(errMsg string, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.newValueForTimestampCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonNewValueForTimestamp, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
-					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
+					return newSampleDuplicateTimestampError(errMsg, model.Time(timestamp), labels)
 				})
 			},
 			func(labels []mimirpb.LabelAdapter) {
