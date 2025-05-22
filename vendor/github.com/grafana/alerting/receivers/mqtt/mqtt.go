@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
-	"github.com/grafana/alerting/logging"
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -30,20 +32,18 @@ type message struct {
 
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	tmpl     *templates.Template
 	settings Config
 	client   client
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, logger logging.Logger, cli client) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, logger log.Logger, cli client) *Notifier {
 	if cli == nil {
 		cli = &mqttClient{}
 	}
 
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		tmpl:     template,
 		settings: cfg,
 		client:   cli,
@@ -61,11 +61,12 @@ type mqttMessage struct {
 }
 
 func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	n.log.Debug("Sending an MQTT message", "topic", n.settings.Topic, "qos", n.settings.QoS, "retain", n.settings.Retain)
+	l := n.GetLogger(ctx)
+	level.Debug(l).Log("msg", "Sending an MQTT message", "topic", n.settings.Topic, "qos", n.settings.QoS, "retain", n.settings.Retain)
 
-	msg, err := n.buildMessage(ctx, as...)
+	msg, err := n.buildMessage(ctx, l, as...)
 	if err != nil {
-		n.log.Error("Failed to build MQTT message", "error", err.Error())
+		level.Error(l).Log("msg", "Failed to build MQTT message", "err", err.Error())
 		return false, err
 	}
 
@@ -74,25 +75,25 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		tlsCfg, err = n.settings.TLSConfig.ToCryptoTLSConfig()
 	}
 	if err != nil {
-		n.log.Error("Failed to build TLS config", "error", err.Error())
+		level.Error(l).Log("msg", "Failed to build TLS config", "err", err.Error())
 		return false, fmt.Errorf("failed to build TLS config: %s", err.Error())
 	}
 
 	err = n.client.Connect(ctx, n.settings.BrokerURL, n.settings.ClientID, n.settings.Username, n.settings.Password, tlsCfg)
 	if err != nil {
-		n.log.Error("Failed to connect to MQTT broker", "error", err.Error())
+		level.Error(l).Log("msg", "Failed to connect to MQTT broker", "err", err.Error())
 		return false, fmt.Errorf("Failed to connect to MQTT broker: %s", err.Error())
 	}
 	defer func() {
 		err := n.client.Disconnect(ctx)
 		if err != nil {
-			n.log.Error("Failed to disconnect from MQTT broker", "error", err.Error())
+			level.Error(l).Log("msg", "Failed to disconnect from MQTT broker", "err", err.Error())
 		}
 	}()
 
 	qos, err := n.settings.QoS.Int64()
 	if err != nil {
-		n.log.Error("Failed to parse QoS", "error", err.Error())
+		level.Error(l).Log("msg", "Failed to parse QoS", "err", err.Error())
 		return false, fmt.Errorf("Failed to parse QoS: %s", err.Error())
 	}
 
@@ -107,24 +108,24 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	)
 
 	if err != nil {
-		n.log.Error("Failed to publish MQTT message", "error", err.Error())
+		level.Error(l).Log("msg", "Failed to publish MQTT message", "err", err.Error())
 		return false, fmt.Errorf("Failed to publish MQTT message: %s", err.Error())
 	}
 
 	return true, nil
 }
 
-func (n *Notifier) buildMessage(ctx context.Context, as ...*types.Alert) (string, error) {
+func (n *Notifier) buildMessage(ctx context.Context, l log.Logger, as ...*types.Alert) (string, error) {
 	groupKey, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, n.tmpl, as, n.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, n.tmpl, as, l, &tmplErr)
 	messageText := tmpl(n.settings.Message)
 	if tmplErr != nil {
-		n.log.Warn("Failed to template MQTT message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "Failed to template MQTT message", "err", tmplErr.Error())
 	}
 
 	switch n.settings.MessageFormat {

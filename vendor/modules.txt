@@ -683,13 +683,12 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250508220812-83b6de6b0a35
+# github.com/grafana/alerting v0.0.0-20250522092815-92adaaa0147a
 ## explicit; go 1.22
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
 github.com/grafana/alerting/http
 github.com/grafana/alerting/images
-github.com/grafana/alerting/logging
 github.com/grafana/alerting/models
 github.com/grafana/alerting/notify
 github.com/grafana/alerting/notify/nfstatus
