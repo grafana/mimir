@@ -30,10 +30,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
-	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -71,6 +69,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -11654,10 +11653,7 @@ type loggerWithBuffer struct {
 }
 
 func newLoggerWithCounter(t *testing.T, buf *bytes.Buffer) *loggerWithBuffer {
-	var lvl dslog.Level
-	require.NoError(t, lvl.Set("info"))
-	logger := dslog.NewGoKitWithWriter(dslog.LogfmtFormat, buf)
-	level.NewFilter(logger, lvl.Option)
+	logger := util_log.MakeLeveledLogger(buf, "info")
 	return &loggerWithBuffer{
 		logger: logger,
 		buf:    buf,
