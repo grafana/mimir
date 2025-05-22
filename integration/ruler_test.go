@@ -345,8 +345,8 @@ func TestRulerAPIRulesEvaluationDisabledForTenant(t *testing.T) {
 	runtimeConfig := `
 overrides:
   user-1:
-	ruler_alerting_rules_evaluation_enabled: false
-	ruler_recording_rules_evaluation_enabled: false
+    ruler_alerting_rules_evaluation_enabled: false
+    ruler_recording_rules_evaluation_enabled: false
 `
 	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(runtimeConfig)))
 
