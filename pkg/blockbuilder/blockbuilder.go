@@ -57,6 +57,8 @@ type BlockBuilder struct {
 
 	blockBuilderMetrics blockBuilderMetrics
 	tsdbBuilderMetrics  tsdbBuilderMetrics
+
+	runDone chan struct{}
 }
 
 func New(
@@ -107,6 +109,7 @@ func newWithSchedulerClient(
 			}
 		}
 
+		b.runDone = make(chan struct{})
 		runningFunc = b.runningPullMode
 		stoppingFunc = b.stoppingPullMode
 		b.committer = &noOpCommitter{}
@@ -182,6 +185,9 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 }
 
 func (b *BlockBuilder) stoppingPullMode(_ error) error {
+	// Wait for the run loop to exit.
+	<-b.runDone
+
 	b.kafkaClient.Close()
 	b.scheduler.Close()
 
@@ -194,6 +200,8 @@ func (b *BlockBuilder) stoppingPullMode(_ error) error {
 // runningPullMode is a service `running` function for pull mode, where we learn
 // about jobs from a block-builder-scheduler. We consume one job at a time.
 func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
+	defer close(b.runDone)
+
 	// Kick off the scheduler's run loop.
 	go b.scheduler.Run(ctx)
 
@@ -214,7 +222,9 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 			continue
 		}
 
-		if _, err := b.consumeJob(ctx, key, spec); err != nil {
+		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
+
+		if _, err := b.consumeJob(context.Background(), key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 			continue
 		}
