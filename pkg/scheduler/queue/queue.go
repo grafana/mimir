@@ -338,7 +338,9 @@ func (q *RequestQueue) dispatcherLoop() {
 			for currentElement != nil {
 				waitingDequeueReq := currentElement.Value.(*QuerierWorkerDequeueRequest)
 				waitingDequeueReq.sendError(ErrStopped)
-				currentElement = currentElement.Next()
+				nextElement := currentElement.Next()
+				q.waitingDequeueRequestsToDispatch.Remove(currentElement)
+				currentElement = nextElement
 			}
 
 			if !q.queueBroker.isEmpty() {
