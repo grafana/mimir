@@ -3117,7 +3117,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -11297,8 +11297,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
