@@ -83,7 +83,7 @@ jobs:
           # Create timestamp for branch naming so that multiple runs don't clobber each other
           TIMESTAMP=$(date +%Y%m%d%H%M)
           
-          echo "old_hash=OLD_HASH" >> $GITHUB_OUTPUT
+          echo "old_hash=$OLD_HASH" >> $GITHUB_OUTPUT
           echo "new_hash=$NEW_HASH" >> $GITHUB_OUTPUT
           echo "short_hash=$SHORT_HASH" >> $GITHUB_OUTPUT
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
