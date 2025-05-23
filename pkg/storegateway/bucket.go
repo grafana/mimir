@@ -1963,7 +1963,7 @@ func (s *bucketBlockSet) timerange() (mint, maxt int64) {
 	return mint, maxt
 }
 
-// bucketBlock represents a block that is located in a bucket. It holds intermediate
+// bucketBlock represents a block that is located in a bkt. It holds intermediate
 // state for the block on local disk.
 type bucketBlock struct {
 	userID     string
