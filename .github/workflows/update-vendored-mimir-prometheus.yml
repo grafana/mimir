@@ -37,6 +37,18 @@ jobs:
           # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
           go-version: "1.24.2"
 
+      - name: Get current mimir-prometheus version
+        id: get-current-version
+        run: |
+          # Get current mimir-prometheus version from go.mod
+          CURRENT_VERSION=$(go mod edit -json | jq -r '.Replace[] | select(.New.Path == "github.com/grafana/mimir-prometheus") | .New.Version | .[-12:]')
+          if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" = "null" ]; then
+            echo "No current mimir-prometheus version found in go.mod"
+            CURRENT_VERSION=""
+          fi
+          
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "Current mimir-prometheus version: $CURRENT_VERSION"
 
       # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
       # because any events triggered by the later don't spawn GitHub actions.
@@ -108,8 +120,10 @@ jobs:
             *This PR was automatically created by the [update-mimir-prometheus workflow](https://github.com/grafana/mimir/blob/main/.github/workflows/update-mimir-prometheus.yml)*
 
             ### Details:
-            - **Source branch/ref**: [`${{ inputs.mimir_prometheus_branch }}`](https://github.com/grafana/mimir-prometheus/tree/${{ inputs.mimir_prometheus_branch }})
-            - **Commit hash**: [`${{ steps.get-commit-info.outputs.commit_hash }}`](https://github.com/grafana/mimir-prometheus/commit/${{ steps.get-commit-info.outputs.commit_hash }})
+            - **Source branch/ref**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/tree/{0})', inputs.mimir_prometheus_branch) }}
+            - **Previous commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-current-version.outputs.current_version) }}
+            - **New commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.commit_hash) }}
+            - **Changes**: ${{ format('[`{0}...{1}`](https://github.com/grafana/mimir-prometheus/compare/{0}...{1})', steps.get-current-version.outputs.current_version, steps.get-commit-info.outputs.commit_hash) }}
           commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}`
           branch: bot/${{ inputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
           base: ${{ inputs.mimir_branch }}
