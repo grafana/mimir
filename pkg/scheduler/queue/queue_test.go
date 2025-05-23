@@ -329,6 +329,13 @@ func queueConsume(
 	return lastTenantIdx, err
 }
 
+// TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker tests a scenario which previously caused a panic.
+// When a querier-worker submits a dequeue request while there are no queue items sharded to that querier,
+// The waiting dequeue request is held in an internal queue until a reshard or enqueue operation occurs.
+// A reshard or enqueue operation triggers an attempt to dispatch queue items to those waiting dequeue requests.
+//
+// If the querier-worker associated with the dequeue request has since crashed or otherwise been deregistered,
+// the queue should skip that dequeue request drop it from the internal queue so it will not be retried.
 func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.T) {
 	const forgetDelay = 2 * time.Second
 	const testTimeout = 10 * time.Second
@@ -376,12 +383,13 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		assert.True(t, errors.Is(err, ErrQuerierWorkerDisconnected) || errors.Is(err, context.Canceled) || errors.Is(err, ErrQuerierShuttingDown) || errors.Is(err, ErrStopped))
 	}
 
-	// Enqueue requests from a user which would NOT be sharded to querier-1.
+	// Enqueue requests which will NOT be sharded to querier-1.
 	// NOTE: "user-1" shuffle shard always chooses the first querier ("querier-1" in this case)
 	// when there are only one or two queriers in the sorted list of connected queriers.
 	//
-	// These will sit in the queue as user-1's sharded querier, querier-2 is not awaiting a request yet.
-	// Two different additional queue dimensions must exist in the queue tree to create the potential panic condition.
+	// These requests will sit in the queue -
+	// querier-2 is the only querier sharded to user-1, but querier-2 has not requested to dequeue yet.
+	// >1 queue dimensions must exist in the queue to reproduce a potential panic condition (dims % unregisteredWorkerID).
 	reqNotShardedToQuerier1 := &SchedulerRequest{
 		Ctx:                       context.Background(),
 		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
