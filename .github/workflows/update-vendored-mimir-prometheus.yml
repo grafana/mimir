@@ -42,11 +42,13 @@ jobs:
 
       - name: Get mimir-prometheus commit info
         id: get-commit-info
+        env:
+          MIMIR_PROMETHEUS_BRANCH: ${{ inputs.mimir_prometheus_branch }}
         run: |
           # Fetch the latest commit hash from the specified branch
-          COMMIT_HASH=$(git ls-remote https://github.com/grafana/mimir-prometheus.git ${{ inputs.mimir_prometheus_branch }} | cut -f1)
+          COMMIT_HASH=$(git ls-remote https://github.com/grafana/mimir-prometheus.git "${MIMIR_PROMETHEUS_BRANCH}" | cut -f1)
           if [ -z "$COMMIT_HASH" ]; then
-            echo "Error: Could not find commit hash for branch/ref ${{ inputs.mimir_prometheus_branch }}"
+            echo "Error: Could not find commit hash for branch/ref ${MIMIR_PROMETHEUS_BRANCH}"
             exit 1
           fi
           
