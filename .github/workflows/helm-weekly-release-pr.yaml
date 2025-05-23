@@ -6,14 +6,15 @@ on:
 
   workflow_dispatch: # for manual testing
 
-# These permissions are needed to assume roles from Github's OIDC.
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
 
 jobs:
   weekly-release-pr:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,13 +24,16 @@ jobs:
         id: update
         run: bash .github/workflows/scripts/helm-weekly-release.sh
 
+      # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
+      # because any events triggered by the later don't spawn GitHub actions.
+      # Refer to https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
       - name: Retrieve GitHub App Credentials from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@28361cdb22223e5f1e34358c86c20908e7248760 # v1.1.0
+        uses: grafana/shared-workflows/actions/get-vault-secrets@5d7e361bc7e0a183cde8afe9899fb7b596d2659b # get-vault-secrets-v1.2.0
         with:
           repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
+            APP_ID=mimir-vendoring:app-id
+            PRIVATE_KEY=mimir-vendoring:app-pem-key
 
       - name: Generate GitHub App Token
         id: app-token
