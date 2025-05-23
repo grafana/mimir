@@ -977,7 +977,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 			start:     startTime.Unix() * 1000,
 			end:       endTime.Unix() * 1000,
 			step:      120 * 1000,
-			queryExpr: parseQuery(t, fmt.Sprintf(`sum by(group_2) (rate({__name__=~".+"}[%s]))`, (2*step).String())),
+			queryExpr: parseQuery(t, fmt.Sprintf(`sum by(group_2) (rate({__name__=~".+"}[%s])) + 1`, (2*step).String())),
 		})
 	}
 
