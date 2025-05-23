@@ -52,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -104,6 +105,7 @@ const (
 	MemberlistKV                     string = "memberlist-kv"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
+	ParquetConverter                 string = "parquet-converter"
 	Querier                          string = "querier"
 	QuerierQueryPlanner              string = "querier-query-planner"
 	QueryFrontend                    string = "query-frontend"
@@ -1195,6 +1197,17 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	return t.Compactor, nil
 }
 
+func (t *Mimir) initParquetConverter() (serv services.Service, err error) {
+	t.Cfg.ParquetConverter.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+
+	t.ParquetConverter, err = parquetconverter.NewParquetConverter(t.Cfg.ParquetConverter, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer, t.Overrides)
+	if err != nil {
+		return
+	}
+
+	return t.ParquetConverter, nil
+}
+
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
@@ -1234,6 +1247,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.ParquetConverter.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
@@ -1403,6 +1417,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
+	mm.RegisterModule(ParquetConverter, t.initParquetConverter)
 	mm.RegisterModule(Querier, t.initQuerier)
 	mm.RegisterModule(QuerierQueryPlanner, t.initQuerierQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
@@ -1448,6 +1463,7 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
+		ParquetConverter:                 {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault},
 		QuerierQueryPlanner:              {API, ActivityTracker},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
