@@ -1,0 +1,96 @@
+name: Update mimir-prometheus dependency
+
+on:
+  workflow_dispatch:
+    inputs:
+      mimir_branch:
+        description: 'Mimir branch to update (default: main)'
+        required: false
+        default: 'main'
+        type: string
+      mimir_prometheus_branch:
+        description: 'mimir-prometheus branch/commit to update to (default: main)'
+        required: false
+        default: 'main'
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-mimir-prometheus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.mimir_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+
+      - name: Configure Git
+        env:
+          GITHUB_LOGIN: ${{ github.actor }}
+        run: |
+          git config --global user.name "${GITHUB_LOGIN}"
+          git config --global user.email "${GITHUB_LOGIN}@users.noreply.github.com"
+          git config --global --add safe.directory '*'
+
+      - name: Get mimir-prometheus commit info
+        id: get-commit-info
+        run: |
+          # Fetch the latest commit hash from the specified branch
+          COMMIT_HASH=$(git ls-remote https://github.com/grafana/mimir-prometheus.git ${{ inputs.mimir_prometheus_branch }} | cut -f1)
+          if [ -z "$COMMIT_HASH" ]; then
+            echo "Error: Could not find commit hash for branch/ref ${{ inputs.mimir_prometheus_branch }}"
+            exit 1
+          fi
+          
+          # Get short commit hash for display
+          SHORT_HASH=${COMMIT_HASH:0:12}
+          
+          # Create timestamp for branch naming so that multiple runs don't clobber each other
+          TIMESTAMP=$(date +%Y%m%d%H%M)
+          
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          echo "short_hash=$SHORT_HASH" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          
+          echo "Found commit: $COMMIT_HASH"
+
+      - name: Update go.mod
+        run: |
+          # Update the replace directive in go.mod using go mod edit with commit hash
+          go mod edit -replace=github.com/prometheus/prometheus=github.com/grafana/mimir-prometheus@${{ steps.get-commit-info.outputs.commit_hash }}
+          
+          echo "Updated go.mod with new mimir-prometheus commit: ${{ steps.get-commit-info.outputs.commit_hash }}"
+
+      - name: Update dependencies
+        run: |
+          echo "Tidying go.mod and updating vendor directory..."
+          go mod tidy
+          go mod vendor
+          
+          echo "Dependencies updated successfully"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5.0.3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: Update mimir-prometheus to ${{ steps.get-commit-info.outputs.short_hash }}
+          body: |
+            ## Update mimir-prometheus dependency
+
+            *This PR was automatically created by the [update-mimir-prometheus workflow](https://github.com/grafana/mimir/blob/main/.github/workflows/update-mimir-prometheus.yml)*
+
+            ### Details:
+            - **Source branch/ref**: [`${{ inputs.mimir_prometheus_branch }}`](https://github.com/grafana/mimir-prometheus/tree/${{ inputs.mimir_prometheus_branch }})
+            - **Commit hash**: [`${{ steps.get-commit-info.outputs.commit_hash }}`](https://github.com/grafana/mimir-prometheus/commit/${{ steps.get-commit-info.outputs.commit_hash }})
+          commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}`
+          branch: bot/${{ inputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
+          base: ${{ inputs.mimir_branch }}
+          delete-branch: true
