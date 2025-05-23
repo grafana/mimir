@@ -4,12 +4,14 @@ package commonsubexpressionelimination
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -250,4 +252,50 @@ func createTestOperator(t *testing.T, seriesCount int, memoryConsumptionTracker 
 		Data:                     operatorData,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}, expectedData
+}
+
+func TestOperator_ClosingAfterFailedRead(t *testing.T) {
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
+	require.NoError(t, err)
+
+	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+
+	buffer := NewDuplicationBuffer(&failingOperator{series}, memoryConsumptionTracker)
+	consumer1 := buffer.AddConsumer()
+	consumer2 := buffer.AddConsumer()
+	ctx := context.Background()
+
+	metadata1, err := consumer1.SeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
+	types.SeriesMetadataSlicePool.Put(metadata1, memoryConsumptionTracker)
+
+	data, err := consumer1.NextSeries(ctx)
+	require.EqualError(t, err, "something went wrong reading data")
+	require.Equal(t, types.InstantVectorSeriesData{}, data)
+
+	consumer2.Close()
+	consumer1.Close()
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+type failingOperator struct {
+	series []types.SeriesMetadata
+}
+
+func (o *failingOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
+	return o.series, nil
+}
+
+func (o *failingOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	return types.InstantVectorSeriesData{}, errors.New("something went wrong reading data")
+}
+
+func (o *failingOperator) ExpressionPosition() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (o *failingOperator) Close() {
+	// Nothing to do.
 }
