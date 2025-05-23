@@ -158,6 +158,10 @@ github.com/alecthomas/kingpin/v2
 # github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 ## explicit; go 1.15
 github.com/alecthomas/units
+# github.com/andybalholm/brotli v1.1.0
+## explicit; go 1.13
+github.com/andybalholm/brotli
+github.com/andybalholm/brotli/matchfinder
 # github.com/armon/go-metrics v0.4.1
 ## explicit; go 1.12
 github.com/armon/go-metrics
@@ -941,6 +945,7 @@ github.com/klauspost/compress/internal/le
 github.com/klauspost/compress/internal/race
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/s2
+github.com/klauspost/compress/snappy
 github.com/klauspost/compress/zlib
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
@@ -974,6 +979,9 @@ github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
+# github.com/mattn/go-runewidth v0.0.15
+## explicit; go 1.9
+github.com/mattn/go-runewidth
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
@@ -1054,7 +1062,14 @@ github.com/oklog/ulid/v2
 # github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 ## explicit
 github.com/okzk/sdnotify
+<<<<<<< HEAD
 # github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.128.0
+=======
+# github.com/olekukonko/tablewriter v0.0.5
+## explicit; go 1.12
+github.com/olekukonko/tablewriter
+# github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.125.0
+>>>>>>> 60e41667eb (bring in prometheus/parquet-common code to new package (#11490))
 ## explicit; go 1.23.0
 github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics/identity
 # github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.128.0
@@ -1082,6 +1097,37 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
+# github.com/oracle/oci-go-sdk/v65 v65.92.0
+## explicit; go 1.13
+# github.com/parquet-go/parquet-go v0.25.0
+## explicit; go 1.22
+github.com/parquet-go/parquet-go
+github.com/parquet-go/parquet-go/bloom
+github.com/parquet-go/parquet-go/bloom/xxhash
+github.com/parquet-go/parquet-go/compress
+github.com/parquet-go/parquet-go/compress/brotli
+github.com/parquet-go/parquet-go/compress/gzip
+github.com/parquet-go/parquet-go/compress/lz4
+github.com/parquet-go/parquet-go/compress/snappy
+github.com/parquet-go/parquet-go/compress/uncompressed
+github.com/parquet-go/parquet-go/compress/zstd
+github.com/parquet-go/parquet-go/deprecated
+github.com/parquet-go/parquet-go/encoding
+github.com/parquet-go/parquet-go/encoding/bitpacked
+github.com/parquet-go/parquet-go/encoding/bytestreamsplit
+github.com/parquet-go/parquet-go/encoding/delta
+github.com/parquet-go/parquet-go/encoding/plain
+github.com/parquet-go/parquet-go/encoding/rle
+github.com/parquet-go/parquet-go/encoding/thrift
+github.com/parquet-go/parquet-go/format
+github.com/parquet-go/parquet-go/hashprobe
+github.com/parquet-go/parquet-go/hashprobe/aeshash
+github.com/parquet-go/parquet-go/hashprobe/wyhash
+github.com/parquet-go/parquet-go/internal/bitpack
+github.com/parquet-go/parquet-go/internal/bytealg
+github.com/parquet-go/parquet-go/internal/debug
+github.com/parquet-go/parquet-go/internal/unsafecast
+github.com/parquet-go/parquet-go/sparse
 # github.com/pierrec/lz4/v4 v4.1.22
 ## explicit; go 1.14
 github.com/pierrec/lz4/v4
@@ -1277,6 +1323,9 @@ github.com/puzpuzpuz/xsync/v3
 # github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
 ## explicit
 github.com/rainycape/unidecode
+# github.com/rivo/uniseg v0.4.7
+## explicit; go 1.18
+github.com/rivo/uniseg
 # github.com/rs/cors v1.11.0
 ## explicit; go 1.13
 github.com/rs/cors
