@@ -289,7 +289,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
 
 	// No page size limit
-	actualGroups, token, err := c.GetPrometheusRules(0, "")
+	_, actualGroups, token, err := c.GetPrometheusRules(0, "")
 	require.NoError(t, err)
 	require.Empty(t, token)
 	require.Len(t, actualGroups, len(expectedGroups))
@@ -304,7 +304,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	var nextToken string
 	returnedGroups := make([]NGPair, 0, len(expectedGroups))
 	for i := 0; i < 4; i++ {
-		gps, token, err := c.GetPrometheusRules(2, nextToken)
+		_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 		require.NoError(t, err)
 		require.Len(t, gps, 2)
 		require.NotEmpty(t, token)
@@ -312,7 +312,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		returnedGroups = append(returnedGroups, NGPair{gps[0].File, gps[0].Name}, NGPair{gps[1].File, gps[1].Name})
 		nextToken = token
 	}
-	gps, token, err := c.GetPrometheusRules(2, nextToken)
+	_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 	require.NoError(t, err)
 	require.Len(t, gps, 1)
 	require.Empty(t, token)
@@ -326,8 +326,57 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	}
 
 	// Invalid max groups value
-	_, _, err = c.GetPrometheusRules(-1, "")
+	resp, _, _, err := c.GetPrometheusRules(-1, "")
 	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestRulerAPIRulesEvaluationDisabledForTenant(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	runtimeConfig := `
+overrides:
+  user-1:
+    ruler_alerting_rules_evaluation_enabled: false
+    ruler_recording_rules_evaluation_enabled: false
+`
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(runtimeConfig)))
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
+		map[string]string{
+			"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
+			"-runtime-config.reload-period": "100ms",
+			// Disable rule group limit
+			"-ruler.max-rule-groups-per-tenant": "0",
+		},
+	)
+
+	// Start rulers.
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
+	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
+
+	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+
+	// user-1 has all rules disabled
+	resp, _, _, err := c.GetPrometheusRules(0, "")
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
 }
 
 func TestRulerSharding(t *testing.T) {
@@ -394,7 +443,7 @@ func TestRulerSharding(t *testing.T) {
 	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(numRulesGroups), "cortex_prometheus_rule_group_rules"))
 
 	// Fetch the rules and ensure they match the configured ones.
-	actualGroups, _, err := c.GetPrometheusRules(0, "")
+	_, actualGroups, _, err := c.GetPrometheusRules(0, "")
 	require.NoError(t, err)
 
 	var actualNames []string
@@ -1318,7 +1367,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert that the alert is firing
-	rules, _, err := c.GetPrometheusRules(0, "")
+	_, rules, _, err := c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 
@@ -1335,7 +1384,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert the alert is already firing
-	rules, _, err = c.GetPrometheusRules(0, "")
+	_, rules, _, err = c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 }
