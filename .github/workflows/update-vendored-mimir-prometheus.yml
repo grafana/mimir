@@ -31,6 +31,9 @@ jobs:
 
       - name: Set up Go
         uses: actions/setup-go@v5
+        with:
+          # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
+          go-version: "1.24.2"
 
       - name: Configure Git
         env:
