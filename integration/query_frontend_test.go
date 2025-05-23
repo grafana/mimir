@@ -561,6 +561,7 @@ overrides:
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	now := time.Now()
+	nowTruncatedToLastSecond := now.Truncate(time.Second)
 
 	// Push some series.
 	cWrite, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "fake")
@@ -745,10 +746,10 @@ overrides:
 		{
 			name: "query time range exceeds the limit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
+				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, nowTruncatedToLastSecond.Add(-time.Minute), nowTruncatedToLastSecond, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
 		},
 		{
 			name: "query remote read time range exceeds the limit",
@@ -782,7 +783,7 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expJSON:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expJSON:       `{"error":"invalid parameter \"query\": query expression produces a range vector, but expression for range queries must produce an instant vector or scalar", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
