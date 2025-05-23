@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mimir_branch:
-        description: 'Mimir branch to update (default: main)'
-        required: false
+        description: 'Mimir branch to update'
+        required: true
         default: 'main'
         type: string
       mimir_prometheus_branch:
-        description: 'mimir-prometheus branch/commit to update to (default: main)'
-        required: false
+        description: 'mimir-prometheus branch/commit to update to'
+        required: true
         default: 'main'
         type: string
 
