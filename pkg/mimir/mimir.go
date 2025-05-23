@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/parquetconverter"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
@@ -143,6 +144,7 @@ type Config struct {
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
 	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
+	ParquetConverter    parquetconverter.Config                    `yaml:"parquet_converter" category:"experimental"`
 
 	Common CommonConfig `yaml:"common"`
 
@@ -209,6 +211,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageStats.RegisterFlags(f)
 	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
+	c.ParquetConverter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
 }
@@ -428,7 +431,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	var paths []pathConfig
 
 	// Blocks storage (check only for components using it).
-	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, ParquetConverter, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",
@@ -788,6 +791,7 @@ type Mimir struct {
 	RulerStorage                     rulestore.RuleStore
 	Alertmanager                     *alertmanager.MultitenantAlertmanager
 	Compactor                        *compactor.MultitenantCompactor
+	ParquetConverter                 *parquetconverter.ParquetConverter
 	StoreGateway                     *storegateway.StoreGateway
 	MemberlistKV                     *memberlist.KVInitService
 	ActivityTracker                  *activitytracker.ActivityTracker
