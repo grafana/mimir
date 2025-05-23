@@ -26,26 +26,39 @@ jobs:
   update-mimir-prometheus:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine branch names
-        id: branch-names
+      - name: Determine branch names (repository_dispatch)
+        id: branch-names-dispatch
+        if: github.event_name == 'repository_dispatch'
+        env:
+          MIMIR_BRANCH: ${{ github.event.client_payload.branch_name }}
         run: |
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            # For repository_dispatch, use the branch_name from client_payload for mimir_prometheus_branch.
-            # The main use case is for weekly branches, so we just use the same branch name here too.
-            MIMIR_PROMETHEUS_BRANCH="${{ github.event.client_payload.branch_name }}"
-            MIMIR_BRANCH=$MIMIR_PROMETHEUS_BRANCH
-            echo "Triggered by repository_dispatch"
-            echo "Using mimir-prometheus branch from payload: $MIMIR_PROMETHEUS_BRANCH"
-          else
-            # For workflow_dispatch, use the input values
-            MIMIR_BRANCH="${{ inputs.mimir_branch }}"
-            MIMIR_PROMETHEUS_BRANCH="${{ inputs.mimir_prometheus_branch }}"
-            echo "Triggered by workflow_dispatch"
-            echo "Using input values - mimir branch: $MIMIR_BRANCH, mimir-prometheus branch: $MIMIR_PROMETHEUS_BRANCH"
-          fi
+          # For repository_dispatch, use the env-injected mimir_prometheus_branch.
+          # The main use case is for weekly branches, so we just use the same branch name here too.
+          echo "Triggered by repository_dispatch"
+          echo "Using mimir-prometheus branch from payload: $MIMIR_PROMETHEUS_BRANCH"
           
           echo "mimir_branch=$MIMIR_BRANCH" >> $GITHUB_OUTPUT
           echo "mimir_prometheus_branch=$MIMIR_PROMETHEUS_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Determine branch names (workflow_dispatch)
+        id: branch-names-manual
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          MIMIR_BRANCH: ${{ inputs.mimir_branch }}
+          MIMIR_PROMETHEUS_BRANCH: ${{ inputs.mimir_prometheus_branch }}
+        run: |
+          # For workflow_dispatch, use the env-injected branch names.
+          echo "Triggered by workflow_dispatch"
+          echo "Using input values - mimir branch: $MIMIR_BRANCH, mimir-prometheus branch: $MIMIR_PROMETHEUS_BRANCH"
+
+          echo "mimir_branch=$MIMIR_BRANCH" >> $GITHUB_OUTPUT
+          echo "mimir_prometheus_branch=$MIMIR_PROMETHEUS_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Determine branch names (combined)
+        id: branch-names
+        run: |
+          echo "mimir_branch=${{ steps.branch-names-dispatch.outputs.mimir_branch || steps.branch-names-manual.outputs.mimir_branch }}" >> $GITHUB_OUTPUT
+          echo "mimir_prometheus_branch=${{ steps.branch-names-dispatch.outputs.mimir_prometheus_branch || steps.branch-names-manual.outputs.mimir_prometheus_branch }}" >> $GITHUB_OUTPUT
 
       - name: Check out repository
         uses: actions/checkout@v4
@@ -60,11 +73,6 @@ jobs:
         with:
           # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
           go-version: "1.24.4"
-
-      - name: Get current mimir-prometheus version
-        id: get-current-version
-        run: |
-
 
       # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
       # because any events triggered by the later don't spawn GitHub actions.
