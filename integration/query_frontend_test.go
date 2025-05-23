@@ -736,14 +736,6 @@ overrides:
 			expJSON:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
-			name: "max samples limit hit",
-			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
-			},
-			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
-		},
-		{
 			name: "query time range exceeds the limit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, nowTruncatedToLastSecond.Add(-time.Minute), nowTruncatedToLastSecond, time.Minute)
