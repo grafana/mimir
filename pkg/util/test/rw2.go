@@ -99,16 +99,22 @@ func AddHistogramSeries(
 type SymbolTableBuilder struct {
 	count   uint32
 	symbols map[string]uint32
+	offset  uint32
 }
 
 func NewSymbolTableBuilder(symbols []string) *SymbolTableBuilder {
+	return NewSymbolTableBuilderWithOffset(symbols, 0)
+}
+
+func NewSymbolTableBuilderWithOffset(symbols []string, offset uint32) *SymbolTableBuilder {
 	symbolsMap := make(map[string]uint32)
 	for i, sym := range symbols {
-		symbolsMap[sym] = uint32(i)
+		symbolsMap[sym] = uint32(i) + offset
 	}
 	return &SymbolTableBuilder{
 		count:   uint32(len(symbols)),
 		symbols: symbolsMap,
+		offset:  offset,
 	}
 }
 
@@ -116,15 +122,15 @@ func (symbols *SymbolTableBuilder) GetSymbol(sym string) uint32 {
 	if i, ok := symbols.symbols[sym]; ok {
 		return i
 	}
-	symbols.symbols[sym] = symbols.count
+	symbols.symbols[sym] = symbols.offset + symbols.count
 	symbols.count++
-	return symbols.count - 1
+	return symbols.offset + symbols.count - 1
 }
 
 func (symbols *SymbolTableBuilder) GetSymbols() []string {
 	res := make([]string, len(symbols.symbols))
 	for sym, i := range symbols.symbols {
-		res[i] = sym
+		res[i-symbols.offset] = sym
 	}
 	return res
 }
