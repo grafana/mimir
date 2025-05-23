@@ -177,9 +177,9 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 			assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
 
-			assert.NotNil(t, g.stores.getStore("user-1"))
-			assert.NotNil(t, g.stores.getStore("user-2"))
-			assert.Nil(t, g.stores.getStore("user-unknown"))
+			assert.NotNil(t, g.stores.(*BucketStores).getStore("user-1"))
+			assert.NotNil(t, g.stores.(*BucketStores).getStore("user-2"))
+			assert.Nil(t, g.stores.(*BucketStores).getStore("user-unknown"))
 		})
 	}
 }
@@ -771,7 +771,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 	srv := newStoreGatewayTestServer(t, g)
 
 	// No sync retries to speed up tests.
-	g.stores.syncBackoffConfig = backoff.Config{MaxRetries: 1}
+	g.stores.(*BucketStores).syncBackoffConfig = backoff.Config{MaxRetries: 1}
 
 	// Start the store-gateway.
 	require.NoError(t, services.StartAndAwaitRunning(ctx, g))

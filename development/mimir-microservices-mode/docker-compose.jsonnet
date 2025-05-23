@@ -35,6 +35,9 @@ std.manifestYamlDoc({
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
+
+    // If true, start parquet-converter
+    enable_parquet: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -44,6 +47,7 @@ std.manifestYamlDoc({
     self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
     self.store_gateways(3) +
     self.compactor +
+    (if $._config.enable_parquet then self.parquet_converter else {}) +
     self.rulers(2) +
     self.alertmanagers(3) +
     self.nginx +
@@ -142,6 +146,14 @@ std.manifestYamlDoc({
     }),
   },
 
+  parquet_converter:: {
+    'parquet-converter': mimirService({
+      name: 'parquet-converter',
+      target: 'parquet-converter',
+      httpPort: 8040,
+    }),
+  },
+
   rulers(count):: if count <= 0 then {} else {
     ['ruler-%d' % id]: mimirService({
       name: 'ruler-' + id,
@@ -170,6 +182,8 @@ std.manifestYamlDoc({
       target: 'store-gateway',
       httpPort: 8010 + id,
       jaegerApp: 'store-gateway-%d' % id,
+      extraArguments:
+        if $._config.enable_parquet then '-store-gateway.parquet-enabled=true' else '',
     })
     for id in std.range(1, count)
   },
