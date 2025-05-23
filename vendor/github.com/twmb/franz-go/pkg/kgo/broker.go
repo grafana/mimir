@@ -533,7 +533,16 @@ func (b *broker) loadConnection(ctx context.Context, req kmsg.Request) (*brokerC
 		return *pcxn, nil
 	}
 
+	start := time.Now()
 	conn, err := b.connect(ctx)
+	defer func() {
+		since := time.Since(start)
+		b.cl.cfg.hooks.each(func(h Hook) {
+			if h, ok := h.(HookBrokerConnect); ok {
+				h.OnBrokerConnect(b.meta, since, conn, err)
+			}
+		})
+	}()
 	if err != nil {
 		return nil, err
 	}
@@ -643,14 +652,7 @@ func (b *broker) reapConnections(idleTimeout time.Duration) (total int) {
 // connect connects to the broker's addr, returning the new connection.
 func (b *broker) connect(ctx context.Context) (net.Conn, error) {
 	b.cl.cfg.logger.Log(LogLevelDebug, "opening connection to broker", "addr", b.addr, "broker", logID(b.meta.NodeID))
-	start := time.Now()
 	conn, err := b.cl.cfg.dialFn(ctx, "tcp", b.addr)
-	since := time.Since(start)
-	b.cl.cfg.hooks.each(func(h Hook) {
-		if h, ok := h.(HookBrokerConnect); ok {
-			h.OnBrokerConnect(b.meta, since, conn, err)
-		}
-	})
 	if err != nil {
 		if !errors.Is(err, ErrClientClosed) && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "operation was canceled") {
 			if errors.Is(err, io.EOF) {
@@ -772,21 +774,29 @@ start:
 	// Version 0 and an UNSUPPORTED_VERSION error.
 	//
 	// Pre Kafka 2.4, we have to retry the request with version 0.
-	// Post, Kafka replies with all versions.
+	// Post, Kafka replies with the version we should retry with (KIP-511).
 	if rawResp[1] == 35 {
 		if maxVersion == 0 {
 			return errors.New("broker replied with UNSUPPORTED_VERSION to an ApiVersions request of version 0")
 		}
-		srawResp := string(rawResp)
-		if srawResp == "\x00\x23\x00\x00\x00\x00" ||
-			// EventHubs erroneously replies with v1, so we check
-			// for that as well.
-			srawResp == "\x00\x23\x00\x00\x00\x00\x00\x00\x00\x00" {
-			cxn.cl.cfg.logger.Log(LogLevelDebug, "broker does not know our ApiVersions version, downgrading to version 0 and retrying", "broker", logID(cxn.b.meta.NodeID))
-			maxVersion = 0
-			goto start
+
+		resp.Version = 0
+		if err = resp.ReadFrom(rawResp); err != nil {
+			return fmt.Errorf("unable to read ApiVersions response: %w", err)
 		}
-		cxn.cl.cfg.logger.Log(LogLevelDebug, "broker does not know our ApiVersions version but replied with all keys, deserializing as v0", "broker", logID(cxn.b.meta.NodeID))
+		switch {
+		case len(resp.ApiKeys) == 0:
+			maxVersion = 0
+			cxn.cl.cfg.logger.Log(LogLevelDebug, "broker does not know our ApiVersions version, downgrading to version 0 and retrying", "broker", logID(cxn.b.meta.NodeID))
+			goto start
+		case len(resp.ApiKeys) == 1 && resp.ApiKeys[0].ApiKey == 18:
+			maxVersion = resp.ApiKeys[0].MaxVersion
+			cxn.cl.cfg.logger.Log(LogLevelDebug, fmt.Sprintf("broker does not know our ApiVersions version but replied version %[1]d, downgrading to version %[1]d and retrying", maxVersion), "broker", logID(cxn.b.meta.NodeID))
+			goto start
+		default:
+			// Should not hit this case, but we hope the broker replied with all keys
+		}
+		resp = req.ResponseKind().(*kmsg.ApiVersionsResponse)
 		resp.Version = 0
 	}
 

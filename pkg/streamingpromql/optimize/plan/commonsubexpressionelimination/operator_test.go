@@ -12,14 +12,14 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestOperator_Buffering(t *testing.T) {
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	inner, expectedData := createTestOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -111,7 +111,7 @@ func TestOperator_Buffering(t *testing.T) {
 }
 
 func TestOperator_ClosedWithBufferedData(t *testing.T) {
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	inner, expectedData := createTestOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -181,7 +181,7 @@ func TestOperator_Cloning(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	inner := &operators.TestOperator{
 		Series:                   []labels.Labels{labels.FromStrings(labels.MetricName, "test_series")},
 		Data:                     []types.InstantVectorSeriesData{series},
@@ -217,7 +217,7 @@ func TestOperator_Cloning(t *testing.T) {
 	require.NotSame(t, d1.Histograms[1].H, d2.Histograms[1].H, "consumers should not share second histogram")
 }
 
-func createTestOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (*operators.TestOperator, []types.InstantVectorSeriesData) {
+func createTestOperator(t *testing.T, seriesCount int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*operators.TestOperator, []types.InstantVectorSeriesData) {
 	series := make([]labels.Labels, 0, seriesCount)
 	operatorData := make([]types.InstantVectorSeriesData, 0, seriesCount)
 	expectedData := make([]types.InstantVectorSeriesData, 0, seriesCount)

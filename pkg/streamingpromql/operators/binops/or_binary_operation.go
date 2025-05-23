@@ -8,9 +8,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // OrBinaryOperation represents a logical 'or' between two vectors.
@@ -18,7 +18,7 @@ type OrBinaryOperation struct {
 	Left                     types.InstantVectorOperator
 	Right                    types.InstantVectorOperator
 	VectorMatching           parser.VectorMatching
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
@@ -44,7 +44,7 @@ func NewOrBinaryOperation(
 	left types.InstantVectorOperator,
 	right types.InstantVectorOperator,
 	vectorMatching parser.VectorMatching,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
@@ -349,7 +349,7 @@ type orGroup struct {
 }
 
 // AccumulateLeftSeriesPresence records the presence of samples on the left-hand side.
-func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
+func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) error {
 	if g.leftSamplePresence == nil {
 		var err error
 		g.leftSamplePresence, err = types.BoolSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
@@ -374,11 +374,11 @@ func (g *orGroup) AccumulateLeftSeriesPresence(data types.InstantVectorSeriesDat
 
 // FilterRightSeries returns rightData filtered based on samples seen for the left-hand side.
 // The return value reuses the slices from rightData, and returns any unused slices to the pool.
-func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	return filterSeries(rightData, g.leftSamplePresence, false, memoryConsumptionTracker, timeRange)
 }
 
-func (g *orGroup) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+func (g *orGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.BoolSlicePool.Put(g.leftSamplePresence, memoryConsumptionTracker)
 	g.leftSamplePresence = nil
 }

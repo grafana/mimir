@@ -710,7 +710,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 		mockErr := kerr.BrokerNotAvailable
-		cluster.ControlKey(kmsg.Metadata.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.ControlKey(kmsg.Metadata.Int16(), func(req kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 
 			respTopic := kmsg.NewMetadataResponseTopic()
@@ -721,7 +721,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 			resp := kmsg.NewPtrMetadataResponse()
 			resp.Topics = append(resp.Topics, respTopic)
-			resp.Version = 12
+			resp.Version = req.GetVersion()
 			return resp, nil, true
 		})
 

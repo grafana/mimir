@@ -658,10 +658,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		i.circuitBreaker.push.activate()
 	}
 
-	if i.reactiveLimiter.read != nil {
-		i.reactiveLimiter.read.activate()
-	}
-
 	return nil
 }
 
@@ -1283,11 +1279,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(errMsg string, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.newValueForTimestampCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonNewValueForTimestamp, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
-					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
+					return newSampleDuplicateTimestampError(errMsg, model.Time(timestamp), labels)
 				})
 			},
 			func(labels []mimirpb.LabelAdapter) {
@@ -1725,7 +1721,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter.isReadLimiterActive() && !i.reactiveLimiter.read.CanAcquirePermit() {
+	if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1750,7 +1746,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter.isReadLimiterActive() {
+	if i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
@@ -3874,10 +3870,6 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 			return
 		}
 
-		if i.reactiveLimiter.read != nil {
-			i.reactiveLimiter.read.deactivate()
-		}
-
 	case http.MethodDelete:
 		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
 		if err != nil {
@@ -3898,10 +3890,6 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 				level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
-			}
-
-			if i.reactiveLimiter.read != nil {
-				i.reactiveLimiter.read.activate()
 			}
 		}
 	}
@@ -3941,6 +3929,17 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// OnPartitionRingChanged resets the read reactive limiter when the ingester's partition transitions to active.
+func (i *Ingester) OnPartitionRingChanged(oldRing, newRing *ring.PartitionRingDesc) {
+	if i.reactiveLimiter.read != nil {
+		oldPartition, ok1 := oldRing.Partitions[i.ingestPartitionID]
+		newPartition, ok2 := newRing.Partitions[i.ingestPartitionID]
+		if ok1 && ok2 && oldPartition.State != newPartition.State && newPartition.State == ring.PartitionActive {
+			i.reactiveLimiter.read.Reset()
+		}
+	}
+}
+
 // checkAvailableForRead checks whether the ingester is available for read requests,
 // and if it is not the case returns an unavailableError error.
 func (i *Ingester) checkAvailableForRead() error {
@@ -3977,8 +3976,8 @@ func (i *Ingester) checkAvailableForPush() error {
 	return newUnavailableError(ingesterState)
 }
 
-// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
-func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.
+func (i *Ingester) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
@@ -3995,7 +3994,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, errPushGrpcDisabled
 	}
 
-	err := i.PushToStorage(ctx, req)
+	err := i.PushToStorageAndReleaseRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}

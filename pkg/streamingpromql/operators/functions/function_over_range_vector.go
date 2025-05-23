@@ -13,16 +13,16 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // FunctionOverRangeVector performs a rate calculation over a range vector.
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
 	ScalarArgs               []types.ScalarOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
 
 	Annotations *annotations.Annotations
@@ -45,7 +45,7 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
 	scalarArgs []types.ScalarOperator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	f FunctionOverRangeVectorDefinition,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,

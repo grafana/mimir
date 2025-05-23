@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
@@ -33,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -51,7 +51,7 @@ type Query struct {
 	originalExpression string
 
 	cancel                   context.CancelCauseFunc
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
 	lookbackDelta            time.Duration
@@ -84,7 +84,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 	q := &Query{
 		queryable:                queryable,
 		engine:                   e,
-		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		memoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
 		annotations:              annotations.New(),
 		stats:                    &types.QueryStats{},
 		topLevelQueryTimeRange:   timeRange,
@@ -558,6 +558,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		defer q.root.Close()
 	}
 
+	// Add the memory consumption tracker to the context of this query before executing it so
+	// that we can pass it to the rest of the read path and keep track of memory used loading
+	// chunks from store-gateways or ingesters.
+	ctx = limiter.AddMemoryTrackerToContext(ctx, q.memoryConsumptionTracker)
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	q.cancel = cancel
 
@@ -692,6 +697,12 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 			return nil, err
 		}
 
+		if len(d.Floats)+len(d.Histograms) > 1 {
+			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
+		}
+
+		// In addition to the two cases below, a series may also have no data points, in which case we don't need to do anything.
 		if len(d.Floats) == 1 && len(d.Histograms) == 0 {
 			point := d.Floats[0]
 			v = append(v, promql.Sample{
@@ -709,15 +720,6 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 
 			// Remove histogram from slice to ensure it's not mutated when the slice is reused.
 			d.Histograms[0].H = nil
-		} else {
-			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
-
-			// A series may have no data points.
-			if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-				continue
-			}
-
-			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
 		types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
@@ -853,13 +855,17 @@ func (q *Query) Close() {
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	case promql.String:
 		// Nothing to do as strings don't come from a pool
+	case nil:
+		// Nothing to do if there is no value.
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}
 
+	q.result.Value = nil
+
 	if q.engine.pedantic && q.result.Err == nil {
-		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
-			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
+		if bytesUsed := q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(); bytesUsed > 0 {
+			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool.", bytesUsed, q.originalExpression))
 		}
 	}
 }

@@ -5,8 +5,8 @@ package operators
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // InstantVectorOperatorBuffer buffers series data until it is needed by an operator.
@@ -26,7 +26,7 @@ type InstantVectorOperatorBuffer struct {
 	seriesUsed          []bool
 	lastSeriesIndexUsed int
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// Stores series read but required for later series.
 	buffer map[int]types.InstantVectorSeriesData
@@ -35,7 +35,7 @@ type InstantVectorOperatorBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
+func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
 	return &InstantVectorOperatorBuffer{
 		source:                   source,
 		seriesUsed:               seriesUsed,

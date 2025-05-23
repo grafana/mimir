@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type Subquery struct {
@@ -39,7 +39,7 @@ func NewSubquery(
 	subqueryOffset time.Duration,
 	subqueryRange time.Duration,
 	expressionPosition posrange.PositionRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) *Subquery {
 	return &Subquery{
 		Inner:                inner,

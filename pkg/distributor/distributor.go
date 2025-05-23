@@ -919,24 +919,24 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
-// Returns a boolean stating if the timeseries should be removed from the request, and an error explaining the first validation finding.
+// Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (bool, error) {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
 	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
-		return true, err
+		return err
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
 
 	if err := d.validateSamples(now, ts, userID, group); err != nil {
-		return true, err
+		return err
 	}
 
 	if err := d.validateHistograms(now, ts, userID, group); err != nil {
-		return true, err
+		return err
 	}
 
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
@@ -946,7 +946,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
 	}
 
-	return false, nil
+	return nil
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -1228,7 +1228,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			rawSamples := len(ts.Samples)
 			rawHistograms := len(ts.Histograms)
-			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1259,9 +1259,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
 				}
-				if shouldRemove {
-					removeIndexes = append(removeIndexes, tsIdx)
-				}
+				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
 
@@ -1764,6 +1762,24 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return ctx
 	}
 
+	var partitionsRequestContext func() context.Context
+	var partitionsRequestContextAndCancel func() (context.Context, context.CancelFunc)
+
+	if d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled && d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime > 0 {
+		// Create a separate context for partitions with shorter timeout during migration
+		partitionsRequestContextAndCancel = sync.OnceValues(func() (context.Context, context.CancelFunc) {
+			timeout := d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime
+			return context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		})
+
+		partitionsRequestContext = func() context.Context {
+			ctx, _ := partitionsRequestContextAndCancel()
+			return ctx
+		}
+	} else {
+		partitionsRequestContext = remoteRequestContext
+	}
+
 	batchCleanup := func() {
 		// Notify the provided callback that it's now safe to run the cleanup because there are no
 		// more in-flight requests to the backend.
@@ -1772,6 +1788,10 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		// All requests have completed, so it's now safe to cancel the requests context to release resources.
 		_, cancel := remoteRequestContextAndCancel()
 		cancel()
+		if partitionsRequestContextAndCancel != nil {
+			_, cancel = partitionsRequestContextAndCancel()
+			cancel()
+		}
 	}
 
 	batchOptions := ring.DoBatchOptions{
@@ -1785,7 +1805,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -1809,7 +1829,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
@@ -1819,7 +1839,11 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
 	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
 	if partitionsErr != nil {
-		return partitionsErr
+		if d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled && d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageErrors {
+			level.Warn(d.log).Log("msg", "failed to write to ingest storage", "error", partitionsErr)
+		} else {
+			return partitionsErr
+		}
 	}
 	return ingestersErr
 }

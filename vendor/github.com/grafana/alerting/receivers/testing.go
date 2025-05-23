@@ -2,6 +2,8 @@ package receivers
 
 import (
 	"context"
+
+	"github.com/go-kit/log"
 )
 
 type NotificationServiceMock struct {
@@ -13,7 +15,7 @@ type NotificationServiceMock struct {
 	StatusCode   int
 }
 
-func (ns *NotificationServiceMock) SendWebhook(_ context.Context, cmd *SendWebhookSettings) error {
+func (ns *NotificationServiceMock) SendWebhook(_ context.Context, _ log.Logger, cmd *SendWebhookSettings) error {
 	ns.WebhookCalls = append(ns.WebhookCalls, *cmd)
 	ns.Webhook = *cmd
 
@@ -47,10 +49,10 @@ func NewMockWebhookSender() *MockWebhookSender {
 	}
 }
 
-func (m *MockWebhookSender) SendWebhook(ctx context.Context, cmd *SendWebhookSettings) error {
+func (m *MockWebhookSender) SendWebhook(ctx context.Context, l log.Logger, cmd *SendWebhookSettings) error {
 	m.Calls = append(m.Calls, Call{
 		Method: "SendWebhook",
-		Args:   []interface{}{ctx, cmd},
+		Args:   []interface{}{ctx, l, cmd},
 	})
 
 	if m.SendWebhookFunc != nil {

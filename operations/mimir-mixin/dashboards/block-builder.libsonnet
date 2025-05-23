@@ -7,7 +7,75 @@ local filename = 'mimir-block-builder.json';
     ($.dashboard('Block-builder') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('Summary')
+      $.row('Scheduler summary')
+      .addPanel(
+        $.timeseriesPanel('Partition Lag') +
+        $.panelDescription(
+          'Partition Lag',
+          'Number of records in the backlog of a partition.',
+        ) +
+        $.queryPanel(
+          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          '{{partition}}',
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Jobs') +
+        $.panelDescription(
+          'Outstanding jobs',
+          'Number of outstanding and active jobs.',
+        ) +
+        $.queryPanel(
+          [
+            'cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'cortex_blockbuilder_scheduler_assigned_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            'outstanding',
+            'active',
+          ],
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Job Update Duration') +
+        $.panelDescription(
+          'Scheduler Job Update Duration',
+          'Amount of time the scheduler took to calculate the jobs.'
+        ) +
+        $.queryPanel(
+          [
+            'histogram_quantile(0.50, sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder_scheduler)],
+            'histogram_quantile(0.99, sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder_scheduler)],
+            'histogram_avg(sum (rate(cortex_blockbuilder_scheduler_schedule_update_seconds{%(job)s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.block_builder_scheduler)],
+          ],
+          [
+            '50th percentile',
+            '99th percentile',
+            'average',
+          ],
+        ) +
+        { fieldConfig+: { defaults+: { unit: 's' } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Errors') +
+        $.panelDescription(
+          'Errors',
+          'Various errors exposed by the scheduler.',
+        ) +
+        $.queryPanel(
+          [
+            'sum(increase(cortex_blockbuilder_scheduler_fetch_offsets_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(increase(cortex_blockbuilder_scheduler_flush_failed_total{%(job)s}[$__rate_interval]))' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          ],
+          [
+            'fetch offsets failed',
+            'flush failed',
+          ],
+        )
+      )
+    )
+    .addRow(
+      $.row('Block builder summary')
       .addPanel(
         $.timeseriesPanel('Kafka fetched records / sec') +
         $.panelDescription(
@@ -126,12 +194,21 @@ local filename = 'mimir-block-builder.json';
       )
     )
     .addRow(
-      $.row('Resources')
+      $.row('Block builder resources')
       .addPanel(
         $.containerCPUUsagePanelByComponent('block_builder'),
       )
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder'),
+      )
+    )
+    .addRow(
+      $.row('Scheduler resources')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('block_builder_scheduler'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('block_builder_scheduler'),
       )
     ),
 }

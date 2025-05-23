@@ -56,8 +56,9 @@ type HookClientClosed interface {
 // HookBrokerConnect is called after a connection to a broker is opened.
 type HookBrokerConnect interface {
 	// OnBrokerConnect is passed the broker metadata, how long it took to
-	// dial, and either the dial's resulting net.Conn or error.
-	OnBrokerConnect(meta BrokerMetadata, dialDur time.Duration, conn net.Conn, err error)
+	// dial and initialize the connection (issue ApiVersions and run through
+	// any SASL flow), and either the dial's resulting net.Conn or any error.
+	OnBrokerConnect(meta BrokerMetadata, initDur time.Duration, conn net.Conn, err error)
 }
 
 // HookBrokerDisconnect is called when a connection to a broker is closed.

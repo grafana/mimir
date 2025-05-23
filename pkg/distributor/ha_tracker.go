@@ -212,10 +212,11 @@ type defaultHaTracker struct {
 	electedReplicaPropagationTime prometheus.Histogram
 	kvCASCalls                    *prometheus.CounterVec
 
-	cleanupRuns               prometheus.Counter
-	replicasMarkedForDeletion prometheus.Counter
-	deletedReplicas           prometheus.Counter
-	markingForDeletionsFailed prometheus.Counter
+	cleanupRuns                      prometheus.Counter
+	replicasMarkedForDeletion        prometheus.Counter
+	deletedReplicas                  prometheus.Counter
+	markingForDeletionsFailed        prometheus.Counter
+	replicasDescFailedTypeAssertions prometheus.Counter
 }
 
 // For one cluster, the information we need to do ha-tracking.
@@ -290,6 +291,10 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Name: "cortex_ha_tracker_replicas_cleanup_delete_failed_total",
 			Help: "Number of elected replicas that failed to be marked for deletion, or deleted.",
 		}),
+		replicasDescFailedTypeAssertions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ha_tracker_replica_desc_failed_type_assertions_total",
+			Help: "Number of failed replicaDesc type assertions in the HA tracker.",
+		}),
 	}
 	client, err := kv.NewClient(
 		cfg.KVStore,
@@ -357,7 +362,10 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
-			return false
+			// Always return true to ensure WatchPrefix() is never interrupted, otherwise the HA tracker stops to receive updates.
+			level.Error(h.logger).Log("msg", "unexpected data type receive when watching for HA tracker updates", "return type", fmt.Sprintf("%T", value), "key", key)
+			h.replicasDescFailedTypeAssertions.Inc()
+			return true
 		}
 		h.processKVStoreEntry(key, replica)
 		return true
@@ -636,6 +644,14 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 			}
 			electedAtTime = desc.ElectedAt
 			electedChanges = desc.ElectedChanges
+
+			// In the past we had a bug that caused ElectedAt timestamp to not be set (so it was the default zero value).
+			// The bug is fixed now, but we may still have very old entries around with a zero ElectedAt timestamp.
+			// To avoid misunderstandings, we proactively fix it by setting the ElectedAt to now.
+			if electedAtTime == 0 {
+				electedAtTime = timestamp.FromTime(now)
+			}
+
 			// If our replica is different, wait until the failover time
 			if desc.Replica != replica {
 				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
@@ -647,13 +663,11 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 				electedChanges = desc.ElectedChanges + 1
 			}
 		} else {
-			if desc == nil || (desc.DeletedAt > 0) {
-				// if there is no desc in the kvStore , or if the entry in kvStore is marked as deleted but not yet removed,
-				// set the electedAtTime to avoid being zero
-				// The second part, (desc.DeletedAt > 0), ensures the replica is elected to "revive" the cluster entry after the previous one was deleted.
-				electedAtTime = timestamp.FromTime(now)
-			}
+			// The replica doesn't exist in the KV store yet, or it's marked for deletion. We have to re-create it,
+			// making sure the ElectedAt timestamp is set.
+			electedAtTime = timestamp.FromTime(now)
 		}
+
 		// Attempt to update KVStore to our timestamp and replica.
 		desc = &ReplicaDesc{
 			Replica:        replica,

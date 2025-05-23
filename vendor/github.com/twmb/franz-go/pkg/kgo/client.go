@@ -1346,11 +1346,11 @@ func (cl *Client) retryableBrokerFn(fn func() (*broker, error)) *retryable {
 }
 
 func (cl *Client) shouldRetry(tries int, err error) bool {
-	return (kerr.IsRetriable(err) || isRetryableBrokerErr(err)) && int64(tries) < cl.cfg.retries
+	return (kerr.IsRetriable(err) || isRetryableBrokerErr(err)) && int64(tries) <= cl.cfg.retries
 }
 
 func (cl *Client) shouldRetryNext(tries int, err error) bool {
-	return isSkippableBrokerErr(err) && int64(tries) < cl.cfg.retries
+	return isSkippableBrokerErr(err) && int64(tries) <= cl.cfg.retries
 }
 
 type retryable struct {
@@ -1406,7 +1406,7 @@ start:
 	}
 
 	if err != nil || retryErr != nil {
-		if r.limitRetries == 0 || tries < r.limitRetries {
+		if r.limitRetries == 0 || tries <= r.limitRetries {
 			backoff := r.cl.cfg.retryBackoff(tries)
 			if retryTimeout == 0 || time.Now().Add(backoff).Sub(tryStart) <= retryTimeout {
 				// If this broker / request had a retryable error, we can
@@ -1415,8 +1415,10 @@ start:
 				// broker is different than the current, we also retry.
 				if r.cl.shouldRetry(tries, err) || r.cl.shouldRetry(tries, retryErr) {
 					r.cl.cfg.logger.Log(LogLevelDebug, "retrying request",
+						"request", kmsg.NameForKey(req.Key()),
 						"tries", tries,
 						"backoff", backoff,
+						"time_since_start", time.Since(tryStart),
 						"request_error", err,
 						"response_error", retryErr,
 					)
@@ -1802,7 +1804,8 @@ func (cl *Client) doLoadCoordinators(ctx context.Context, typ int8, keys ...stri
 			"coordinator_keys", req.CoordinatorKeys,
 		)
 
-		shards := cl.RequestSharded(cl.ctx, req)
+		ctx := context.WithValue(cl.ctx, noShardRetryCtx, true)
+		shards := cl.RequestSharded(ctx, req)
 
 		for _, shard := range shards {
 			if shard.Err != nil {
@@ -2314,6 +2317,8 @@ type sharder interface {
 	merge([]ResponseShard) (kmsg.Response, error)
 }
 
+var noShardRetryCtx = func() *string { s := "no_shard_retry"; return &s }()
+
 // handleShardedReq splits and issues requests to brokers, recursively
 // splitting as necessary if requests fail and need remapping.
 func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]ResponseShard, shardMerge) {
@@ -2386,6 +2391,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 
 	l := cl.cfg.logger
 	debug := l.Level() >= LogLevelDebug
+	noRetries := ctx != nil && ctx.Value(noShardRetryCtx) != nil
 
 	// issue is called to progressively split and issue requests.
 	//
@@ -2477,16 +2483,16 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				backoff := cl.cfg.retryBackoff(tries)
 				if err != nil &&
 					(reshardable && isPinned && errors.Is(err, errBrokerTooOld) && tries <= 3) ||
-					(retryTimeout == 0 || time.Now().Add(backoff).Sub(start) <= retryTimeout) && cl.shouldRetry(tries, err) && cl.waitTries(ctx, backoff) {
+					(retryTimeout == 0 || time.Now().Add(backoff).Sub(start) <= retryTimeout) && cl.shouldRetry(tries, err) && cl.waitTries(ctx, backoff) && !noRetries {
 					// Non-reshardable re-requests just jump back to the
 					// top where the broker is loaded. This is the case on
 					// requests where the original request is split to
 					// dedicated brokers; we do not want to re-shard that.
 					if !reshardable {
-						l.Log(LogLevelDebug, "sharded request failed, reissuing without resharding", "req", kmsg.Key(myIssue.req.Key()).Name(), "time_since_start", time.Since(start), "tries", try.tries, "err", err)
+						l.Log(LogLevelDebug, "sharded request failed, reissuing without resharding", "req", kmsg.Key(myIssue.req.Key()).Name(), "time_since_start", time.Since(start), "tries", tries, "err", err)
 						goto start
 					}
-					l.Log(LogLevelDebug, "sharded request failed, resharding and reissuing", "req", kmsg.Key(myIssue.req.Key()).Name(), "time_since_start", time.Since(start), "tries", try.tries, "err", err)
+					l.Log(LogLevelDebug, "sharded request failed, resharding and reissuing", "req", kmsg.Key(myIssue.req.Key()).Name(), "time_since_start", time.Since(start), "tries", tries, "err", err)
 					issue(reqTry{tries, myUnderlyingReq, err})
 					return
 				}

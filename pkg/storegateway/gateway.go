@@ -179,7 +179,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create ring client")
 	}
 
-	var dynamicReplication DynamicReplication = NewNopDynamicReplication()
+	var dynamicReplication DynamicReplication = NewNopDynamicReplication(gatewayCfg.ShardingRing.ReplicationFactor)
 	if gatewayCfg.DynamicReplication.Enabled {
 		dynamicReplication = NewMaxTimeDynamicReplication(
 			gatewayCfg,

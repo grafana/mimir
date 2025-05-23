@@ -331,7 +331,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.dispatcherMetrics = dispatch.NewDispatcherMetrics(true, am.registry)
 
-	//TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
+	// TODO: From this point onward, the alertmanager _might_ receive requests - we need to make sure we've settled and are ready.
 	return am, nil
 }
 
@@ -614,6 +614,14 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
+	grafanaOpts := []alertingHttp.ClientOption{
+		alertingHttp.WithUserAgent(version.UserAgent()),
+	}
+
+	if dialer := firewallDialer.Dialer(); dialer != nil {
+		grafanaOpts = append(grafanaOpts, alertingHttp.WithDialer(*dialer))
+	}
+
 	// Cached templates.
 	var tmpl *template.Template
 	var gTmpl *template.Template
@@ -635,7 +643,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				gTmpl.ExternalURL = tmplExternalURL
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier)
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier, grafanaOpts...)
 		} else {
 			if tmpl == nil {
 				tmpl, err = loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
@@ -688,10 +696,18 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 	emailCfg := am.emailCfg
 	am.emailCfgMtx.RUnlock()
 
-	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier)
+	opts := []alertingHttp.ClientOption{
+		alertingHttp.WithUserAgent(version.UserAgent()),
+	}
+
+	if firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits)).Dialer(); firewallDialer != nil {
+		opts = append(opts, alertingHttp.WithDialer(*firewallDialer))
+	}
+
+	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier, opts...)
 }
 
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
@@ -699,21 +715,22 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		return nil, err
 	}
 
-	integrations, err := alertingNotify.BuildReceiverIntegrations(
-		rCfg,
-		tmpl,
-		&images.URLProvider{},
-		newLoggerFactory(logger),
-		alertingHttp.ClientConfiguration{UserAgent: version.UserAgent()},
-		alertingReceivers.NewEmailSenderFactory(emailCfg),
-		wrapper,
-		1, // orgID is always 1.
-		version.Version,
-	)
+	emailSender, err := alertingReceivers.NewEmailSender(emailCfg)
 	if err != nil {
 		return nil, err
 	}
 
+	integrations := alertingNotify.BuildReceiverIntegrations(
+		rCfg,
+		tmpl,
+		&images.URLProvider{},
+		logger,
+		emailSender,
+		wrapper,
+		1, // orgID is always 1.
+		version.Version,
+		opts...,
+	)
 	return integrations, nil
 }
 

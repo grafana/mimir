@@ -64,12 +64,16 @@ type DynamicReplication interface {
 	MaxReplicationFactor() int
 }
 
-func NewNopDynamicReplication() *NopDynamicReplication {
-	return &NopDynamicReplication{}
+func NewNopDynamicReplication(defaultReplicationFactor int) *NopDynamicReplication {
+	return &NopDynamicReplication{
+		replicationFactor: defaultReplicationFactor,
+	}
 }
 
 // NopDynamicReplication is an DynamicReplication implementation that always returns false.
-type NopDynamicReplication struct{}
+type NopDynamicReplication struct {
+	replicationFactor int
+}
 
 func (n NopDynamicReplication) EligibleForSync(ReplicatedBlock) (bool, int) {
 	return false, 0
@@ -80,7 +84,7 @@ func (n NopDynamicReplication) EligibleForQuerying(ReplicatedBlock) (bool, int) 
 }
 
 func (n NopDynamicReplication) MaxReplicationFactor() int {
-	return 1
+	return n.replicationFactor
 }
 
 func NewMaxTimeDynamicReplication(cfg Config, gracePeriod time.Duration) *MaxTimeDynamicReplication {

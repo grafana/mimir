@@ -156,12 +156,12 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 		q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 		require.NoError(t, err)
 		mimir := q.Exec(context.Background())
-		q.Close()
+		defer q.Close()
 
 		q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
 		require.NoError(t, err)
 		prometheus := q.Exec(context.Background())
-		q.Close()
+		defer q.Close()
 
 		testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
 	})
@@ -3417,4 +3417,41 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 			runTest(t, engine, queryOpts, 14*time.Minute)
 		})
 	})
+}
+
+func TestQueryClose(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric{idx="1"} 0+1x5
+			some_metric{idx="2"} 0+1x5
+			some_metric{idx="3"} 0+1x5
+			some_metric{idx="4"} 0+1x5
+			some_metric{idx="5"} 0+1x5
+			some_histogram{idx="1"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
+			some_histogram{idx="2"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}}x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	start := timestamp.Time(0)
+	end := start.Add(4 * time.Minute)
+	step := time.Minute
+
+	q, err := engine.NewRangeQuery(context.Background(), storage, nil, `count({__name__=~"some_.*"})`, start, end, step)
+	require.NoError(t, err)
+
+	res := q.Exec(context.Background())
+	require.NoError(t, res.Err)
+
+	q.Close()
+	mqeQuery, ok := q.(*Query)
+	require.True(t, ok)
+	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	// Close the query a second time, to ensure that closing the query again does not cause any issues.
+	q.Close()
+	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 }

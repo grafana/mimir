@@ -39,12 +39,12 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	logger := dslog.NewGoKitWithWriter(logFormat, writer)
 
 	if rateLimitedCfg.Enabled {
-		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(6))
+		// use UTC timestamps and skip 7 stack frames if rate limited logger is needed.
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(7))
 		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsBurstSize, rateLimitedCfg.Registry)
 	} else {
-		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(5))
+		// use UTC timestamps and skip 6 stack frames if no rate limited logger is needed.
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(6))
 	}
 	// Must put the level filter last for efficiency.
 	logger = newFilter(logger, logLevel)
@@ -52,6 +52,17 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	// Set global logger.
 	Logger = logger
 	return logger
+}
+
+// MakeLeveledLogger makes a logger wrapped with the same level filter used in the global logger.
+// Intended for use in tests that don't set the global logger.
+func MakeLeveledLogger(writer io.Writer, level string) log.Logger {
+	var logLevel dslog.Level
+	if err := logLevel.Set(level); err != nil {
+		panic(err)
+	}
+	logger := log.NewLogfmtLogger(writer)
+	return newFilter(logger, logLevel)
 }
 
 type logLevel int
@@ -63,11 +74,16 @@ const (
 	errorLevel
 )
 
-type leveledLogger interface {
-	level() logLevel
+type privateLevelDetector struct {
+	string
+	logLevel
 }
 
-var _ leveledLogger = levelFilter{}
+func (x *privateLevelDetector) String() string {
+	return x.string
+}
+
+var _ log.Logger = levelFilter{}
 
 // Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.
 type levelFilter struct {
@@ -93,8 +109,15 @@ func newFilter(logger log.Logger, lvl dslog.Level) log.Logger {
 	}
 }
 
-func (f levelFilter) level() logLevel {
-	return f.lvl
+// If we are called with a special magic struct, use it to pass back the logging level.
+func (f levelFilter) Log(keyvals ...interface{}) error {
+	if len(keyvals) > 0 {
+		if x, ok := keyvals[len(keyvals)-1].(*privateLevelDetector); ok {
+			x.logLevel = f.lvl
+			return nil
+		}
+	}
+	return f.Logger.Log(keyvals...)
 }
 
 func (f *levelFilter) DebugEnabled() bool {

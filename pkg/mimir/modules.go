@@ -717,6 +717,9 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 		return
 	}
 
+	if t.IngesterPartitionRingWatcher != nil {
+		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
@@ -1189,7 +1192,7 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
-	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger)
+	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize continuous-test client")
 	}
