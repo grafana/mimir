@@ -71,6 +71,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
+	github.com/parquet-go/parquet-go v0.25.0
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/otlptranslator v0.0.0-20250620074007-94f535e0c588
 	github.com/prometheus/procfs v0.16.1
@@ -113,6 +114,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
+	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/at-wat/mqtt-go v0.19.4 // indirect
 	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
@@ -149,19 +151,23 @@ require (
 	github.com/knadh/koanf/providers/confmap v1.0.0 // indirect
 	github.com/knadh/koanf/v2 v2.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
+	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
 	github.com/minio/crc64nvme v1.0.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
+	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.125.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.125.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.125.0 // indirect
+	github.com/oracle/oci-go-sdk/v65 v65.92.0 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/prometheus/sigv4 v0.1.2 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/sercand/kuberesolver/v6 v6.0.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
