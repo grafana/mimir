@@ -28,7 +28,11 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	if err != nil {
 		return nil, err
 	}
+<<<<<<< HEAD
 	m, err := search.NewMaterializer(s, d, block, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback)
+=======
+	m, err := search.NewMaterializer(s, d, block, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +53,11 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 
 	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
+<<<<<<< HEAD
 			cs, err := search.MatchersToConstraints(matchers...)
+=======
+			cs, err := search.MatchersToConstraint(matchers...)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 			if err != nil {
 				return err
 			}
@@ -66,7 +74,11 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 				return nil
 			}
 
+<<<<<<< HEAD
 			series, err := b.m.Materialize(ctx, nil, rgi, mint, maxt, skipChunks, rr)
+=======
+			series, err := b.m.Materialize(ctx, rgi, mint, maxt, skipChunks, rr)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 			if err != nil {
 				return err
 			}
@@ -99,7 +111,11 @@ func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []
 
 	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
+<<<<<<< HEAD
 			cs, err := search.MatchersToConstraints(matchers...)
+=======
+			cs, err := search.MatchersToConstraint(matchers...)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 			if err != nil {
 				return err
 			}
@@ -139,7 +155,11 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 
 	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
+<<<<<<< HEAD
 			cs, err := search.MatchersToConstraints(matchers...)
+=======
+			cs, err := search.MatchersToConstraint(matchers...)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 			if err != nil {
 				return err
 			}

@@ -20,7 +20,10 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+<<<<<<< HEAD
 	"github.com/prometheus-community/parquet-common/convert"
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -39,7 +42,11 @@ import (
 type mockBlockConverter struct{}
 
 // ConvertBlock implements the blockConverter interface and always returns nil (success).
+<<<<<<< HEAD
 func (m mockBlockConverter) ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger, opts []convert.ConvertOption) error {
+=======
+func (m mockBlockConverter) ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) error {
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	return nil
 }
 

@@ -23,6 +23,7 @@ import (
 var tracer = otel.Tracer("pkg/storage/parquet")
 
 type querierOpts struct {
+<<<<<<< HEAD
 	concurrency                      int
 	rowCountLimitFunc                search.QuotaLimitFunc
 	chunkBytesLimitFunc              search.QuotaLimitFunc
@@ -38,6 +39,21 @@ var DefaultQuerierOpts = querierOpts{
 	dataBytesLimitFunc:               search.NoopQuotaLimitFunc,
 	materializedSeriesCallback:       search.NoopMaterializedSeriesFunc,
 	materializedLabelsFilterCallback: search.NoopMaterializedLabelsFilterCallback,
+=======
+	concurrency                int
+	rowCountLimitFunc          search.QuotaLimitFunc
+	chunkBytesLimitFunc        search.QuotaLimitFunc
+	dataBytesLimitFunc         search.QuotaLimitFunc
+	materializedSeriesCallback search.MaterializedSeriesFunc
+}
+
+var DefaultQuerierOpts = querierOpts{
+	concurrency:                runtime.GOMAXPROCS(0),
+	rowCountLimitFunc:          search.NoopQuotaLimitFunc,
+	chunkBytesLimitFunc:        search.NoopQuotaLimitFunc,
+	dataBytesLimitFunc:         search.NoopQuotaLimitFunc,
+	materializedSeriesCallback: search.NoopMaterializedSeriesFunc,
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 }
 
 type QuerierOpts func(*querierOpts)
@@ -78,6 +94,7 @@ func WithMaterializedSeriesCallback(fn search.MaterializedSeriesFunc) QuerierOpt
 	}
 }
 
+<<<<<<< HEAD
 // WithMaterializedLabelsFilterCallback sets a callback function to create a filter that can be used
 // to filter series based on their labels before materializing chunks.
 func WithMaterializedLabelsFilterCallback(cb search.MaterializedLabelsFilterCallback) QuerierOpts {
@@ -86,6 +103,8 @@ func WithMaterializedLabelsFilterCallback(cb search.MaterializedLabelsFilterCall
 	}
 }
 
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 func NewParquetChunkQuerier(d *schema.PrometheusParquetChunksDecoder, shardFinder queryable.ShardsFinderFunction, opts ...QuerierOpts) (prom_storage.ChunkQuerier, error) {
 	cfg := DefaultQuerierOpts
 

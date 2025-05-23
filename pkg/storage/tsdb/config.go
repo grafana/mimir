@@ -441,7 +441,10 @@ type BucketStoreConfig struct {
 	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
 
 	// Options for the parquet store
+<<<<<<< HEAD
 	ParquetLoadIndexToDisk   bool   `yaml:"parquet_load_index_to_disk" category:"advanced"`
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	ParquetMaxRowCount       uint64 `yaml:"parquet_max_row_count" category:"advanced"`
 	ParquetMaxChunkSizeBytes uint64 `yaml:"parquet_max_chunk_size_bytes" category:"advanced"`
 	ParquetMaxDataSizeBytes  uint64 `yaml:"parquet_max_data_size_bytes" category:"advanced"`
@@ -474,7 +477,10 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
 
 	// Parquet flags separated from the rest to avoid confusion on rebases with main
+<<<<<<< HEAD
 	f.BoolVar(&cfg.ParquetLoadIndexToDisk, "blocks-storage.bucket-store.parquet-load-index-to-disk", true, "True to download the Parquet labels file to disk before opening it. False to open it directly from the bucket.")
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	f.Uint64Var(&cfg.ParquetMaxRowCount, "blocks-storage.bucket-store.parquet-max-row-count", 0, "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.")
 	f.Uint64Var(&cfg.ParquetMaxChunkSizeBytes, "blocks-storage.bucket-store.parquet-max-chunk-size-bytes", 0, "Maximum size in bytes that can be fetched from the parquet chunks file. If the size exceeds this value the query will stop with limit error.")
 	f.Uint64Var(&cfg.ParquetMaxDataSizeBytes, "blocks-storage.bucket-store.parquet-max-data-size-bytes", 0, "Maximum size in bytes that can be fetched from the parquet labels and chunks data files combined in a single query. If the size exceeds this value the query will stop with limit error.")

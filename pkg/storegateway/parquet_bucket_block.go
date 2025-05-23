@@ -29,6 +29,7 @@ type ParquetShardReaderCloser interface {
 
 // ParquetShardReader implements the storage.ParquetShard and io.Closer interfaces
 // in order to control custom lifecycle logic for compatibility with lazy & pooled readers.
+<<<<<<< HEAD
 // The block's pending readers counter is incremented when the reader is created and decremented on Close().
 type parquetBucketShardReader struct {
 	block *parquetBucketBlock
@@ -39,6 +40,28 @@ func (r *parquetBucketShardReader) LabelsFile() storage.ParquetFileView {
 }
 
 func (r *parquetBucketShardReader) ChunksFile() storage.ParquetFileView {
+=======
+type parquetBucketShardReader struct {
+	block             *parquetBucketBlock
+	readersMu         sync.Mutex
+	labelsFileReaders int
+	chunksFileReaders int
+}
+
+func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	r.labelsFileReaders++
+	r.block.pendingReaders.Add(1)
+	return r.block.shardReaderCloser.LabelsFile()
+}
+
+func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	r.chunksFileReaders++
+	r.block.pendingReaders.Add(1)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	return r.block.shardReaderCloser.ChunksFile()
 }
 
@@ -47,8 +70,23 @@ func (r *parquetBucketShardReader) TSDBSchema() (*schema.TSDBSchema, error) {
 }
 
 func (r *parquetBucketShardReader) Close() error {
+<<<<<<< HEAD
 	r.block.pendingReaders.Done()
 	return nil
+=======
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	errs := multierror.New()
+
+	// TODO Actually closing the files should be handled in the reader pool - need to verify logic there.
+	if totalReaders := r.labelsFileReaders + r.chunksFileReaders; totalReaders > 0 {
+		for i := 0; i < totalReaders; i++ {
+			r.block.pendingReaders.Done()
+		}
+	}
+
+	return errs.Err()
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 }
 
 // parquetBucketBlock wraps access to the block's storage.ParquetShard interface
@@ -82,7 +120,10 @@ func newParquetBucketBlock(
 }
 
 func (b *parquetBucketBlock) ShardReader() ParquetShardReaderCloser {
+<<<<<<< HEAD
 	b.pendingReaders.Add(1)
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	return &parquetBucketShardReader{block: b}
 }
 

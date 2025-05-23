@@ -13,9 +13,15 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+<<<<<<< HEAD
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
+=======
+	"github.com/prometheus-community/parquet-common/schema"
+	"github.com/prometheus-community/parquet-common/storage"
+	"github.com/thanos-io/objstore"
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"golang.org/x/sync/errgroup"
 )
 
@@ -32,11 +38,34 @@ const FirstShardIndex = 0
 // Reader wraps access to a TSDB block's storage.ParquetShard interface.
 
 type Reader interface {
+<<<<<<< HEAD
 	BlockID() ulid.ULID
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	storage.ParquetShard
 	io.Closer
 }
 
+<<<<<<< HEAD
+=======
+type ParquetBucketOpener struct {
+	bkt    objstore.BucketReader
+	prefix string
+}
+
+func NewParquetBucketOpener(bkt objstore.BucketReader, prefix string) *ParquetBucketOpener {
+	return &ParquetBucketOpener{
+		bkt: bkt,
+	}
+}
+
+func (o *ParquetBucketOpener) Open(
+	ctx context.Context, name string, opts ...storage.FileOption,
+) (*storage.ParquetFile, error) {
+	return storage.OpenFromBucket(ctx, o.bkt, filepath.Join(o.prefix, name), opts...)
+}
+
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 type ParquetLocalFileOpener struct {
 	dir string
 }
@@ -57,22 +86,35 @@ func (o *ParquetLocalFileOpener) Open(
 // Parquet labels and chunks files are opened immediately in the constructor;
 // lazy-loading or other lifecycle management can be implemented by wrapping this type.
 type BasicReader struct {
+<<<<<<< HEAD
 	blockID                ulid.ULID
 	labelsFile, chunksFile storage.ParquetFileView
+=======
+	labelsFile, chunksFile *storage.ParquetFile
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	schema                 *schema.TSDBSchema
 	o                      sync.Once
 }
 
 func NewBasicReader(
 	ctx context.Context,
+<<<<<<< HEAD
 	blockID ulid.ULID,
+=======
+	blockID string,
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	shard int,
 	labelsFileOpener storage.ParquetOpener,
 	chunksFileOpener storage.ParquetOpener,
 	opts ...storage.FileOption,
 ) (*BasicReader, error) {
+<<<<<<< HEAD
 	labelsFileName := schema.LabelsPfileNameForShard(blockID.String(), shard)
 	chunksFileName := schema.ChunksPfileNameForShard(blockID.String(), shard)
+=======
+	labelsFileName := schema.LabelsPfileNameForShard(blockID, shard)
+	chunksFileName := schema.ChunksPfileNameForShard(blockID, shard)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 
 	errGroup := errgroup.Group{}
 
@@ -93,12 +135,16 @@ func NewBasicReader(
 	}
 
 	return &BasicReader{
+<<<<<<< HEAD
 		blockID:    blockID,
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		labelsFile: labelsFile,
 		chunksFile: chunksFile,
 	}, nil
 }
 
+<<<<<<< HEAD
 func (r *BasicReader) BlockID() ulid.ULID {
 	return r.blockID
 }
@@ -108,13 +154,24 @@ func (r *BasicReader) LabelsFile() storage.ParquetFileView {
 }
 
 func (r *BasicReader) ChunksFile() storage.ParquetFileView {
+=======
+func (r *BasicReader) LabelsFile() *storage.ParquetFile {
+	return r.labelsFile
+}
+
+func (r *BasicReader) ChunksFile() *storage.ParquetFile {
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	return r.chunksFile
 }
 
 func (r *BasicReader) TSDBSchema() (*schema.TSDBSchema, error) {
 	var err error
 	r.o.Do(func() {
+<<<<<<< HEAD
 		r.schema, err = schema.FromLabelsFile(r.labelsFile)
+=======
+		r.schema, err = schema.FromLabelsFile(r.labelsFile.File)
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	})
 	return r.schema, err
 }

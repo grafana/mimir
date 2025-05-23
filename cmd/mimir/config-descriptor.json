@@ -10178,6 +10178,7 @@
             },
             {
               "kind": "field",
+<<<<<<< HEAD
               "name": "parquet_load_index_to_disk",
               "required": false,
               "desc": "True to download the Parquet labels file to disk before opening it. False to open it directly from the bucket.",
@@ -10189,6 +10190,8 @@
             },
             {
               "kind": "field",
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
               "name": "parquet_max_row_count",
               "required": false,
               "desc": "Maximum number of rows in a parquet file. If the number of rows exceeds this value the query will stop with limit error.",
@@ -18808,6 +18811,7 @@
           "fieldType": "duration"
         },
         {
+<<<<<<< HEAD
           "kind": "field",
           "name": "sorting_labels",
           "required": false,
@@ -18874,6 +18878,8 @@
           "fieldCategory": "advanced"
         },
         {
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
           "kind": "block",
           "name": "sharding_ring",
           "required": false,

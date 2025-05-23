@@ -16,7 +16,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+<<<<<<< HEAD
 	"github.com/grafana/dskit/cache"
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
@@ -83,6 +86,7 @@ func NewParquetBucketStores(
 	reg prometheus.Registerer,
 ) (*ParquetBucketStores, error) {
 
+<<<<<<< HEAD
 	chunksCacheClient, err := cache.CreateClient("parquet-chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "parquet-chunks-cache")
@@ -93,6 +97,8 @@ func NewParquetBucketStores(
 		return nil, errors.Wrapf(err, "failed to create caching bucket for parquet bucket stores")
 	}
 
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
@@ -122,7 +128,11 @@ func NewParquetBucketStores(
 			MaxRetries: 3,
 		},
 
+<<<<<<< HEAD
 		bkt:    cachingBucket,
+=======
+		bkt:    bkt,
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		stores: map[string]*ParquetBucketStore{},
 
 		bucketStoreMetrics: NewParquetBucketStoreMetrics(reg),
@@ -136,11 +146,16 @@ func NewParquetBucketStores(
 
 	// Register metrics.
 	stores.syncTimes = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+<<<<<<< HEAD
 		Name:    "cortex_parquet_bucket_stores_blocks_sync_seconds",
+=======
+		Name:    "cortex_bucket_stores_blocks_sync_seconds",
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		Help:    "The total time it takes to perform a sync stores",
 		Buckets: []float64{0.1, 1, 10, 30, 60, 120, 300, 600, 900},
 	})
 	stores.syncLastSuccess = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+<<<<<<< HEAD
 		Name: "cortex_parquet_bucket_stores_blocks_last_successful_sync_timestamp_seconds",
 		Help: "Unix timestamp of the last successful blocks sync.",
 	})
@@ -154,6 +169,21 @@ func NewParquetBucketStores(
 	})
 	stores.blocksLoaded = prometheus.NewDesc(
 		"cortex_parquet_bucket_store_blocks_loaded",
+=======
+		Name: "cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds",
+		Help: "Unix timestamp of the last successful blocks sync.",
+	})
+	stores.tenantsDiscovered = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_bucket_stores_tenants_discovered",
+		Help: "Number of tenants discovered in the bucket.",
+	})
+	stores.tenantsSynced = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_bucket_stores_tenants_synced",
+		Help: "Number of tenants synced.",
+	})
+	stores.blocksLoaded = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded",
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		"Number of currently loaded blocks.",
 		nil, nil,
 	)
@@ -447,8 +477,11 @@ func (ss *ParquetBucketStores) getOrCreateStore(ctx context.Context, userID stri
 		fetcher,
 		ss.queryGate,
 		ss.lazyLoadingGate,
+<<<<<<< HEAD
 		ss.cfg.BucketStore.ParquetLoadIndexToDisk,
 		nil,
+=======
+>>>>>>> bb537b2d7a (bring in prometheus/parquet-common code to new package (#11490))
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(ss.limits.MaxChunksPerQuery(userID))
 		}),
