@@ -18,6 +18,11 @@ The dashboard isolates each service on the write path into its own section and d
 
 This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
+Use this dashboard for the following use cases:
+
+- Monitor the resource utilization of each component involved in the write path of a Mimir cluster.
+- Identify which component is experiencing capacity issues.
+
 ## Example
 
 The following example shows a Writes resources dashboard from a demo cluster.
