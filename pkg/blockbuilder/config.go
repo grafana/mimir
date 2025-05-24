@@ -43,6 +43,7 @@ type SchedulerConfig struct {
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the block-builders and block-builder-schedulers."`
 	UpdateInterval   time.Duration     `yaml:"update_interval" doc:"description=Interval between scheduler updates."`
 	MaxUpdateAge     time.Duration     `yaml:"max_update_age" doc:"description=Maximum age of jobs to continue sending to the scheduler."`
+	Cluster          string            `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {

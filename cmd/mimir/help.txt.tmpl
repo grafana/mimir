@@ -783,6 +783,12 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+  -server.auxiliary-url-paths comma-separated-list-of-strings
+    	Optionally define auxiliary URL paths, that should not be validated wrt. cluster verification label.
+  -server.cluster-verification-label string
+    	Optionally define the server's cluster verification label, which are sent with requests.
+  -server.cluster-verification-label-check value
+    	Enable validation that HTTP and/or gRPC requests have the configured -server.cluster-verification-label. Ignored if the latter is not set. One of none,all,grpc,http.
   -server.grpc-listen-address string
     	gRPC server listen address.
   -server.grpc-listen-port int

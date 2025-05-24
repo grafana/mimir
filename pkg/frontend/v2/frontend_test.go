@@ -78,7 +78,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	logger := log.NewLogfmtLogger(os.Stdout)
 	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
-	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
+	f, err := NewFrontend(cfg, limits{}, logger, reg, codec, "")
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
@@ -532,7 +532,7 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			})
 
 			req := httptest.NewRequest("GET", "/api/v1/cardinality/active_series?selector=metric", nil)
-			rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f)
+			rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(f, "", nil, nil)
 
 			resp, err := rt.RoundTrip(req.WithContext(user.InjectOrgID(context.Background(), userID)))
 			require.NoError(t, err)

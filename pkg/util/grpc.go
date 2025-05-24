@@ -5,8 +5,6 @@ package util
 import (
 	"errors"
 	"time"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 var ErrCloseAndExhaustTimedOut = errors.New("timed out waiting to exhaust stream after calling CloseSend, will continue exhausting stream in background")
