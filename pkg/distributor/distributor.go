@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1208,6 +1209,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
+		const maxMetricsWithDeduplicatedSamplesToTrace = 10
+		var dedupedPerMetric map[string]int
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1223,10 +1226,30 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
+			rawSamples := len(ts.Samples)
+			rawHistograms := len(ts.Histograms)
 			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
+			}
+
+			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			if dedupedSamplesAndHistograms > 0 {
+				if dedupedPerMetric == nil {
+					dedupedPerMetric = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
+				}
+				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+				if err == nil {
+					increment := len(dedupedPerMetric) < maxMetricsWithDeduplicatedSamplesToTrace
+					if !increment {
+						// If at max capacity, only touch pre-existing entries.
+						_, increment = dedupedPerMetric[name]
+					}
+					if increment {
+						dedupedPerMetric[name] += dedupedSamplesAndHistograms
+					}
+				}
 			}
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
@@ -1242,6 +1265,19 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+		}
+
+		if len(dedupedPerMetric) > 0 {
+			// Emit tracing span events for metrics with deduped samples.
+			spanLogger, _ := spanlogger.NewWithLogger(ctx, d.log, "Distributor.prePushValidationMiddleware")
+			for m, c := range dedupedPerMetric {
+				spanLogger.DebugLog(
+					"msg", "deduplicated samples/histograms with conflicting timestamps from write request",
+					"metric", m,
+					"count", c,
+				)
+			}
+			spanLogger.Finish()
 		}
 
 		if droppedNativeHistograms > 0 {
