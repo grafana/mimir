@@ -304,7 +304,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			// The job discovery process happens concurrently with ongoing job
 			// completions. Now that we have the lock, ignore this job if it's
 			// older than our committed offset.
-			if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok && or.start < c.At {
+			if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok && or.end <= c.At {
 				ps.pendingJobs.Remove(e)
 				continue
 			}
