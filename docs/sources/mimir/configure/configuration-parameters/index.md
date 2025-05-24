@@ -1579,7 +1579,7 @@ The `querier` block configures the querier.
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.query-engine
-[query_engine: <string> | default = "prometheus"]
+[query_engine: <string> | default = "mimir"]
 
 # (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus query engine for any queries not supported by the
