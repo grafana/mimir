@@ -41,7 +41,7 @@ To query the total count of observations within a histogram, use the following q
 
 ```PromQL
 # Native histograms:
-histogram_count(sum(request_duration_seconds))
+sum(histogram_count(request_duration_seconds))
 
 # Classic histograms:
 sum(request_duration_seconds_count)
@@ -51,11 +51,15 @@ To query the total sum of observed values, use the following query:
 
 ```PromQL
 # Native histograms:
-histogram_sum(sum(request_duration_seconds))
+sum(histogram_sum(request_duration_seconds))
 
 # Classic histograms:
 sum(request_duration_seconds_sum)
 ```
+
+{{% admonition type="note" %}}
+`sum(histogram_count(request_duration_seconds))` and `histogram_count(sum(request_duration_seconds))` are equivalent in terms of query results, but the former is more efficient. This applies to `sum` with `histogram_sum` as well.
+{{% /admonition %}}
 
 ### Find rate of observations
 
@@ -63,7 +67,7 @@ To query the rate of all observations calculated over 5 minute time window, use 
 
 ```PromQL
 # Native histograms:
-histogram_count(sum(rate(request_duration_seconds[5m])))
+sum(histogram_count(rate(request_duration_seconds[5m])))
 
 # Classic histograms:
 sum(rate(request_duration_seconds_count[5m]))
@@ -75,7 +79,7 @@ To query the rate of observations between two values such as `0` and `2` seconds
 # Native histograms:
 histogram_fraction(0, 2, sum(rate(request_duration_seconds[5m])))
 *
-histogram_count(sum(rate(request_duration_seconds[5m])))
+sum(histogram_count(rate(request_duration_seconds[5m])))
 
 # Classic histograms:
 sum(rate(request_duration_seconds_bucket{le="2.5"}[5m]))
