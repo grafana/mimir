@@ -22,9 +22,11 @@ import (
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -47,6 +49,8 @@ const (
 
 	maxNotifyFrontendRetries = 5
 )
+
+var tracer = otel.Tracer("querier/worker")
 
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
@@ -228,18 +232,12 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
 
-			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
-			if parentSpanContext != nil {
-				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
-				defer queueSpan.Finish()
-
-				ctx = spanCtx
-
-				if err := sp.updateTracingHeaders(request.HttpRequest, queueSpan); err != nil {
-					level.Warn(sp.log).Log("msg", "could not update trace headers on httpgrpc request, trace may be malformed", "err", err)
-				}
+			if parentSpanContext, valid := httpgrpcutil.ContextWithSpanFromRequest(ctx, request.HttpRequest); valid {
+				var queueSpan trace.Span
+				ctx, queueSpan = tracer.Start(parentSpanContext, "querier_processor_runRequest")
+				defer queueSpan.End()
+				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.HttpRequest))
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
@@ -413,36 +411,13 @@ sendBody:
 	return nil
 }
 
-func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
-	// Reset any trace headers on the HTTP request with the new parent span ID: the child span for the HTTP request created
-	// by the HTTP tracing infrastructure uses the trace information in the HTTP request headers, ignoring the trace
-	// information in the Golang context.
-	return span.Tracer().Inject(span.Context(), opentracing.HTTPHeaders, httpGrpcHeaderWriter{request})
-}
-
-type httpGrpcHeaderWriter struct {
-	request *httpgrpc.HTTPRequest
-}
-
-var _ opentracing.TextMapWriter = httpGrpcHeaderWriter{}
-
-func (w httpGrpcHeaderWriter) Set(key, val string) {
-	for _, h := range w.request.Headers {
-		if h.Key == key {
-			h.Values = []string{val}
-			return
-		}
-	}
-
-	w.request.Headers = append(w.request.Headers, &httpgrpc.Header{Key: key, Values: []string{val}})
-}
-
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
 	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
 	opts, err := sp.grpcConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(sp.grpcConfig.ClusterValidation.Label, sp.invalidClusterValidation, sp.log))
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(addr, opts...)

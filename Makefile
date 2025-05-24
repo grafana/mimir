@@ -456,6 +456,11 @@ lint: check-makefiles
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# We don't use opentracing anymore.
+	faillint -paths \
+		"github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure lines are sorted after lint:sorted directives.
 	go run ./tools/lint-sorted/ \
 		-path ./pkg \

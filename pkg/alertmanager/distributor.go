@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -198,8 +197,8 @@ func (d *Distributor) doAll(userID string, w http.ResponseWriter, r *http.Reques
 
 	results, err := replicationSet.Do(r.Context(), 0, func(ctx context.Context, instance *ring.InstanceDesc) (any, error) {
 		ctx = user.InjectOrgID(ctx, userID)
-		sp, ctx := opentracing.StartSpanFromContext(ctx, "Distributor.doAll")
-		defer sp.Finish()
+		ctx, sp := tracer.Start(ctx, "Distributor.doAll")
+		defer sp.End()
 
 		resp, err := d.doRequest(ctx, *instance, &httpgrpc.HTTPRequest{
 			Method:  r.Method,
@@ -259,8 +258,8 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 	err = ring.DoBatchWithOptions(r.Context(), RingOp, d.alertmanagerRing, []uint32{shardByUser(userID)}, func(am ring.InstanceDesc, _ []int) error {
 		// Use a background context to make sure all alertmanagers get the request even if we return early.
 		localCtx := user.InjectOrgID(context.Background(), userID)
-		sp, localCtx := opentracing.StartSpanFromContext(localCtx, "Distributor.doQuorum")
-		defer sp.Finish()
+		localCtx, sp := tracer.Start(localCtx, "Distributor.doQuorum")
+		defer sp.End()
 
 		resp, err := d.doRequest(localCtx, am, &httpgrpc.HTTPRequest{
 			Method:  r.Method,
@@ -327,8 +326,8 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 		Headers: httpToHttpgrpcHeaders(r.Header),
 	}
 
-	sp, ctx := opentracing.StartSpanFromContext(r.Context(), "Distributor.doUnary")
-	defer sp.Finish()
+	ctx, sp := tracer.Start(r.Context(), "Distributor.doUnary")
+	defer sp.End()
 	// Until we have a mechanism to combine the results from multiple alertmanagers,
 	// we forward the request to only one of the alertmanagers.
 	amDesc := replicationSet.Instances[rand.Intn(len(replicationSet.Instances))]

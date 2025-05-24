@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -32,7 +30,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
@@ -41,9 +43,20 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
+var (
+	spanExporter = tracetest.NewInMemoryExporter()
+)
+
 func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
+
+	// Set a tracer provider with in memory span exporter so we can check the spans later.
+	otel.SetTracerProvider(
+		tracesdk.NewTracerProvider(
+			tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spanExporter)),
+		),
+	)
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
@@ -1543,7 +1556,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		},
 	}
 
-	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry, opentracing.Span, context.Context) {
+	createEngine := func(t *testing.T, limit uint64) (promql.QueryEngine, *prometheus.Registry, trace.Span, context.Context) {
 		reg := prometheus.NewPedanticRegistry()
 		opts := NewTestEngineOpts()
 		opts.CommonOpts.Reg = reg
@@ -1551,10 +1564,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), nil, log.NewNopLogger())
 		require.NoError(t, err)
 
-		tracer, closer := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
-		t.Cleanup(func() { _ = closer.Close() })
-		span, ctx := opentracing.StartSpanFromContextWithTracer(context.Background(), tracer, "query")
-
+		spanExporter.Reset()
+		ctx, span := tracer.Start(context.Background(), "query")
 		return engine, reg, span, ctx
 	}
 
@@ -1563,49 +1574,49 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	step := time.Minute
 
 	for name, testCase := range testCases {
-		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span opentracing.Span, expectedMemoryConsumptionEstimate uint64, queryType string) {
+		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span tracetest.SpanStub, expectedMemoryConsumptionEstimate uint64, queryType string) {
 			peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
 			require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
 
-			jaegerSpan, ok := span.(*jaeger.Span)
-			require.True(t, ok)
-			require.Len(t, jaegerSpan.Logs(), 1)
-			traceLog := jaegerSpan.Logs()[0]
-			expectedFields := []otlog.Field{
-				otlog.String("level", "info"),
-				otlog.String("msg", "query stats"),
-				otlog.Uint64("estimatedPeakMemoryConsumption", expectedMemoryConsumptionEstimate),
-				otlog.String("expr", testCase.expr),
-				otlog.String("queryType", queryType),
+			require.NotEmpty(t, span.Events, "There should be events in the span.")
+			logEvents := filter(span.Events, func(e tracesdk.Event) bool { return e.Name == "log" })
+			require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
+			logEvent := logEvents[0]
+			expectedFields := []attribute.KeyValue{
+				attribute.String("level", "info"),
+				attribute.String("msg", "query stats"),
+				attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
+				attribute.String("expr", testCase.expr),
+				attribute.String("queryType", queryType),
 			}
 
 			switch queryType {
 			case "instant":
 				expectedFields = append(expectedFields,
-					otlog.Int64("time", start.UnixMilli()),
+					attribute.Int64("time", start.UnixMilli()),
 				)
 			case "range":
 				expectedFields = append(expectedFields,
-					otlog.Int64("start", start.UnixMilli()),
-					otlog.Int64("end", end.UnixMilli()),
-					otlog.Int64("step", step.Milliseconds()),
+					attribute.Int64("start", start.UnixMilli()),
+					attribute.Int64("end", end.UnixMilli()),
+					attribute.Int64("step", step.Milliseconds()),
 				)
 			default:
 				panic(fmt.Sprintf("unknown query type: %s", queryType))
 			}
 
-			require.Equal(t, expectedFields, traceLog.Fields)
+			require.Equal(t, expectedFields, logEvent.Attributes)
 		}
 
 		t.Run(name, func(t *testing.T) {
-			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64){
-				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
+			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, trace.Span, context.Context, uint64){
+				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, trace.Span, context.Context, uint64) {
 					engine, reg, span, ctx := createEngine(t, testCase.rangeQueryLimit)
 					q, err := engine.NewRangeQuery(ctx, storage, nil, testCase.expr, start, end, step)
 					require.NoError(t, err)
 					return q, reg, span, ctx, testCase.rangeQueryExpectedPeak
 				},
-				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, opentracing.Span, context.Context, uint64) {
+				"instant": func(t *testing.T) (promql.Query, *prometheus.Registry, trace.Span, context.Context, uint64) {
 					engine, reg, span, ctx := createEngine(t, testCase.instantQueryLimit)
 					q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, start)
 					require.NoError(t, err)
@@ -1619,6 +1630,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 					t.Cleanup(q.Close)
 
 					res := q.Exec(ctx)
+					span.End()
 
 					if testCase.shouldSucceed {
 						require.NoError(t, res.Err)
@@ -1628,11 +1640,24 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 						require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
 					}
 
-					assertEstimatedPeakMemoryConsumption(t, reg, span, expectedPeakMemoryConsumption, queryType)
+					spanStubs := spanExporter.GetSpans()
+					require.Len(t, spanStubs, 1)
+					spanStub := spanStubs[0]
+					assertEstimatedPeakMemoryConsumption(t, reg, spanStub, expectedPeakMemoryConsumption, queryType)
 				})
 			}
 		})
 	}
+}
+
+func filter[T any](slice []T, fn func(T) bool) []T {
+	var result []T
+	for _, item := range slice {
+		if fn(item) {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {

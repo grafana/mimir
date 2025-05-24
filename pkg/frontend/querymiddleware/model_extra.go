@@ -17,11 +17,12 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -234,11 +235,13 @@ func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
-	sp.SetTag("step_ms", r.GetStep())
+func (r *PrometheusRangeQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("query", r.GetQuery()),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+		attribute.Int64("step_ms", r.GetStep()),
+	)
 }
 
 type PrometheusInstantQueryRequest struct {
@@ -424,9 +427,11 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 
 // AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("query", r.GetQuery())
-	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
+func (r *PrometheusInstantQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("query", r.GetQuery()),
+		attribute.String("time", timestamp.Time(r.GetTime()).String()),
+	)
 }
 
 type Hints struct {
@@ -582,27 +587,33 @@ func (r *PrometheusSeriesQueryRequest) WithHeaders(headers []*PrometheusHeader) 
 
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets())),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+	)
 }
 
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("label", fmt.Sprintf("%v", r.GetLabelName()))
-	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("label", r.GetLabelName()),
+		attribute.String("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets())),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+	)
 }
 
 // AddSpanTags writes query information about the current `PrometheusSeriesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusSeriesQueryRequest) AddSpanTags(sp opentracing.Span) {
-	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
-	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
-	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+func (r *PrometheusSeriesQueryRequest) AddSpanTags(sp trace.Span) {
+	sp.SetAttributes(
+		attribute.String("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets())),
+		attribute.String("start", timestamp.Time(r.GetStart()).String()),
+		attribute.String("end", timestamp.Time(r.GetEnd()).String()),
+	)
 }
 
 type PrometheusLabelNamesQueryRequest struct {

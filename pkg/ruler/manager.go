@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/user"
-	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -24,6 +23,10 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
@@ -303,11 +306,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			if err := user.InjectOrgIDIntoHTTPRequest(ctx, req); err != nil {
 				return nil, err
 			}
-			// Jaeger complains the passed-in context has an invalid span ID, so start a new root span
-			sp := ot.GlobalTracer().StartSpan("notify", ot.Tag{Key: "organization", Value: userID})
-			defer sp.Finish()
-			ctx = ot.ContextWithSpan(ctx, sp)
-			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
+
+			ctx, sp := tracer.Start(ctx, "notify", trace.WithAttributes(attribute.String("organization", userID)))
+			defer sp.End()
+
+			otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
 	}, log.With(r.logger, "user", userID)); err != nil {

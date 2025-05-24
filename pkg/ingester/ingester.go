@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -73,9 +74,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/ingester")
 
 const (
 	// Number of timeseries to return in each batch of a QueryStream.
@@ -1769,9 +1771,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
+	spanlog, ctx := spanlogger.New(ctx, i.logger, tracer, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1882,7 +1883,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.LabelNames")
+	spanlog, ctx := spanlogger.New(ctx, i.logger, tracer, "Ingester.LabelNames")
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -2199,9 +2200,8 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
+	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, "Ingester.QueryStream")
 	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

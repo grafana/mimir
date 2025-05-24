@@ -250,7 +250,7 @@ func newOTLPParser(
 			}.Error())
 		}
 
-		spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
+		spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.decodeAndConvert")
 		defer spanLogger.Finish()
 
 		spanLogger.SetTag("content_type", contentType)
