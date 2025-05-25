@@ -12,7 +12,7 @@ weight: 6
 # Grafana Mimir Overview resources dashboard
 
 The Overview resources dashboard shows CPU, memory, disk, and other resource utilization metrics.
-The dashboard groups Mimir components into "Writes", "Reads" and "Backend".
+The dashboard groups Mimir components into "Writes", "Reads", and "Backend".
 
 Use this dashboard for the following use cases:
 

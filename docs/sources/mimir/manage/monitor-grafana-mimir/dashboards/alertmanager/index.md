@@ -20,7 +20,7 @@ Use this dashboard for the following use cases:
 - Monitor the Alertmanager's overall performance and reliability.
 - Track the operational status of the Alertmanager, ensuring it's running as expected and capable of processing incoming alerts.
 - Observe metrics related to alert deduplication, grouping, and routing, which are essential for understanding how alerts are managed and delivered.
-Monitor interactions with object storage systems, such as the storage of alert states, to ensure data persistence and reliability.
+- Monitor interactions with object storage systems, such as the storage of alert states, to ensure data persistence and reliability.
 
 ## Example
 

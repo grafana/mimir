@@ -12,7 +12,7 @@ weight: 7
 # Grafana Mimir Overview networking dashboard
 
 The Overview networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections.
-The dashboard groups Mimir components into "Writes", "Reads" and "Backend".
+The dashboard groups Mimir components into "Writes", "Reads", and "Backend".
 
 Use this dashboard for the following use cases:
 
