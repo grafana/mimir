@@ -13,7 +13,7 @@ weight: 110
 
 # Grafana Mimir Remote ruler reads resources dashboard
 
-The Remote ruler reads resources dashboard shows CPU, memory, disk, and other resources utilization metrics for ruler query path components when remote operational mode is enabled.
+The Remote ruler reads resources dashboard shows CPU, memory, disk, and other resource utilization metrics for ruler query path components when remote operational mode is enabled.
 
 The dashboard isolates each service on the ruler read path into its own section and displays the order in which a read request flows.
 

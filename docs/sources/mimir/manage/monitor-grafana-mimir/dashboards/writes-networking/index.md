@@ -22,7 +22,7 @@ Use this dashboard for the following use cases:
 
 - Monitor the network performance of the write path within a Mimir cluster.
 - Identify where in the write path network delays or congestion are occurring.
-- Diagnose networking bottlenecks in the writer path.
+- Diagnose networking bottlenecks in the write path.
 
 ## Example
 

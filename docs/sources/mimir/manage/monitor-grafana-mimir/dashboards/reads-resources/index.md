@@ -22,7 +22,7 @@ Use this dashboard for the following use cases:
 
 - Diagnose performance issues in the read path.
 - Identify which read path component is experiencing high resource usage.
-- Monitor CPU, memory, and disk usage to identify resource bottlenecks that could affecting query performance.
+- Monitor CPU, memory, and disk usage to identify resource bottlenecks that could affect query performance.
 
 ## Example
 

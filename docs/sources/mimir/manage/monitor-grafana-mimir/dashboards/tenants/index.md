@@ -13,7 +13,7 @@ weight: 160
 
 # Grafana Mimir Tenants dashboard
 
-The Tenants dashboard shows various metrics for the selected tenant.
+The Tenants dashboard shows various metrics for a selected tenant.
 
 Use this dashboard for the following use cases:
 

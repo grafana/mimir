@@ -22,4 +22,4 @@ This dashboard requires [Grafana Loki](/oss/loki/) to fetch detailed query stati
 Use this dashboard for the following use cases:
 
 - Identify and analyze the slowest queries in your Mimir cluster.
-- Filter data to analyze queries from a specific tenant
+- Filter data to analyze queries from a specific tenant.
