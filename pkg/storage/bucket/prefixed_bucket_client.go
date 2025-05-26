@@ -40,8 +40,8 @@ func (b *PrefixedBucketClient) Provider() objstore.ObjProvider {
 }
 
 // Upload the contents of the reader as an object into the bucket.
-func (b *PrefixedBucketClient) Upload(ctx context.Context, name string, r io.Reader) (err error) {
-	err = b.bucket.Upload(ctx, b.fullName(name), r)
+func (b *PrefixedBucketClient) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) (err error) {
+	err = b.bucket.Upload(ctx, b.fullName(name), r, opts...)
 	return
 }
 
