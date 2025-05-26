@@ -449,26 +449,25 @@ overrides_exporter:
   [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
 
 parquet_converter:
-  # (advanced) Comma separated list of tenants that can have their TSDB blocks
-  # converted into parquet. If specified, only these tenants will be converted
-  # by the parquet-converter, otherwise all tenants can be converted. Subject to
-  # sharding.
+  # (advanced) Comma-separated list of tenants that can have their TSDB blocks
+  # converted into Parquet. If specified, the Parquet-converter only converts
+  # these tenants. Otherwise, it converts all tenants. Subject to sharding.
   # CLI flag: -parquet-converter.enabled-tenants
   [enabled_tenants: <string> | default = ""]
 
-  # (advanced) Comma separated list of tenants that cannot have their TSDB
-  # blocks converted into parquet. If specified, and the parquet-converter would
-  # normally pick a given tenant to convert the blocks to parquet (via
-  # -parquet-converter.enabled-tenants or sharding), it will be ignored instead.
+  # (advanced) Comma-separated list of tenants that cannot have their TSDB
+  # blocks converted into Parquet. If specified, and the Parquet-converter would
+  # normally pick a given tenant to convert the blocks to Parquet (via
+  # -parquet-converter.enabled-tenants or sharding), it is ignored instead.
   # CLI flag: -parquet-converter.disabled-tenants
   [disabled_tenants: <string> | default = ""]
 
   # Directory to temporarily store blocks during conversion. This directory is
-  # not required to be persisted between restarts.
+  # not required to persist between restarts.
   # CLI flag: -parquet-converter.data-dir
   [data_dir: <string> | default = "./data-parquet-converter/"]
 
-  # The frequency at which the conversion runs
+  # The frequency at which the conversion runs.
   # CLI flag: -parquet-converter.conversion-interval
   [conversion_interval: <duration> | default = 1m]
 
@@ -542,18 +541,18 @@ parquet_converter:
     # CLI flag: -parquet-converter.ring.instance-enable-ipv6
     [instance_enable_ipv6: <boolean> | default = false]
 
-    # (advanced) Minimum time to wait for ring stability at startup. 0 to
+    # (advanced) Minimum time to wait for ring stability at startup. Set to 0 to
     # disable.
     # CLI flag: -parquet-converter.ring.wait-stability-min-duration
     [wait_stability_min_duration: <duration> | default = 0s]
 
     # (advanced) Maximum time to wait for ring stability at startup. If the
-    # parquet-converter ring keeps changing after this period of time, the
-    # parquet-converter will start anyway.
+    # Parquet-converter ring keeps changing after this period of time, the
+    # Parquet-converter starts anyway.
     # CLI flag: -parquet-converter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
-    # (advanced) Timeout for waiting on parquet-converter to become ACTIVE in
+    # (advanced) Timeout for waiting on Parquet-converter to become ACTIVE in
     # the ring.
     # CLI flag: -parquet-converter.ring.wait-active-instance-timeout
     [wait_active_instance_timeout: <duration> | default = 10m]

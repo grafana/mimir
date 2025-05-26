@@ -48,11 +48,11 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
 
 	// Wait stability flags.
-	f.DurationVar(&cfg.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup. 0 to disable.")
-	f.DurationVar(&cfg.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the parquet-converter ring keeps changing after this period of time, the parquet-converter will start anyway.")
+	f.DurationVar(&cfg.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup. Set to 0 to disable.")
+	f.DurationVar(&cfg.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the Parquet-converter ring keeps changing after this period of time, the Parquet-converter starts anyway.")
 
 	// Timeout durations
-	f.DurationVar(&cfg.WaitActiveInstanceTimeout, flagNamePrefix+"wait-active-instance-timeout", 10*time.Minute, "Timeout for waiting on parquet-converter to become ACTIVE in the ring.")
+	f.DurationVar(&cfg.WaitActiveInstanceTimeout, flagNamePrefix+"wait-active-instance-timeout", 10*time.Minute, "Timeout for waiting on Parquet-converter to become ACTIVE in the ring.")
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {

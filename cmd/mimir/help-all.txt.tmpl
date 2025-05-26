@@ -2112,13 +2112,13 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.wait-stability-min-duration duration
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
   -parquet-converter.conversion-interval duration
-    	The frequency at which the conversion runs (default 1m0s)
+    	The frequency at which the conversion runs. (default 1m0s)
   -parquet-converter.data-dir string
-    	Directory to temporarily store blocks during conversion. This directory is not required to be persisted between restarts. (default "./data-parquet-converter/")
+    	Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts. (default "./data-parquet-converter/")
   -parquet-converter.disabled-tenants comma-separated-list-of-strings
-    	Comma separated list of tenants that cannot have their TSDB blocks converted into parquet. If specified, and the parquet-converter would normally pick a given tenant to convert the blocks to parquet (via -parquet-converter.enabled-tenants or sharding), it will be ignored instead.
+    	Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.
   -parquet-converter.enabled-tenants comma-separated-list-of-strings
-    	Comma separated list of tenants that can have their TSDB blocks converted into parquet. If specified, only these tenants will be converted by the parquet-converter, otherwise all tenants can be converted. Subject to sharding.
+    	Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.
   -parquet-converter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -parquet-converter.ring.consul.cas-retry-delay duration
@@ -2186,11 +2186,11 @@ Usage of ./cmd/mimir/mimir:
   -parquet-converter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -parquet-converter.ring.wait-active-instance-timeout duration
-    	Timeout for waiting on parquet-converter to become ACTIVE in the ring. (default 10m0s)
+    	Timeout for waiting on Parquet-converter to become ACTIVE in the ring. (default 10m0s)
   -parquet-converter.ring.wait-stability-max-duration duration
-    	Maximum time to wait for ring stability at startup. If the parquet-converter ring keeps changing after this period of time, the parquet-converter will start anyway. (default 5m0s)
+    	Maximum time to wait for ring stability at startup. If the Parquet-converter ring keeps changing after this period of time, the Parquet-converter starts anyway. (default 5m0s)
   -parquet-converter.ring.wait-stability-min-duration duration
-    	Minimum time to wait for ring stability at startup. 0 to disable.
+    	Minimum time to wait for ring stability at startup. Set to 0 to disable.
   -print.config
     	Print the config and exit.
   -querier.active-series-results-max-size-bytes int
