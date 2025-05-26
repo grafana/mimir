@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.15.x / unreleased
+
+### Mimirtool
+
+* [BUGFIX] Upgrade Alpine Linux to 3.20.6, fixes CVE-2025-26519. #11530
+
+### Mimir Continuous Test
+
+* [BUGFIX] Upgrade Alpine Linux to 3.20.6, fixes CVE-2025-26519. #11530
+
 ## 2.15.2
 
 ### Grafana Mimir
