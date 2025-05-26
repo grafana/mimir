@@ -710,6 +710,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
       },
+      block_builder: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder',
+      },
     },
 
 
