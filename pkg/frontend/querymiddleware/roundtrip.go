@@ -310,9 +310,9 @@ func newQueryTripperware(
 		}
 
 		if cfg.MaxRetries > 0 {
-			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries)
-			series = newRetryRoundTripper(series, log, cfg.MaxRetries)
-			remoteRead = newRetryRoundTripper(labels, log, cfg.MaxRetries)
+			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, newRetryMetrics(registerer))
+			series = newRetryRoundTripper(series, log, cfg.MaxRetries, newRetryMetrics(registerer))
+			remoteRead = newRetryRoundTripper(labels, log, cfg.MaxRetries, newRetryMetrics(registerer))
 		}
 
 		// Look up cache as first thing after validation.
@@ -382,7 +382,7 @@ func newQueryMiddlewares(
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
-	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
+	retryMiddlewareMetrics := newRetryMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.

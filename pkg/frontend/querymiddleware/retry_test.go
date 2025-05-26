@@ -131,3 +131,74 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	require.Equal(t, int32(1), try.Load())
 	require.Equal(t, ctx.Err(), err)
 }
+
+func Test_RetryRoundTripper(t *testing.T) {
+	var try atomic.Int32
+
+	errBadRequest := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+		Code: http.StatusBadRequest,
+		Body: []byte("Bad Request"),
+	})
+
+	errInternal := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+		Code: http.StatusInternalServerError,
+		Body: []byte("Internal Server Error"),
+	})
+
+	for _, tc := range []struct {
+		name            string
+		handler         http.RoundTripper
+		resp            *http.Response
+		err             error
+		expectedRetries int
+	}{
+		{
+			name:            "retry failures",
+			expectedRetries: 4,
+			handler: RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				if try.Inc() == 5 {
+					return &http.Response{StatusCode: http.StatusOK}, nil
+				}
+				return nil, fmt.Errorf("fail")
+			}),
+			resp: &http.Response{StatusCode: http.StatusOK},
+		},
+		{
+			name:            "don't retry 400s",
+			expectedRetries: 0,
+			handler: RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errBadRequest
+			}),
+			err: errBadRequest,
+		},
+		{
+			name:            "retry 500s",
+			expectedRetries: 5,
+			handler: RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errInternal
+			}),
+			err: errInternal,
+		},
+		{
+			name:            "last error",
+			expectedRetries: 4,
+			handler: RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				if try.Inc() == 5 {
+					return nil, errBadRequest
+				}
+				return nil, errInternal
+			}),
+			err: errBadRequest,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			try.Store(0)
+			mockMetrics := mockRetryMetrics{}
+			rt := newRetryRoundTripper(tc.handler, log.NewNopLogger(), 5, &mockMetrics)
+			resp, err := rt.RoundTrip(&http.Request{})
+			require.Equal(t, tc.err, err)
+			require.Equal(t, tc.resp, resp)
+			require.Equal(t, float64(tc.expectedRetries), mockMetrics.retries)
+		})
+	}
+}
