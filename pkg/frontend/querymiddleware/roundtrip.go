@@ -309,6 +309,12 @@ func newQueryTripperware(
 			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 		}
 
+		if cfg.MaxRetries > 0 {
+			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries)
+			series = newRetryRoundTripper(series, log, cfg.MaxRetries)
+			remoteRead = newRetryRoundTripper(labels, log, cfg.MaxRetries)
+		}
+
 		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)

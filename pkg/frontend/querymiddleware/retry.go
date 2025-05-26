@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -80,6 +81,52 @@ func (r retry) Do(ctx context.Context, req MetricsQueryRequest) (Response, error
 		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
 			return nil, err
 		}
+		// Retry if we get a HTTP 500 or a non-HTTP error.
+		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+		if !ok || httpResp.Code/100 == 5 {
+			lastErr = err
+			log := util_log.WithContext(ctx, spanlogger.FromContext(ctx, r.log))
+			level.Error(log).Log("msg", "error processing request", "try", tries, "err", err)
+			continue
+		}
+
+		return nil, err
+	}
+	return nil, lastErr
+}
+
+type retryRoundTripper struct {
+	next       http.RoundTripper
+	log        log.Logger
+	maxRetries int
+}
+
+func newRetryRoundTripper(next http.RoundTripper, log log.Logger, maxRetries int) http.RoundTripper {
+	return retryRoundTripper{
+		next:       next,
+		log:        log,
+		maxRetries: maxRetries,
+	}
+}
+
+func (r retryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+
+	tries := 0
+	var lastErr error
+	for ; tries < r.maxRetries; tries++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		resp, err := r.next.RoundTrip(req)
+		if err == nil {
+			return resp, nil
+		}
+
+		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
+			return nil, err
+		}
+
 		// Retry if we get a HTTP 500 or a non-HTTP error.
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok || httpResp.Code/100 == 5 {
