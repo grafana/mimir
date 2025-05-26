@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Update to Go v1.23.9 to address [CVE-2025-22871](https://nvd.nist.gov/vuln/detail/CVE-2025-22871). #
+* [BUGFIX] Update to Go v1.23.9 to address [CVE-2025-22871](https://nvd.nist.gov/vuln/detail/CVE-2025-22871). #11543
 
 ## 2.16.0
 
