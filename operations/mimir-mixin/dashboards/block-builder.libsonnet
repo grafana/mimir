@@ -17,7 +17,8 @@ local filename = 'mimir-block-builder.json';
         $.queryPanel(
           '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
           '{{partition}}',
-        )
+        ) +
+        { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
       .addPanel(
         $.timeseriesPanel('Jobs') +
@@ -34,7 +35,8 @@ local filename = 'mimir-block-builder.json';
             'outstanding',
             'active',
           ],
-        )
+        ) +
+        { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 100 } } } },
       )
       .addPanel(
         $.timeseriesPanel('Job Update Duration') +
@@ -200,6 +202,19 @@ local filename = 'mimir-block-builder.json';
       )
       .addPanel(
         $.containerMemoryWorkingSetPanelByComponent('block_builder'),
+      )
+    )
+    .addRowIf(
+      $._config.autoscaling.block_builder.enabled,
+      $.row('Block builder - autoscaling')
+      .addPanel(
+        $.autoScalingActualReplicas('block_builder')
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('block_builder', scalingMetricName='', scalingMetricID='')
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('block_builder')
       )
     )
     .addRow(
