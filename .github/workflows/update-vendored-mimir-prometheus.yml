@@ -30,14 +30,14 @@ jobs:
         id: branch-names-dispatch
         if: github.event_name == 'repository_dispatch'
         env:
-          MIMIR_BRANCH: ${{ github.event.client_payload.branch_name }}
+          MIMIR_PROMETHEUS_BRANCH: ${{ github.event.client_payload.branch_name }}
         run: |
           # For repository_dispatch, use the env-injected mimir_prometheus_branch.
           # The main use case is for weekly branches, so we just use the same branch name here too.
           echo "Triggered by repository_dispatch"
           echo "Using mimir-prometheus branch from payload: $MIMIR_PROMETHEUS_BRANCH"
           
-          echo "mimir_branch=$MIMIR_BRANCH" >> $GITHUB_OUTPUT
+          echo "mimir_branch=$MIMIR_PROMETHEUS_BRANCH" >> $GITHUB_OUTPUT
           echo "mimir_prometheus_branch=$MIMIR_PROMETHEUS_BRANCH" >> $GITHUB_OUTPUT
 
       - name: Determine branch names (workflow_dispatch)
