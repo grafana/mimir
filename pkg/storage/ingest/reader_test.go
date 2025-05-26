@@ -1515,13 +1515,13 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					cluster.KeepControl()
 
 					listOffsetsRequestsCount.Inc()
-					
+
 					// If context has been cancelled, we want to make sure we return an error
 					// that will allow the client to detect the cancellation faster.
 					if contextCancelled.Load() {
 						return nil, context.Canceled, true
 					}
-					
+
 					// Return a proper Kafka error response instead of a raw error
 					// to ensure franz-go will retry this error
 					req := kreq.(*kmsg.ListOffsetsRequest)
@@ -1555,7 +1555,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Cancelling the context should cause the service to switch to a terminal state.
 				assert.Equal(t, services.Starting, reader.State())
-				
+
 				// Mark that context is being cancelled so subsequent requests fail faster
 				contextCancelled.Store(true)
 				cancelReaderCtx()
