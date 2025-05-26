@@ -23,7 +23,7 @@ import (
 
 type retryOperation[T any] func() (T, error)
 
-func retryLogic[T any](cxt context.Context, log log.Logger, maxRetries int, metrics prometheus.Observer, operation retryOperation[T]) (T, error) {
+func doWithRetries[T any](cxt context.Context, log log.Logger, maxRetries int, metrics prometheus.Observer, operation retryOperation[T]) (T, error) {
 	tries := 0
 	defer func() { metrics.Observe(float64(tries)) }()
 
@@ -101,7 +101,7 @@ func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Obser
 }
 
 func (r retry) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	return retryLogic(ctx, r.log, r.maxRetries, r.metrics, func() (Response, error) {
+	return doWithRetries(ctx, r.log, r.maxRetries, r.metrics, func() (Response, error) {
 		return r.next.Do(ctx, req)
 	})
 }
@@ -128,7 +128,7 @@ func newRetryRoundTripper(next http.RoundTripper, log log.Logger, maxRetries int
 }
 
 func (r retryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return retryLogic(req.Context(), r.log, r.maxRetries, r.metrics, func() (*http.Response, error) {
+	return doWithRetries(req.Context(), r.log, r.maxRetries, r.metrics, func() (*http.Response, error) {
 		return r.next.RoundTrip(req)
 	})
 }

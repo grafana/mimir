@@ -273,7 +273,6 @@ func newQueryTripperware(
 	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
-	//retryMetrics := newRetryMetrics(registerer)
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
 		// It means that the first roundtrippers defined in this function will be the last to be
@@ -296,6 +295,8 @@ func newQueryTripperware(
 		if cfg.MaxRetries > 0 {
 			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
 			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
+			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
 		}
 
 		if cfg.ShardActiveSeriesQueries {
