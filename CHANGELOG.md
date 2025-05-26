@@ -1,6 +1,6 @@
 # Changelog
 
-## main / unreleased
+## 2.15.x / unreleased
 
 ### Mimirtool
 
