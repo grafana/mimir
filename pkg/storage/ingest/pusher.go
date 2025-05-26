@@ -104,7 +104,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			}
 
 			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := parsed.Unmarshal(r.content)
+			err := DeserializeRecordContent(r.content, parsed.PreallocWriteRequest, r.version)
 			if err != nil {
 				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
 			}

@@ -140,7 +140,7 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:2],
 			expErr:      "",
 			expectedLogLines: []string{
-				"level=error msg=\"failed to parse write request; skipping\" err=\"received a record with an unsupported version: 101, max supported version: 1\"",
+				"level=error msg=\"failed to parse write request; skipping\" err=\"parsing ingest consumer write request: received a record with an unsupported version: 101, max supported version: 2\"",
 			},
 		},
 		"failed processing of record": {

@@ -193,19 +193,22 @@ func (b *BlockBuilder) stoppingPullMode(_ error) error {
 
 // runningPullMode is a service `running` function for pull mode, where we learn
 // about jobs from a block-builder-scheduler. We consume one job at a time.
-func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
+func (b *BlockBuilder) runningPullMode(svcCtx context.Context) error {
+	// We control our own context here. We'll stop processing jobs when the
+	// service context is cancelled, but let any in-flight jobs complete.
+
 	// Kick off the scheduler's run loop.
-	go b.scheduler.Run(ctx)
+	go b.scheduler.Run(svcCtx)
 
 	for {
-		if err := ctx.Err(); err != nil {
+		if err := svcCtx.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}
 			return err
 		}
 
-		key, spec, err := b.scheduler.GetJob(ctx)
+		key, spec, err := b.scheduler.GetJob(svcCtx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
@@ -214,7 +217,9 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 			continue
 		}
 
-		if _, err := b.consumeJob(ctx, key, spec); err != nil {
+		// Once we've gotten a job, we attempt to complete it even if the context is cancelled.
+
+		if _, err := b.consumeJob(context.Background(), key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 			continue
 		}

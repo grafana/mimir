@@ -965,6 +965,12 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 		return nil, "", fmt.Errorf("no user id found in context")
 	}
 
+	// Return an error when rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
+	// to tell if a tenant doesn't have any rules loaded, or the tenant is limited from evaluating the rules.
+	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
+		return nil, "", errTenantRuleEvaluationDisabled
+	}
+
 	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
@@ -1055,12 +1061,6 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("no user id found in context")
-	}
-
-	// Return an error rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
-	// to tell if a tenant doesn't have any rules loaded, or the tenant is blocked from evaluating the rules.
-	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
-		return nil, errTenantRuleEvaluationDisabled
 	}
 
 	groupDescs, err := r.getLocalRules(ctx, userID, *in)

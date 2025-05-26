@@ -442,6 +442,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
 		queryReq, idx, err := s.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
+			// The error returned can either be ErrQuerierShuttingDown or ErrQuerierWorkerDisconnected.
+			// ErrQuerierShuttingDown is a control-flow message between services to exit this loop.
+			// (see note in transformRequestQueueError).
+			// ErrQuerierWorkerDisconnected is caused by connection/goroutine crash;
+			// we expect this loop is no longer alive to receive the error anyway.
 			return s.transformRequestQueueError(err)
 		}
 

@@ -1560,7 +1560,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Requests / sec';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
+        $.queryPanel(
+          |||
+            sum(rate(cortex_query_scheduler_queue_duration_seconds_count{%s}[$__rate_interval]))
+          ||| % $.jobMatcher(querySchedulerJobName),
+          'Requests/s'
+        ) +
+        $.stack +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } },
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
