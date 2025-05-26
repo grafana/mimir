@@ -36,10 +36,7 @@ import (
 )
 
 const (
-	batchSize             = 50000
-	batchStreamBufferSize = 10
-	parquetFileName       = "block.parquet"
-	ringKey               = "parquet-converter"
+	ringKey = "parquet-converter"
 
 	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
 	// in the ring will be automatically removed after.
