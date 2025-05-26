@@ -610,6 +610,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		promql.NewEngine(promql.EngineOpts{}),
 		defaultStepFunc,
 		nil,
+		nil,
 	)
 
 	middlewaresByRequestType := map[string]struct {
@@ -630,9 +631,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		"remote read": {
 			instances: remoteReadMiddlewares,
 			exceptions: []string{
-				"instrumentMiddleware",
-				"querySharding", // No query sharding support.
-				"retry",
+				"querySharding",                         // No query sharding support.
 				"splitAndCacheMiddleware",               // No time splitting and results cache support.
 				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
@@ -832,6 +831,7 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				nil,
 				reg,
 			)
+
 			require.NoError(t, err)
 
 			req := tc.makeRequest()

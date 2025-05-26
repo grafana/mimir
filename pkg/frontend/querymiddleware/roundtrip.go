@@ -256,6 +256,8 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
+	retryMetrics := newRetryMetrics(registerer)
+
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
 		cfg,
 		log,
@@ -267,9 +269,11 @@ func newQueryTripperware(
 		engine,
 		engineOpts.NoStepSubqueryIntervalFn,
 		registerer,
+		retryMetrics,
 	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
+	//retryMetrics := newRetryMetrics(registerer)
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
 		// It means that the first roundtrippers defined in this function will be the last to be
@@ -289,6 +293,11 @@ func newQueryTripperware(
 		labels := next
 		series := next
 
+		if cfg.MaxRetries > 0 {
+			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
+			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+		}
+
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
 			activeNativeHistogramMetrics = newShardActiveNativeHistogramMetricsMiddleware(activeNativeHistogramMetrics, limits, log)
@@ -307,12 +316,6 @@ func newQueryTripperware(
 			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
-		}
-
-		if cfg.MaxRetries > 0 {
-			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, newRetryMetrics(registerer))
-			series = newRetryRoundTripper(series, log, cfg.MaxRetries, newRetryMetrics(registerer))
-			remoteRead = newRetryRoundTripper(labels, log, cfg.MaxRetries, newRetryMetrics(registerer))
 		}
 
 		// Look up cache as first thing after validation.
@@ -370,6 +373,7 @@ func newQueryMiddlewares(
 	engine *promql.Engine,
 	defaultStepFunc func(rangeMillis int64) int64,
 	registerer prometheus.Registerer,
+	retryMetrics prometheus.Observer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
@@ -382,7 +386,6 @@ func newQueryMiddlewares(
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
-	retryMiddlewareMetrics := newRetryMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -518,8 +521,9 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
+		remoteReadMiddleware = append(remoteReadMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
 	}
 
 	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
