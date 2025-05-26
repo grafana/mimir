@@ -283,6 +283,9 @@ type roundTripperHandler struct {
 }
 
 func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
+	spanLogger, ctx := spanlogger.NewWithLogger(ctx, rth.logger, "roundTripperHandler.Do")
+	defer spanLogger.Finish()
+
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)
 	if err != nil {
 		return nil, err
