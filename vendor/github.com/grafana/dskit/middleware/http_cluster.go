@@ -21,6 +21,7 @@ import (
 
 type clusterValidationError struct {
 	ClusterValidationErrorMessage string `json:"cluster_validation_error_message"`
+	Route                         string `json:"route"`
 }
 
 // writeAsJSON writes this error as JSON to the HTTP response.
@@ -65,8 +66,8 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 			return resp, nil
 		}
 		msg := fmt.Sprintf("request rejected by the server: %s", clusterValidationErr.ClusterValidationErrorMessage)
-		invalidClusterValidationReporter(msg, req.URL.Path)
-		return nil, fmt.Errorf("%s", msg)
+		invalidClusterValidationReporter(msg, clusterValidationErr.Route)
+		return nil, errors.New(msg)
 	}
 }
 
@@ -99,8 +100,15 @@ func ClusterValidationMiddleware(
 
 	return Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if err := checkClusterFromRequest(r, cluster, softValidation, reExcludedPath, invalidClusterRequests, logger); err != nil {
-				clusterValidationErr := clusterValidationError{ClusterValidationErrorMessage: err.Error()}
+			route := ExtractRouteName(r.Context())
+			if route == "" {
+				route = "<unknown-route>"
+			}
+			if err := checkClusterFromRequest(r, cluster, route, softValidation, reExcludedPath, invalidClusterRequests, logger); err != nil {
+				clusterValidationErr := clusterValidationError{
+					ClusterValidationErrorMessage: err.Error(),
+					Route:                         route,
+				}
 				clusterValidationErr.writeAsJSON(w)
 				return
 			}
@@ -119,7 +127,7 @@ func validateClusterValidationMiddlewareInputParameters(cluster string, logger l
 }
 
 func checkClusterFromRequest(
-	r *http.Request, expectedCluster string, softValidationEnabled bool, reExcludedPath *regexp.Regexp,
+	r *http.Request, expectedCluster, route string, softValidationEnabled bool, reExcludedPath *regexp.Regexp,
 	invalidClusterRequests *prometheus.CounterVec, logger log.Logger,
 ) error {
 	if reExcludedPath != nil && reExcludedPath.MatchString(r.URL.Path) {
@@ -153,7 +161,7 @@ func checkClusterFromRequest(
 			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)
 		}
 
-		invalidClusterRequests.WithLabelValues("http", r.URL.Path, expectedCluster, reqCluster).Inc()
+		invalidClusterRequests.WithLabelValues("http", route, expectedCluster, reqCluster).Inc()
 		level.Warn(logger).Log("msg", "request with wrong cluster validation label", "request_cluster_validation_label", reqCluster)
 		return wrongClusterErr
 	}
@@ -164,7 +172,7 @@ func checkClusterFromRequest(
 			emptyClusterErr = fmt.Errorf("rejected request with empty cluster validation label - it should be %q", expectedCluster)
 		}
 
-		invalidClusterRequests.WithLabelValues("http", r.URL.Path, expectedCluster, "").Inc()
+		invalidClusterRequests.WithLabelValues("http", route, expectedCluster, "").Inc()
 		level.Warn(logger).Log("msg", "request with no cluster validation label")
 		return emptyClusterErr
 	}
@@ -174,7 +182,7 @@ func checkClusterFromRequest(
 		rejectedRequestErr = fmt.Errorf("rejected request: %w", err)
 	}
 
-	invalidClusterRequests.WithLabelValues("http", r.URL.Path, expectedCluster, "").Inc()
+	invalidClusterRequests.WithLabelValues("http", route, expectedCluster, "").Inc()
 	level.Warn(logger).Log("msg", "detected error during cluster validation label extraction", "err", err)
 	return rejectedRequestErr
 }
