@@ -23,7 +23,7 @@ var defaultTenantResolver = tenant.NewMultiResolver()
 type SpanLogger = spanlogger.SpanLogger
 
 // New makes a new SpanLogger with a log.Logger to send logs to.
-// It starts a new OTEL span with the method name provided using the tracer provided.
+// It starts a new OTel span with the method name provided using the tracer provided.
 // The provided context will have the logger attached to it and can be retrieved with FromContext.
 func New(ctx context.Context, logger log.Logger, tracer trace.Tracer, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
 	return spanlogger.NewOTel(ctx, logger, tracer, method, defaultTenantResolver, kvps...)
