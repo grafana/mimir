@@ -16,12 +16,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/grafana/alerting/templates/gomplate"
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
+
+	"github.com/grafana/alerting/templates/gomplate"
 
 	"github.com/grafana/alerting/models"
 )
@@ -33,6 +34,38 @@ type Data = template.Data
 var (
 	// Provides current time. Can be overwritten in tests.
 	timeNow = time.Now
+)
+
+// Kind represents the type or category of a template. It is used to differentiate between various template kinds.
+type Kind int
+
+func (k Kind) String() string {
+	switch k {
+	case GrafanaKind:
+		return "Grafana"
+	case MimirKind:
+		return "Mimir"
+	default:
+		return "Unknown"
+	}
+}
+
+// validKinds is a set of all recognized template kinds
+var validKinds = map[Kind]struct{}{
+	GrafanaKind: {},
+	MimirKind:   {},
+}
+
+// IsKnownKind checks if the provided kind is a recognized template kind
+func IsKnownKind(kind Kind) bool {
+	_, exists := validKinds[kind]
+	return exists
+}
+
+const (
+	kindUnknown Kind = iota
+	GrafanaKind
+	MimirKind
 )
 
 type TemplateDefinition struct {
@@ -97,8 +130,8 @@ func DefaultTemplate(options ...template.Option) (TemplateDefinition, error) {
 		newTextTmpl = text
 	}
 
-	// Call FromContent without any user-provided templates to get the combined default template.
-	_, err := FromContent(nil, append(options, captureTemplate)...)
+	// Call fromContent without any user-provided templates to get the combined default template.
+	_, err := fromContent(defaultTemplatesPerKind(GrafanaKind), append(defaultOptionsPerKind(GrafanaKind), append(options, captureTemplate)...)...)
 	if err != nil {
 		return TemplateDefinition{}, err
 	}
@@ -139,26 +172,9 @@ func addFuncs(text *tmpltext.Template, html *tmplhtml.Template) {
 	html.Funcs(funcs)
 }
 
-func NewTemplate(options ...template.Option) (*Template, error) {
-	return template.New(append([]template.Option{addFuncs}, options...)...)
-}
-
-func NewRawTemplate(options ...template.Option) (*tmpltext.Template, error) {
-	var tmpl *tmpltext.Template
-	var capture template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
-		tmpl = text
-	}
-
-	_, err := NewTemplate(append(options, capture)...)
-	if err != nil {
-		return nil, err
-	}
-	return tmpl, nil
-}
-
-// FromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.
-func FromContent(tmpls []string, options ...template.Option) (*Template, error) {
-	t, err := NewTemplate(options...)
+// fromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.
+func fromContent(tmpls []string, options ...template.Option) (*Template, error) {
+	t, err := template.New(options...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +191,6 @@ func FromContent(tmpls []string, options ...template.Option) (*Template, error) 
 			return nil, err
 		}
 		f.Close()
-	}
-
-	// Parse default template string.
-	err = t.Parse(strings.NewReader(DefaultTemplateString))
-	if err != nil {
-		return nil, err
 	}
 
 	// Parse all provided templates.

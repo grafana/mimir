@@ -469,14 +469,14 @@ func newTestReceiversResult(alert types.Alert, results []result, receivers []*AP
 func TestReceivers(
 	ctx context.Context,
 	c TestReceiversConfigBodyParams,
-	tmpls []string,
+	tmpls []templates.TemplateDefinition,
 	buildIntegrationsFunc func(*APIReceiver, *template.Template) ([]*nfstatus.Integration, error),
-	externalURL string) (*TestReceiversResult, int, error) {
+	externalURL string, logger log.Logger) (*TestReceiversResult, int, error) {
 
 	now := time.Now() // The start time of the test
 	testAlert := newTestAlert(c, now, now)
 
-	tmpl, err := templateFromContent(tmpls, externalURL)
+	tmpl, err := templates.TemplateFromTemplateDefinitions(tmpls, logger, externalURL)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get template: %w", err)
 	}
@@ -570,7 +570,7 @@ func TestReceivers(
 }
 
 func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []templates.TemplateDefinition, externalURL string, logger log.Logger) (*TestTemplatesResults, error) {
-	definitions, err := parseTestTemplate(c.Name, c.Template)
+	definitions, err := templates.ParseTestTemplate(c.Name, c.Template)
 	if err != nil {
 		return &TestTemplatesResults{
 			Errors: []TestTemplatesErrorResult{{
@@ -580,22 +580,27 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 		}, nil
 	}
 
+	tc := templates.TemplateDefinition{
+		Name:     c.Name,
+		Template: c.Template,
+	}
+
 	// Recreate the current template replacing the definition blocks that are being tested. This is so that any blocks that were removed don't get defined.
 	var found bool
-	templateContents := make([]string, 0, len(tmpls)+1)
+	templateContents := make([]templates.TemplateDefinition, 0, len(tmpls)+1)
 	for _, td := range tmpls {
 		if td.Name == c.Name {
 			// Template already exists, test with the new definition replacing the old one.
-			templateContents = append(templateContents, c.Template)
+			templateContents = append(templateContents, tc)
 			found = true
 			continue
 		}
-		templateContents = append(templateContents, td.Template)
+		templateContents = append(templateContents, td)
 	}
 
 	if !found {
 		// Template is a new one, add it to the list.
-		templateContents = append(templateContents, c.Template)
+		templateContents = append(templateContents, tc)
 	}
 
 	// Capture the underlying text template so we can use ExecuteTemplate.
@@ -603,7 +608,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 	var captureTemplate template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
 		newTextTmpl = text
 	}
-	newTmpl, err := templateFromContent(templateContents, externalURL, captureTemplate)
+	newTmpl, err := templates.TemplateFromTemplateDefinitions(templateContents, logger, externalURL, captureTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -679,18 +684,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg NotificationsConfiguration) (err 
 	am.templates = make([]templates.TemplateDefinition, len(cfg.Templates))
 	copy(am.templates, cfg.Templates)
 
-	seen := make(map[string]struct{})
-	tmpls := make([]string, 0, len(am.templates))
-	for _, tc := range am.templates {
-		if _, ok := seen[tc.Name]; ok {
-			level.Warn(am.logger).Log("msg", "template with same name is defined multiple times, skipping...", "template_name", tc.Name)
-			continue
-		}
-		tmpls = append(tmpls, tc.Template)
-		seen[tc.Name] = struct{}{}
-	}
-
-	tmpl, err := templateFromContent(tmpls, am.ExternalURL())
+	tmpl, err := templates.TemplateFromTemplateDefinitions(am.templates, am.logger, am.ExternalURL())
 	if err != nil {
 		return err
 	}
