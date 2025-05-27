@@ -18,6 +18,11 @@ The dashboard isolates each service on the read path into its own section and di
 
 This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
+Use this dashboard for the following use cases:
+
+- Monitor in-flight requests and TCP connections to identify any potential bottlenecks or connection issues between services.
+- Visualize bandwidth to detect if any component is experiencing network saturation or unusual traffic patterns.
+
 ## Example
 
 The following example shows a Reads networking dashboard from a demo cluster.
