@@ -206,7 +206,10 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 					for _, series := range result.Data {
 						for name, value := range series {
 							batchCounts[name]++
-							batchCounts[value]++
+							// Skip counting values for __name__ label
+							if name != "__name__" {
+								batchCounts[value]++
+							}
 						}
 					}
 
@@ -219,7 +222,7 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 						}
 					}
 
-					log.Printf("Worker %d: Found %d active series (batch %d/%d), kept %d/%d strings (appearing ≥10 times)",
+					log.Printf("Worker %d: Found %d active series (batch %d/%d), kept %d/%d strings",
 						workerID, len(result.Data), batchCount, batchesPerWorker, keptStrings, len(batchCounts))
 
 				case <-ctx.Done():
