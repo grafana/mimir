@@ -118,7 +118,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("rw2 with offset produces expected WriteRequest", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithOffset(nil, 256)
+		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		data, err := writeRequest.Marshal()
@@ -191,7 +191,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("wrong offset fails to unmarshal", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithOffset(nil, 256)
+		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		data, err := writeRequest.Marshal()
@@ -211,6 +211,82 @@ func TestRW2Unmarshal(t *testing.T) {
 		err = received.Unmarshal(data)
 
 		require.ErrorContains(t, err, "invalid")
+	})
+
+	t.Run("offset and shared symbols produces expected write request", func(t *testing.T) {
+		commonSymbols := []string{"__name__", "job"}
+		syms := test.NewSymbolTableBuilderWithCommon(nil, uint32(len(commonSymbols)), commonSymbols)
+		// Create a new WriteRequest with some sample data.
+		writeRequest := makeTestRW2WriteRequest(syms)
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		received.RW2SymbolOffset = uint32(len(commonSymbols))
+		received.RW2CommonSymbols = commonSymbols
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		expected := &PreallocWriteRequest{
+			WriteRequest: WriteRequest{
+				Timeseries: []PreallocTimeseries{
+					{
+						TimeSeries: &TimeSeries{
+							Labels: []LabelAdapter{
+								{
+									Name:  "__name__",
+									Value: "test_metric_total",
+								},
+								{
+									Name:  "job",
+									Value: "test_job",
+								},
+							},
+							Samples: []Sample{
+								{
+									Value:       123.456,
+									TimestampMs: 1234567890,
+								},
+							},
+							Exemplars: []Exemplar{
+								{
+									Value:       123.456,
+									TimestampMs: 1234567890,
+									Labels: []LabelAdapter{
+										{
+											Name:  "__name__",
+											Value: "test_metric_total",
+										},
+										{
+											Name:  "traceID",
+											Value: "1234567890abcdef",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Metadata: []*MetricMetadata{
+					{
+						MetricFamilyName: "test_metric_total",
+						Type:             COUNTER,
+						Help:             "test_metric_help",
+						Unit:             "test_metric_unit",
+					},
+				},
+				unmarshalFromRW2: true,
+				rw2symbols:       rw2PagedSymbols{offset: 2, commonSymbols: commonSymbols},
+			},
+			UnmarshalFromRW2: true,
+			RW2SymbolOffset:  2,
+			RW2CommonSymbols: commonSymbols,
+		}
+
+		// Check that the unmarshalled data matches the original data.
+		require.Equal(t, expected, &received)
 	})
 }
 

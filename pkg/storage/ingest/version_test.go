@@ -113,7 +113,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 	})
 
 	t.Run("v2", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithOffset(nil, V2RecordSymbolOffset)
+		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols)
 		reqv2 := &mimirpb.WriteRequestRW2{
 			Timeseries: []mimirpb.TimeSeriesRW2{{
 				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
