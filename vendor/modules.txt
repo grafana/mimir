@@ -720,7 +720,7 @@ github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
-# github.com/grafana/dskit v0.0.0-20250523172940-c9115f6be261
+# github.com/grafana/dskit v0.0.0-20250527065258-f84dc58e0bd9
 ## explicit; go 1.23
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1331,7 +1331,7 @@ github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20250317105316-a0136a6f898d
+# github.com/thanos-io/objstore v0.0.0-20250317105316-a0136a6f898d => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
 ## explicit; go 1.22.7
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp
@@ -2042,3 +2042,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
+# github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
