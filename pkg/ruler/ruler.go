@@ -593,7 +593,7 @@ func (r *Ruler) initialSync(ctx context.Context) error {
 		boff.Wait()
 	}
 	if lastErr == nil {
-		return boff.Err()
+		return fmt.Errorf("initial sync: %w", boff.Err())
 	}
 	return lastErr
 }
