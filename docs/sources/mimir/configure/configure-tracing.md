@@ -19,7 +19,7 @@ During this transition, Mimir uses OTel libraries, but performs the configuratio
 ## Dependencies
 
 Set up a Jaeger deployment to collect and store traces from Grafana Mimir.
-A deployment includes either the Jaeger all-in-one binary, or a distributed system of agents, collectors, and queriers.
+A deployment includes either the Jaeger all-in-one binary or a distributed system of agents, collectors, and queriers.
 If you run Grafana Mimir on Kubernetes, refer to [Jaeger Kubernetes](https://github.com/jaegertracing/jaeger-kubernetes).
 
 ## Configuration
