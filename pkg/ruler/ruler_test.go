@@ -1211,7 +1211,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 	}
 }
 
-func TestRuler_InitialSyncFails(t *testing.T) {
+func TestRuler_InitialSync_RetryOnFail(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 	store := &testRuleStore{}
 	reg := prometheus.NewPedanticRegistry()
@@ -1219,14 +1219,17 @@ func TestRuler_InitialSyncFails(t *testing.T) {
 
 	// Override the backoff config to fail the test faster.
 	ruler.syncBackoffConfig.MinBackoff = 10 * time.Millisecond
-	ruler.syncBackoffConfig.MaxRetries = 1
+	ruler.syncBackoffConfig.MaxRetries = 2
 
 	wantErr := errors.New("test failed")
-	store.On("ListAllUsers", mock.Anything, mock.Anything).Return([]string{}, wantErr)
+	store.On("ListAllUsers", mock.Anything, mock.Anything).
+		Twice(). // This ruler instance retries two times.
+		Return([]string{}, wantErr)
 
 	require.ErrorIs(t, services.StartAndAwaitRunning(context.Background(), ruler), wantErr)
 
-	verifySyncRulesMetric(t, reg, 1, 0)
+	// Two initial syncs because of the retry.
+	verifySyncRulesMetric(t, reg, 2, 0)
 }
 
 type testRuleStore struct {
