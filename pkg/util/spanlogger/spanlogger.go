@@ -8,7 +8,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/spanlogger"
 	"github.com/grafana/dskit/tenant"
-	"go.opentelemetry.io/otel/trace"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -22,11 +23,15 @@ var defaultTenantResolver = tenant.NewMultiResolver()
 // SpanLogger unifies tracing and logging, to reduce repetition.
 type SpanLogger = spanlogger.SpanLogger
 
-// New makes a new SpanLogger with a log.Logger to send logs to.
-// It starts a new OTel span with the method name provided using the tracer provided.
-// The provided context will have the logger attached to it and can be retrieved with FromContext.
-func New(ctx context.Context, logger log.Logger, tracer trace.Tracer, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
-	return spanlogger.NewOTel(ctx, logger, tracer, method, defaultTenantResolver, kvps...)
+// New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
+// to it and can be retrieved with FromContext.
+func New(ctx context.Context, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
+	return spanlogger.New(ctx, util_log.Logger, method, defaultTenantResolver, kvps...)
+}
+
+// NewWithLogger is like New but allows to pass a logger.
+func NewWithLogger(ctx context.Context, logger log.Logger, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
+	return spanlogger.New(ctx, logger, method, defaultTenantResolver, kvps...)
 }
 
 // FromContext returns a SpanLogger using the current parent span.

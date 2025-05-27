@@ -590,7 +590,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 		msg = append(msg,
 			"msg", "query stats",
-			"estimatedPeakMemoryConsumption", int64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
+			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(),
 			"expr", q.originalExpression,
 		)
 

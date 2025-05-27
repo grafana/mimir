@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/instrument"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type instrumentMiddleware struct {
@@ -44,7 +44,10 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 func (h *instrumentMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	var resp Response
 	err := instrument.CollectedRequest(ctx, h.name, h.durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-		req.AddSpanTags(trace.SpanFromContext(ctx))
+		sp := opentracing.SpanFromContext(ctx)
+		if sp != nil {
+			req.AddSpanTags(sp)
+		}
 
 		var err error
 		resp, err = h.next.Do(ctx, req)

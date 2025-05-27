@@ -27,10 +27,10 @@ import (
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -42,8 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
-
-var tracer = otel.Tracer("pkg/frontend/v2")
 
 var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
 
@@ -232,7 +230,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req))
+	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(ctx)
+	if tracer != nil && span != nil {
+		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
+		if err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)

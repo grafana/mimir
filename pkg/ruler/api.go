@@ -165,7 +165,7 @@ func NewAPI(r *Ruler, s rulestore.RuleStore, logger log.Logger) *API {
 }
 
 func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.PrometheusRules")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.PrometheusRules")
 	defer logger.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -324,7 +324,7 @@ func parseExcludeAlerts(req *http.Request) (bool, error) {
 }
 
 func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.PrometheusAlerts")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.PrometheusAlerts")
 	defer logger.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -496,7 +496,7 @@ func (a *API) parseRequest(req *http.Request, requireNamespace, requireGroup boo
 }
 
 func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.ListRules")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.ListRules")
 	defer logger.Finish()
 
 	userID, namespace, _, err := a.parseRequest(req, false, false)
@@ -586,7 +586,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.GetRuleGroup")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.GetRuleGroup")
 	defer logger.Finish()
 
 	userID, namespace, groupName, err := a.parseRequest(req, true, true)
@@ -619,7 +619,7 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.CreateRuleGroup")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.CreateRuleGroup")
 	defer logger.Finish()
 
 	userID, namespace, _, err := a.parseRequest(req, true, false)
@@ -719,7 +719,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.DeleteNamespace")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteNamespace")
 	defer logger.Finish()
 
 	userID, namespace, _, err := a.parseRequest(req, true, false)
@@ -756,7 +756,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.DeleteRuleGroup")
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteRuleGroup")
 	defer logger.Finish()
 
 	userID, namespace, groupName, err := a.parseRequest(req, true, true)

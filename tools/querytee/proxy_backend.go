@@ -15,8 +15,9 @@ import (
 	"path"
 	"time"
 
+	"github.com/opentracing-contrib/go-stdlib/nethttp"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type ProxyBackendInterface interface {
@@ -56,7 +57,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		DisableCompression:  true,
 	}
 
-	tracingTransport := otelhttp.NewTransport(innerTransport)
+	tracingTransport := &nethttp.Transport{RoundTripper: innerTransport}
 
 	return &ProxyBackend{
 		name:      name,
@@ -90,6 +91,9 @@ func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, b
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}
+
+	req, ht := nethttp.TraceRequest(opentracing.GlobalTracer(), req)
+	defer ht.Finish()
 
 	start := time.Now()
 	status, responseBody, resp, err := b.doBackendRequest(req)

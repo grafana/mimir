@@ -26,11 +26,8 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"gopkg.in/yaml.v3"
 )
-
-var tracer = otel.Tracer("pkg/tools/querytee")
 
 type ProxyConfig struct {
 	ServerHTTPServiceAddress            string

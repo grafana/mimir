@@ -9,7 +9,6 @@ import (
 	"flag"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -18,8 +17,6 @@ const (
 	defaultConcurrency   = 16
 	defaultMaxTenants    = 0
 )
-
-var tracer = otel.Tracer("pkg/tenantfederation")
 
 type Config struct {
 	// Enabled switches on support for multi tenant query federation

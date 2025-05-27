@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -51,8 +50,6 @@ var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 )
-
-var tracer = otel.Tracer("pkg/storegateway")
 
 // Config holds the store gateway config.
 type Config struct {

@@ -214,7 +214,7 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, hints *stor
 		return m.upstream.LabelValues(ctx, ids[0], name, hints, matchers...)
 	}
 
-	spanlog, ctx := spanlogger.New(ctx, m.logger, tracer, "mergeQuerier.LabelValues")
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
 	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
@@ -253,7 +253,7 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints
 		return m.upstream.LabelNames(ctx, ids[0], hints, matchers...)
 	}
 
-	spanlog, ctx := spanlogger.New(ctx, m.logger, tracer, "mergeQuerier.LabelNames")
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
 	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
@@ -365,7 +365,7 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		return m.upstream.Select(ctx, ids[0], sortSeries, hints, matchers...)
 	}
 
-	spanlog, ctx := spanlogger.New(ctx, m.logger, tracer, "mergeQuerier.Select")
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 
 	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)

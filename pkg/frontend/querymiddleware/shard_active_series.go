@@ -16,9 +16,10 @@ import (
 	"github.com/go-kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/compress/s2"
+	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -70,7 +71,7 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, useZeroAllocatio
 }
 
 func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response, error) {
-	spanLog, ctx := spanlogger.New(r.Context(), s.logger, tracer, "shardActiveSeries.RoundTrip")
+	spanLog, ctx := spanlogger.NewWithLogger(r.Context(), s.logger, "shardActiveSeries.RoundTrip")
 	defer spanLog.Finish()
 
 	var (
@@ -221,12 +222,12 @@ func (s *shardActiveSeriesMiddleware) mergeResponsesWithZeroAllocationDecoder(ct
 func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encoding string) {
 	defer w.Close()
 
-	_, span := tracer.Start(ctx, "shardActiveSeries.writeMergedResponse")
-	defer span.End()
+	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
+	defer span.Finish()
 
 	var out io.Writer = w
 	if encoding == encodingTypeSnappyFramed {
-		span.SetAttributes(attribute.String("encoding", encodingTypeSnappyFramed))
+		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
 		enc := getSnappyWriter(w)
 		out = enc
 		defer func() {
@@ -236,7 +237,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 			snappyWriterPool.Put(enc)
 		}()
 	} else {
-		span.SetAttributes(attribute.String("encoding", "none"))
+		span.LogFields(otlog.String("encoding", "none"))
 	}
 
 	stream := jsoniter.ConfigFastest.BorrowStream(out)
@@ -285,7 +286,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 
 	if err := check(); err != nil {
 		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
-		span.RecordError(err)
+		span.LogFields(otlog.Error(err))
 		stream.WriteMore()
 		stream.WriteObjectField("status")
 		stream.WriteString("error")
@@ -300,12 +301,12 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecoder(ctx context.Context, check func() error, w io.WriteCloser, streamCh chan *bytes.Buffer, encoding string) {
 	defer w.Close()
 
-	_, span := tracer.Start(ctx, "shardActiveSeries.writeMergedResponseWithZeroAllocationDecoder")
-	defer span.End()
+	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponseWithZeroAllocationDecoder")
+	defer span.Finish()
 
 	var out io.Writer = w
 	if encoding == encodingTypeSnappyFramed {
-		span.SetAttributes(attribute.String("encoding", encodingTypeSnappyFramed))
+		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
 		enc := getSnappyWriter(w)
 		out = enc
 		defer func() {
@@ -315,7 +316,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 			snappyWriterPool.Put(enc)
 		}()
 	} else {
-		span.SetAttributes(attribute.String("encoding", "none"))
+		span.LogFields(otlog.String("encoding", "none"))
 	}
 
 	stream := jsoniter.ConfigFastest.BorrowStream(out)
@@ -356,7 +357,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 
 	if err := check(); err != nil {
 		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
-		span.RecordError(err)
+		span.LogFields(otlog.Error(err))
 		stream.WriteMore()
 		stream.WriteObjectField("status")
 		stream.WriteString("error")

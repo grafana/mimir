@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -18,11 +19,12 @@ import (
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	"github.com/opentracing-contrib/go-stdlib/nethttp"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matchers/compat"
@@ -652,7 +654,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		}
 
 		// Add a middleware to extract the trace context and add a header.
-		internalQuerierRouter = middleware.Tracer{}.Wrap(internalQuerierRouter)
+		internalQuerierRouter = nethttp.MiddlewareFunc(opentracing.GlobalTracer(), internalQuerierRouter.ServeHTTP, nethttp.OperationNameFunc(func(*http.Request) string {
+			return "internalQuerier"
+		}))
 
 		// If queries are processed using the external HTTP Server, we need wrap the internal querier with
 		// HTTP router with middleware to parse the tenant ID from the HTTP header and inject it into the

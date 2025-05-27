@@ -21,13 +21,14 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
+	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
@@ -83,18 +84,13 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		cached  bool
 		promise expandedPostingsPromise
 	)
-	ctx, span := tracer.Start(ctx, "ExpandedPostings()")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ExpandedPostings()")
 	defer func() {
-		span.SetAttributes(
-			attribute.Int("returned postings", len(returnRefs)),
-			attribute.Bool("cached", cached),
-			attribute.Bool("promise_loaded", loaded),
-			attribute.Stringer("block_id", r.block.meta.ULID),
-		)
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String())
 		if returnErr != nil {
-			span.RecordError(returnErr)
+			span.LogFields(otlog.Error(returnErr))
 		}
-		span.End()
+		span.Finish()
 	}()
 	promise, loaded = r.expandedPostingsPromise(ctx, ms, stats)
 	returnRefs, pendingMatchers, cached, returnErr = promise(ctx)

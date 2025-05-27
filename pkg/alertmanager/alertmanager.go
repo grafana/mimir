@@ -63,7 +63,6 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 
@@ -84,8 +83,6 @@ const (
 	nflogStateKeyPrefix    = "nfl:"
 	silencesStateKeyPrefix = "sil:"
 )
-
-var tracer = otel.Tracer("pkg/alertmanager")
 
 // Config configures an Alertmanager.
 type Config struct {

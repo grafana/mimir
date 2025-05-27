@@ -20,14 +20,12 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
-	jaegerpropagator "go.opentelemetry.io/contrib/propagators/jaeger"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -42,28 +40,6 @@ import (
 )
 
 const testMaxOutstandingPerTenant = 5
-
-var (
-	spanExporter = tracetest.NewInMemoryExporter()
-)
-
-func init() {
-	// Set a tracer provider with in memory span exporter so we can check the spans later.
-	otel.SetTracerProvider(
-		tracesdk.NewTracerProvider(
-			tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spanExporter)),
-		),
-	)
-
-	// Setup text propagation as it would be done in the tracing. package.
-
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator([]propagation.TextMapPropagator{
-		// w3c Propagator is the default propagator for opentelemetry
-		propagation.TraceContext{}, propagation.Baggage{},
-		// jaeger Propagator is for opentracing backwards compatibility
-		jaegerpropagator.Jaeger{},
-	}...))
-}
 
 func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
@@ -308,6 +284,10 @@ func TestTracingContext(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 
+	closer, err := config.Configuration{}.InitGlobalTracer("test")
+	require.NoError(t, err)
+	defer closer.Close()
+
 	req := &schedulerpb.FrontendToScheduler{
 		Type:            schedulerpb.ENQUEUE,
 		QueryID:         1,
@@ -316,9 +296,8 @@ func TestTracingContext(t *testing.T) {
 		FrontendAddress: "frontend-12345",
 	}
 
-	ctx, sp := tracer.Start(context.Background(), "client")
-	defer sp.End()
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	sp, _ := opentracing.StartSpanFromContext(context.Background(), "client")
+	opentracing.GlobalTracer().Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
 
 	frontendToScheduler(t, frontendLoop, req)
 
@@ -328,8 +307,6 @@ func TestTracingContext(t *testing.T) {
 
 	for _, r := range scheduler.schedulerInflightRequests {
 		require.NotNil(t, r.ParentSpanContext)
-		require.True(t, r.ParentSpanContext.IsValid())
-		require.Equal(t, sp.SpanContext().TraceID().String(), r.ParentSpanContext.TraceID().String())
 	}
 }
 
@@ -416,10 +393,10 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	}
 
 	// Inject span context to the request so we can check handling of max outstanding requests.
-	spanExporter.Reset()
-	ctx, sp := tracer.Start(context.Background(), "client")
-	defer sp.End()
-	otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	mockTracer := mocktracer.New()
+	opentracing.SetGlobalTracer(mockTracer)
+	sp, _ := opentracing.StartSpanFromContextWithTracer(context.Background(), mockTracer, "client")
+	require.NoError(t, mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest)))
 
 	require.NoError(t, fl.Send(&req))
 
@@ -427,7 +404,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
 
-	spans := spanExporter.GetSpans()
+	spans := mockTracer.FinishedSpans()
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 

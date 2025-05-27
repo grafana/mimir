@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -27,8 +26,6 @@ import (
 func init() {
 	promqlext.ExtendPromQL()
 }
-
-var tracer = otel.Tracer("pkg/streamingpromql")
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 

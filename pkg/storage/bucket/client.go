@@ -17,8 +17,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
-	"go.opentelemetry.io/otel"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -27,8 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/swift"
 	"github.com/grafana/mimir/pkg/util"
 )
-
-var tracer = otel.Tracer("storage/bucket")
 
 const (
 	// S3 is the value for the S3 storage backend.
@@ -189,7 +186,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg), tracer)
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
