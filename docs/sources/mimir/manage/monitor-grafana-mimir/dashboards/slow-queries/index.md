@@ -18,3 +18,8 @@ The Slow queries dashboard shows details about the slowest queries for a given t
 If you enable [Grafana Tempo](/oss/tempo/) tracing, the dashboard displays a link to the trace of each query.
 
 This dashboard requires [Grafana Loki](/oss/loki/) to fetch detailed query statistics from logs.
+
+Use this dashboard for the following use cases:
+
+- Identify and analyze the slowest queries in your Mimir cluster.
+- Filter data to analyze queries from a specific tenant.
