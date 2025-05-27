@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -44,6 +43,9 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -61,6 +63,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/distributor")
 
 func init() {
 	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
@@ -997,11 +1001,11 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
-		span := opentracing.SpanFromContext(ctx)
-		if span != nil {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
-		}
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(
+			attribute.String("cluster", cluster),
+			attribute.String("replica", replica),
+		)
 
 		numSamples := 0
 		now := time.Now()
@@ -1339,12 +1343,12 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			numExemplars += len(ts.Exemplars)
 		}
 
-		span := opentracing.SpanFromContext(ctx)
-		if span != nil {
-			span.SetTag("write.samples", numSamples)
-			span.SetTag("write.exemplars", numExemplars)
-			span.SetTag("write.metadata", len(req.Metadata))
-		}
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(
+			attribute.Int("write.samples", numSamples),
+			attribute.Int("write.exemplars", numExemplars),
+			attribute.Int("write.metadata", len(req.Metadata)),
+		)
 
 		d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
@@ -1656,10 +1660,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return nil
 	}
 
-	span := opentracing.SpanFromContext(ctx)
-	if span != nil {
-		span.SetTag("organization", userID)
-	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("organization", userID))
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
 		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
@@ -2480,7 +2482,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 		// activeSeriesResponse, its return value is never used.
 		type ignored struct{}
 
-		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
+		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.ActiveSeries.queryIngester")
 		defer log.Finish()
 
 		stream, err := client.ActiveSeries(ctx, req)

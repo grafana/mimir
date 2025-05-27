@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -60,6 +61,8 @@ const (
 	// RulerRingKey is the key under which we store the rulers ring in the KVStore.
 	RulerRingKey = "ring"
 )
+
+var tracer = otel.Tracer("pkg/ruler")
 
 type rulesSyncReason string
 
@@ -1102,7 +1105,7 @@ func (fs StringFilterSet) IsFiltered(val string) bool {
 }
 
 func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesRequest) ([]*GroupStateDesc, error) {
-	spanLog, _ := spanlogger.NewWithLogger(ctx, r.logger, "Ruler.getLocalRules")
+	spanLog, _ := spanlogger.New(ctx, r.logger, tracer, "Ruler.getLocalRules")
 	defer spanLog.Finish()
 
 	// Get the rule groups from the manager. We track the time it takes because the manager needs to

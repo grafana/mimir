@@ -42,7 +42,7 @@ func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReaders map[s
 func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Response, returnErr error) {
 	ctx := req.Context()
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, r.logger, "readConsistencyRoundTripper.RoundTrip")
+	spanLog, ctx := spanlogger.New(ctx, r.logger, tracer, "readConsistencyRoundTripper.RoundTrip")
 	defer spanLog.Finish()
 
 	// Fetch the tenant ID(s).
