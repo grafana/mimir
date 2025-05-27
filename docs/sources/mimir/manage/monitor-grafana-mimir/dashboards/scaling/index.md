@@ -17,7 +17,7 @@ The Scaling dashboard displays services that you can optionally scale up in the 
 
 Use this dashboard for the following use cases:
 
-- Identify which Mimir components  require scaling in response to specific failures or performance issues.
+- Identify which Mimir components require scaling in response to specific failures or performance issues.
 - Review metrics for individual Mimir services, such as CPU usage versus request rates, to pinpoint which components are experiencing high load.
 - Integrate with Mimir runbooks for detailed guidance on scaling strategies for various components.
 
