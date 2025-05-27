@@ -61,7 +61,7 @@ func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
 		if len(ps.commonSymbols) == 0 {
 			return "", fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
 		}
-		if ref < 0 || ref > uint32(len(ps.commonSymbols)) {
+		if ref > uint32(len(ps.commonSymbols)) {
 			return "", fmt.Errorf("common symbol reference %d is out of bounds", ref)
 		}
 		return ps.commonSymbols[ref], nil
