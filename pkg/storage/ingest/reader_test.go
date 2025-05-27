@@ -1507,14 +1507,30 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
 					consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
 					listOffsetsRequestsCount = atomic.NewInt64(0)
+					contextCancelled         = atomic.NewBool(false)
 				)
 
 				// Mock Kafka to always fail the ListOffsets request.
-				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 
 					listOffsetsRequestsCount.Inc()
-					return nil, errors.New("mocked error"), true
+
+					// If context has been cancelled, we want to make sure we return an error
+					// that will allow the client to detect the cancellation faster.
+					if contextCancelled.Load() {
+						return nil, context.Canceled, true
+					}
+
+					// Return a proper Kafka error response instead of a raw error
+					// to ensure franz-go will retry this error
+					req := kreq.(*kmsg.ListOffsetsRequest)
+					res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+					res.Default()
+					res.Topics = []kmsg.ListOffsetsResponseTopic{
+						{Topic: topicName, Partitions: []kmsg.ListOffsetsResponseTopicPartition{{ErrorCode: kerr.NotLeaderForPartition.Code}}},
+					}
+					return res, nil, true
 				})
 
 				// Create and start the reader.
@@ -1531,13 +1547,17 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
 				})
 
-				// Wait until the Kafka cluster received at least 1 ListOffsets request.
+				// Wait until the Kafka cluster received at least 2 ListOffsets requests.
+				// This ensures the reader is actively trying to fetch offsets and retrying.
 				test.Poll(t, 5*time.Second, true, func() interface{} {
-					return listOffsetsRequestsCount.Load() > 0
+					return listOffsetsRequestsCount.Load() > 1
 				})
 
 				// Cancelling the context should cause the service to switch to a terminal state.
 				assert.Equal(t, services.Starting, reader.State())
+
+				// Mark that context is being cancelled so subsequent requests fail faster
+				contextCancelled.Store(true)
 				cancelReaderCtx()
 
 				// franz-go has internal retries that can last up to 10s
