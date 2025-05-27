@@ -23,15 +23,15 @@ import (
 
 type retryOperation[T any] func() (T, error)
 
-func doWithRetries[T any](cxt context.Context, log log.Logger, maxRetries int, metrics prometheus.Observer, operation retryOperation[T]) (T, error) {
+func doWithRetries[T any](ctx context.Context, log log.Logger, maxRetries int, metrics prometheus.Observer, operation retryOperation[T]) (T, error) {
 	tries := 0
 	defer func() { metrics.Observe(float64(tries)) }()
 
 	var lastErr error
 	var zero T
 	for ; tries < maxRetries; tries++ {
-		if cxt.Err() != nil {
-			return zero, cxt.Err()
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
 		}
 
 		resp, err := operation()
@@ -47,7 +47,7 @@ func doWithRetries[T any](cxt context.Context, log log.Logger, maxRetries int, m
 		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 		if !ok || httpResp.Code/100 == 5 {
 			lastErr = err
-			log := util_log.WithContext(cxt, spanlogger.FromContext(cxt, log))
+			log := util_log.WithContext(ctx, spanlogger.FromContext(ctx, log))
 			level.Error(log).Log("msg", "error processing request", "try", tries, "err", err)
 			continue
 		}
