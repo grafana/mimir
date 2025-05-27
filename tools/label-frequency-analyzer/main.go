@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -206,10 +207,10 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 					for _, series := range result.Data {
 						for name, value := range series {
 							batchCounts[name]++
-							// Skip counting values for __name__ label
-							if name != "__name__" {
-								batchCounts[value]++
+							if name == "image" {
+								continue
 							}
+							batchCounts[value]++
 						}
 					}
 
@@ -283,11 +284,30 @@ func runAnalysis(ctx context.Context, cfg config, tenantID string) error {
 
 	// Print top N most common strings
 	log.Printf("\nTop %d most common strings for tenant %s:", cfg.TopN, tenantID)
+
+	// Create CSV writer that writes to stdout
+	w := csv.NewWriter(os.Stdout)
+	defer w.Flush()
+
+	// Write CSV header
+	if err := w.Write([]string{"rank", "string", "count", "bytes"}); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	// Write data rows
 	for i, sc := range counts {
 		if i >= cfg.TopN {
 			break
 		}
-		log.Printf("%d. %s: %d", i+1, sc.str, sc.count)
+		bytesUsed := len(sc.str) * int(sc.count)
+		if err := w.Write([]string{
+			fmt.Sprintf("%d", i+1),
+			sc.str,
+			fmt.Sprintf("%d", sc.count),
+			fmt.Sprintf("%d", bytesUsed),
+		}); err != nil {
+			return fmt.Errorf("failed to write CSV row: %w", err)
+		}
 	}
 
 	return nil
