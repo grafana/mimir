@@ -543,6 +543,22 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -overrides-exporter.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -parquet-converter.conversion-interval duration
+    	The frequency at which the conversion runs. (default 1m0s)
+  -parquet-converter.data-dir string
+    	Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts. (default "./data-parquet-converter/")
+  -parquet-converter.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -parquet-converter.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -parquet-converter.ring.etcd.password string
+    	Etcd password.
+  -parquet-converter.ring.etcd.username string
+    	Etcd username.
+  -parquet-converter.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -parquet-converter.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -print.config
     	Print the config and exit.
   -querier.cardinality-analysis-enabled
