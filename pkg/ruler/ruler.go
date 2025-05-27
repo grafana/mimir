@@ -1506,7 +1506,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 // forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
 // The execution breaks on first error returned by f().
 func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
-	rulers, err := ring.GetReplicationSetForOperation(op)
+	rulers, err := ring.GetSubringForOperationStates(op).GetReplicationSetForOperation(op)
 	if err != nil {
 		return err
 	}
