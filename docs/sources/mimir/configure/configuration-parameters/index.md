@@ -448,6 +448,115 @@ overrides_exporter:
   # CLI flag: -overrides-exporter.enabled-metrics
   [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
 
+parquet_converter:
+  # (advanced) Comma-separated list of tenants that can have their TSDB blocks
+  # converted into Parquet. If specified, the Parquet-converter only converts
+  # these tenants. Otherwise, it converts all tenants. Subject to sharding.
+  # CLI flag: -parquet-converter.enabled-tenants
+  [enabled_tenants: <string> | default = ""]
+
+  # (advanced) Comma-separated list of tenants that cannot have their TSDB
+  # blocks converted into Parquet. If specified, and the Parquet-converter would
+  # normally pick a given tenant to convert the blocks to Parquet (via
+  # -parquet-converter.enabled-tenants or sharding), it is ignored instead.
+  # CLI flag: -parquet-converter.disabled-tenants
+  [disabled_tenants: <string> | default = ""]
+
+  # Directory to temporarily store blocks during conversion. This directory is
+  # not required to persist between restarts.
+  # CLI flag: -parquet-converter.data-dir
+  [data_dir: <string> | default = "./data-parquet-converter/"]
+
+  # The frequency at which the conversion runs.
+  # CLI flag: -parquet-converter.conversion-interval
+  [conversion_interval: <duration> | default = 1m]
+
+  sharding_ring:
+    # The key-value store used to share the hash ring across multiple instances.
+    kvstore:
+      # Backend storage to use for the ring. Supported values are: consul, etcd,
+      # inmemory, memberlist, multi.
+      # CLI flag: -parquet-converter.ring.store
+      [store: <string> | default = "memberlist"]
+
+      # (advanced) The prefix for the keys in the store. Should end with a /.
+      # CLI flag: -parquet-converter.ring.prefix
+      [prefix: <string> | default = "parquet-converters/"]
+
+      # The consul block configures the consul client.
+      # The CLI flags prefix for this block configuration is:
+      # parquet-converter.ring
+      [consul: <consul>]
+
+      # The etcd block configures the etcd client.
+      # The CLI flags prefix for this block configuration is:
+      # parquet-converter.ring
+      [etcd: <etcd>]
+
+      multi:
+        # (advanced) Primary backend storage used by multi-client.
+        # CLI flag: -parquet-converter.ring.multi.primary
+        [primary: <string> | default = ""]
+
+        # (advanced) Secondary backend storage used by multi-client.
+        # CLI flag: -parquet-converter.ring.multi.secondary
+        [secondary: <string> | default = ""]
+
+        # (advanced) Mirror writes to secondary store.
+        # CLI flag: -parquet-converter.ring.multi.mirror-enabled
+        [mirror_enabled: <boolean> | default = false]
+
+        # (advanced) Timeout for storing value to secondary store.
+        # CLI flag: -parquet-converter.ring.multi.mirror-timeout
+        [mirror_timeout: <duration> | default = 2s]
+
+    # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+    # CLI flag: -parquet-converter.ring.heartbeat-period
+    [heartbeat_period: <duration> | default = 15s]
+
+    # (advanced) The heartbeat timeout after which parquet-converters are
+    # considered unhealthy within the ring. 0 = never (timeout disabled).
+    # CLI flag: -parquet-converter.ring.heartbeat-timeout
+    [heartbeat_timeout: <duration> | default = 1m]
+
+    # (advanced) Instance ID to register in the ring.
+    # CLI flag: -parquet-converter.ring.instance-id
+    [instance_id: <string> | default = "<hostname>"]
+
+    # List of network interface names to look up when finding the instance IP
+    # address.
+    # CLI flag: -parquet-converter.ring.instance-interface-names
+    [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+    # (advanced) Port to advertise in the ring (defaults to
+    # -server.grpc-listen-port).
+    # CLI flag: -parquet-converter.ring.instance-port
+    [instance_port: <int> | default = 0]
+
+    # (advanced) IP address to advertise in the ring. Default is auto-detected.
+    # CLI flag: -parquet-converter.ring.instance-addr
+    [instance_addr: <string> | default = ""]
+
+    # (advanced) Enable using a IPv6 instance address. (default false)
+    # CLI flag: -parquet-converter.ring.instance-enable-ipv6
+    [instance_enable_ipv6: <boolean> | default = false]
+
+    # (advanced) Minimum time to wait for ring stability at startup. Set to 0 to
+    # disable.
+    # CLI flag: -parquet-converter.ring.wait-stability-min-duration
+    [wait_stability_min_duration: <duration> | default = 0s]
+
+    # (advanced) Maximum time to wait for ring stability at startup. If the
+    # Parquet-converter ring keeps changing after this period of time, the
+    # Parquet-converter starts anyway.
+    # CLI flag: -parquet-converter.ring.wait-stability-max-duration
+    [wait_stability_max_duration: <duration> | default = 5m]
+
+    # (advanced) Timeout for waiting on Parquet-converter to become ACTIVE in
+    # the ring.
+    # CLI flag: -parquet-converter.ring.wait-active-instance-timeout
+    [wait_active_instance_timeout: <duration> | default = 10m]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
@@ -2906,6 +3015,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
+- `parquet-converter.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
@@ -3011,6 +3121,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `ingester.partition-ring`
 - `ingester.ring`
 - `overrides-exporter.ring`
+- `parquet-converter.ring`
 - `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
