@@ -42,7 +42,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -54,6 +54,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
 			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(enableSuffixes),
 		},
@@ -206,7 +207,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -218,6 +219,7 @@ func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
 			"-distributor.otel-convert-histograms-to-nhcb": strconv.FormatBool(enableExplicitHistogramToNHCB),
 		},
