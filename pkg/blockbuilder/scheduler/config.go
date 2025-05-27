@@ -20,6 +20,7 @@ type Config struct {
 	MaxScanAge          time.Duration `yaml:"max_scan_age" category:"advanced"`
 	MaxJobsPerPartition int           `yaml:"max_jobs_per_partition" category:"experimental"`
 	EnqueueInterval     time.Duration `yaml:"enqueue_interval" category:"experimental"`
+	MaxFailCount        int           `yaml:"max_fail_count" category:"experimental"`
 
 	// Config parameters defined outside the block-builder-scheduler config and are injected dynamically.
 	Kafka ingest.KafkaConfig `yaml:"-"`
@@ -35,6 +36,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.MaxScanAge, "block-builder-scheduler.max-scan-age", 12*time.Hour, "The oldest record age to consider when scanning for jobs.")
 	f.IntVar(&cfg.MaxJobsPerPartition, "block-builder-scheduler.max-jobs-per-partition", 1, "The maximum number of jobs that can be scheduled for a partition.")
 	f.DurationVar(&cfg.EnqueueInterval, "block-builder-scheduler.enqueue-interval", 2*time.Second, "How frequently to enqueue pending jobs.")
+	f.IntVar(&cfg.MaxFailCount, "block-builder-scheduler.max-fail-count", 2, "The maximum number of times a job can fail before errors are emitted")
 }
 
 func (cfg *Config) Validate() error {
@@ -68,6 +70,9 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.EnqueueInterval <= 0 {
 		return fmt.Errorf("enqueue interval (%d) must be positive", cfg.EnqueueInterval)
+	}
+	if cfg.MaxFailCount <= 0 {
+		return fmt.Errorf("max fail count (%d) must be positive", cfg.MaxFailCount)
 	}
 	return nil
 }
