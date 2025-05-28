@@ -1578,6 +1578,8 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 
 // eval evaluates the given expression as the given AST expression node requires.
 func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, annotations.Annotations) {
+	// TODO: ikonstantinov: remove WithoutCancel, it's here to avoid the cancellation of the context by timeout when debugging
+	ctx = context.WithoutCancel(ctx)
 	// This is the top-level evaluation method.
 	// Thus, we check for timeout/cancellation here.
 	if err := contextDone(ctx, "expression evaluation"); err != nil {
@@ -1677,6 +1679,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				matrixArgIndex = i
 				matrixArg = true
 				// Replacing parser.SubqueryExpr with parser.MatrixSelector.
+				fmt.Println("subquery", subq.Expr.String())
 				val, totalSamples, ws := ev.evalSubquery(ctx, subq)
 				e.Args[i] = val
 				warnings.Merge(ws)

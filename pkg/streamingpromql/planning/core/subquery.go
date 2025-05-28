@@ -129,8 +129,10 @@ func (s *Subquery) OperatorFactory(children []types.Operator, timeRange types.Qu
 	if !ok {
 		return nil, fmt.Errorf("expected InstantVectorOperator as child of Subquery, got %T", children[0])
 	}
-
-	o := operators.NewSubquery(inner, timeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker)
+	subqueryTimeRange := s.ChildrenTimeRange(timeRange)
+	childStats := params.Stats.NewChild(true)
+	childStats.InitStepTracking(subqueryTimeRange.StartT, subqueryTimeRange.EndT, subqueryTimeRange.IntervalMilliseconds)
+	o := operators.NewSubquery(inner, timeRange, subqueryTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition.ToPrometheusType(), params.MemoryConsumptionTracker, params.Stats, childStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

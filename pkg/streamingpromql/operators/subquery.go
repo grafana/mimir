@@ -16,6 +16,7 @@ import (
 type Subquery struct {
 	Inner                types.InstantVectorOperator
 	ParentQueryTimeRange types.QueryTimeRange
+	ChildQueryTimeRange  types.QueryTimeRange
 
 	SubqueryTimestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	SubqueryOffset    int64  // In milliseconds
@@ -28,6 +29,9 @@ type Subquery struct {
 	floats            *types.FPointRingBuffer
 	histograms        *types.HPointRingBuffer
 	stepData          *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
+
+	ParentQueryStats *types.QueryStats
+	ChildQueryStats  *types.QueryStats
 }
 
 var _ types.RangeVectorOperator = &Subquery{}
@@ -35,15 +39,19 @@ var _ types.RangeVectorOperator = &Subquery{}
 func NewSubquery(
 	inner types.InstantVectorOperator,
 	parentQueryTimeRange types.QueryTimeRange,
+	childQueryTimeRange types.QueryTimeRange,
 	subqueryTimestamp *int64,
 	subqueryOffset time.Duration,
 	subqueryRange time.Duration,
 	expressionPosition posrange.PositionRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	parentQueryStats *types.QueryStats,
+	childQueryStats *types.QueryStats,
 ) *Subquery {
 	return &Subquery{
 		Inner:                inner,
 		ParentQueryTimeRange: parentQueryTimeRange,
+		ChildQueryTimeRange:  childQueryTimeRange,
 		SubqueryTimestamp:    subqueryTimestamp,
 		SubqueryOffset:       subqueryOffset.Milliseconds(),
 		SubqueryRange:        subqueryRange,
@@ -52,6 +60,8 @@ func NewSubquery(
 		floats:               types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:           types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:             &types.RangeVectorStepData{},
+		ParentQueryStats:     parentQueryStats,
+		ChildQueryStats:      childQueryStats,
 	}
 }
 
@@ -63,6 +73,7 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	// Release the previous series' slices now, so we are likely to reuse the slices for the next series.
 	s.floats.Release()
 	s.histograms.Release()
+	s.ChildQueryStats.Release()
 
 	data, err := s.Inner.NextSeries(ctx)
 	if err != nil {
@@ -115,7 +126,34 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	s.stepData.RangeStart = rangeStart
 	s.stepData.RangeEnd = rangeEnd
 
+	if s.ChildQueryStats != nil && s.ChildQueryStats.TotalSamplesPerStep != nil {
+		temp := s.samplesProcessedInChildQuery(s.stepData.RangeStart, s.stepData.RangeEnd)
+		s.ParentQueryStats.IncrementSamplesAtTimestamp(s.stepData.StepT, temp)
+	}
+
 	return s.stepData, nil
+}
+
+// samplesProcessedInChildQuery returns the number of samples processed in child query that corresponds to the current parent query step.
+func (s *Subquery) samplesProcessedInChildQuery(start, end int64) int64 {
+	if s.ChildQueryStats == nil || s.ChildQueryStats.TotalSamplesPerStep == nil {
+		return 0
+	}
+
+	sum := int64(0)
+	childStartT := s.ChildQueryTimeRange.StartT
+	childInterval := s.ChildQueryTimeRange.IntervalMilliseconds
+	totalChildSteps := len(s.ChildQueryStats.TotalSamplesPerStep)
+	
+	for i := 0; i < totalChildSteps; i++ {
+		childTimestamp := childStartT + int64(i)*childInterval
+		if childTimestamp > start && childTimestamp <= end {
+			sum += s.ChildQueryStats.TotalSamplesPerStep[i]
+		} else if childTimestamp > end {
+			break
+		}
+	}
+	return sum
 }
 
 func (s *Subquery) StepCount() int {

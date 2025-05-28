@@ -3302,6 +3302,23 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamples:        10, // Instant vector selectors ignore stale markers.
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1},
 		},
+		"instant vector selector with @ modifier": {
+			expr:                        `dense_series{} @ 0`,
+			expectedTotalSamples:        1,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{1},
+		},
+		"instant vector with offset modifier": {
+			expr:                        `dense_series{} offset 2m`,
+			expectedTotalSamples:        9,
+			expectedTotalSamplesPerStep: []int64{0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+		},
+		"instant vector with offset modifier before start of the series": {
+			expr:                        `dense_series{} offset 1w`,
+			expectedTotalSamples:        0,
+			expectedTotalSamplesPerStep: []int64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		},
+
 		"raw range vector selector with single point": {
 			expr:                        `dense_series[45s]`,
 			isInstantQuery:              true,
@@ -3318,6 +3335,11 @@ func TestQueryStats(t *testing.T) {
 			expr:                        `sum_over_time(dense_series{}[30s])`,
 			expectedTotalSamples:        11,
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+		},
+		"range vector selector with 2 points at every time step": {
+			expr:                        `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples:        21,
+			expectedTotalSamplesPerStep: []int64{1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
 		},
 		"range vector selector with points only in start of time range": {
 			expr:                        `sum_over_time(start_series{}[30s])`,
@@ -3369,6 +3391,11 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamples:        26,
 			expectedTotalSamplesPerStep: []int64{13, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		},
+		"range vector selector with @ modifier": {
+			expr:                        `sum_over_time(dense_series{}[2m] @ 300)`,
+			expectedTotalSamples:        22, // each step selects 2 points at T=300 over query range
+			expectedTotalSamplesPerStep: []int64{2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -3380,6 +3407,685 @@ func TestQueryStats(t *testing.T) {
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
 			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples)
 			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
+		})
+	}
+}
+
+func TestSubqueryStats(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	start := timestamp.Time(0)
+	end := start.Add(10 * time.Minute)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			dense_series  0 1 2 3 4 5 6 7 8 9 10
+			start_series  0 1 _ _ _ _ _ _ _ _ _
+			end_series    _ _ _ _ _ 5 6 7 8 9 10
+			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+			stale_series  0 1 2 3 4 5 stale 7 8 9 10
+			nan_series    NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
+	`)
+
+	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) *promstats.QuerySamples {
+		var q promql.Query
+		var err error
+		opts := promql.NewPrometheusQueryOpts(true, 0)
+		if isInstantQuery {
+			q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, end)
+		} else {
+			q, err = engine.NewRangeQuery(context.Background(), storage, opts, expr, start, end, time.Minute)
+		}
+
+		require.NoError(t, err)
+
+		defer q.Close()
+
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+
+		return q.Stats().Samples
+	}
+
+	testCases := map[string]struct {
+		expr                        string
+		isInstantQuery              bool
+		expectedTotalSamples        int64
+		expectedTotalSamplesPerStep []int64
+		SkipCompareWithPQE          bool
+	}{
+		"simple subquery": {
+			expr:                        `dense_series{}[5m:1m]`,
+			expectedTotalSamples:        5,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{5},
+		},
+		"aggregation over subquery": {
+			expr:                        `max_over_time(dense_series{}[5m:1m])`,
+			expectedTotalSamples:        5,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{5},
+		},
+		"aggregation over subquery, range query": {
+			expr:                        `max_over_time(dense_series[5m:1m])`,
+			expectedTotalSamples:        45,
+			expectedTotalSamplesPerStep: []int64{0, 1, 2, 3, 4, 5, 5, 5, 5, 5, 5},
+		},
+
+		"subquery range = interval": {
+			expr:                        `dense_series[1m:1m]`,
+			expectedTotalSamples:        1,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{1},
+		},
+		"subquery range = interval, range query": {
+			expr:                        `max_over_time(dense_series{}[1m:1m])`,
+			expectedTotalSamples:        11,
+			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+		},
+
+		"subquery resolution > interval": {
+			expr:                        `dense_series{}[1m:5m]`,
+			expectedTotalSamples:        1,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{1},
+		},
+		"subquery resolution > interval, range query": {
+			expr:                        `max_over_time(dense_series{}[1m:5m])`,
+			expectedTotalSamples:        3,
+			isInstantQuery:              false,
+			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+		},
+
+		// "rate subquery",  "aggregation over rate subquery" and "aggregation over subquery with ranged vector selector, range query" tests cover PromQE corner case:
+		// In PromQE, rate(dense_series[1m30s])[5m:1m] - reports 10 samples processed, but max_over_time(rate(dense_series[1m30s])[5m:1m]) reports 5.
+		// It means, that if subquery is a range vector selector wrapped in a func call - it's samples count is calculated incorrectly in PromQE.
+		// That's why we check only MQE samples count.
+		"subquery with ranged vector selector": {
+			expr:                        `rate(dense_series[1m30s])[5m:1m]`,
+			expectedTotalSamples:        10,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{10},
+			SkipCompareWithPQE:          true,
+		},
+		"aggregation over subquery with ranged vector selector": {
+			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
+			expectedTotalSamples:        10,
+			expectedTotalSamplesPerStep: []int64{10},
+			isInstantQuery:              true,
+			SkipCompareWithPQE:          true,
+		},
+		"aggregation over subquery with ranged vector selector, range query": {
+			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
+			expectedTotalSamples:        85,
+			expectedTotalSamplesPerStep: []int64{1, 3, 5, 7, 9, 10, 10, 10, 10, 10, 10},
+			SkipCompareWithPQE:          true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
+			if !testCase.SkipCompareWithPQE {
+
+				require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
+				require.Equal(t, testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per stepsamples does not match value from Prometheus' engine")
+			}
+
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples)
+			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
+
+		})
+	}
+}
+
+// TestQueryStatisticsUpstream based on Prometheus' TestQueryStatistics.
+func TestQueryStatisticsUpstream(t *testing.T) {
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 10s
+		  metricWith1SampleEvery10Seconds 1+1x100
+		  metricWith3SampleEvery10Seconds{a="1",b="1"} 1+1x100
+		  metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
+		  metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
+		  metricWith1HistogramEvery10Seconds {{schema:1 count:5 sum:20 buckets:[1 2 1 1]}}+{{schema:1 count:10 sum:5 buckets:[1 2 3 4]}}x100
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, start, end time.Time, interval time.Duration) *promstats.QuerySamples {
+		var q promql.Query
+		var err error
+		opts := promql.NewPrometheusQueryOpts(true, 0)
+
+		if interval == 0 {
+			// Instant query
+			q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, start)
+		} else {
+			// Range query
+			q, err = engine.NewRangeQuery(context.Background(), storage, opts, expr, start, end, interval)
+		}
+
+		require.NoError(t, err)
+		defer q.Close()
+
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+
+		return q.Stats().Samples
+	}
+
+	cases := []struct {
+		Query               string
+		SkipMaxCheck        bool
+		TotalSamples        int64
+		TotalSamplesPerStep promstats.TotalSamplesPerStep
+		Start               time.Time
+		End                 time.Time
+		Interval            time.Duration
+	}{
+		{
+			Query:        `"literal string"`,
+			SkipMaxCheck: true, // This can't fail from a max samples limit.
+			Start:        time.Unix(21, 0),
+			TotalSamples: 0,
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 0,
+			},
+		},
+		{
+			Query:        "1",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 0,
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 0,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "metricWith1HistogramEvery10Seconds",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 13, // 1 histogram HPoint of size 13 / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 13,
+			},
+		},
+		{
+			// timestamp function has a special handling.
+			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(22, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				22000: 1, // Aligned to the step time, not the sample time.
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds offset 10s",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds @ 15",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds{a="1"}`,
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds{a="1"} @ 19`,
+			Start:        time.Unix(21, 0),
+			TotalSamples: 1, // 1 sample / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds{a="1"}[20s] @ 19`,
+			Start:        time.Unix(21, 0),
+			TotalSamples: 2, // (1 sample / 10 seconds) * 20s
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 2,
+			},
+		},
+		{
+			Query:        "metricWith3SampleEvery10Seconds",
+			Start:        time.Unix(21, 0),
+			TotalSamples: 3, // 3 samples / 10 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				21000: 3,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds[60s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+		},
+		{
+			Query:        "metricWith1HistogramEvery10Seconds[60s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 78,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 4
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 24,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
+			// max_over_time(metricWith1SampleEvery10Seconds[61s]) @ 190 and 200 will return 7 samples.
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 26,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 312, // (1 histogram (size 13) / 10 seconds * 60 seconds) * 4
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 312,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds[60s] @ 30",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 4, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 4,
+			},
+		},
+		{
+			Query:        "metricWith1HistogramEvery10Seconds[60s] @ 30",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 52,
+			},
+		},
+		{
+			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+		{
+			Query:        "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds[60s] offset 10s",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+		},
+		{
+			Query:        "metricWith3SampleEvery10Seconds[60s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 18, // 3 sample / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[60s])",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+		},
+		{
+			Query:        "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 6,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s])",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 18, // 3 sample / 10 seconds * 60 seconds
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds[60s:5s]",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+		{
+			Query:        "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 36, // 3 sample per query * 12 queries (60/5)
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 36,
+			},
+		},
+		{
+			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			Start:        time.Unix(201, 0),
+			TotalSamples: 72, // 2 * (3 sample per query * 12 queries (60/5))
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds{a="1"}`,
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 4, // 1 sample per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds{a="1"}`,
+			Start:        time.Unix(204, 0),
+			End:          time.Unix(223, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 4, // 1 sample per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				204000: 1, // aligned to the step time, not the sample time
+				209000: 1,
+				214000: 1,
+				219000: 1,
+			},
+		},
+		{
+			Query:        `metricWith1HistogramEvery10Seconds`,
+			Start:        time.Unix(204, 0),
+			End:          time.Unix(223, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 52, // 1 histogram (size 13 HPoint) per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				204000: 13, // aligned to the step time, not the sample time
+				209000: 13,
+				214000: 13,
+				219000: 13,
+			},
+		},
+		{
+			// timestamp function has a special handling
+			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 4, // 1 sample per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// timestamp function has a special handling
+			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 4, // 1 sample per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			Query:        `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
+			Start:        time.Unix(991, 0),
+			End:          time.Unix(1021, 0),
+			Interval:     10 * time.Second,
+			TotalSamples: 2, // 1 sample per query * 2 steps with data
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				991000:  1,
+				1001000: 1,
+				1011000: 0,
+				1021000: 0,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds{a="1"} offset 10s`,
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 4, // 1 sample per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+		},
+		{
+			Query:        `metricWith3SampleEvery10Seconds`,
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 12, // 3 sample per query * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 3,
+				206000: 3,
+				211000: 3,
+				216000: 3,
+			},
+		},
+		{
+			Query:        `max_over_time(metricWith3SampleEvery10Seconds[60s])`,
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 72, // (3 sample / 10 seconds * 60 seconds) * 4 steps = 72
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 18,
+				206000: 18,
+				211000: 18,
+				216000: 18,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 144, // 3 sample per query * 12 queries (60/5) * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 36,
+				206000: 36,
+				211000: 36,
+				216000: 36,
+			},
+		},
+		{
+			Query:        "max_over_time(metricWith1SampleEvery10Seconds[60s:5s])",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 48, // 1 sample per query * 12 queries (60/5) * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+		},
+		{
+			Query:        "sum by (b) (max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 48, // 1 sample per query * 12 queries (60/5) * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 12,
+				206000: 12,
+				211000: 12,
+				216000: 12,
+			},
+		},
+		{
+			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 72,
+				206000: 72,
+				211000: 72,
+				216000: 72,
+			},
+		},
+		{
+			Query:        "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			TotalSamples: 192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
+			TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+				201000: 48,
+				206000: 48,
+				211000: 48,
+				216000: 48,
+			},
+		},
+		/// These tests are NOT from upstream and commented out because PQE probably undercounts the number of samples.
+		// {
+		// 	Query:        "rate(metricWith3SampleEvery10Seconds[60s])[60s:5s]",
+		// 	Start:        time.Unix(201, 0),
+		// 	TotalSamples: 216, // 3/10*60 sample per query * 12 queries (60/5)
+		// 	TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+		// 		201000: 216,
+		// 	},
+		// },
+		// {
+		// 	Query:        "max_over_time(rate(metricWith3SampleEvery10Seconds[60s])[60s:5s])",
+		// 	Start:        time.Unix(201, 0),
+		// 	TotalSamples: 36, //  it's wrong. Should be 216, as in previous test
+		// 	TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+		// 		201000: 36,
+		// 	},
+		// },
+		// {
+		// 	Query:        "max_over_time(rate(metricWith3SampleEvery10Seconds[60s])[60s:5s])",
+		// 	Start:        time.Unix(201, 0),
+		// 	End:          time.Unix(220, 0),
+		// 	Interval:     5 * time.Second,
+		// 	TotalSamples: 144, // it's wrong as well. Should be 216 * 4: same query as above repeated 4 times.
+		// 	TotalSamplesPerStep: promstats.TotalSamplesPerStep{
+		// 		201000: 36,
+		// 		206000: 36,
+		// 		211000: 36,
+		// 		216000: 36,
+		// 	},
+		// },
+	}
+
+	for i, testCase := range cases {
+		t.Run(fmt.Sprintf("case_%d_%s", i, testCase.Query), func(t *testing.T) {
+			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.Query, testCase.Start, testCase.End, testCase.Interval)
+			require.Equal(t, testCase.TotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
+			require.Equal(t, &testCase.TotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStepMap(), "invalid test case: expected per step samples does not match value from Prometheus' engine")
+
+			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.Query, testCase.Start, testCase.End, testCase.Interval)
+			require.Equal(t, testCase.TotalSamples, mimirSamplesStats.TotalSamples)
+			require.Equal(t, &testCase.TotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStepMap())
+
 		})
 	}
 }

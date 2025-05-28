@@ -31,7 +31,7 @@ type QueryStats struct {
 
 type stepStat struct {
 	T int64
-	V float64
+	V int64
 }
 
 const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
@@ -70,6 +70,32 @@ func (qs *QueryStats) IncrementSamplesAtTimestamp(t, samples int64) {
 	if qs.TotalSamplesPerStep != nil {
 		i := int((t - qs.startTimestamp) / qs.interval)
 		qs.TotalSamplesPerStep[i] += samples
+	}
+}
+
+// TODO: ikonstantinov: think about better name
+func (qs *QueryStats) NewChild(enablePerStepStats bool) *QueryStats {
+	return &QueryStats{
+		EnablePerStepStats: enablePerStepStats,
+	}
+}
+
+func (qs *QueryStats) TotalSamplesPerStepPoints() []stepStat {
+	if !qs.EnablePerStepStats {
+		return nil
+	}
+
+	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
+	for i, c := range qs.TotalSamplesPerStep {
+		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: c}
+	}
+	return ts
+}
+
+func (qs *QueryStats) Release() {
+	qs.TotalSamples = 0
+	if qs.TotalSamplesPerStep != nil {
+		clear(qs.TotalSamplesPerStep)
 	}
 }
 
