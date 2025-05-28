@@ -44,46 +44,46 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 			shouldParseData: true, // Should parse but result in PrometheusResponse with Data=nil
 		},
 		{
-			name:        "empty JSON object",
-			contentType: "application/json",
-			responseBody: `{}`,
+			name:            "empty JSON object",
+			contentType:     "application/json",
+			responseBody:    `{}`,
 			expectedError:   "",
 			shouldParseData: true,
 		},
 		{
-			name:        "JSON array instead of object",
-			contentType: "application/json",
-			responseBody: `["item1", "item2", "item3"]`,
+			name:          "JSON array instead of object",
+			contentType:   "application/json",
+			responseBody:  `["item1", "item2", "item3"]`,
 			expectedError: "readObjectStart: expect { or n, but found [",
 		},
 		{
-			name:        "JSON string instead of object",
-			contentType: "application/json",
-			responseBody: `"just a string"`,
+			name:          "JSON string instead of object",
+			contentType:   "application/json",
+			responseBody:  `"just a string"`,
 			expectedError: "readObjectStart: expect { or n, but found \"",
 		},
 		{
-			name:        "JSON number instead of object",
-			contentType: "application/json",
-			responseBody: `42`,
+			name:          "JSON number instead of object",
+			contentType:   "application/json",
+			responseBody:  `42`,
 			expectedError: "readObjectStart: expect { or n, but found 4",
 		},
 		{
-			name:        "malformed JSON - missing closing brace",
-			contentType: "application/json",
-			responseBody: `{"status": "success", "data": {"resultType": "matrix"`,
+			name:          "malformed JSON - missing closing brace",
+			contentType:   "application/json",
+			responseBody:  `{"status": "success", "data": {"resultType": "matrix"`,
 			expectedError: "object not ended with }",
 		},
 		{
-			name:        "malformed JSON - trailing comma",
-			contentType: "application/json",
-			responseBody: `{"status": "success", "data": {},}`,
+			name:          "malformed JSON - trailing comma",
+			contentType:   "application/json",
+			responseBody:  `{"status": "success", "data": {},}`,
 			expectedError: "unsupported value type",
 		},
 		{
-			name:        "malformed JSON - unescaped quotes",
-			contentType: "application/json",
-			responseBody: `{"message": "this contains "unescaped" quotes"}`,
+			name:          "malformed JSON - unescaped quotes",
+			contentType:   "application/json",
+			responseBody:  `{"message": "this contains "unescaped" quotes"}`,
 			expectedError: "expect }, but found u",
 		},
 		{
@@ -140,15 +140,15 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 			expectedError: "unknown response content type 'application/xml'",
 		},
 		{
-			name:        "text/plain content type with plain text body",
-			contentType: "text/plain",
-			responseBody: "Something went wrong. Please try again later.",
+			name:          "text/plain content type with plain text body",
+			contentType:   "text/plain",
+			responseBody:  "Something went wrong. Please try again later.",
 			expectedError: "unknown response content type 'text/plain'",
 		},
 		{
-			name:        "empty content type with JSON body",
-			contentType: "",
-			responseBody: `{"status": "success", "data": null}`,
+			name:          "empty content type with JSON body",
+			contentType:   "",
+			responseBody:  `{"status": "success", "data": null}`,
 			expectedError: "unknown response content type ''",
 		},
 		{
@@ -311,7 +311,7 @@ func TestPrometheusCodec_ResponseParsingErrorStatusCodes(t *testing.T) {
 
 			_, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 			require.Error(t, err)
-			
+
 			// Should be an API error with the corresponding status code
 			require.True(t, apierror.IsAPIError(err))
 			resp, ok := apierror.HTTPResponseFromError(err)
