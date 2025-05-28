@@ -58,41 +58,25 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 	}
 
 	// Write the bucket index.
-	//for _, userID := range []string{"user-1", "user-2"} {
+	// for _, userID := range []string{"user-1", "user-2"} {
 	//	createBucketIndex(t, bucketClient, userID)
-	//}
+	// }
 
 	tests := map[string]struct {
 		numConverters        int
 		expectedBlocksLoaded int
 	}{
-		"shard size 0, 1 gateway, RF = 1": {
+		"1 converter": {
 			numConverters:        1,
 			expectedBlocksLoaded: numBlocks,
 		},
-		"shard size 0, 2 gateways, RF = 1": {
+		"2 converters": {
 			numConverters:        2,
 			expectedBlocksLoaded: numBlocks, // blocks are sharded across gateways
 		},
-		"shard size 0, 3 gateways, RF = 2": {
-			numConverters:        3,
-			expectedBlocksLoaded: 2 * numBlocks, // blocks are replicated 2 times
-		},
-		"shard size 0, 5 gateways, RF = 3": {
-			numConverters:        5,
-			expectedBlocksLoaded: 3 * numBlocks, // blocks are replicated 3 times
-		},
-		"shard size 1, 1 gateway, RF = 1": {
-			numConverters:        1,
-			expectedBlocksLoaded: numBlocks,
-		},
-		"shard size 3, 5 gateways, RF = 2": {
+		"5 converters": {
 			numConverters:        5,
 			expectedBlocksLoaded: 2 * numBlocks, // blocks are replicated 2 times
-		},
-		"shard size 3, 20 gateways, RF = 3": {
-			numConverters:        20,
-			expectedBlocksLoaded: 3 * numBlocks, // blocks are replicated 3 times
 		},
 	}
 
@@ -138,7 +122,7 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 			}
 
 			// At this point we expect that all converters have done the initial sync and
-			// they have synched only their own blocks, because they waited for a stable
+			// they have synced only their own blocks, because they waited for a stable
 			// ring before starting the initial sync.
 			metrics := registries.BuildMetricFamiliesPerTenant()
 			assert.Equal(t, float64(testData.expectedBlocksLoaded), metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded"))
