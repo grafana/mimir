@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,15 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 	requestTime := parseTimeRFC3339(t, "2023-01-09T03:24:12Z")
 	hoursSinceEpoch := util.TimeToMillis(requestTime) / time.Hour.Milliseconds()
 	daysSinceEpoch := hoursSinceEpoch / 24
+
+	alphabet := "abcdefghijklmnopqrstuvwxyz"
+	longUserID := strings.Join(func(it string) []string {
+		tenantName := make([]string, len(it))
+		for i, v := range it {
+			tenantName[i] = fmt.Sprintf("tenant-%c", v)
+		}
+		return tenantName
+	}(alphabet), "|")
 
 	tests := []struct {
 		name     string
@@ -62,12 +72,25 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 			},
 			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 1),
 		},
+		{
+			name:   "long userID creates a valid key",
+			userID: longUserID,
+			r: &PrometheusRangeQueryRequest{
+				start: requestTime.UnixMilli(),
+				// Over 24 hours, range part should be 1
+				end:       requestTime.Add(25 * time.Hour).UnixMilli(),
+				queryExpr: parseQuery(t, "up"),
+			},
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey(longUserID), cacheHashKey("up"), daysSinceEpoch, 1),
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.expected, generateCardinalityEstimationCacheKey(tt.userID, tt.r, 24*time.Hour))
+			key := generateCardinalityEstimationCacheKey(tt.userID, tt.r, 24*time.Hour)
+			assert.Equal(t, tt.expected, key)
+			assert.LessOrEqual(t, len(key), 250, "Cardinality estimation cache key length should not exceed the maximum length")
 		})
 	}
 }
