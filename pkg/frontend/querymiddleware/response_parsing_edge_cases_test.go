@@ -27,12 +27,14 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		name            string
 		contentType     string
 		responseBody    string
+		statusCodes     []int  // test with multiple status codes
 		expectedError   string
 		shouldParseData bool // whether we expect to get a valid PrometheusResponse with nil data
 	}{
 		{
 			name:        "arbitrary JSON object",
 			contentType: "application/json",
+			statusCodes: []int{200, 500, 503},
 			responseBody: `{
 				"someField": "someValue",
 				"anotherField": 123,
@@ -46,6 +48,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:            "empty JSON object",
 			contentType:     "application/json",
+			statusCodes:     []int{200, 404, 500},
 			responseBody:    `{}`,
 			expectedError:   "",
 			shouldParseData: true,
@@ -53,42 +56,49 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:          "JSON array instead of object",
 			contentType:   "application/json",
+			statusCodes:   []int{200, 400, 500},
 			responseBody:  `["item1", "item2", "item3"]`,
 			expectedError: "readObjectStart: expect { or n, but found [",
 		},
 		{
 			name:          "JSON string instead of object",
 			contentType:   "application/json",
+			statusCodes:   []int{200, 500},
 			responseBody:  `"just a string"`,
 			expectedError: "readObjectStart: expect { or n, but found \"",
 		},
 		{
 			name:          "JSON number instead of object",
 			contentType:   "application/json",
+			statusCodes:   []int{200, 503},
 			responseBody:  `42`,
 			expectedError: "readObjectStart: expect { or n, but found 4",
 		},
 		{
 			name:          "malformed JSON - missing closing brace",
 			contentType:   "application/json",
+			statusCodes:   []int{200, 500, 503},
 			responseBody:  `{"status": "success", "data": {"resultType": "matrix"`,
 			expectedError: "object not ended with }",
 		},
 		{
 			name:          "malformed JSON - trailing comma",
 			contentType:   "application/json",
+			statusCodes:   []int{200},
 			responseBody:  `{"status": "success", "data": {},}`,
 			expectedError: "unsupported value type",
 		},
 		{
 			name:          "malformed JSON - unescaped quotes",
 			contentType:   "application/json",
+			statusCodes:   []int{200, 500},
 			responseBody:  `{"message": "this contains "unescaped" quotes"}`,
 			expectedError: "expect }, but found u",
 		},
 		{
 			name:        "valid JSON with null data field",
 			contentType: "application/json",
+			statusCodes: []int{200, 511},
 			responseBody: `{
 				"status": "success",
 				"data": null
@@ -99,6 +109,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:        "HTTP error response with arbitrary JSON content",
 			contentType: "application/json",
+			statusCodes: []int{200, 511, 503, 500},
 			responseBody: `{
 				"message": "Network Authentication Required",
 				"code": 511,
@@ -110,6 +121,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:        "text/plain content type with JSON body",
 			contentType: "text/plain",
+			statusCodes: []int{200, 500, 503},
 			responseBody: `{
 				"status": "success",
 				"data": {
@@ -122,6 +134,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:        "text/html content type with HTML body",
 			contentType: "text/html",
+			statusCodes: []int{200, 500},
 			responseBody: `<!DOCTYPE html>
 			<html>
 			<head><title>Error 500</title></head>
@@ -132,6 +145,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:        "application/xml content type with XML body",
 			contentType: "application/xml",
+			statusCodes: []int{200, 500, 503},
 			responseBody: `<?xml version="1.0" encoding="UTF-8"?>
 			<error>
 				<code>500</code>
@@ -142,18 +156,21 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:          "text/plain content type with plain text body",
 			contentType:   "text/plain",
+			statusCodes:   []int{200, 500, 503, 511},
 			responseBody:  "Something went wrong. Please try again later.",
 			expectedError: "unknown response content type 'text/plain'",
 		},
 		{
 			name:          "empty content type with JSON body",
 			contentType:   "",
+			statusCodes:   []int{200, 500, 503, 429, 413},
 			responseBody:  `{"status": "success", "data": null}`,
 			expectedError: "unknown response content type ''",
 		},
 		{
 			name:        "custom content type with JSON body",
 			contentType: "application/vnd.api+json",
+			statusCodes: []int{200, 500},
 			responseBody: `{
 				"jsonapi": {"version": "1.0"},
 				"errors": [
@@ -168,216 +185,108 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		{
 			name:        "content type with charset parameter",
 			contentType: "application/json; charset=utf-8",
+			statusCodes: []int{200, 500, 503},
 			responseBody: `{
 				"status": "success",
 				"data": null
 			}`,
 			expectedError: "unknown response content type 'application/json; charset=utf-8'",
 		},
+		{
+			name:        "unicode characters in arbitrary JSON",
+			contentType: "application/json",
+			statusCodes: []int{200, 500, 503},
+			responseBody: func() string {
+				return `{
+					"message": "こんにちは世界",
+					"emoji": "🚀🔥💻",
+					"special": "quotes: \"'` + "`" + `",
+					"unicode_escape": "\u0048\u0065\u006C\u006C\u006F",
+					"nested": {
+						"key": "value with ñáñá and 中文"
+					}
+				}`
+			}(),
+			expectedError:   "",
+			shouldParseData: true,
+		},
+		{
+			name:        "very large arbitrary JSON",
+			contentType: "application/json",
+			statusCodes: []int{200, 500},
+			responseBody: func() string {
+				var buf strings.Builder
+				buf.WriteString(`{"largeData": [`)
+				for i := 0; i < 10000; i++ {
+					if i > 0 {
+						buf.WriteString(",")
+					}
+					buf.WriteString(`{"index":`)
+					buf.WriteString(fmt.Sprintf("%d", i))
+					buf.WriteString(`,"data":"`)
+					buf.WriteString(strings.Repeat("1234567890", 10)) // 100 chars per item
+					buf.WriteString(`"}`)
+				}
+				buf.WriteString(`]}`)
+				return buf.String()
+			}(),
+			expectedError:   "",
+			shouldParseData: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+			for _, statusCode := range tc.statusCodes {
+				t.Run(fmt.Sprintf("status_%d", statusCode), func(t *testing.T) {
+					reg := prometheus.NewPedanticRegistry()
+					codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
 
-			responseBody := []byte(tc.responseBody)
-			httpResponse := &http.Response{
-				StatusCode:    200,
-				Header:        http.Header{"Content-Type": []string{tc.contentType}},
-				Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
-				ContentLength: int64(len(responseBody)),
-			}
+					responseBody := []byte(tc.responseBody)
+					headers := http.Header{}
+					if tc.contentType != "" {
+						headers["Content-Type"] = []string{tc.contentType}
+					}
 
-			decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+					httpResponse := &http.Response{
+						StatusCode:    statusCode,
+						Header:        headers,
+						Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
+						ContentLength: int64(len(responseBody)),
+					}
 
-			if tc.expectedError != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.expectedError)
-				return
-			}
+					decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
 
-			require.NoError(t, err)
-			require.NotNil(t, decoded)
+					// For empty content type with error status codes, expect specific error handling
+					if tc.contentType == "" && (statusCode == 500 || statusCode == 503 || statusCode == 429 || statusCode == 413) {
+						require.Error(t, err)
+						require.True(t, apierror.IsAPIError(err))
+						resp, ok := apierror.HTTPResponseFromError(err)
+						require.True(t, ok)
+						require.Equal(t, int32(statusCode), resp.Code)
+						return
+					}
 
-			if tc.shouldParseData {
-				// For arbitrary JSON, we expect to get a PrometheusResponse but with Data=nil
-				promResp, ok := decoded.GetPrometheusResponse()
-				require.True(t, ok)
-				require.NotNil(t, promResp)
+					if tc.expectedError != "" {
+						require.Error(t, err)
+						assert.Contains(t, err.Error(), tc.expectedError)
+						return
+					}
 
-				// Test that ResponseToSamples handles this gracefully
-				_, respErr := ResponseToSamples(promResp)
-				require.Error(t, respErr)
-				assert.Contains(t, respErr.Error(), "response data is nil")
+					require.NoError(t, err)
+					require.NotNil(t, decoded)
+
+					if tc.shouldParseData {
+						// For arbitrary JSON, we expect to get a PrometheusResponse but with Data=nil
+						promResp, ok := decoded.GetPrometheusResponse()
+						require.True(t, ok)
+						require.NotNil(t, promResp)
+
+						// Test that ResponseToSamples handles this gracefully
+						_, respErr := ResponseToSamples(promResp)
+						require.Error(t, respErr)
+						assert.Contains(t, respErr.Error(), "response data is nil")
+					}
+				})
 			}
 		})
 	}
-}
-
-// TestPrometheusCodec_ResponseParsingLargePayloads tests handling of unusually large responses
-func TestPrometheusCodec_ResponseParsingLargePayloads(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
-
-	t.Run("very large arbitrary JSON", func(t *testing.T) {
-		// Create a large JSON object that's not a valid Prometheus response
-		var buf strings.Builder
-		buf.WriteString(`{"largeData": [`)
-		for i := 0; i < 10000; i++ {
-			if i > 0 {
-				buf.WriteString(",")
-			}
-			buf.WriteString(`{"index":`)
-			buf.WriteString(strings.Repeat("1234567890", 10)) // 100 chars per item
-			buf.WriteString("}")
-		}
-		buf.WriteString(`]}`)
-
-		responseBody := []byte(buf.String())
-		httpResponse := &http.Response{
-			StatusCode:    200,
-			Header:        http.Header{"Content-Type": []string{"application/json"}},
-			Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
-			ContentLength: int64(len(responseBody)),
-		}
-
-		decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-		require.NoError(t, err)
-		require.NotNil(t, decoded)
-
-		// Should parse but result in PrometheusResponse with Data=nil
-		promResp, ok := decoded.GetPrometheusResponse()
-		require.True(t, ok)
-		require.NotNil(t, promResp)
-
-		// ResponseToSamples should handle this gracefully
-		_, respErr := ResponseToSamples(promResp)
-		require.Error(t, respErr)
-		assert.Contains(t, respErr.Error(), "response data is nil")
-	})
-}
-
-// TestPrometheusCodec_ResponseParsingSpecialCharacters tests responses with special characters
-func TestPrometheusCodec_ResponseParsingSpecialCharacters(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
-
-	t.Run("unicode characters in arbitrary JSON", func(t *testing.T) {
-		responseBody := []byte(`{
-			"message": "こんにちは世界",
-			"emoji": "🚀🔥💻",
-			"special": "quotes: \"'` + "`" + `",
-			"unicode_escape": "\u0048\u0065\u006C\u006C\u006F"
-		}`)
-
-		httpResponse := &http.Response{
-			StatusCode:    200,
-			Header:        http.Header{"Content-Type": []string{"application/json"}},
-			Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
-			ContentLength: int64(len(responseBody)),
-		}
-
-		decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-		require.NoError(t, err)
-		require.NotNil(t, decoded)
-
-		// Should parse but result in PrometheusResponse with Data=nil
-		promResp, ok := decoded.GetPrometheusResponse()
-		require.True(t, ok)
-		require.NotNil(t, promResp)
-
-		// ResponseToSamples should handle this gracefully
-		_, respErr := ResponseToSamples(promResp)
-		require.Error(t, respErr)
-		assert.Contains(t, respErr.Error(), "response data is nil")
-	})
-}
-
-// TestPrometheusCodec_ResponseParsingErrorStatusCodes tests handling of various HTTP error status codes
-func TestPrometheusCodec_ResponseParsingErrorStatusCodes(t *testing.T) {
-	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
-
-	// Test error status codes WITHOUT content type (these should generate errors)
-	for _, statusCode := range []int{500, 503, 429, 413} {
-		t.Run(fmt.Sprintf("status_%d_no_content_type", statusCode), func(t *testing.T) {
-			responseBody := []byte("Something went wrong")
-
-			httpResponse := &http.Response{
-				StatusCode:    statusCode,
-				Header:        http.Header{}, // No content type
-				Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
-				ContentLength: int64(len(responseBody)),
-			}
-
-			_, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-			require.Error(t, err)
-
-			// Should be an API error with the corresponding status code
-			require.True(t, apierror.IsAPIError(err))
-			resp, ok := apierror.HTTPResponseFromError(err)
-			require.True(t, ok)
-			require.Equal(t, int32(statusCode), resp.Code)
-		})
-	}
-
-	// Test error status codes WITH application/json content type (these get parsed as JSON)
-	for _, statusCode := range []int{500, 503} {
-		t.Run(fmt.Sprintf("status_%d_with_json_content_type", statusCode), func(t *testing.T) {
-			responseBody := []byte(`{
-				"message": "This is arbitrary JSON with error status",
-				"code": ` + fmt.Sprintf("%d", statusCode) + `
-			}`)
-
-			httpResponse := &http.Response{
-				StatusCode:    statusCode,
-				Header:        http.Header{"Content-Type": []string{"application/json"}},
-				Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
-				ContentLength: int64(len(responseBody)),
-			}
-
-			// With content type, it tries to parse as JSON regardless of status code
-			decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-			require.NoError(t, err)
-			require.NotNil(t, decoded)
-
-			// Should parse but result in PrometheusResponse with Data=nil
-			promResp, ok := decoded.GetPrometheusResponse()
-			require.True(t, ok)
-			require.NotNil(t, promResp)
-
-			// ResponseToSamples should handle this gracefully
-			_, respErr := ResponseToSamples(promResp)
-			require.Error(t, respErr)
-			assert.Contains(t, respErr.Error(), "response data is nil")
-		})
-	}
-
-	// Test that 200 status with arbitrary JSON doesn't generate an error
-	t.Run("status_200_with_arbitrary_json", func(t *testing.T) {
-		responseBody := []byte(`{
-			"message": "This is not a Prometheus response",
-			"someField": "someValue"
-		}`)
-
-		httpResponse := &http.Response{
-			StatusCode:    200,
-			Header:        http.Header{"Content-Type": []string{"application/json"}},
-			Body:          io.NopCloser(bytes.NewBuffer(responseBody)),
-			ContentLength: int64(len(responseBody)),
-		}
-
-		decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
-		require.NoError(t, err)
-		require.NotNil(t, decoded)
-
-		// Should parse but result in PrometheusResponse with Data=nil
-		promResp, ok := decoded.GetPrometheusResponse()
-		require.True(t, ok)
-		require.NotNil(t, promResp)
-
-		// ResponseToSamples should handle this gracefully
-		_, respErr := ResponseToSamples(promResp)
-		require.Error(t, respErr)
-		assert.Contains(t, respErr.Error(), "response data is nil")
-	})
 }
