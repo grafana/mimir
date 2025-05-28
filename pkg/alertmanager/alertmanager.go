@@ -637,7 +637,8 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
-		if rcv.Type() == definition.GrafanaReceiverType {
+		rcvType := rcv.Type()
+		if rcvType == definition.GrafanaReceiverType {
 			// Create the Grafana template struct if it has not already been created.
 			if gTmpl == nil {
 				gTmpl, err = alertingTemplates.FromContent(templates, WithCustomFunctions(am.cfg.UserID))
@@ -647,7 +648,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				gTmpl.ExternalURL = tmplExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier, grafanaOpts...)
-		} else {
+		} else if rcvType == definition.AlertmanagerReceiverType {
 			if tmpl == nil {
 				tmpl, err = loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {

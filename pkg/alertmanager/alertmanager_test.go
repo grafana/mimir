@@ -723,7 +723,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		}
 	}, 5*time.Second, 100*time.Millisecond)
 
-	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no receivers.
+	// Ensure templates are correctly built for empty/noop/blackhole notifiers.
 	cfgRaw = `{
             "route": {
                 "receiver": "empty_receiver",
@@ -737,10 +737,9 @@ func TestGrafanaAlertmanager(t *testing.T) {
 	cfg, err = definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 
-	// Sanity check, if this fails, the test is broken.
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{}, cfgRaw, &url.URL{}, nil))
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
 
-	// Test that the template is validated.
+	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no non-empty receivers.
 	testTemplate = alertingTemplates.TemplateDefinition{
 		Name:     "test",
 		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
