@@ -29,6 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	mimirsync "github.com/grafana/mimir/pkg/util/sync"
 )
 
 var (
@@ -359,6 +360,7 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Request callbacks from KVStore when data changes.
 	// The KVStore config we gave when creating h should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass an empty string here.
+	// WatchPrefix blocks until ctx is done or the function provided returns false.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica, ok := value.(*ReplicaDesc)
 		if !ok {
@@ -371,7 +373,11 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 		return true
 	})
 
-	wg.Wait()
+	if err := mimirsync.WaitWithTimeout(&wg, 10*time.Second); err != nil {
+		level.Error(h.logger).Log("msg", "wait group was not done after 10m but we expected it to be done in a few milliseconds", "err", err)
+		return fmt.Errorf("waiting for updateKVLoop to be done: %w", err)
+	}
+
 	return nil
 }
 
