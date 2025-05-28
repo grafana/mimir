@@ -288,6 +288,41 @@ func TestRW2Unmarshal(t *testing.T) {
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
 	})
+
+	t.Run("common symbol received but none defined", func(t *testing.T) {
+		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		// Create a new WriteRequest with some sample data.
+		writeRequest := makeTestRW2WriteRequest(syms)
+		writeRequest.Timeseries[0].LabelsRefs[0] = 128 // In the reserved space
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		received.RW2SymbolOffset = 256
+		received.RW2CommonSymbols = nil
+		err = received.Unmarshal(data)
+		require.ErrorContains(t, err, "invalid")
+	})
+
+	t.Run("common symbol out of bounds", func(t *testing.T) {
+		commonSyms := []string{"__name__"}
+		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, commonSyms)
+		// Create a new WriteRequest with some sample data.
+		writeRequest := makeTestRW2WriteRequest(syms)
+		writeRequest.Timeseries[0].LabelsRefs[0] = 1 // Out of bounds common symbol.
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		received.RW2SymbolOffset = 256
+		received.RW2CommonSymbols = commonSyms
+		err = received.Unmarshal(data)
+		require.ErrorContains(t, err, "invalid")
+	})
 }
 
 func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
