@@ -373,7 +373,7 @@ func (h *defaultHaTracker) loop(ctx context.Context) error {
 		return true
 	})
 
-	if err := mimirsync.WaitWithTimeout(&wg, 10*time.Minute); err != nil {
+	if err := mimirsync.WaitWithTimeout(&wg, 10*time.Second); err != nil {
 		level.Error(h.logger).Log("msg", "wait group was not done after 10m but we expected it to be done in a few milliseconds", "err", err)
 		return fmt.Errorf("waiting for updateKVLoop to be done: %w", err)
 	}
