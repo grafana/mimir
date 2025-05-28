@@ -161,7 +161,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		policy = noOpJobCreationPolicy[schedulerpb.JobSpec]{}
 	}
 
-	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, policy)
+	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
 	s.finalizeObservations()
 	s.populateInitialJobs(ctx)
 	s.observations = nil
