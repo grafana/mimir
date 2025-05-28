@@ -428,6 +428,13 @@ func TestResponseToSamples(t *testing.T) {
 	assertEqualSampleStream(t, input.Data.Result, streams)
 }
 
+func TestResponseToSamplesWithNilData(t *testing.T) {
+	resp := &PrometheusResponse{Data: nil}
+	_, err := ResponseToSamples(resp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "response data is nil")
+}
+
 func assertEqualSampleStream(t *testing.T, expected, actual []SampleStream) {
 	// Expect the same length.
 	require.Equal(t, len(expected), len(actual))
