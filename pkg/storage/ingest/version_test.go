@@ -13,6 +13,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
+func TestV2SymbolsCompat(t *testing.T) {
+	t.Run("v2 symbols cannot be larger than v2 offset", func(t *testing.T) {
+		require.GreaterOrEqual(t, len(V2CommonSymbols), V2RecordSymbolOffset)
+	})
+}
+
 func TestRecordVersionHeader(t *testing.T) {
 	t.Run("no version header is assumed to be v0", func(t *testing.T) {
 		rec := &kgo.Record{
