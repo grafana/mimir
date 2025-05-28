@@ -637,7 +637,8 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
-		if rcv.Type() == definition.GrafanaReceiverType {
+		switch rcv.Type() {
+		case definition.GrafanaReceiverType:
 			// Create the Grafana template struct if it has not already been created.
 			if gTmpl == nil {
 				gTmpl, err = alertingTemplates.FromContent(templates, WithCustomFunctions(am.cfg.UserID))
@@ -647,7 +648,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				gTmpl.ExternalURL = tmplExternalURL
 			}
 			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier, grafanaOpts...)
-		} else {
+		case definition.AlertmanagerReceiverType:
 			if tmpl == nil {
 				tmpl, err = loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
@@ -656,6 +657,8 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				tmpl.ExternalURL = tmplExternalURL
 			}
 			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+		case definition.EmptyReceiverType:
+			// Empty receiver, no integrations to build.
 		}
 		if err != nil {
 			return nil, err
