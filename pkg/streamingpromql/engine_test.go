@@ -3475,7 +3475,7 @@ func TestSubqueryStats(t *testing.T) {
 		"aggregation over subquery, range query": {
 			expr:                        `max_over_time(dense_series[5m:1m])`,
 			expectedTotalSamples:        45,
-			expectedTotalSamplesPerStep: []int64{0, 1, 2, 3, 4, 5, 5, 5, 5, 5, 5},
+			expectedTotalSamplesPerStep: []int64{1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5},
 		},
 
 		"subquery range = interval": {
