@@ -39,7 +39,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				time:      requestTime.UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-a"), cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name:   "range query",
@@ -49,7 +49,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				end:       requestTime.Add(2 * time.Hour).UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name:   "range query with large range",
@@ -60,7 +60,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				end:       requestTime.Add(25 * time.Hour).UnixMilli(),
 				queryExpr: parseQuery(t, "up"),
 			},
-			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 1),
 		},
 	}
 
@@ -77,6 +77,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	c := cache.NewInstrumentedMockCache()
 
 	actualKey := fmt.Sprintf("QS:tenant-a:%s:1234:4321", cacheHashKey("up"))
+	userID := "tenant-a"
 	actualValue := uint64(25)
 
 	expectedFetchCount := 0
@@ -84,6 +85,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 		cache               cache.Cache
 		name                string
 		key                 string
+		userID              string
 		expectedCardinality uint64
 		expectedPresent     bool
 	}{
@@ -91,6 +93,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 			cache:               nil,
 			name:                "nil cache",
 			key:                 actualKey,
+			userID:              userID,
 			expectedCardinality: 0,
 			expectedPresent:     false,
 		},
@@ -98,6 +101,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 			cache:               c,
 			name:                "cache hit",
 			key:                 actualKey,
+			userID:              userID,
 			expectedCardinality: actualValue,
 			expectedPresent:     true,
 		},
@@ -105,6 +109,15 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 			cache:               c,
 			name:                "cache miss",
 			key:                 "not present",
+			userID:              userID,
+			expectedCardinality: 0,
+			expectedPresent:     false,
+		},
+		{
+			cache:               c,
+			name:                "cache hit but wrong userID",
+			key:                 actualKey,
+			userID:              "tenant-b",
 			expectedCardinality: 0,
 			expectedPresent:     false,
 		},
@@ -112,8 +125,8 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ce := cardinalityEstimation{cache: tt.cache}
-			ce.storeCardinalityForKey(actualKey, actualValue)
-			estimate, ok := ce.lookupCardinalityForKey(ctx, tt.key)
+			ce.storeCardinalityForKey(actualKey, actualValue, userID)
+			estimate, ok := ce.lookupCardinalityForKey(ctx, tt.key, tt.userID)
 			if tt.cache != nil {
 				expectedFetchCount++
 			}
@@ -142,8 +155,11 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			return &PrometheusResponse{}, nil
 		}
 	}
-	marshaledEstimate, err := proto.Marshal(&QueryStatistics{EstimatedSeriesCount: numSeries})
-	require.NoError(t, err)
+	marshaledEstimate := func(numSeries uint64, userID string) []byte {
+		est, err := proto.Marshal(&QueryStatistics{EstimatedSeriesCount: numSeries, UserID: userID})
+		require.Nil(t, err)
+		return est
+	}
 
 	tests := []struct {
 		name              string
@@ -178,7 +194,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and unchanged cardinality",
 			tenantID:          "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries),
-			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate},
+			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate(numSeries, "1")},
 			expectedLoads:     1,
 			expectedStores:    0,
 			expectedErr:       assert.NoError,
@@ -187,16 +203,27 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			name:              "with populated cache and marginally changed cardinality",
 			tenantID:          "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries+1),
-			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate},
+			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate(numSeries, "1")},
 			expectedLoads:     1,
 			expectedStores:    0,
 			expectedErr:       assert.NoError,
 		},
 		{
+			name:     "with populated cache and different userID",
+			tenantID: "1",
+			downstreamHandler: func(_ context.Context, _ MetricsQueryRequest) (Response, error) {
+				return &PrometheusResponse{}, nil
+			},
+			cacheContent:   map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate(numSeries, "2")},
+			expectedLoads:  1,
+			expectedStores: 1,
+			expectedErr:    assert.NoError,
+		},
+		{
 			name:              "with populated cache and significantly changed cardinality",
 			tenantID:          "1",
 			downstreamHandler: addSeriesHandler(numSeries, numSeries*2),
-			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate},
+			cacheContent:      map[string][]byte{generateCardinalityEstimationCacheKey("1", request, cardinalityEstimateBucketSize): marshaledEstimate(numSeries, "1")},
 			expectedLoads:     1,
 			expectedStores:    1,
 			expectedErr:       assert.NoError,
