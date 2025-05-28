@@ -27,7 +27,7 @@ func TestPrometheusCodec_ResponseParsingEdgeCases(t *testing.T) {
 		name            string
 		contentType     string
 		responseBody    string
-		statusCodes     []int  // test with multiple status codes
+		statusCodes     []int // test with multiple status codes
 		expectedError   string
 		shouldParseData bool // whether we expect to get a valid PrometheusResponse with nil data
 	}{
