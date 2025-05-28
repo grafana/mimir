@@ -813,6 +813,7 @@ func TestSubqueries(t *testing.T) {
 	`
 
 	opts := NewTestEngineOpts()
+	opts.CommonOpts.EnablePerStepStats = true
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
 	require.NoError(t, err)

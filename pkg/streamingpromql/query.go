@@ -86,7 +86,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		engine:                   e,
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
 		annotations:              annotations.New(),
-		stats:                    &types.QueryStats{EnablePerStepStats: e.enablePerStepStats && opts.EnablePerStepStats()},
+		stats:                    types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats()),
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 	}
@@ -420,8 +420,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 
 		subqueryTimeRange := core.SubqueryTimeRange(timeRange, e.Range, step, core.TimeFromTimestamp(e.Timestamp), e.OriginalOffset)
 
-		childStats := stats.NewChild(true)
-		childStats.InitStepTracking(subqueryTimeRange.StartT, subqueryTimeRange.EndT, subqueryTimeRange.IntervalMilliseconds)
+		childStats := types.NewQueryStats(subqueryTimeRange, true)
 		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange, childStats)
 		if err != nil {
 			return nil, err
@@ -612,12 +611,6 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		level.Info(logger).Log(msg...)
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
-	// TODO: ikonstantinov: think about better placing, maybe in the query.new()?
-	if q.topLevelQueryTimeRange.IsInstant {
-		q.stats.InitStepTracking(q.topLevelQueryTimeRange.StartT, q.topLevelQueryTimeRange.StartT, 1)
-	} else {
-		q.stats.InitStepTracking(q.topLevelQueryTimeRange.StartT, q.topLevelQueryTimeRange.EndT, q.topLevelQueryTimeRange.IntervalMilliseconds)
-	}
 	switch root := q.root.(type) {
 	case types.RangeVectorOperator:
 		series, err := root.SeriesMetadata(ctx)

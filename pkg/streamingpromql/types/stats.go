@@ -25,8 +25,7 @@ type QueryStats struct {
 	TotalSamplesPerStep []int64
 
 	EnablePerStepStats bool
-	startTimestamp     int64
-	interval           int64
+	timerange          QueryTimeRange
 }
 
 type stepStat struct {
@@ -36,15 +35,15 @@ type stepStat struct {
 
 const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
 
-func (qs *QueryStats) InitStepTracking(start, end, interval int64) {
-	if !qs.EnablePerStepStats {
-		return
+func NewQueryStats(timerange QueryTimeRange, enablePerStepStats bool) *QueryStats {
+	qs := &QueryStats{
+		timerange:          timerange,
+		EnablePerStepStats: enablePerStepStats,
 	}
-
-	numSteps := int((end-start)/interval) + 1
-	qs.TotalSamplesPerStep = make([]int64, numSteps)
-	qs.startTimestamp = start
-	qs.interval = interval
+	if enablePerStepStats {
+		qs.TotalSamplesPerStep = make([]int64, qs.timerange.StepCount)
+	}
+	return qs
 }
 
 // IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
@@ -68,31 +67,11 @@ func (qs *QueryStats) IncrementSamplesAtTimestamp(t, samples int64) {
 	qs.TotalSamples += samples
 
 	if qs.TotalSamplesPerStep != nil {
-		i := int((t - qs.startTimestamp) / qs.interval)
-		qs.TotalSamplesPerStep[i] += samples
+		qs.TotalSamplesPerStep[qs.timerange.PointIndex(t)] += samples
 	}
 }
 
-// TODO: ikonstantinov: think about better name
-func (qs *QueryStats) NewChild(enablePerStepStats bool) *QueryStats {
-	return &QueryStats{
-		EnablePerStepStats: enablePerStepStats,
-	}
-}
-
-func (qs *QueryStats) TotalSamplesPerStepPoints() []stepStat {
-	if !qs.EnablePerStepStats {
-		return nil
-	}
-
-	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
-	for i, c := range qs.TotalSamplesPerStep {
-		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: c}
-	}
-	return ts
-}
-
-func (qs *QueryStats) Release() {
+func (qs *QueryStats) Clear() {
 	qs.TotalSamples = 0
 	if qs.TotalSamplesPerStep != nil {
 		clear(qs.TotalSamplesPerStep)
