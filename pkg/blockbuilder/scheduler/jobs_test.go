@@ -143,7 +143,7 @@ func TestPersistentFailure(t *testing.T) {
 	s := newJobQueue(988*time.Hour, noOpJobCreationPolicy[testSpec]{}, 2, newSchedulerMetrics(reg), test.NewTestingLogger(t))
 	require.NotNil(t, s)
 
-	s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
+	require.NoError(t, s.add("job1", testSpec{topic: "hello", commitRecTs: time.Now()}))
 
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
@@ -154,7 +154,7 @@ func TestPersistentFailure(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "w0", j.assignee)
 
-	for range s.maxFailCount + 3 {
+	for range s.jobFailuresAllowed + 3 {
 		// Expire the lease.
 		j.leaseExpiry = time.Now().Add(-1 * time.Minute)
 		s.clearExpiredLeases()

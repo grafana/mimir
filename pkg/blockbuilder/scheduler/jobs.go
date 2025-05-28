@@ -22,11 +22,11 @@ var (
 )
 
 type jobQueue[T any] struct {
-	leaseExpiry    time.Duration
-	creationPolicy jobCreationPolicy[T]
-	maxFailCount   int
-	metrics        schedulerMetrics
-	logger         log.Logger
+	leaseExpiry        time.Duration
+	creationPolicy     jobCreationPolicy[T]
+	jobFailuresAllowed int
+	metrics            schedulerMetrics
+	logger             log.Logger
 
 	mu         sync.Mutex
 	epoch      int64
@@ -34,13 +34,13 @@ type jobQueue[T any] struct {
 	unassigned *list.List
 }
 
-func newJobQueue[T any](leaseExpiry time.Duration, jobCreationPolicy jobCreationPolicy[T], maxFailCount int, metrics schedulerMetrics, logger log.Logger) *jobQueue[T] {
+func newJobQueue[T any](leaseExpiry time.Duration, jobCreationPolicy jobCreationPolicy[T], jobFailuresAllowed int, metrics schedulerMetrics, logger log.Logger) *jobQueue[T] {
 	return &jobQueue[T]{
-		leaseExpiry:    leaseExpiry,
-		creationPolicy: jobCreationPolicy,
-		maxFailCount:   maxFailCount,
-		metrics:        metrics,
-		logger:         logger,
+		leaseExpiry:        leaseExpiry,
+		creationPolicy:     jobCreationPolicy,
+		jobFailuresAllowed: jobFailuresAllowed,
+		metrics:            metrics,
+		logger:             logger,
 
 		jobs:       make(map[string]*job[T]),
 		unassigned: list.New(),
@@ -231,7 +231,7 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 			// An expired job gets to go to the front of the unassigned list.
 			s.unassigned.PushFront(j)
 
-			if j.failCount > s.maxFailCount {
+			if j.failCount > s.jobFailuresAllowed {
 				s.metrics.persistentJobFailures.Inc()
 				level.Error(s.logger).Log("msg", "job failed in a persistent manner", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee, "fail_count", j.failCount)
 			} else {
