@@ -1274,15 +1274,16 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		if len(dedupedPerMetric) > 0 {
 			// Emit tracing span events for metrics with deduped samples.
-			spanLogger, _ := spanlogger.New(ctx, d.log, tracer, "Distributor.prePushValidationMiddleware")
+			sp := trace.SpanFromContext(ctx)
 			for m, c := range dedupedPerMetric {
-				spanLogger.DebugLog(
-					"msg", "deduplicated samples/histograms with conflicting timestamps from write request",
-					"metric", m,
-					"count", c,
+				sp.AddEvent(
+					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
+					trace.WithAttributes(
+						attribute.String("metric", m),
+						attribute.Int("count", c),
+					),
 				)
 			}
-			spanLogger.Finish()
 		}
 
 		if droppedNativeHistograms > 0 {
