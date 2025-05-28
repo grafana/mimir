@@ -1238,24 +1238,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				droppedNativeHistograms += len(ts.Histograms)
 			}
 
-			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
-			if dedupedSamplesAndHistograms > 0 {
-				if dedupedPerMetric == nil {
-					dedupedPerMetric = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
-				}
-				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-				if err == nil {
-					increment := len(dedupedPerMetric) < maxMetricsWithDeduplicatedSamplesToTrace
-					if !increment {
-						// If at max capacity, only touch pre-existing entries.
-						_, increment = dedupedPerMetric[name]
-					}
-					if increment {
-						dedupedPerMetric[name] += dedupedSamplesAndHistograms
-					}
-				}
-			}
-
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
@@ -1267,13 +1249,32 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				continue
 			}
 
+			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			if dedupedSamplesAndHistograms > 0 {
+				if dedupedPerMetric == nil {
+					dedupedPerMetric = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
+				}
+				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+				if err != nil {
+					name = "unnamed"
+				}
+				increment := len(dedupedPerMetric) < maxMetricsWithDeduplicatedSamplesToTrace
+				if !increment {
+					// If at max capacity, only touch pre-existing entries.
+					_, increment = dedupedPerMetric[name]
+				}
+				if increment {
+					dedupedPerMetric[name] += dedupedSamplesAndHistograms
+				}
+			}
+
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 		}
 
 		if len(dedupedPerMetric) > 0 {
 			// Emit tracing span events for metrics with deduped samples.
-			spanLogger, _ := spanlogger.NewWithLogger(ctx, d.log, "Distributor.prePushValidationMiddleware")
+			spanLogger, _ := spanlogger.New(ctx, d.log, tracer, "Distributor.prePushValidationMiddleware")
 			for m, c := range dedupedPerMetric {
 				spanLogger.DebugLog(
 					"msg", "deduplicated samples/histograms with conflicting timestamps from write request",
