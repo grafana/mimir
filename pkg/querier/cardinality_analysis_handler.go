@@ -36,7 +36,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			return
 		}
 
-		cardinalityRequest, err := cardinality.DecodeLabelNamesRequest(r)
+		cardinalityRequest, err := cardinality.DecodeLabelNamesRequest(r, tenantID, limits)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -66,7 +66,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			return
 		}
 
-		cardinalityRequest, err := cardinality.DecodeLabelValuesRequest(r)
+		cardinalityRequest, err := cardinality.DecodeLabelValuesRequest(r, tenantID, limits)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
