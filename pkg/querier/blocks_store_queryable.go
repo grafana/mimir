@@ -341,7 +341,7 @@ func (q *blocksStoreQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 }
 
 func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelNames")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -386,7 +386,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 }
 
 func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelValues")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -438,7 +438,7 @@ func (q *blocksStoreQuerier) Close() error {
 }
 
 func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.SelectHints, tenantID string, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.selectSorted")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Finish()
 
 	minT, maxT := sp.Start, sp.End
@@ -762,7 +762,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
+			log, reqCtx := spanlogger.New(reqCtx, spanLog, tracer, "blocksStoreQuerier.fetchSeriesFromStores")
 			defer log.Finish()
 			log.SetTag("store_gateway_address", c.RemoteAddress())
 

@@ -51,11 +51,11 @@ func TestRulerAPI(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
-	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags())
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), RulerStorageS3Flags(), BlocksStorageFlags())
 
 	// Start Mimir components.
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
@@ -154,6 +154,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	flags := mergeFlags(
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageLocalFlags(),
 		map[string]string{
 			"-ruler-storage.local.directory": filepath.Join(e2e.ContainerSharedDir, "ruler_configs"),
 			"-ruler.poll-interval":           "2s",
@@ -220,7 +221,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -228,6 +229,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
 			// Disable rule group limit
@@ -339,7 +341,7 @@ func TestRulerAPIRulesEvaluationDisabledForTenant(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	runtimeConfig := `
@@ -355,6 +357,7 @@ overrides:
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
 			"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
@@ -405,7 +408,7 @@ func TestRulerSharding(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -413,6 +416,7 @@ func TestRulerSharding(t *testing.T) {
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
 			// Disable rule group limit

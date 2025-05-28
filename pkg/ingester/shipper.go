@@ -104,7 +104,7 @@ func newShipper(
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "Ingester.Shipper.Sync")
+	log, ctx := spanlogger.New(ctx, s.logger, tracer, "Ingester.Shipper.Sync")
 	defer log.Finish()
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {

@@ -858,7 +858,7 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 }
 
 func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
-	// Test that job detection and enqueueiing work as expected w/r/t the
+	// Test that job detection and enqueueing work as expected w/r/t the
 	// job creation policy.
 
 	sched, _ := mustScheduler(t)
@@ -933,4 +933,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count(), "the job should have been ignored because it's behind the committed offset")
+}
+
+func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+
+	part := int32(1)
+	pt := sched.getPartitionState(part)
+	// Assume at startup we compute this job offset range:
+	pt.addPendingJob(&offsetRange{start: 10, end: 30})
+
+	// But the job we imported from the existing workers now being completed may be (10, 20):
+	sched.advanceCommittedOffset("ingest", part, 20)
+
+	assert.Equal(t, 1, pt.pendingJobs.Len())
+	assert.Equal(t, 0, sched.jobs.count())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
 }

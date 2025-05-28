@@ -15,13 +15,13 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -34,6 +34,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/blockbuilder")
 
 type BlockBuilder struct {
 	services.Service
@@ -128,17 +130,18 @@ func newWithSchedulerClient(
 }
 
 func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc.ClientConn, error) {
-	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
-		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
+	opts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
+		nil,
 		nil,
 		util.NewInvalidClusterValidationReporter(b.cfg.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label, b.blockBuilderMetrics.invalidClusterValidation, b.logger),
 	)
 	if err != nil {
 		return nil, nil, err
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(b.cfg.SchedulerConfig.Address, dialOpts...)
+	conn, err := grpc.Dial(b.cfg.SchedulerConfig.Address, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -242,7 +245,7 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 		b.blockBuilderMetrics.consumeJobDuration.WithLabelValues(success).Observe(time.Since(start).Seconds())
 	}(time.Now())
 
-	sp, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BlockBuilder.consumeJob")
+	sp, ctx := spanlogger.New(ctx, b.logger, tracer, "BlockBuilder.consumeJob")
 	defer sp.Finish()
 
 	logger := log.With(sp, "partition", spec.Partition, "job_id", key.Id, "job_epoch", key.Epoch)
@@ -445,7 +448,7 @@ func PartitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // If the partition is lagging behind, it takes care of consuming it in sections.
 func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state PartitionState, cycleEndTime time.Time, cycleEndOffset int64, logger log.Logger) (finalState PartitionState, err error) {
-	sp, ctx := spanlogger.NewWithLogger(ctx, logger, "BlockBuilder.consumePartition")
+	sp, ctx := spanlogger.New(ctx, logger, tracer, "BlockBuilder.consumePartition")
 	defer sp.Finish()
 
 	logger = log.With(sp, "partition", partition, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset)
