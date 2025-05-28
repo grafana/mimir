@@ -41,6 +41,10 @@ func (u *UnaryNegationOfScalar) ExpressionPosition() posrange.PositionRange {
 	return u.expressionPosition
 }
 
+func (u *UnaryNegationOfScalar) Prepare(params types.PrepareParams) {
+	u.Inner.Prepare(params)
+}
+
 func (u *UnaryNegationOfScalar) Close() {
 	u.Inner.Close()
 }

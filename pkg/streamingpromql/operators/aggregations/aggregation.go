@@ -273,6 +273,10 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
+func (a *Aggregation) Prepare(params types.PrepareParams) {
+	a.Inner.Prepare(params)
+}
+
 func (a *Aggregation) Close() {
 	// The wrapping operator is responsible for returning any a.ParamData slice
 	// since it is responsible for setting them up.

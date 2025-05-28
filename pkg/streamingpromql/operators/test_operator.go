@@ -62,6 +62,10 @@ func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiting.Memo
 	t.Data = nil
 }
 
+func (t *TestOperator) Prepare(params types.PrepareParams) {
+	// Nothing to do.
+}
+
 func (t *TestOperator) Close() {
 	// Note that we do not return any unused series data here: it is the responsibility of the test to call ReleaseUnreadData, if needed.
 	t.Closed = true

@@ -112,6 +112,10 @@ func (a *Absent) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
+func (a *Absent) Prepare(params types.PrepareParams) {
+	a.Inner.Prepare(params)
+}
+
 func (a *Absent) Close() {
 	a.Inner.Close()
 

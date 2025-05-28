@@ -53,6 +53,10 @@ func (s *Time) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
+func (s *Time) Prepare(params types.PrepareParams) {
+	// Nothing to do.
+}
+
 func (s *Time) Close() {
 	// Nothing to do.
 }

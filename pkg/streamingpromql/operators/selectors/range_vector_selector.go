@@ -33,10 +33,9 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *RangeVectorSelector {
 	return &RangeVectorSelector{
 		Selector:   selector,
-		Stats:      stats,
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:   &types.RangeVectorStepData{},
@@ -157,6 +156,10 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			return fmt.Errorf("unknown value type %s", valueType.String())
 		}
 	}
+}
+
+func (m *RangeVectorSelector) Prepare(params types.PrepareParams) {
+	m.Stats = params.QueryStats
 }
 
 func (m *RangeVectorSelector) Close() {

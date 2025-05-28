@@ -129,4 +129,5 @@ func (t *testScalarOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *testScalarOperator) Close() {}
+func (t *testScalarOperator) Prepare(params types.PrepareParams) {}
+func (t *testScalarOperator) Close()                             {}

@@ -105,6 +105,15 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 	return m.Func.SeriesDataFunc(series, m.scalarArgsData, m.timeRange, m.MemoryConsumptionTracker)
 }
 
+func (m *FunctionOverInstantVector) Prepare(params types.PrepareParams) {
+	m.Inner.Prepare(params)
+
+	// TODO: ikonstantinov: do we need to prepare the scalar args?
+	for _, sa := range m.ScalarArgs {
+		sa.Prepare(params)
+	}
+}
+
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
 

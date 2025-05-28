@@ -178,6 +178,10 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	return data, nil
 }
 
+func (m *InstantVectorSelector) Prepare(params types.PrepareParams) {
+	m.Stats = params.QueryStats
+}
+
 func (v *InstantVectorSelector) Close() {
 	v.Selector.Close()
 	v.memoizedIterator = nil

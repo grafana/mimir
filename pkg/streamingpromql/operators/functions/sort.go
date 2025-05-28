@@ -159,6 +159,10 @@ func (s *Sort) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
+func (s *Sort) Prepare(params types.PrepareParams) {
+	s.Inner.Prepare(params)
+}
+
 func (s *Sort) Close() {
 	s.Inner.Close()
 

@@ -45,8 +45,6 @@ func NewSubquery(
 	subqueryRange time.Duration,
 	expressionPosition posrange.PositionRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	parentQueryStats *types.QueryStats,
-	subqueryStats *types.QueryStats,
 ) *Subquery {
 	return &Subquery{
 		Inner:                inner,
@@ -60,8 +58,6 @@ func NewSubquery(
 		floats:               types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:           types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:             &types.RangeVectorStepData{},
-		parentQueryStats:     parentQueryStats,
-		subqueryStats:        subqueryStats,
 	}
 }
 
@@ -159,6 +155,15 @@ func (s *Subquery) Range() time.Duration {
 
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *Subquery) Prepare(params types.PrepareParams) {
+	s.parentQueryStats = params.QueryStats
+	paramsCopy := params
+	subqueryStats := types.NewQueryStats(s.SubqueryTimeRange, true)
+	s.subqueryStats = subqueryStats
+	paramsCopy.QueryStats = subqueryStats
+	s.Inner.Prepare(paramsCopy)
 }
 
 func (s *Subquery) Close() {

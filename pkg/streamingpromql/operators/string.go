@@ -34,6 +34,10 @@ func (s *StringLiteral) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
+func (s *StringLiteral) Prepare(params types.PrepareParams) {
+	// Do nothing
+}
+
 func (s *StringLiteral) Close() {
 	// Nothing to do.
 }

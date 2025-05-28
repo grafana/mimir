@@ -105,6 +105,11 @@ func (s *ScalarScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 	return s.expressionPosition
 }
 
+func (s *ScalarScalarBinaryOperation) Prepare(params types.PrepareParams) {
+	s.Left.Prepare(params)
+	s.Right.Prepare(params)
+}
+
 func (s *ScalarScalarBinaryOperation) Close() {
 	s.Left.Close()
 	s.Right.Close()

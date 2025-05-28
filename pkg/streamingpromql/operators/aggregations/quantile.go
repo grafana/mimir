@@ -85,6 +85,10 @@ func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVect
 	return q.Aggregation.NextSeries(ctx)
 }
 
+func (q *QuantileAggregation) Prepare(params types.PrepareParams) {
+	q.Aggregation.Prepare(params)
+}
+
 func (q *QuantileAggregation) Close() {
 	if q.Aggregation.ParamData.Samples != nil {
 		types.FPointSlicePool.Put(q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)

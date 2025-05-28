@@ -65,6 +65,10 @@ func (s *ScalarToInstantVector) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
+func (s *ScalarToInstantVector) Prepare(params types.PrepareParams) {
+	s.Scalar.Prepare(params)
+}
+
 func (s *ScalarToInstantVector) Close() {
 	s.Scalar.Close()
 }

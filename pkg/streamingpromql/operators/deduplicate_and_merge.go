@@ -141,6 +141,10 @@ func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
 	return d.Inner.ExpressionPosition()
 }
 
+func (d *DeduplicateAndMerge) Prepare(params types.PrepareParams) {
+	d.Inner.Prepare(params)
+}
+
 func (d *DeduplicateAndMerge) Close() {
 	d.Inner.Close()
 

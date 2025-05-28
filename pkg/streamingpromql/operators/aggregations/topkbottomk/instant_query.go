@@ -286,6 +286,12 @@ func (t *InstantQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
+func (t *InstantQuery) Prepare(params types.PrepareParams) {
+	t.Inner.Prepare(params)
+	// TODO: ikonstantinov: do we need to prepare the param?
+	t.Param.Prepare(params)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()

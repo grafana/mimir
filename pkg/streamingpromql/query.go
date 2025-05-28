@@ -130,7 +130,7 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 		LookbackDelta: q.lookbackDelta,
 	}
 
-	q.root, err = q.convertToOperator(expr, q.topLevelQueryTimeRange, q.stats)
+	q.root, err = q.convertToOperator(expr, q.topLevelQueryTimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -138,14 +138,14 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 	return q, nil
 }
 
-func (q *Query) convertToOperator(expr parser.Expr, timeRange types.QueryTimeRange, stats *types.QueryStats) (types.Operator, error) {
+func (q *Query) convertToOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.Operator, error) {
 	switch expr.Type() {
 	case parser.ValueTypeMatrix:
-		return q.convertToRangeVectorOperator(expr, timeRange, stats)
+		return q.convertToRangeVectorOperator(expr, timeRange)
 	case parser.ValueTypeVector:
-		return q.convertToInstantVectorOperator(expr, timeRange, stats)
+		return q.convertToInstantVectorOperator(expr, timeRange)
 	case parser.ValueTypeScalar:
-		return q.convertToScalarOperator(expr, timeRange, stats)
+		return q.convertToScalarOperator(expr, timeRange)
 	case parser.ValueTypeString:
 		return q.convertToStringOperator(expr)
 	default:
@@ -171,7 +171,7 @@ func (q *Query) convertToStringOperator(expr parser.Expr) (types.StringOperator,
 	}
 }
 
-func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange, stats *types.QueryStats) (types.InstantVectorOperator, error) {
+func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if expr.Type() != parser.ValueTypeVector {
 		return nil, fmt.Errorf("cannot create instant vector operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
@@ -193,10 +193,9 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				ExpressionPosition:       e.PositionRange(),
 				MemoryConsumptionTracker: q.memoryConsumptionTracker,
 			},
-			Stats: stats,
 		}, nil
 	case *parser.AggregateExpr:
-		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange, stats)
+		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -204,14 +203,14 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		if e.Param != nil {
 			switch e.Op {
 			case parser.TOPK, parser.BOTTOMK:
-				param, err := q.convertToScalarOperator(e.Param, timeRange, stats)
+				param, err := q.convertToScalarOperator(e.Param, timeRange)
 				if err != nil {
 					return nil, err
 				}
 
 				return topkbottomk.New(inner, param, timeRange, e.Grouping, e.Without, e.Op == parser.TOPK, q.memoryConsumptionTracker, q.annotations, e.PosRange), nil
 			case parser.QUANTILE:
-				param, err := q.convertToScalarOperator(e.Param, timeRange, stats)
+				param, err := q.convertToScalarOperator(e.Param, timeRange)
 				if err != nil {
 					return nil, err
 				}
@@ -248,7 +247,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			e.PosRange,
 		)
 	case *parser.Call:
-		return q.convertFunctionCallToInstantVectorOperator(e, timeRange, stats)
+		return q.convertFunctionCallToInstantVectorOperator(e, timeRange)
 	case *parser.BinaryExpr:
 		// We only need to handle three combinations of types here:
 		// Scalar on left, vector on right
@@ -263,22 +262,22 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			var err error
 
 			if e.LHS.Type() == parser.ValueTypeScalar {
-				scalar, err = q.convertToScalarOperator(e.LHS, timeRange, stats)
+				scalar, err = q.convertToScalarOperator(e.LHS, timeRange)
 				if err != nil {
 					return nil, err
 				}
 
-				vector, err = q.convertToInstantVectorOperator(e.RHS, timeRange, stats)
+				vector, err = q.convertToInstantVectorOperator(e.RHS, timeRange)
 				if err != nil {
 					return nil, err
 				}
 			} else {
-				scalar, err = q.convertToScalarOperator(e.RHS, timeRange, stats)
+				scalar, err = q.convertToScalarOperator(e.RHS, timeRange)
 				if err != nil {
 					return nil, err
 				}
 
-				vector, err = q.convertToInstantVectorOperator(e.LHS, timeRange, stats)
+				vector, err = q.convertToInstantVectorOperator(e.LHS, timeRange)
 				if err != nil {
 					return nil, err
 				}
@@ -295,12 +294,12 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		}
 
 		// Vectors on both sides.
-		lhs, err := q.convertToInstantVectorOperator(e.LHS, timeRange, stats)
+		lhs, err := q.convertToInstantVectorOperator(e.LHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := q.convertToInstantVectorOperator(e.RHS, timeRange, stats)
+		rhs, err := q.convertToInstantVectorOperator(e.RHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -324,14 +323,14 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 	case *parser.UnaryExpr:
 		if e.Op == parser.ADD {
 			// Unary addition (+value): there's nothing to do, just return the inner expression.
-			return q.convertToInstantVectorOperator(e.Expr, timeRange, stats)
+			return q.convertToInstantVectorOperator(e.Expr, timeRange)
 		}
 
 		if e.Op != parser.SUB {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
 		}
 
-		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange, stats)
+		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -340,18 +339,18 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
-		return q.convertToInstantVectorOperator(e.Expr, timeRange, stats)
+		return q.convertToInstantVectorOperator(e.Expr, timeRange)
 	case *parser.ParenExpr:
-		return q.convertToInstantVectorOperator(e.Expr, timeRange, stats)
+		return q.convertToInstantVectorOperator(e.Expr, timeRange)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for instant vectors", e))
 	}
 }
 
-func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange, stats *types.QueryStats) (types.InstantVectorOperator, error) {
+func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	switch e.Func.Name {
 	case "absent":
-		inner, err := q.convertToInstantVectorOperator(e.Args[0], timeRange, stats)
+		inner, err := q.convertToInstantVectorOperator(e.Args[0], timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +360,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 		return functions.NewAbsent(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
 
 	case "absent_over_time":
-		inner, err := q.convertToRangeVectorOperator(e.Args[0], timeRange, stats)
+		inner, err := q.convertToRangeVectorOperator(e.Args[0], timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -378,7 +377,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 
 		args := make([]types.Operator, len(e.Args))
 		for i := range e.Args {
-			a, err := q.convertToOperator(e.Args[i], timeRange, stats)
+			a, err := q.convertToOperator(e.Args[i], timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -389,7 +388,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 	}
 }
 
-func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange, stats *types.QueryStats) (types.RangeVectorOperator, error) {
+func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.RangeVectorOperator, error) {
 	if expr.Type() != parser.ValueTypeMatrix {
 		return nil, fmt.Errorf("cannot create range vector operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
@@ -409,7 +408,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
-		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, stats), nil
+		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
 		step := e.Step
@@ -420,8 +419,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 
 		subqueryTimeRange := core.SubqueryTimeRange(timeRange, e.Range, step, core.TimeFromTimestamp(e.Timestamp), e.OriginalOffset)
 
-		childStats := types.NewQueryStats(subqueryTimeRange, true)
-		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange, childStats)
+		inner, err := q.convertToInstantVectorOperator(e.Expr, subqueryTimeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -435,23 +433,21 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			e.Range,
 			e.PositionRange(),
 			q.memoryConsumptionTracker,
-			stats,
-			childStats,
 		)
 
 		return subquery, nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
-		return q.convertToRangeVectorOperator(e.Expr, timeRange, stats)
+		return q.convertToRangeVectorOperator(e.Expr, timeRange)
 	case *parser.ParenExpr:
-		return q.convertToRangeVectorOperator(e.Expr, timeRange, stats)
+		return q.convertToRangeVectorOperator(e.Expr, timeRange)
 	default:
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("PromQL expression type %T for range vectors", e))
 	}
 }
 
-func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryTimeRange, stats *types.QueryStats) (types.ScalarOperator, error) {
+func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	if expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("cannot create scalar operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
@@ -468,19 +464,19 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 		return o, nil
 
 	case *parser.Call:
-		return q.convertFunctionCallToScalarOperator(e, timeRange, stats)
+		return q.convertFunctionCallToScalarOperator(e, timeRange)
 
 	case *parser.UnaryExpr:
 		if e.Op == parser.ADD {
 			// Unary addition (+value): there's nothing to do, just return the inner expression.
-			return q.convertToScalarOperator(e.Expr, timeRange, stats)
+			return q.convertToScalarOperator(e.Expr, timeRange)
 		}
 
 		if e.Op != parser.SUB {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("unary expression with '%s'", e.Op))
 		}
 
-		inner, err := q.convertToScalarOperator(e.Expr, timeRange, stats)
+		inner, err := q.convertToScalarOperator(e.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -489,16 +485,16 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
-		return q.convertToScalarOperator(e.Expr, timeRange, stats)
+		return q.convertToScalarOperator(e.Expr, timeRange)
 	case *parser.ParenExpr:
-		return q.convertToScalarOperator(e.Expr, timeRange, stats)
+		return q.convertToScalarOperator(e.Expr, timeRange)
 	case *parser.BinaryExpr:
-		lhs, err := q.convertToScalarOperator(e.LHS, timeRange, stats)
+		lhs, err := q.convertToScalarOperator(e.LHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := q.convertToScalarOperator(e.RHS, timeRange, stats)
+		rhs, err := q.convertToScalarOperator(e.RHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -510,7 +506,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 	}
 }
 
-func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange types.QueryTimeRange, stats *types.QueryStats) (types.ScalarOperator, error) {
+func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
 	factory, ok := functions.ScalarFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
@@ -518,7 +514,7 @@ func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange ty
 
 	args := make([]types.Operator, len(e.Args))
 	for i := range e.Args {
-		a, err := q.convertToOperator(e.Args[i], timeRange, stats)
+		a, err := q.convertToOperator(e.Args[i], timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -611,6 +607,10 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		level.Info(logger).Log(msg...)
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
+
+	q.root.Prepare(types.PrepareParams{
+		QueryStats: q.stats,
+	})
 	switch root := q.root.(type) {
 	case types.RangeVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
@@ -871,7 +871,7 @@ func (q *Query) Statement() parser.Statement {
 	return q.statement
 }
 
-// TODO: ikonstantinov: with the PerStepStats introduction, Stats doesn't really implement the same interface as Prometheus' Stats, because it doesn't report PerStepStats properly
+// TODO: ikonstantinov: with the PerStepStats introduction doesn't really implement the same interface as Prometheus' Stats, because it doesn't report PerStepStats properly
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),

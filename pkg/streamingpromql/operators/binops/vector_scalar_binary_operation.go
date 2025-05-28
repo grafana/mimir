@@ -252,6 +252,11 @@ func (v *VectorScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 	return v.expressionPosition
 }
 
+func (v *VectorScalarBinaryOperation) Prepare(params types.PrepareParams) {
+	v.Scalar.Prepare(params)
+	v.Vector.Prepare(params)
+}
+
 func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()

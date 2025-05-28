@@ -200,6 +200,10 @@ func (d *DuplicationConsumer) ExpressionPosition() posrange.PositionRange {
 	return d.Buffer.Inner.ExpressionPosition()
 }
 
+func (d *DuplicationConsumer) Prepare(params types.PrepareParams) {
+	d.Buffer.Inner.Prepare(params)
+}
+
 func (d *DuplicationConsumer) Close() {
 	d.Buffer.CloseConsumer(d.consumerIndex)
 }

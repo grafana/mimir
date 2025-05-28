@@ -56,6 +56,10 @@ func (s *ScalarConstant) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
+func (s *ScalarConstant) Prepare(params types.PrepareParams) {
+	// Nothing to do.
+}
+
 func (s *ScalarConstant) Close() {
 	// Nothing to do.
 }

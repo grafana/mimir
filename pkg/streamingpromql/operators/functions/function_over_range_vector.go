@@ -188,6 +188,15 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 	m.Annotations.Add(generator(metricName, pos))
 }
 
+func (m *FunctionOverRangeVector) Prepare(params types.PrepareParams) {
+	m.Inner.Prepare(params)
+
+	// TODO: ikonstantinov: do we need to prepare the scalar args?
+	for _, sa := range m.ScalarArgs {
+		sa.Prepare(params)
+	}
+}
+
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
