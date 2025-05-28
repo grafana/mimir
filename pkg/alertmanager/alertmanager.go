@@ -637,7 +637,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
-		switch rcvType := rcv.Type(); rcvType {
+		switch rcv.Type() {
 		case definition.GrafanaReceiverType:
 			// Create the Grafana template struct if it has not already been created.
 			if gTmpl == nil {
