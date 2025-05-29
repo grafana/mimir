@@ -85,7 +85,7 @@ local filename = 'mimir-block-builder.json';
           |||
             Number of pending jobs by a partition.
 
-            Positive number of pending jobs indicates that there is a backlog of work that is waiting to be scheduled to the block-builder.
+            Positive number of pending jobs indicates that there is a backlog of jobs that aren't yet eligible for scheduling.
           |||,
         ) +
         $.queryPanel(
