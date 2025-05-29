@@ -1995,7 +1995,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Request Added Latency\nArtificial delay added by Distributors to requests.\n",
+                  "description": "### Request added latency\nArtificial delay added by distributors to requests.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2047,7 +2047,7 @@
                      {
                         "expr": "histogram_quantile(0.01, sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))) * 1e3",
                         "format": "time_series",
-                        "legendFormat": "1th percentile",
+                        "legendFormat": "1st percentile",
                         "legendLink": null
                      },
                      {
@@ -2057,7 +2057,7 @@
                         "legendLink": null
                      }
                   ],
-                  "title": "Request Added Latency",
+                  "title": "Request added latency",
                   "type": "timeseries"
                }
             ],
@@ -2065,7 +2065,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Added Latency",
+            "title": "Added latency",
             "titleSize": "h6"
          },
          {
