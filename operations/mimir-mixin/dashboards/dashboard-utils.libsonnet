@@ -1351,12 +1351,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       [
         '99th percentile',
         '50th percentile',
-        '1th percentile',
+        '1st percentile',
         'Average',
       ],
     ) + $.panelDescription(
-      'Request Added Latency',
-      'Artificial delay added by Distributors to requests.'
+      'Request added latency',
+      'Artificial delay added by distributors to requests.'
     ) + {
       fieldConfig+: {
         defaults+: {

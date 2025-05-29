@@ -151,9 +151,9 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.gateway_enabled,
-      $.row('Added Latency')
+      $.row('Added latency')
       .addPanel(
-        $.timeseriesPanel('Request Added Latency') +
+        $.timeseriesPanel('Request added latency') +
         $.requestAddedLatencyPanelNativeHistogram($.queries.request_added_latency_metric, $.jobMatcher($._config.job_names.gateway))
       )
     )
