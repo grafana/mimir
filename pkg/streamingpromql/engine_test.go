@@ -3238,6 +3238,11 @@ func TestQueryStats(t *testing.T) {
 
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
+	planningOpts := opts
+	planningOpts.UseQueryPlanning = true
+	mimirEngineWithPlanning, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
 	start := timestamp.Time(0)
 	end := start.Add(10 * time.Minute)
 
@@ -3408,6 +3413,10 @@ func TestQueryStats(t *testing.T) {
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
 			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples)
 			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
+
+			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
 		})
 	}
 }
@@ -3419,6 +3428,11 @@ func TestSubqueryStats(t *testing.T) {
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	planningOpts := opts
+	planningOpts.UseQueryPlanning = true
+	mimirEngineWithPlanning, err := NewEngine(planningOpts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(planningOpts), log.NewNopLogger())
+	require.NoError(t, err)
 
 	start := timestamp.Time(0)
 	end := start.Add(10 * time.Minute)
@@ -3461,7 +3475,7 @@ func TestSubqueryStats(t *testing.T) {
 		expectedTotalSamplesPerStep []int64
 		SkipCompareWithPQE          bool
 	}{
-		"simple subquery": {
+		"subquery": {
 			expr:                        `dense_series{}[5m:1m]`,
 			expectedTotalSamples:        5,
 			isInstantQuery:              true,
@@ -3473,41 +3487,39 @@ func TestSubqueryStats(t *testing.T) {
 			isInstantQuery:              true,
 			expectedTotalSamplesPerStep: []int64{5},
 		},
-		"aggregation over subquery, range query": {
+		"aggregation over subquery - range query": {
 			expr:                        `max_over_time(dense_series[5m:1m])`,
 			expectedTotalSamples:        45,
 			expectedTotalSamplesPerStep: []int64{1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5},
 		},
 
-		"subquery range = interval": {
+		"subquery range equals subquery interval": {
 			expr:                        `dense_series[1m:1m]`,
 			expectedTotalSamples:        1,
 			isInstantQuery:              true,
 			expectedTotalSamplesPerStep: []int64{1},
 		},
-		"subquery range = interval, range query": {
+		"subquery range equals subquery interval -  range query": {
 			expr:                        `max_over_time(dense_series{}[1m:1m])`,
 			expectedTotalSamples:        11,
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
 
-		"subquery resolution > interval": {
+		"subquery resolution greater than subquery interval": {
 			expr:                        `dense_series{}[1m:5m]`,
 			expectedTotalSamples:        1,
 			isInstantQuery:              true,
 			expectedTotalSamplesPerStep: []int64{1},
 		},
-		"subquery resolution > interval, range query": {
+		"subquery resolution greater than subquery interval - range query": {
 			expr:                        `max_over_time(dense_series{}[1m:5m])`,
 			expectedTotalSamples:        3,
 			isInstantQuery:              false,
 			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
 		},
-
-		// "rate subquery",  "aggregation over rate subquery" and "aggregation over subquery with ranged vector selector, range query" tests cover PromQE corner case:
-		// In PromQE, rate(dense_series[1m30s])[5m:1m] - reports 10 samples processed, but max_over_time(rate(dense_series[1m30s])[5m:1m]) reports 5.
-		// It means, that if subquery is a range vector selector wrapped in a func call - it's samples count is calculated incorrectly in PromQE.
-		// That's why we check only MQE samples count.
+		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
+		// In MQE it's fixed, so that's why cases has a SkipCompareWithPQE flag.
+		// See this for details: https://github.com/prometheus/prometheus/issues/16638
 		"subquery with ranged vector selector": {
 			expr:                        `rate(dense_series[1m30s])[5m:1m]`,
 			expectedTotalSamples:        10,
@@ -3518,8 +3530,8 @@ func TestSubqueryStats(t *testing.T) {
 		"aggregation over subquery with ranged vector selector": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
 			expectedTotalSamples:        10,
-			expectedTotalSamplesPerStep: []int64{10},
 			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{10},
 			SkipCompareWithPQE:          true,
 		},
 		"aggregation over subquery with ranged vector selector, range query": {
@@ -3543,11 +3555,15 @@ func TestSubqueryStats(t *testing.T) {
 			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples)
 			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
 
+			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+
 		})
 	}
 }
 
-// TestQueryStatisticsUpstream based on Prometheus' TestQueryStatistics.
+// TestCases are taken from Prometheus' TestQueryStatistics.
 func TestQueryStatisticsUpstream(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnablePerStepStats = true
@@ -3555,6 +3571,11 @@ func TestQueryStatisticsUpstream(t *testing.T) {
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	planningOpts := opts
+	planningOpts.UseQueryPlanning = true
+	mimirEngineWithPlanning, err := NewEngine(planningOpts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(planningOpts), log.NewNopLogger())
+	require.NoError(t, err)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 10s
@@ -3919,6 +3940,10 @@ func TestQueryStatisticsUpstream(t *testing.T) {
 			mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.Query, testCase.Start, testCase.End, testCase.Interval)
 			require.Equal(t, testCase.TotalSamples, mimirSamplesStats.TotalSamples)
 			require.Equal(t, testCase.TotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
+
+			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, testCase.Query, testCase.Start, testCase.End, testCase.Interval)
+			require.Equal(t, testCase.TotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+			require.Equal(t, testCase.TotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
 
 		})
 	}
