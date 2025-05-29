@@ -1917,19 +1917,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
         histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
 
         # Add a filter to show only the outliers. We consider an ingester an outlier if its
-        # 100th percentile latency is greater than the 200%% of the average 100th of the 10
-        # worst ingesters (if there are less than 10 ingesters, then all ingesters will be took
-        # in account).
+        # 100th percentile latency is greater than the 200%% of the average 100th of the 10%%
+        # worst ingesters (minimum 10 ingesters; if there are less than 10 ingesters, then all
+        # ingesters will be took in account).
         > scalar(
           avg(
-            topk(10,
-                histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+            topk(
+                scalar(
+                    clamp_min(
+                        ceil(
+                            count(count by(%(per_namespace_label)s, %(per_instance_label)s) (cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}))
+                            * 0.1
+                        ), 10
+                    )
+                ),
+                histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
                 > 0
             )
           )
           * 2
         )
-      ||| % { job_matcher: $.jobMatcher($._config.job_names.ingester) },
+      ||| % {
+        job_matcher: $.jobMatcher($._config.job_names.ingester),
+        per_instance_label: $._config.per_instance_label,
+        per_namespace_label: $._config.per_namespace_label,
+      },
       '{{pod}}',
     ) + {
       fieldConfig+: {
