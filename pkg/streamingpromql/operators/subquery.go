@@ -130,17 +130,23 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 
 // samplesProcessedInSubquery returns the number of samples processed in a time range selected by parent query step from subquery results.
 func (s *Subquery) samplesProcessedInSubquery(start, end int64) int64 {
-	if s.subqueryStats == nil || s.subqueryStats.TotalSamplesPerStep == nil {
+	if s.subqueryStats == nil || s.subqueryStats.TotalSamplesPerStep == nil || len(s.subqueryStats.TotalSamplesPerStep) == 0 {
 		return 0
 	}
+
+	startIndex := 0
+	if start >= s.SubqueryTimeRange.StartT {
+		startIndex = int((start-s.SubqueryTimeRange.StartT)/s.SubqueryTimeRange.IntervalMilliseconds) + 1
+	}
+
+	endIndex := int((end - s.SubqueryTimeRange.StartT) / s.SubqueryTimeRange.IntervalMilliseconds)
+	if endIndex >= len(s.subqueryStats.TotalSamplesPerStep) {
+		endIndex = len(s.subqueryStats.TotalSamplesPerStep) - 1
+	}
+
 	sum := int64(0)
-	for i := 0; i < len(s.subqueryStats.TotalSamplesPerStep); i++ {
-		childTimestamp := s.SubqueryTimeRange.StartT + int64(i)*s.SubqueryTimeRange.IntervalMilliseconds
-		if childTimestamp > start && childTimestamp <= end {
-			sum += s.subqueryStats.TotalSamplesPerStep[i]
-		} else if childTimestamp > end {
-			break
-		}
+	for i := startIndex; i <= endIndex; i++ {
+		sum += s.subqueryStats.TotalSamplesPerStep[i]
 	}
 	return sum
 }
