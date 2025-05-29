@@ -88,7 +88,6 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
-	Stats                    *types.QueryStats
 	LookbackDelta            time.Duration
 }
 

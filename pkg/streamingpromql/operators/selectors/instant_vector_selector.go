@@ -33,6 +33,13 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, returnSampleTimestamps bool) *InstantVectorSelector {
+	return &InstantVectorSelector{
+		Selector:                 selector,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		ReturnSampleTimestamps:   returnSampleTimestamps,
+	}
+}
 func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.Selector.ExpressionPosition
 }

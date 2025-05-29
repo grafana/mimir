@@ -165,10 +165,12 @@ func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 
 func (s *Subquery) Prepare(params types.PrepareParams) {
 	s.parentQueryStats = params.QueryStats
-	paramsCopy := params
-	subqueryStats := types.NewQueryStats(s.SubqueryTimeRange, true)
-	s.subqueryStats = subqueryStats
-	paramsCopy.QueryStats = subqueryStats
+	// Child Samples will be counted later when processing subquery results.
+	s.subqueryStats = types.NewQueryStats(s.SubqueryTimeRange, true)
+
+	paramsCopy := types.PrepareParams{
+		QueryStats: s.subqueryStats,
+	}
 	s.Inner.Prepare(paramsCopy)
 }
 

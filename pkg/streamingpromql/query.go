@@ -179,21 +179,18 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
 		lookbackDelta := q.lookbackDelta
-
-		return &selectors.InstantVectorSelector{
+		selector := &selectors.Selector{
+			Queryable:                q.queryable,
+			TimeRange:                timeRange,
+			Timestamp:                e.Timestamp,
+			Offset:                   e.OriginalOffset.Milliseconds(),
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 e.LabelMatchers,
+			ExpressionPosition:       e.PositionRange(),
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			Selector: &selectors.Selector{
-				Queryable:     q.queryable,
-				TimeRange:     timeRange,
-				Timestamp:     e.Timestamp,
-				Offset:        e.OriginalOffset.Milliseconds(),
-				LookbackDelta: lookbackDelta,
-				Matchers:      e.LabelMatchers,
+		}
 
-				ExpressionPosition:       e.PositionRange(),
-				MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			},
-		}, nil
+		return selectors.NewInstantVectorSelector(selector, q.memoryConsumptionTracker, false), nil
 	case *parser.AggregateExpr:
 		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
@@ -668,6 +665,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	if len(*q.annotations) > 0 {
 		q.result.Warnings = *q.annotations
 	}
+
 	return q.result
 }
 
@@ -871,13 +869,15 @@ func (q *Query) Statement() parser.Statement {
 	return q.statement
 }
 
-// TODO: ikonstantinov: with the PerStepStats introduction doesn't really implement the same interface as Prometheus' Stats, because it doesn't report PerStepStats properly
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
+		// TODO: Returned promstats.QuerySamples won't report TotalSamplesPerStepMap() properly.
+		// See this for details: https://github.com/grafana/mimir/pull/11416#discussion_r2110930357
 		Samples: &promstats.QuerySamples{
 			TotalSamples:        q.stats.TotalSamples,
 			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
+			EnablePerStepStats:  q.stats.EnablePerStepStats,
 		},
 	}
 }
