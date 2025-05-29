@@ -447,62 +447,123 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 }
 
 func TestGetRules(t *testing.T) {
-	// ruler ID -> (user ID -> list of groups).
-	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
-
 	type testCase struct {
-		shuffleShardSize int
+		shuffleShardSize     int
+		tokensByRuler        map[string][]uint32
+		rulerState           map[string]ring.InstanceState // if not set, assumed to be active
+		expectedRulesByRuler map[string]map[string]rulespb.RuleGroupList
 	}
 
-	expectedRulesByRuler := expectedRulesMap{
-		"ruler1": map[string]rulespb.RuleGroupList{
-			"user1": {
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "first", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "second", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-		},
-		"ruler2": map[string]rulespb.RuleGroupList{
-			"user1": {
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "first", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "second", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-		},
-		"ruler3": map[string]rulespb.RuleGroupList{
-			"user3": {
-				&rulespb.RuleGroupDesc{User: "user3", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "forth", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "fifty", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-		},
+	makeRule := func(user string, i int) *rulespb.RuleGroupDesc {
+		return &rulespb.RuleGroupDesc{User: user, Namespace: "namespace", Name: fmt.Sprintf("%d", i), Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second}
+	}
+
+	rules := []*rulespb.RuleGroupDesc{
+		makeRule("user1", 1), // 0
+		makeRule("user1", 2), // 1
+		makeRule("user1", 3), // 2
+		makeRule("user2", 1), // 3
+		makeRule("user2", 2), // 4
+		makeRule("user2", 3), // 5
+		makeRule("user2", 4), // 6
+		makeRule("user2", 5), // 7
+		makeRule("user3", 1), // 8
+	}
+
+	allRulesByUser := map[string]rulespb.RuleGroupList{}
+	for _, rule := range rules {
+		allRulesByUser[rule.User] = append(allRulesByUser[rule.User], rule)
 	}
 
 	testCases := map[string]testCase{
 		"Shuffle Shard Size 0": {
 			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+					"user2": {rules[3]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+					"user2": {rules[4], rules[5]},
+				},
+				"ruler3": {
+					"user2": {rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+			},
 		},
 		"Shuffle Shard Size 2": {
 			shuffleShardSize: 2,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					// User token to control the users using ruler1 as part of their subring
+					[]uint32{userToken("user1", 0) + 1},
+					// Group tokens to control which rules go to ruler1
+					generateTokenForGroups(1, rules[0], rules[1])...,
+				),
+				"ruler2": append(
+					[]uint32{userToken("user1", 1) + 1, userToken("user2", 0) + 1, userToken("user3", 0) + 1},
+					generateTokenForGroups(1, rules[2])...,
+				),
+				"ruler3": append(
+					[]uint32{userToken("user2", 1) + 1, userToken("user3", 1) + 1},
+					generateTokenForGroups(1, rules[3], rules[4], rules[5], rules[6], rules[7], rules[8])...,
+				),
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+				},
+				"ruler3": {
+					"user2": {rules[3], rules[4], rules[5], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+			},
+		},
+		"Shuffle Shard Size 0 with 1 joining ruler": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+					// add tokens for rules from ruler3 (as that's joining)
+					generateTokenForGroups(2, rules[6], rules[7], rules[8])...),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler3": ring.JOINING,
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+					"user2": {rules[3], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+					"user2": {rules[4], rules[5]},
+				},
+				"ruler3": {},
+			},
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			var (
-				allRulesByUser   = map[string]rulespb.RuleGroupList{}
-				allRulesByRuler  = map[string]rulespb.RuleGroupList{}
-				allTokensByRuler = map[string][]uint32{}
-				registryByRuler  = map[string]*prometheus.Registry{}
-				rulerAddrMap     = map[string]*Ruler{}
-				storage          = newMockRuleStore(allRulesByUser)
-				ctx              = context.Background()
+				registryByRuler = map[string]*prometheus.Registry{}
+				rulerAddrMap    = map[string]*Ruler{}
+				storage         = newMockRuleStore(allRulesByUser)
+				ctx             = context.Background()
 			)
 
 			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
@@ -526,12 +587,11 @@ func TestGetRules(t *testing.T) {
 				})))
 			}
 
-			for rID, r := range expectedRulesByRuler {
+			activeRulers := 0
+			for rID, _ := range tc.expectedRulesByRuler {
 				createAndStartRuler(rID)
-				for user, rules := range r {
-					allRulesByUser[user] = append(allRulesByUser[user], rules...)
-					allRulesByRuler[rID] = append(allRulesByRuler[rID], rules...)
-					allTokensByRuler[rID] = generateTokenForGroups(rules, 1)
+				if tc.rulerState[rID] == ring.ACTIVE {
+					activeRulers++
 				}
 			}
 
@@ -546,8 +606,12 @@ func TestGetRules(t *testing.T) {
 				if d == nil {
 					d = ring.NewDesc()
 				}
-				for rID, tokens := range allTokensByRuler {
-					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+				for rID, tokens := range tc.tokensByRuler {
+					state, ok := tc.rulerState[rID]
+					if !ok {
+						state = ring.ACTIVE
+					}
+					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, state, time.Now(), false, time.Time{})
 				}
 				return d, true, nil
 			}))
@@ -557,24 +621,24 @@ func TestGetRules(t *testing.T) {
 
 			// Sync rules on each ruler.
 			for _, r := range rulerAddrMap {
-				err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
-				require.NoError(t, err)
+				// Use rulerSyncReasonPeriodic to ensure rules are distributed among ACTIVE rulers
+				r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
 			}
 
 			// Call GetRules() on each ruler.
 			for u := range allRulesByUser {
 				ctx := user.InjectOrgID(ctx, u)
 
-				for _, r := range rulerAddrMap {
+				for rID, r := range rulerAddrMap {
 					rules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
 					require.NoError(t, err)
-					require.Equal(t, len(allRulesByUser[u]), len(rules.Groups))
+					require.Equal(t, len(allRulesByUser[u]), len(rules.Groups), "rules are not equal for %s, %s", u, rID)
 
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 					if tc.shuffleShardSize > 0 {
 						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
 					} else {
-						require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
+						require.Equal(t, int32(activeRulers), mockPoolClient.numberOfCalls.Load())
 					}
 					mockPoolClient.numberOfCalls.Store(0)
 				}
@@ -582,15 +646,31 @@ func TestGetRules(t *testing.T) {
 
 			// Ensure rule groups have been sharded among rulers.
 			totalLoadedRules := 0
-			totalConfiguredRules := 0
+			totalConfiguredRules := len(rules)
 
 			for rID, r := range rulerAddrMap {
 				localRules, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
 				require.NoError(t, err)
+
+				expectedRules := map[string]rulespb.RuleGroupList{}
+				for user, groups := range tc.expectedRulesByRuler[rID] {
+					expectedRules[user] = rulespb.RuleGroupList{}
+					for _, group := range groups {
+						// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules
+						expectedRules[user] = append(expectedRules[user], &rulespb.RuleGroupDesc{
+							Namespace:     group.Namespace,
+							Name:          group.Name,
+							User:          user,
+							Interval:      group.Interval,
+							SourceTenants: group.SourceTenants,
+						})
+					}
+				}
+
+				require.Equal(t, expectedRules, localRules, "rules not equal for %s", rID)
 				for _, rules := range localRules {
 					totalLoadedRules += len(rules)
 				}
-				totalConfiguredRules += len(allRulesByRuler[rID])
 			}
 
 			require.Equal(t, totalConfiguredRules, totalLoadedRules)
@@ -1606,7 +1686,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 	})
 }
 
-func generateTokenForGroups(groups []*rulespb.RuleGroupDesc, offset uint32) []uint32 {
+func generateTokenForGroups(offset uint32, groups ...*rulespb.RuleGroupDesc) []uint32 {
 	var tokens []uint32
 
 	for _, g := range groups {

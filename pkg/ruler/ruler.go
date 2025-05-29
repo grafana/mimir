@@ -686,7 +686,7 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 	return configs, nil
 }
 
-// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synched by this ruler instance.
+// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synced by this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
 func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason, cacheLookupEnabled bool) (result map[string]rulespb.RuleGroupList, err error) {
