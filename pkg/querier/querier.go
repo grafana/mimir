@@ -168,6 +168,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	parser.EnableExperimentalFunctions = true
 
 	var eng promql.QueryEngine
+
 	switch cfg.QueryEngine {
 	case prometheusEngine:
 		eng = promql.NewEngine(opts)

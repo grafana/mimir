@@ -880,18 +880,6 @@ func (q *Query) Stats() *promstats.Statistics {
 			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
 		},
 	}
-	// qs := promstats.QuerySamples{
-	// 	TotalSamples:        q.stats.TotalSamples,
-	// 	TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
-	// 	EnablePerStepStats:  q.stats.EnablePerStepStats,
-	// }
-	// qs.SetInterval(q.topLevelQueryTimeRange.IntervalMilliseconds)
-	// qs.SetStartTs(q.topLevelQueryTimeRange.StartT)
-
-	// return &promstats.Statistics{
-	// 	Timers:  promstats.NewQueryTimers(),
-	// 	Samples: &qs,
-	// }
 }
 
 func (q *Query) Cancel() {
