@@ -1340,6 +1340,32 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  requestAddedLatencyPanelNativeHistogram(metric, selector)::
+    $.queryPanel(
+      [
+        'histogram_quantile(0.99, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
+        'histogram_quantile(0.50, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
+        'histogram_quantile(0.01, sum(rate(%s{%s}[$__rate_interval]))) * 1e3' % [metric, selector],
+        'sum(histogram_sum(sum(rate(%s{%s}[$__rate_interval])))) / sum(histogram_count(sum(rate(%s{%s}[$__rate_interval])))) * 1e3' % [metric, selector, metric, selector],
+      ],
+      [
+        '99th percentile',
+        '50th percentile',
+        '1st percentile',
+        'Average',
+      ],
+    ) + $.panelDescription(
+      'Request added latency',
+      'Artificial delay added by distributors to requests.'
+    ) + {
+      fieldConfig+: {
+        defaults+: {
+          unit: 'ms',
+          min: 0,
+        },
+      },
+    },
+
   filterNodeDiskContainer(containerName)::
     |||
       ignoring(%(instanceLabel)s) group_right() (
