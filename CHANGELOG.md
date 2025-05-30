@@ -152,6 +152,7 @@
 * [ENHANCEMENT] Add tenant configuration block `ruler_alertmanager_client_config` which allows the Ruler's Alertmanager client options to be specified on a per-tenant basis. #10816
 * [ENHANCEMENT] Distributor: Trace when deduplicating a metric's samples or histograms. #11159 #11715
 * [ENHANCEMENT] Store-gateway: Retry querying blocks from store-gateways with dynamic replication until trying all possible store-gateways. #11354 #11398
+* [ENHANCEMENT] Mimirtool: Support multiple `--selector` flags in remote read commands to send multiple queries in a single protobuf request, leveraging the remote read protocol's native batching capabilities. Added `--use-chunks` flag to control response type preference (chunked streaming vs sampled). #11733
 * [ENHANCEMENT] Query-frontend: Add optional reason to blocked_queries config. #11407 #11434
 * [ENHANCEMENT] Distributor: Gracefully handle type assertion of WatchPrefix in HA Tracker to continue checking for updates. #11411 #11461
 * [ENHANCEMENT] Querier: Include chunks streamed from store-gateway in Mimir Query Engine memory estimate of query memory usage. #11453 #11465

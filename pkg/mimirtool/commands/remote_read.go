@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -31,18 +32,23 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
 	"github.com/oklog/ulid/v2"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
@@ -64,11 +70,12 @@ type RemoteReadCommand struct {
 	readTimeout time.Duration
 	tsdbPath    string
 
-	selector      string
+	selectors     []string
 	from          string
 	to            string
 	readSizeLimit uint64
 	blockDuration time.Duration
+	useChunks     bool
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -103,9 +110,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Default("30s").
 			DurationVar(&c.readTimeout)
 
-		cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used.`).
+		cmd.Flag("selector", `PromQL selector to filter metrics on. To return all metrics '{__name__!=""}' can be used. Can be specified multiple times to send multiple queries in a single remote read request.`).
 			Default("up").
-			StringVar(&c.selector)
+			StringsVar(&c.selectors)
 
 		cmd.Flag("from", "Start of the time window to select metrics (inclusive).").
 			Default(now.Add(-time.Hour).Format(time.RFC3339)).
@@ -116,6 +123,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
 			Default(strconv.Itoa(DefaultChunkedReadLimit)).
 			Uint64Var(&c.readSizeLimit)
+		cmd.Flag("use-chunks", "Request chunked streaming response (STREAMED_XOR_CHUNKS) instead of sampled response (SAMPLES).").
+			Default("true").
+			BoolVar(&c.useChunks)
 	}
 
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
@@ -212,18 +222,18 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing to: '%s' value: %w", c.to, err)
 	}
 
-	matchers, err := parser.ParseMetricSelector(c.selector)
-	if err != nil {
-		return nil, time.Time{}, time.Time{}, err
+	if len(c.selectors) == 0 {
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
 	}
 
-	readClient, err := c.readClient()
-	if err != nil {
-		return nil, time.Time{}, time.Time{}, err
-	}
+	// Parse all selectors
+	var pbQueries []*prompb.Query
+	for _, selector := range c.selectors {
+		matchers, err := parser.ParseMetricSelector(selector)
+		if err != nil {
+			return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing selector '%s': %w", selector, err)
+		}
 
-	return func(ctx context.Context, from, to time.Time) (storage.SeriesSet, error) {
-		log.Infof("Querying time from=%s to=%s with selector=%s", from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano), c.selector)
 		pbQuery, err := remote.ToQuery(
 			int64(model.TimeFromUnixNano(from.UnixNano())),
 			int64(model.TimeFromUnixNano(to.UnixNano())),
@@ -231,33 +241,359 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 			nil,
 		)
 		if err != nil {
-			return nil, err
+			return nil, time.Time{}, time.Time{}, fmt.Errorf("error creating query for selector '%s': %w", selector, err)
 		}
+		pbQueries = append(pbQueries, pbQuery)
+	}
 
-		resp, err := readClient.Read(ctx, pbQuery, false)
-		if err != nil {
-			return nil, err
+	readClient, err := c.readClient()
+	if err != nil {
+		return nil, time.Time{}, time.Time{}, err
+	}
+
+	return func(ctx context.Context, queryFrom, queryTo time.Time) (storage.SeriesSet, error) {
+		log.Infof("Querying time from=%s to=%s with %d selectors", queryFrom.Format(time.RFC3339), queryTo.Format(time.RFC3339), len(c.selectors))
+		for i, selector := range c.selectors {
+			log.Debugf("Selector %d: %s", i+1, selector)
 		}
-
-		return resp, nil
-
+		return c.executeMultipleQueries(ctx, readClient, pbQueries)
 	}, from, to, nil
 }
 
+// executeMultipleQueries sends multiple queries in a single protobuf request
+func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
+	// We'll use reflection to access the private fields of the client to send a batched request
+	// This is hacky but gets the job done for now
+	client, ok := readClient.(*remote.Client)
+	if !ok {
+		return nil, fmt.Errorf("unexpected readClient type: %T", readClient)
+	}
+
+	// Build the batched request with user-selected response type preference
+	var acceptedTypes []prompb.ReadRequest_ResponseType
+	if c.useChunks {
+		log.Debugf("Requesting chunked streaming response (STREAMED_XOR_CHUNKS)")
+		acceptedTypes = []prompb.ReadRequest_ResponseType{
+			prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+			prompb.ReadRequest_SAMPLES, // fallback
+		}
+	} else {
+		log.Debugf("Requesting sampled response (SAMPLES)")
+		acceptedTypes = []prompb.ReadRequest_ResponseType{
+			prompb.ReadRequest_SAMPLES,
+		}
+	}
+
+	req := &prompb.ReadRequest{
+		Queries:               queries,
+		AcceptedResponseTypes: acceptedTypes,
+	}
+
+	// Marshal the batched request
+	data, err := proto.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal read request: %w", err)
+	}
+
+	compressed := snappy.Encode(nil, data)
+
+	// Use reflection to get the URL from the client
+	clientValue := reflect.ValueOf(client).Elem()
+	urlStringField := clientValue.FieldByName("urlString")
+	if !urlStringField.IsValid() {
+		return nil, fmt.Errorf("unable to access urlString field")
+	}
+	urlString := urlStringField.String()
+
+	// Create HTTP request
+	httpReq, err := http.NewRequest(http.MethodPost, urlString, bytes.NewReader(compressed))
+	if err != nil {
+		return nil, fmt.Errorf("unable to create request: %w", err)
+	}
+	httpReq.Header.Add("Content-Encoding", "snappy")
+	httpReq.Header.Add("Accept-Encoding", "snappy")
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	httpReq.Header.Set("User-Agent", "mimirtool")
+	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+
+	// Send the request using the client's HTTP client
+	httpResp, err := client.Client.Do(httpReq.WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(httpResp.Body)
+		errStr := strings.TrimSpace(string(body))
+		return nil, fmt.Errorf("remote server returned http status %s: %s", httpResp.Status, errStr)
+	}
+
+	contentType := httpResp.Header.Get("Content-Type")
+	log.Debugf("Response content type: %s", contentType)
+
+	// Handle different response types
+	switch {
+	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
+		log.Debugf("Processing chunked streaming response")
+		return c.handleChunkedResponse(httpResp, queries)
+	case strings.HasPrefix(contentType, "application/x-protobuf"):
+		log.Debugf("Processing sampled response")
+		return c.handleSampledResponse(httpResp, queries)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %s", contentType)
+	}
+}
+
+// combinedSeriesSet implements storage.SeriesSet for multiple series
+type combinedSeriesSet struct {
+	series []storage.Series
+	index  int
+	err    error
+}
+
+func (c *combinedSeriesSet) Next() bool {
+	c.index++
+	return c.index < len(c.series)
+}
+
+func (c *combinedSeriesSet) At() storage.Series {
+	if c.index < 0 || c.index >= len(c.series) {
+		return nil
+	}
+	return c.series[c.index]
+}
+
+func (c *combinedSeriesSet) Err() error {
+	return c.err
+}
+
+func (c *combinedSeriesSet) Warnings() annotations.Annotations {
+	return nil
+}
+
+// handleSampledResponse handles the traditional sampled response format
+func (c *RemoteReadCommand) handleSampledResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
+	// Read and decompress response
+	compressedResp, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	uncompressed, err := snappy.Decode(nil, compressedResp)
+	if err != nil {
+		return nil, fmt.Errorf("error decompressing response: %w", err)
+	}
+
+	// Unmarshal response
+	var resp prompb.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal response body: %w", err)
+	}
+
+	if len(resp.Results) != len(queries) {
+		return nil, fmt.Errorf("responses: want %d, got %d", len(queries), len(resp.Results))
+	}
+
+	// Combine all results from all queries
+	var allSeries []storage.Series
+	for i, result := range resp.Results {
+		log.Infof("Processing result %d/%d with %d series", i+1, len(resp.Results), len(result.Timeseries))
+		seriesSet := remote.FromQueryResult(false, result)
+		for seriesSet.Next() {
+			allSeries = append(allSeries, seriesSet.At())
+		}
+		if err := seriesSet.Err(); err != nil {
+			return nil, fmt.Errorf("error reading series from query %d: %w", i, err)
+		}
+	}
+
+	log.Infof("Combined %d series from %d queries", len(allSeries), len(queries))
+	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+}
+
+// handleChunkedResponse handles the streamed chunked response format
+func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
+	// Use the chunked reader from the remote package
+	reader := remote.NewChunkedReader(httpResp.Body, c.readSizeLimit, nil)
+
+	// Collect all series from all queries
+	var allSeries []storage.Series
+	processedQueries := make(map[int64]int)
+	totalBytes := 0
+
+	for {
+		var chunkedResp prompb.ChunkedReadResponse
+		err := reader.NextProto(&chunkedResp)
+		if err == io.EOF {
+			break
+		}
+		totalBytes += chunkedResp.Size()
+		if err != nil {
+			return nil, fmt.Errorf("error reading chunked response: %w", err)
+		}
+
+		queryIndex := chunkedResp.QueryIndex
+		if queryIndex < 0 || queryIndex >= int64(len(queries)) {
+			return nil, fmt.Errorf("invalid query index %d, expected 0-%d", queryIndex, len(queries)-1)
+		}
+
+		processedQueries[queryIndex]++
+		if processedQueries[queryIndex] == 1 {
+			log.Infof("Processing chunked response for query %d", queryIndex)
+		}
+
+		// Each ChunkedSeries contains chunks for a single series
+		for _, chunkSeries := range chunkedResp.ChunkedSeries {
+			// Create a series that can iterate over the chunks
+			// Convert protobuf labels to labels.Labels
+			lbs := make(labels.Labels, len(chunkSeries.Labels))
+			for i, l := range chunkSeries.Labels {
+				lbs[i] = labels.Label{Name: l.Name, Value: l.Value}
+			}
+			series := &multiQueryChunkedSeries{
+				labels: lbs,
+				chunks: chunkSeries.Chunks,
+				mint:   queries[queryIndex].StartTimestampMs,
+				maxt:   queries[queryIndex].EndTimestampMs,
+			}
+			allSeries = append(allSeries, series)
+		}
+	}
+
+	log.Infof("Combined %d series from %d queries using chunked streaming (%d bytes)", len(allSeries), len(queries), totalBytes)
+	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+}
+
+// multiQueryChunkedSeries implements storage.Series for chunked data from multiple queries
+type multiQueryChunkedSeries struct {
+	labels     labels.Labels
+	chunks     []prompb.Chunk
+	mint, maxt int64
+}
+
+func (s *multiQueryChunkedSeries) Labels() labels.Labels {
+	return s.labels
+}
+
+func (s *multiQueryChunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	// Create a new chunked series iterator
+	return newMultiQueryChunkedIterator(s.chunks, s.mint, s.maxt)
+}
+
+// newMultiQueryChunkedIterator creates an iterator for chunked series data
+func newMultiQueryChunkedIterator(chunks []prompb.Chunk, mint, maxt int64) chunkenc.Iterator {
+	return &multiQueryChunkedIterator{
+		chunks:   chunks,
+		mint:     mint,
+		maxt:     maxt,
+		chunkIdx: 0,
+	}
+}
+
+// multiQueryChunkedIterator implements an iterator for chunked data
+type multiQueryChunkedIterator struct {
+	chunks     []prompb.Chunk
+	mint, maxt int64
+	chunkIdx   int
+	cur        chunkenc.Iterator
+	s          storage.Series
+	err        error
+}
+
+func (it *multiQueryChunkedIterator) Next() chunkenc.ValueType {
+	// If we have a current chunk iterator, try to get next value
+	if it.cur != nil {
+		if vt := it.cur.Next(); vt != chunkenc.ValNone {
+			return vt
+		}
+		// Current chunk is exhausted, move to next
+		it.chunkIdx++
+	}
+
+	// Find next non-empty chunk
+	for it.chunkIdx < len(it.chunks) {
+		chunk := it.chunks[it.chunkIdx]
+		// Convert protobuf chunk to storage chunk
+		c, err := chunkenc.FromData(chunkenc.Encoding(chunk.Type), chunk.Data)
+		if err != nil {
+			it.err = fmt.Errorf("error decoding chunk %d: %w", it.chunkIdx, err)
+			return chunkenc.ValNone
+		}
+		it.cur = c.Iterator(nil)
+		if vt := it.cur.Next(); vt != chunkenc.ValNone {
+			return vt
+		}
+		// This chunk was empty, try next
+		it.chunkIdx++
+	}
+
+	// No more chunks
+	return chunkenc.ValNone
+}
+
+func (it *multiQueryChunkedIterator) At() (int64, float64) {
+	if it.cur == nil {
+		return 0, 0
+	}
+	return it.cur.At()
+}
+
+func (it *multiQueryChunkedIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	if it.cur == nil {
+		return 0, nil
+	}
+	return it.cur.AtHistogram(h)
+}
+
+func (it *multiQueryChunkedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	if it.cur == nil {
+		return 0, nil
+	}
+	return it.cur.AtFloatHistogram(fh)
+}
+
+func (it *multiQueryChunkedIterator) AtT() int64 {
+	if it.cur == nil {
+		return 0
+	}
+	return it.cur.AtT()
+}
+
+func (it *multiQueryChunkedIterator) Seek(t int64) chunkenc.ValueType {
+	// Reset to beginning and iterate until we find t
+	it.chunkIdx = 0
+	it.cur = nil
+	for {
+		vt := it.Next()
+		if vt == chunkenc.ValNone {
+			return chunkenc.ValNone
+		}
+		if it.AtT() >= t {
+			return vt
+		}
+	}
+}
+
+func (it *multiQueryChunkedIterator) Err() error {
+	return it.err
+}
+
 // prepare() validates the input and prepares the client to query remote read endpoints
-func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), error) {
+func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), time.Time, time.Time, error) {
 	query, from, to, err := c.parseArgsAndPrepareClient()
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, time.Time{}, err
 	}
 
 	return func(ctx context.Context) (storage.SeriesSet, error) {
 		return query(ctx, from, to)
-	}, nil
+	}, from, to, nil
 }
 
 func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
-	query, err := c.prepare()
+	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
 	}
@@ -310,7 +646,7 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 }
 
 func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
-	query, err := c.prepare()
+	query, _, _, err := c.prepare()
 	if err != nil {
 		return err
 	}
