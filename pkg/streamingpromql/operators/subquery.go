@@ -171,10 +171,10 @@ func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) err
 		return fmt.Errorf("could not create stats for subquery: %w", err)
 	}
 	s.subqueryStats = childStats
-	paramsCopy := types.PrepareParams{
+	childParams := types.PrepareParams{
 		QueryStats: childStats,
 	}
-	return s.Inner.Prepare(ctx, &paramsCopy)
+	return s.Inner.Prepare(ctx, &childParams)
 }
 
 func (s *Subquery) Close() {
