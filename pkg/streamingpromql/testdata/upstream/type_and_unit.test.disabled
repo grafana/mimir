@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/type_and_unit.test
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Prometheus Authors
+
 # Test PROM-39 type and unit labels with operators.
 
 # A. Healthy case
