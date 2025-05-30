@@ -107,6 +107,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Update Thanos to Mimir migration guide with tip to add `__tenant_id__` label. #11584
+
 ### Tools
 
 * [ENHANCEMENT] `kafkatool`: Add `offsets` command for querying various partition offsets. #11115
