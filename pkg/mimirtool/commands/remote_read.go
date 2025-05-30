@@ -294,18 +294,33 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 	}, from, to, nil
 }
 
-// executeMultipleQueries sends multiple queries in a single protobuf request
-func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
-	// We'll use reflection to access the private fields of the client to send a batched request
-	// This is hacky but gets the job done for now
-	client, ok := readClient.(*remote.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected readClient type: %T", readClient)
+// MultiQueryReadClient wraps a remote.ReadClient to support multiple queries in a single request
+type MultiQueryReadClient struct {
+	client remote.ReadClient
+}
+
+// ReadMultiple sends multiple queries in a single protobuf request
+func (m *MultiQueryReadClient) ReadMultiple(ctx context.Context, queries []*prompb.Query, useChunks bool) (storage.SeriesSet, error) {
+	if len(queries) == 1 {
+		// Use the original client for single queries to maintain compatibility
+		return m.client.Read(ctx, queries[0], false)
 	}
 
-	// Build the batched request with user-selected response type preference
+	// For multiple queries, we need to use the underlying client implementation
+	client, ok := m.client.(*remote.Client)
+	if !ok {
+		return nil, fmt.Errorf("multi-query support requires *remote.Client, got %T", m.client)
+	}
+
+	return m.executeMultipleQueries(ctx, client, queries, useChunks)
+}
+
+// executeMultipleQueries sends multiple queries in a single protobuf request
+// This is inspired by the prometheus remote.Client.Read method but supports multiple queries
+func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, client *remote.Client, queries []*prompb.Query, useChunks bool) (storage.SeriesSet, error) {
+	// Build the batched request with response type preference
 	var acceptedTypes []prompb.ReadRequest_ResponseType
-	if c.useChunks {
+	if useChunks {
 		log.Debugf("Requesting chunked streaming response (STREAMED_XOR_CHUNKS)")
 		acceptedTypes = []prompb.ReadRequest_ResponseType{
 			prompb.ReadRequest_STREAMED_XOR_CHUNKS,
@@ -332,6 +347,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 	compressed := snappy.Encode(nil, data)
 
 	// Use reflection to get the URL from the client
+	// TODO: This could be improved by extending the prometheus client interface
 	clientValue := reflect.ValueOf(client).Elem()
 	urlStringField := clientValue.FieldByName("urlString")
 	if !urlStringField.IsValid() {
@@ -370,13 +386,18 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 	switch {
 	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
 		log.Debugf("Processing chunked streaming response")
-		return c.handleChunkedResponse(httpResp, queries)
+		return m.handleChunkedResponse(httpResp, queries)
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
 		log.Debugf("Processing sampled response")
-		return c.handleSampledResponse(httpResp, queries)
+		return m.handleSampledResponse(httpResp, queries)
 	default:
 		return nil, fmt.Errorf("unsupported content type: %s", contentType)
 	}
+}
+
+func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
+	multiClient := &MultiQueryReadClient{client: readClient}
+	return multiClient.ReadMultiple(ctx, queries, c.useChunks)
 }
 
 // combinedSeriesSet implements storage.SeriesSet for multiple series
@@ -407,7 +428,7 @@ func (c *combinedSeriesSet) Warnings() annotations.Annotations {
 }
 
 // handleSampledResponse handles the traditional sampled response format
-func (c *RemoteReadCommand) handleSampledResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
+func (m *MultiQueryReadClient) handleSampledResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
 	// Read and decompress response
 	compressedResp, err := io.ReadAll(httpResp.Body)
 	if err != nil {
@@ -448,9 +469,10 @@ func (c *RemoteReadCommand) handleSampledResponse(httpResp *http.Response, queri
 }
 
 // handleChunkedResponse handles the streamed chunked response format
-func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
+func (m *MultiQueryReadClient) handleChunkedResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
 	// Use the chunked reader from the remote package
-	reader := remote.NewChunkedReader(httpResp.Body, c.readSizeLimit, nil)
+	// TODO: Get readSizeLimit from client config
+	reader := remote.NewChunkedReader(httpResp.Body, DefaultChunkedReadLimit, nil)
 
 	// Collect all series from all queries
 	var allSeries []storage.Series
