@@ -107,8 +107,8 @@ func (i *InstantVectorToScalar) ExpressionPosition() posrange.PositionRange {
 	return i.expressionPosition
 }
 
-func (i *InstantVectorToScalar) Prepare(params types.PrepareParams) {
-	i.Inner.Prepare(params)
+func (i *InstantVectorToScalar) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return i.Inner.Prepare(ctx, params)
 }
 
 func (i *InstantVectorToScalar) Close() {

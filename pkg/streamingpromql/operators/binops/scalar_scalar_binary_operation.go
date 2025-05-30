@@ -105,9 +105,12 @@ func (s *ScalarScalarBinaryOperation) ExpressionPosition() posrange.PositionRang
 	return s.expressionPosition
 }
 
-func (s *ScalarScalarBinaryOperation) Prepare(params types.PrepareParams) {
-	s.Left.Prepare(params)
-	s.Right.Prepare(params)
+func (s *ScalarScalarBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := s.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return s.Right.Prepare(ctx, params)
 }
 
 func (s *ScalarScalarBinaryOperation) Close() {

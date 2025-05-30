@@ -273,8 +273,8 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
-func (a *Aggregation) Prepare(params types.PrepareParams) {
-	a.Inner.Prepare(params)
+func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return a.Inner.Prepare(ctx, params)
 }
 
 func (a *Aggregation) Close() {

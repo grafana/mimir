@@ -264,9 +264,12 @@ func (a *AndUnlessBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
-func (a *AndUnlessBinaryOperation) Prepare(params types.PrepareParams) {
-	a.Left.Prepare(params)
-	a.Right.Prepare(params)
+func (a *AndUnlessBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := a.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return a.Right.Prepare(ctx, params)
 }
 
 func (a *AndUnlessBinaryOperation) Close() {

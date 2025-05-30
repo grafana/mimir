@@ -85,8 +85,13 @@ func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVect
 	return q.Aggregation.NextSeries(ctx)
 }
 
-func (q *QuantileAggregation) Prepare(params types.PrepareParams) {
-	q.Aggregation.Prepare(params)
+func (q *QuantileAggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := q.Aggregation.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return q.Param.Prepare(ctx, params)
 }
 
 func (q *QuantileAggregation) Close() {

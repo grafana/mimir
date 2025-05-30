@@ -584,9 +584,13 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *ope
 	return formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, sourceSeriesMetadata, side, b.VectorMatching, b.Op, b.ReturnBool)
 }
 
-func (b *OneToOneVectorVectorBinaryOperation) Prepare(params types.PrepareParams) {
-	b.Left.Prepare(params)
-	b.Right.Prepare(params)
+func (b *OneToOneVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := b.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return b.Right.Prepare(ctx, params)
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Close() {

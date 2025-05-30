@@ -439,9 +439,12 @@ func (h *HistogramQuantileFunction) computeOutputSeriesForGroup(g *bucketGroup) 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }
 
-func (h *HistogramQuantileFunction) Prepare(params types.PrepareParams) {
-	h.phArg.Prepare(params)
-	h.inner.Prepare(params)
+func (h *HistogramQuantileFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := h.phArg.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return h.inner.Prepare(ctx, params)
 }
 
 func (h *HistogramQuantileFunction) Close() {

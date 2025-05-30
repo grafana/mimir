@@ -14,6 +14,10 @@ type PrepareParams struct {
 	QueryStats *QueryStats
 }
 
+func (p *PrepareParams) Clone() PrepareParams {
+	return PrepareParams{}
+}
+
 // Operator represents all operators.
 type Operator interface {
 	// ExpressionPosition returns the position of the PromQL expression that this operator represents.
@@ -25,8 +29,8 @@ type Operator interface {
 	// It must be safe to call Close multiple times.
 	Close()
 
-	// Prepare prepares the operator for execution. It must be called before actually doing something with the operator.
-	Prepare(params PrepareParams)
+	// Prepare prepares the operator for execution. It must be called before calling methods like `SeriesMetadata` or `NextSeries`.
+	Prepare(ctx context.Context, params *PrepareParams) error
 }
 
 // SeriesOperator represents all operators that return one or more series.

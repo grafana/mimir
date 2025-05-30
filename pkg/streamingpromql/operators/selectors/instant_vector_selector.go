@@ -73,8 +73,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	lastHistogramT := int64(math.MinInt64)
 	var lastHistogram *histogram.FloatHistogram
 
-	for stepT, step := v.Selector.TimeRange.StartT, -1; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMilliseconds {
-		step++
+	stepIndex := -1
+	for stepT := v.Selector.TimeRange.StartT; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMilliseconds {
+		stepIndex++
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram
@@ -161,7 +162,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			lastHistogram = h
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
-			v.Stats.IncrementSamplesAtStep(step, types.EquivalentFloatSampleCount(h))
+			v.Stats.IncrementSamplesAtStep(stepIndex, types.EquivalentFloatSampleCount(h))
 
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
@@ -173,7 +174,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
-			v.Stats.IncrementSamplesAtStep(step, 1)
+			v.Stats.IncrementSamplesAtStep(stepIndex, 1)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
@@ -185,8 +186,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	return data, nil
 }
 
-func (m *InstantVectorSelector) Prepare(params types.PrepareParams) {
+func (m *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	m.Stats = params.QueryStats
+	return nil
 }
 
 func (v *InstantVectorSelector) Close() {

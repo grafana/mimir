@@ -81,12 +81,17 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption)
+	stats, err := types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats(), memoryConsumptionTracker)
+	if err != nil {
+		return nil, fmt.Errorf("could not get create stats for query: %w", err)
+	}
 	q := &Query{
 		queryable:                queryable,
 		engine:                   e,
-		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		memoryConsumptionTracker: memoryConsumptionTracker,
 		annotations:              annotations.New(),
-		stats:                    types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats()),
+		stats:                    stats,
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 	}
@@ -550,7 +555,6 @@ func (q *Query) convertNodeToOperator(node planning.Node, timeRange types.QueryT
 
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
-
 	if q.engine.pedantic {
 		// Close the root operator a second time to ensure all operators behave correctly if Close is called multiple times.
 		defer q.root.Close()
@@ -605,9 +609,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
 
-	q.root.Prepare(types.PrepareParams{
+	err = q.root.Prepare(ctx, &types.PrepareParams{
 		QueryStats: q.stats,
 	})
+	if err != nil {
+		return &promql.Result{Err: fmt.Errorf("failed to prepare query: %w", err)}
+	}
+
 	switch root := q.root.(type) {
 	case types.RangeVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
@@ -835,6 +843,7 @@ func (q *Query) Close() {
 	if q.cancel != nil {
 		q.cancel(errQueryClosed)
 	}
+	q.stats.Close()
 
 	if q.result == nil {
 		return
@@ -857,7 +866,6 @@ func (q *Query) Close() {
 	default:
 		panic(fmt.Sprintf("unknown result value type %T", q.result.Value))
 	}
-
 	if q.engine.pedantic && q.result.Err == nil {
 		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
 			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")

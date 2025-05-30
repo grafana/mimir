@@ -6,8 +6,10 @@
 package types
 
 import (
+	"fmt"
 	"unsafe"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
@@ -22,28 +24,33 @@ type QueryStats struct {
 	// then samples in the overlapping 15s are counted twice.
 	TotalSamples int64
 
+	// TotalSamplesPerStep represents the total number of samples scanned
+	// per step while evaluating a query. Each step should be identical to the
+	// TotalSamples when a step is run as an instant query, which means
+	// we intentionally do not account for optimizations that happen inside the
+	// range query engine that reduce the actual work that happens.
 	TotalSamplesPerStep []int64
 
 	EnablePerStepStats bool
-	timerange          QueryTimeRange
+	timeRange          QueryTimeRange
+
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
-type stepStat struct {
-	T int64
-	V int64
-}
-
-const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
-
-func NewQueryStats(timerange QueryTimeRange, enablePerStepStats bool) *QueryStats {
+func NewQueryStats(timeRange QueryTimeRange, enablePerStepStats bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (*QueryStats, error) {
 	qs := &QueryStats{
-		timerange:          timerange,
-		EnablePerStepStats: enablePerStepStats,
+		EnablePerStepStats:       enablePerStepStats,
+		timeRange:                timeRange,
+		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 	if enablePerStepStats {
-		qs.TotalSamplesPerStep = make([]int64, qs.timerange.StepCount)
+		s, err := Int64SlicePool.Get(qs.timeRange.StepCount, qs.memoryConsumptionTracker)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate TotalSamplesPerStep: %w", err)
+		}
+		qs.TotalSamplesPerStep = s[:qs.timeRange.StepCount]
 	}
-	return qs
+	return qs, nil
 }
 
 // IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
@@ -67,16 +74,27 @@ func (qs *QueryStats) IncrementSamplesAtTimestamp(t, samples int64) {
 	qs.TotalSamples += samples
 
 	if qs.TotalSamplesPerStep != nil {
-		qs.TotalSamplesPerStep[qs.timerange.PointIndex(t)] += samples
+		qs.TotalSamplesPerStep[qs.timeRange.PointIndex(t)] += samples
 	}
 }
 
+// Clear resets the TotalSamples counter to 0 and zeroes out all entries in the
+// TotalSamplesPerStep slice, preserving its length and capacity for reuse.
 func (qs *QueryStats) Clear() {
 	qs.TotalSamples = 0
 	if qs.TotalSamplesPerStep != nil {
 		clear(qs.TotalSamplesPerStep)
 	}
 }
+
+func (qs *QueryStats) Close() {
+	if qs.TotalSamplesPerStep != nil {
+		Int64SlicePool.Put(qs.TotalSamplesPerStep, qs.memoryConsumptionTracker)
+		qs.TotalSamplesPerStep = nil
+	}
+}
+
+const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))
 
 func EquivalentFloatSampleCount(h *histogram.FloatHistogram) int64 {
 	return (int64(h.Size()) + timestampFieldSize) / int64(FPointSize)

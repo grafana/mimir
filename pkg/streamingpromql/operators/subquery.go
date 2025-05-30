@@ -4,6 +4,7 @@ package operators
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -32,6 +33,8 @@ type Subquery struct {
 
 	parentQueryStats *types.QueryStats
 	subqueryStats    *types.QueryStats
+
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
 var _ types.RangeVectorOperator = &Subquery{}
@@ -47,17 +50,18 @@ func NewSubquery(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 ) *Subquery {
 	return &Subquery{
-		Inner:                inner,
-		ParentQueryTimeRange: parentQueryTimeRange,
-		SubqueryTimeRange:    subqueryTimeRange,
-		SubqueryTimestamp:    subqueryTimestamp,
-		SubqueryOffset:       subqueryOffset.Milliseconds(),
-		SubqueryRange:        subqueryRange,
-		expressionPosition:   expressionPosition,
-		rangeMilliseconds:    subqueryRange.Milliseconds(),
-		floats:               types.NewFPointRingBuffer(memoryConsumptionTracker),
-		histograms:           types.NewHPointRingBuffer(memoryConsumptionTracker),
-		stepData:             &types.RangeVectorStepData{},
+		Inner:                    inner,
+		ParentQueryTimeRange:     parentQueryTimeRange,
+		SubqueryTimeRange:        subqueryTimeRange,
+		SubqueryTimestamp:        subqueryTimestamp,
+		SubqueryOffset:           subqueryOffset.Milliseconds(),
+		SubqueryRange:            subqueryRange,
+		expressionPosition:       expressionPosition,
+		rangeMilliseconds:        subqueryRange.Milliseconds(),
+		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
+		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
+		stepData:                 &types.RangeVectorStepData{},
+		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
@@ -69,7 +73,7 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	// Release the previous series' slices now, so we are likely to reuse the slices for the next series.
 	s.floats.Release()
 	s.histograms.Release()
-	// Clean the subquery stats to not to double count samples from previous series in a next series.
+	// Clear the subquery stats to not double count samples from previous series in a next series.
 	s.subqueryStats.Clear()
 
 	data, err := s.Inner.NextSeries(ctx)
@@ -130,10 +134,6 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 
 // samplesProcessedInSubquery returns the number of samples processed in a time range selected by parent query step from subquery results.
 func (s *Subquery) samplesProcessedInSubquery(start, end int64) int64 {
-	if s.subqueryStats == nil || s.subqueryStats.TotalSamplesPerStep == nil || len(s.subqueryStats.TotalSamplesPerStep) == 0 {
-		return 0
-	}
-
 	startIndex := 0
 	if start >= s.SubqueryTimeRange.StartT {
 		startIndex = int((start-s.SubqueryTimeRange.StartT)/s.SubqueryTimeRange.IntervalMilliseconds) + 1
@@ -163,19 +163,23 @@ func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *Subquery) Prepare(params types.PrepareParams) {
+func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	s.parentQueryStats = params.QueryStats
 	// Child Samples will be counted later when processing subquery results.
-	s.subqueryStats = types.NewQueryStats(s.SubqueryTimeRange, true)
-
-	paramsCopy := types.PrepareParams{
-		QueryStats: s.subqueryStats,
+	childStats, err := types.NewQueryStats(s.SubqueryTimeRange, true, s.memoryConsumptionTracker)
+	if err != nil {
+		return fmt.Errorf("could not create stats for subquery: %w", err)
 	}
-	s.Inner.Prepare(paramsCopy)
+	s.subqueryStats = childStats
+	paramsCopy := types.PrepareParams{
+		QueryStats: childStats,
+	}
+	return s.Inner.Prepare(ctx, &paramsCopy)
 }
 
 func (s *Subquery) Close() {
 	s.Inner.Close()
 	s.histograms.Close()
 	s.floats.Close()
+	s.subqueryStats.Close()
 }

@@ -317,9 +317,13 @@ func (o *OrBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return o.expressionPosition
 }
 
-func (o *OrBinaryOperation) Prepare(params types.PrepareParams) {
-	o.Left.Prepare(params)
-	o.Right.Prepare(params)
+func (o *OrBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := o.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return o.Right.Prepare(ctx, params)
 }
 
 func (o *OrBinaryOperation) Close() {
