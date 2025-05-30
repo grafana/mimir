@@ -461,11 +461,9 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
-		// Permissive limit to first verify impact on existing users.
-		// TODO: Make this strict.
-		for name, tmpl := range grafanaConfig.Templates {
+		for _, tmpl := range grafanaConfig.Templates {
 			if size := len(tmpl.Body); size > maxSize {
-				level.Warn(logger).Log("msg", "template too big", "user", user, "template", name, "size", size, "limit", maxSize)
+				return fmt.Errorf(errTemplateTooBig, tmpl.GetFilename(), size, maxSize)
 			}
 		}
 	}
