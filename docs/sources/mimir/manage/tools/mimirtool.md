@@ -575,8 +575,8 @@ The remote-read commands support multiple `--selector` flags to query multiple s
 
 Additionally, you can control the response format using the `--use-chunks` flag:
 
-- `--use-chunks=true` (default): Requests chunked streaming response for better performance with large datasets
-- `--use-chunks=false`: Requests traditional sampled response format
+- `--use-chunks` (default): Requests chunked streaming response for better performance with large datasets
+- `--no-use-chunks`: Requests traditional sampled response format
 
 [remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 
