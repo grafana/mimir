@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -459,36 +458,3 @@ func TestCombinedSeriesSet(t *testing.T) {
 	}
 }
 
-func TestMultiQueryChunkedIterator(t *testing.T) {
-	// Test basic iterator functionality
-	chunks := []prompb.Chunk{
-		{
-			Type: prompb.Chunk_XOR,
-			Data: createMockXORChunk(t, []int64{1000, 2000}, []float64{1.0, 2.0}),
-		},
-	}
-
-	iter := newMultiQueryChunkedIterator(chunks, 1000, 2000)
-
-	// Test iteration
-	vt := iter.Next()
-	assert.NotEqual(t, chunkenc.ValNone, vt)
-
-	// Test error handling
-	assert.NoError(t, iter.Err())
-}
-
-// createMockXORChunk creates a simple XOR encoded chunk for testing
-func createMockXORChunk(t *testing.T, timestamps []int64, values []float64) []byte {
-	require.Equal(t, len(timestamps), len(values))
-	
-	chunk := chunkenc.NewXORChunk()
-	appender, err := chunk.Appender()
-	require.NoError(t, err)
-	
-	for i := range timestamps {
-		appender.Append(timestamps[i], values[i])
-	}
-	
-	return chunk.Bytes()
-}

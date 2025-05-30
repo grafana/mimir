@@ -294,33 +294,32 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 	}, from, to, nil
 }
 
-// MultiQueryReadClient wraps a remote.ReadClient to support multiple queries in a single request
-type MultiQueryReadClient struct {
-	client remote.ReadClient
-}
-
-// ReadMultiple sends multiple queries in a single protobuf request
-func (m *MultiQueryReadClient) ReadMultiple(ctx context.Context, queries []*prompb.Query, useChunks bool) (storage.SeriesSet, error) {
-	if len(queries) == 1 {
-		// Use the original client for single queries to maintain compatibility
-		return m.client.Read(ctx, queries[0], false)
-	}
-
-	// For multiple queries, we need to use the underlying client implementation
-	client, ok := m.client.(*remote.Client)
-	if !ok {
-		return nil, fmt.Errorf("multi-query support requires *remote.Client, got %T", m.client)
-	}
-
-	return m.executeMultipleQueries(ctx, client, queries, useChunks)
-}
-
 // executeMultipleQueries sends multiple queries in a single protobuf request
-// This is inspired by the prometheus remote.Client.Read method but supports multiple queries
-func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, client *remote.Client, queries []*prompb.Query, useChunks bool) (storage.SeriesSet, error) {
+// This leverages the remote read protocol's native support for batching multiple queries
+func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
+	if len(queries) == 1 {
+		// Use the original client for single queries to maintain full compatibility
+		return readClient.Read(ctx, queries[0], false)
+	}
+
+	// For multiple queries, we need to use batched requests
+	// The prometheus client doesn't support this yet, so we implement it ourselves
+	// but reuse as much of the existing infrastructure as possible
+	client, ok := readClient.(*remote.Client)
+	if !ok {
+		return nil, fmt.Errorf("multi-query support requires *remote.Client, got %T", readClient)
+	}
+
+	return c.sendBatchedRequest(ctx, client, queries)
+}
+
+// sendBatchedRequest sends a single HTTP request with multiple queries
+// This is the minimal implementation needed to support batching while reusing
+// the prometheus client's response handling where possible
+func (c *RemoteReadCommand) sendBatchedRequest(ctx context.Context, client *remote.Client, queries []*prompb.Query) (storage.SeriesSet, error) {
 	// Build the batched request with response type preference
 	var acceptedTypes []prompb.ReadRequest_ResponseType
-	if useChunks {
+	if c.useChunks {
 		log.Debugf("Requesting chunked streaming response (STREAMED_XOR_CHUNKS)")
 		acceptedTypes = []prompb.ReadRequest_ResponseType{
 			prompb.ReadRequest_STREAMED_XOR_CHUNKS,
@@ -338,7 +337,8 @@ func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, clien
 		AcceptedResponseTypes: acceptedTypes,
 	}
 
-	// Marshal the batched request
+	// Use the same logic as prometheus client for sending the request
+	// This is copied from vendor/github.com/prometheus/prometheus/storage/remote/client.go
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal read request: %w", err)
@@ -346,8 +346,7 @@ func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, clien
 
 	compressed := snappy.Encode(nil, data)
 
-	// Use reflection to get the URL from the client
-	// TODO: This could be improved by extending the prometheus client interface
+	// Get URL using reflection (same as before)
 	clientValue := reflect.ValueOf(client).Elem()
 	urlStringField := clientValue.FieldByName("urlString")
 	if !urlStringField.IsValid() {
@@ -355,7 +354,6 @@ func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, clien
 	}
 	urlString := urlStringField.String()
 
-	// Create HTTP request
 	httpReq, err := http.NewRequest(http.MethodPost, urlString, bytes.NewReader(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create request: %w", err)
@@ -366,7 +364,6 @@ func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, clien
 	httpReq.Header.Set("User-Agent", "mimirtool")
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
 
-	// Send the request using the client's HTTP client
 	httpResp, err := client.Client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
@@ -382,22 +379,81 @@ func (m *MultiQueryReadClient) executeMultipleQueries(ctx context.Context, clien
 	contentType := httpResp.Header.Get("Content-Type")
 	log.Debugf("Response content type: %s", contentType)
 
-	// Handle different response types
+	// Handle different response types - simplified approach
 	switch {
-	case strings.HasPrefix(contentType, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse"):
-		log.Debugf("Processing chunked streaming response")
-		return m.handleChunkedResponse(httpResp, queries)
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
 		log.Debugf("Processing sampled response")
-		return m.handleSampledResponse(httpResp, queries)
+		return c.handleSampledResponse(req, httpResp)
 	default:
-		return nil, fmt.Errorf("unsupported content type: %s", contentType)
+		// For chunked responses or unsupported types, fall back to individual requests
+		// This keeps the implementation simple while still providing batching for the common case
+		log.Debugf("Falling back to individual requests for content type: %s", contentType)
+		return c.fallbackToIndividualRequests(ctx, client, queries)
 	}
 }
 
-func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
-	multiClient := &MultiQueryReadClient{client: readClient}
-	return multiClient.ReadMultiple(ctx, queries, c.useChunks)
+// handleSampledResponse handles batched sampled responses
+func (c *RemoteReadCommand) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response) (storage.SeriesSet, error) {
+	// Read and decompress response
+	compressedResp, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	uncompressed, err := snappy.Decode(nil, compressedResp)
+	if err != nil {
+		return nil, fmt.Errorf("error decompressing response: %w", err)
+	}
+
+	var resp prompb.ReadResponse
+	err = proto.Unmarshal(uncompressed, &resp)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal response body: %w", err)
+	}
+
+	if len(resp.Results) != len(req.Queries) {
+		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
+	}
+
+	// Combine all results from all queries
+	var allSeries []storage.Series
+	for i, result := range resp.Results {
+		log.Debugf("Processing result %d/%d with %d series", i+1, len(resp.Results), len(result.Timeseries))
+		seriesSet := remote.FromQueryResult(false, result)
+		for seriesSet.Next() {
+			allSeries = append(allSeries, seriesSet.At())
+		}
+		if err := seriesSet.Err(); err != nil {
+			return nil, fmt.Errorf("error reading series from query %d: %w", i, err)
+		}
+	}
+
+	log.Infof("Combined %d series from %d queries using batched request", len(allSeries), len(req.Queries))
+	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+}
+
+// fallbackToIndividualRequests handles cases where batching isn't supported
+func (c *RemoteReadCommand) fallbackToIndividualRequests(ctx context.Context, client *remote.Client, queries []*prompb.Query) (storage.SeriesSet, error) {
+	log.Infof("Using individual requests for %d queries", len(queries))
+	var allSeries []storage.Series
+	for i, query := range queries {
+		log.Debugf("Executing individual query %d/%d", i+1, len(queries))
+		seriesSet, err := client.Read(ctx, query, false)
+		if err != nil {
+			return nil, fmt.Errorf("error executing query %d: %w", i, err)
+		}
+		
+		// Collect all series from this query
+		for seriesSet.Next() {
+			allSeries = append(allSeries, seriesSet.At())
+		}
+		if err := seriesSet.Err(); err != nil {
+			return nil, fmt.Errorf("error reading series from query %d: %w", i, err)
+		}
+	}
+
+	log.Infof("Combined %d series from %d individual queries", len(allSeries), len(queries))
+	return &combinedSeriesSet{series: allSeries, index: -1}, nil
 }
 
 // combinedSeriesSet implements storage.SeriesSet for multiple series
@@ -427,214 +483,7 @@ func (c *combinedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// handleSampledResponse handles the traditional sampled response format
-func (m *MultiQueryReadClient) handleSampledResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
-	// Read and decompress response
-	compressedResp, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %w", err)
-	}
 
-	uncompressed, err := snappy.Decode(nil, compressedResp)
-	if err != nil {
-		return nil, fmt.Errorf("error decompressing response: %w", err)
-	}
-
-	// Unmarshal response
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %w", err)
-	}
-
-	if len(resp.Results) != len(queries) {
-		return nil, fmt.Errorf("responses: want %d, got %d", len(queries), len(resp.Results))
-	}
-
-	// Combine all results from all queries
-	var allSeries []storage.Series
-	for i, result := range resp.Results {
-		log.Infof("Processing result %d/%d with %d series", i+1, len(resp.Results), len(result.Timeseries))
-		seriesSet := remote.FromQueryResult(false, result)
-		for seriesSet.Next() {
-			allSeries = append(allSeries, seriesSet.At())
-		}
-		if err := seriesSet.Err(); err != nil {
-			return nil, fmt.Errorf("error reading series from query %d: %w", i, err)
-		}
-	}
-
-	log.Infof("Combined %d series from %d queries", len(allSeries), len(queries))
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
-}
-
-// handleChunkedResponse handles the streamed chunked response format
-func (m *MultiQueryReadClient) handleChunkedResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
-	// Use the chunked reader from the remote package
-	// TODO: Get readSizeLimit from client config
-	reader := remote.NewChunkedReader(httpResp.Body, DefaultChunkedReadLimit, nil)
-
-	// Collect all series from all queries
-	var allSeries []storage.Series
-	processedQueries := make(map[int64]int)
-	totalBytes := 0
-
-	for {
-		var chunkedResp prompb.ChunkedReadResponse
-		err := reader.NextProto(&chunkedResp)
-		if err == io.EOF {
-			break
-		}
-		totalBytes += chunkedResp.Size()
-		if err != nil {
-			return nil, fmt.Errorf("error reading chunked response: %w", err)
-		}
-
-		queryIndex := chunkedResp.QueryIndex
-		if queryIndex < 0 || queryIndex >= int64(len(queries)) {
-			return nil, fmt.Errorf("invalid query index %d, expected 0-%d", queryIndex, len(queries)-1)
-		}
-
-		processedQueries[queryIndex]++
-		if processedQueries[queryIndex] == 1 {
-			log.Infof("Processing chunked response for query %d", queryIndex)
-		}
-
-		// Each ChunkedSeries contains chunks for a single series
-		for _, chunkSeries := range chunkedResp.ChunkedSeries {
-			// Create a series that can iterate over the chunks
-			// Convert protobuf labels to labels.Labels
-			lbs := make(labels.Labels, len(chunkSeries.Labels))
-			for i, l := range chunkSeries.Labels {
-				lbs[i] = labels.Label{Name: l.Name, Value: l.Value}
-			}
-			series := &multiQueryChunkedSeries{
-				labels: lbs,
-				chunks: chunkSeries.Chunks,
-				mint:   queries[queryIndex].StartTimestampMs,
-				maxt:   queries[queryIndex].EndTimestampMs,
-			}
-			allSeries = append(allSeries, series)
-		}
-	}
-
-	log.Infof("Combined %d series from %d queries using chunked streaming (%d bytes)", len(allSeries), len(queries), totalBytes)
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
-}
-
-// multiQueryChunkedSeries implements storage.Series for chunked data from multiple queries
-type multiQueryChunkedSeries struct {
-	labels     labels.Labels
-	chunks     []prompb.Chunk
-	mint, maxt int64
-}
-
-func (s *multiQueryChunkedSeries) Labels() labels.Labels {
-	return s.labels
-}
-
-func (s *multiQueryChunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	// Create a new chunked series iterator
-	return newMultiQueryChunkedIterator(s.chunks, s.mint, s.maxt)
-}
-
-// newMultiQueryChunkedIterator creates an iterator for chunked series data
-func newMultiQueryChunkedIterator(chunks []prompb.Chunk, mint, maxt int64) chunkenc.Iterator {
-	return &multiQueryChunkedIterator{
-		chunks:   chunks,
-		mint:     mint,
-		maxt:     maxt,
-		chunkIdx: 0,
-	}
-}
-
-// multiQueryChunkedIterator implements an iterator for chunked data
-type multiQueryChunkedIterator struct {
-	chunks     []prompb.Chunk
-	mint, maxt int64
-	chunkIdx   int
-	cur        chunkenc.Iterator
-	s          storage.Series
-	err        error
-}
-
-func (it *multiQueryChunkedIterator) Next() chunkenc.ValueType {
-	// If we have a current chunk iterator, try to get next value
-	if it.cur != nil {
-		if vt := it.cur.Next(); vt != chunkenc.ValNone {
-			return vt
-		}
-		// Current chunk is exhausted, move to next
-		it.chunkIdx++
-	}
-
-	// Find next non-empty chunk
-	for it.chunkIdx < len(it.chunks) {
-		chunk := it.chunks[it.chunkIdx]
-		// Convert protobuf chunk to storage chunk
-		c, err := chunkenc.FromData(chunkenc.Encoding(chunk.Type), chunk.Data)
-		if err != nil {
-			it.err = fmt.Errorf("error decoding chunk %d: %w", it.chunkIdx, err)
-			return chunkenc.ValNone
-		}
-		it.cur = c.Iterator(nil)
-		if vt := it.cur.Next(); vt != chunkenc.ValNone {
-			return vt
-		}
-		// This chunk was empty, try next
-		it.chunkIdx++
-	}
-
-	// No more chunks
-	return chunkenc.ValNone
-}
-
-func (it *multiQueryChunkedIterator) At() (int64, float64) {
-	if it.cur == nil {
-		return 0, 0
-	}
-	return it.cur.At()
-}
-
-func (it *multiQueryChunkedIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	if it.cur == nil {
-		return 0, nil
-	}
-	return it.cur.AtHistogram(h)
-}
-
-func (it *multiQueryChunkedIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	if it.cur == nil {
-		return 0, nil
-	}
-	return it.cur.AtFloatHistogram(fh)
-}
-
-func (it *multiQueryChunkedIterator) AtT() int64 {
-	if it.cur == nil {
-		return 0
-	}
-	return it.cur.AtT()
-}
-
-func (it *multiQueryChunkedIterator) Seek(t int64) chunkenc.ValueType {
-	// Reset to beginning and iterate until we find t
-	it.chunkIdx = 0
-	it.cur = nil
-	for {
-		vt := it.Next()
-		if vt == chunkenc.ValNone {
-			return chunkenc.ValNone
-		}
-		if it.AtT() >= t {
-			return vt
-		}
-	}
-}
-
-func (it *multiQueryChunkedIterator) Err() error {
-	return it.err
-}
 
 func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 	query, _, _, err := c.prepare()
