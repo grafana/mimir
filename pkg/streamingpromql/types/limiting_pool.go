@@ -3,6 +3,7 @@
 package types
 
 import (
+	"slices"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -142,9 +143,9 @@ func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
 		h.PositiveBuckets[i] = 12345678
 	}
 
-	for i := range h.CustomValues {
-		h.CustomValues[i] = 12345678
-	}
+	// As of https://github.com/prometheus/prometheus/pull/16565, CustomValues slices are treated as immutable,
+	// so we replace the slice with a new slice rather than mutating the existing slice.
+	h.CustomValues = slices.Repeat([]float64{12345678}, len(h.CustomValues))
 
 	return h
 }

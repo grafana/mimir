@@ -389,12 +389,12 @@ func TestBatchMergeChunks(t *testing.T) {
 			Chunkseries: []client.TimeSeriesChunk{
 				// Series with chunks in the 1,2 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "foo"}},
 					Chunks: chunks12,
 				},
 				// Series with chunks in the 2,1 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "bar"}},
 					Chunks: chunks21,
 				},
 			},
@@ -465,7 +465,7 @@ func BenchmarkQueryExecute(b *testing.B) {
 				client.CombinedQueryStreamResponse{
 					Chunkseries: []client.TimeSeriesChunk{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "foo"}},
 							Chunks: chunks,
 						},
 					},

@@ -3160,20 +3160,14 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		// TODO(jhesketh): Add stddev/stdvar back in.
-		// stddev/stdvar are excluded until https://github.com/prometheus/prometheus/pull/14941 is merged
-		// fixing an inconsistency in the Prometheus' engine where if a native histogram is the first sample
-		// loaded, it is incorrectly treated as a 0 float point.
-		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum"} {
+		for _, aggFunc := range []string{"avg", "count", "group", "min", "max", "sum", "stddev", "stdvar"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 		}
-		// NOTE(jhesketh): We do not test a changing quantile factor here as prometheus currently
-		// does not support it (https://github.com/prometheus/prometheus/issues/15971)
+
 		expressions = append(expressions, fmt.Sprintf(`quantile (0.9, series{label=~"(%s)"})`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`quantile by (group) (0.9, series{label=~"(%s)"})`, labelRegex))
-
 		expressions = append(expressions, fmt.Sprintf(`count_values("value", series{label="%s"})`, labelRegex))
 	}
 

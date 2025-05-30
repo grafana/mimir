@@ -29,6 +29,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
@@ -304,7 +305,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:             stats,
 		reg:               r,
 		secondaryHashFunc: shf,
-		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics),
+		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics, []attribute.KeyValue{attribute.String("block", headULID.String())}),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
