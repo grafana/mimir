@@ -67,6 +67,8 @@
 * [BUGFIX] Compactor: Fix issue where `MimirBucketIndexNotUpdated` can fire even though the index has been updated within the alert threshold. #11303
 * [BUGFIX] Distributor: fix old entries in the HA Tracker with zero valued "elected at" timestamp. #11462
 * [BUGFIX] Query-scheduler: Fix issue where deregistered querier goroutines can cause a panic if their backlogged dequeue requests are serviced. #11510
+* [BUGFIX] Querier and query-frontend: Fix issue where aggregation functions like `topk` and `quantile` could return incorrect results if the scalar parameter is not a constant and Prometheus' query engine is in use. #11548
+* [BUGFIX] Querier and query-frontend: Fix issue where range vector selectors could incorrectly ignore samples at the beginning of the range. #11548
 
 ### Mixin
 
