@@ -294,17 +294,28 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 	}, from, to, nil
 }
 
-// executeMultipleQueries sends multiple queries in a single protobuf request
-// This leverages the remote read protocol's native support for batching multiple queries
+// executeMultipleQueries sends multiple queries with batching support
+//
+// TODO: This functionality should be implemented upstream in Prometheus first.
+// The prometheus/prometheus client has a TODO at storage/remote/client.go:347-348
+// that says "Support batching multiple queries into one read request, as the
+// protobuf interface allows for it."
+//
+// Once that's implemented upstream, we should remove this custom implementation
+// and use the enhanced prometheus client directly.
+//
+// This interim solution provides:
+// - True batching for sampled responses (the common case)
+// - Fallback to individual requests for chunked responses
+// - Full compatibility with existing prometheus client infrastructure
 func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
 	if len(queries) == 1 {
 		// Use the original client for single queries to maintain full compatibility
 		return readClient.Read(ctx, queries[0], false)
 	}
 
-	// For multiple queries, we need to use batched requests
-	// The prometheus client doesn't support this yet, so we implement it ourselves
-	// but reuse as much of the existing infrastructure as possible
+	// For multiple queries, we implement batching ourselves as an interim solution
+	// until this functionality is available upstream in prometheus/prometheus
 	client, ok := readClient.(*remote.Client)
 	if !ok {
 		return nil, fmt.Errorf("multi-query support requires *remote.Client, got %T", readClient)
@@ -314,8 +325,9 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 }
 
 // sendBatchedRequest sends a single HTTP request with multiple queries
-// This is the minimal implementation needed to support batching while reusing
-// the prometheus client's response handling where possible
+// This is an interim implementation that should eventually be replaced by
+// upstream prometheus client functionality. It reuses as much of the existing
+// prometheus client infrastructure as possible.
 func (c *RemoteReadCommand) sendBatchedRequest(ctx context.Context, client *remote.Client, queries []*prompb.Query) (storage.SeriesSet, error) {
 	// Build the batched request with response type preference
 	var acceptedTypes []prompb.ReadRequest_ResponseType
