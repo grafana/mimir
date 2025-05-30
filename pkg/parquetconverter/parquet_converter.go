@@ -84,6 +84,8 @@ type ParquetConverter struct {
 	ring                   *ring.Ring
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
+
+	metrics parquetConverterMetrics
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -106,6 +108,7 @@ func newParquetConverter(
 		logger:              log.With(logger, "component", "parquet-converter"),
 		registerer:          registerer,
 		limits:              limits,
+		metrics:             newParquetConverterMetrics(registerer),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -218,9 +221,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			}
 
 			for _, u := range users {
-				if !c.Cfg.allowedTenants.IsAllowed(u) {
-					continue
-				}
 				ulogger := util_log.WithUserID(u, c.logger)
 				uBucket := bucket.NewUserBucketClient(u, c.bucketClient, c.limits)
 
@@ -280,6 +280,15 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						continue
 					}
 
+					start := time.Now()
+					defer func() {
+						duration := time.Since(start)
+						c.metrics.conversionDuration.Observe(duration.Seconds())
+						c.metrics.blocksConverted.Inc()
+						if err != nil {
+							c.metrics.failedBlocksConverted.Inc()
+						}
+					}()
 					err = convertBlock(ctx, m, bdir, uBucket, ulogger)
 					if err != nil {
 						level.Error(ulogger).Log("msg", "failed to convert block", "block", m.ULID.String(), "err", err)
@@ -305,6 +314,7 @@ func (c *ParquetConverter) stopping(_ error) error {
 	return nil
 }
 
+// discoverUsers scans the bucket for users and returns a list of user IDs that are allowed to be converted.
 func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
 	var users []string
 
@@ -314,7 +324,20 @@ func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) 
 		return nil
 	})
 
-	return users, err
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]string, 0, len(users))
+	for _, user := range users {
+		if c.Cfg.allowedTenants.IsAllowed(user) {
+			filtered = append(filtered, user)
+		}
+	}
+
+	// TODO set gauge value
+
+	return filtered, nil
 }
 
 // dirForUser returns the directory to be used to download and convert the blocks for a user
