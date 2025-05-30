@@ -99,17 +99,11 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
 
-	query, err := newQuery(ctx, req, s.engine, queryStatsErrQueryable)
-	if err != nil {
-		return
-	}
-	defer query.Close()
-
-	evalStmt, ok := query.Statement().(*parser.EvalStmt)
+	minT, maxT, ok := s.findMinMaxTime(ctx, req)
 	if !ok {
 		return
 	}
-	minT, maxT := promql.FindMinMaxTime(evalStmt)
+
 	// This middleware may run multiple times for the same request in case of a remote read request
 	// (once for each query in the request). In such case, we compute the minT/maxT time as the min/max
 	// timestamp we see across all queries in the request.
@@ -118,6 +112,29 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	if maxT != 0 && (details.MaxT.IsZero() || details.MaxT.Before(time.UnixMilli(maxT))) {
 		details.MaxT = time.UnixMilli(maxT)
+	}
+}
+
+func (s queryStatsMiddleware) findMinMaxTime(ctx context.Context, req MetricsQueryRequest) (int64, int64, bool) {
+	switch r := req.(type) {
+	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
+		query, err := newQuery(ctx, req, s.engine, queryStatsErrQueryable)
+		if err != nil {
+			return 0, 0, false
+		}
+		defer query.Close()
+
+		evalStmt, ok := query.Statement().(*parser.EvalStmt)
+		if !ok {
+			return 0, 0, false
+		}
+		minT, maxT := promql.FindMinMaxTime(evalStmt)
+		return minT, maxT, true
+	case *remoteReadQueryRequest:
+		minT := r.GetStart() + 1 // The query time range is left-open, but minT is expected to be inclusive.
+		return minT, r.GetEnd(), true
+	default:
+		return 0, 0, false
 	}
 }
 
