@@ -571,16 +571,26 @@ Only one of the namespace selection flags can be specified.
 Grafana Mimir exposes a [remote read API] which allows the system to access the stored series.
 The `remote-read` subcommand `mimirtool` enables you to interact with its API, and to determine which series are stored.
 
+The remote-read commands support multiple `--selector` flags to query multiple series selectors in a single request, leveraging the remote read protocol's native batching capabilities for improved performance.
+
+Additionally, you can control the response format using the `--use-chunks` flag:
+- `--use-chunks=true` (default): Requests chunked streaming response for better performance with large datasets
+- `--use-chunks=false`: Requests traditional sampled response format
+
 [remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 
 #### Stats
 
-The `remote-read stats` command summarizes statistics of the stored series that match the selector.
+The `remote-read stats` command summarizes statistics of the stored series that match the specified selector(s).
 
 ##### Example
 
 ```bash
+# Single selector
 mimirtool remote-read stats --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+
+# Multiple selectors in a single request
+mimirtool remote-read stats --selector '{job="node"}' --selector 'up' --selector 'go_memstats_alloc_bytes' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
 ```
 
 Running the command results in the following output:
@@ -594,12 +604,16 @@ INFO[0000] 2020-12-30 14:00:00.629 +0000 UTC  2020-12-30 14:59:59.629 +0000 UTC 
 
 #### Dump
 
-The `remote-read dump` command prints all series and samples that match the selector.
+The `remote-read dump` command prints all series and samples that match the specified selector(s).
 
 ##### Example
 
 ```bash
+# Single selector
 mimirtool remote-read dump --selector 'up{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+
+# Multiple selectors
+mimirtool remote-read dump --selector 'up{job="node"}' --selector 'go_memstats_alloc_bytes' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
 ```
 
 Running the command results in the following output:
@@ -612,12 +626,15 @@ Running the command results in the following output:
 
 #### Export
 
-The `remote-read export` command exports all series and samples that match the selector into a local TSDB.
+The `remote-read export` command exports all series and samples that match the specified selector(s) into a local TSDB.
 You can use local tooling such as `prometheus` and [`promtool`](https://github.com/prometheus/prometheus/tree/main/cmd/promtool) to further analyze the TSDB.
 
 ```bash
-# Use Remote Read API to download all metrics with label job=name into local tsdb
+# Use Remote Read API to download all metrics with label job=node into local tsdb
 mimirtool remote-read export --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
+
+# Download multiple metric families in a single request
+mimirtool remote-read export --selector '{job="node"}' --selector 'up' --selector 'prometheus_build_info' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
 ```
 
 Running the command results in the following output:
