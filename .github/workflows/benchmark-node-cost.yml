@@ -1,0 +1,159 @@
+name: Benchmark Node Cost
+
+on:
+  workflow_dispatch:
+    inputs:
+      mimir_image_tag:
+        description: "Mimir image tag (e.g., main-abcdef or v2.8.0)"
+        required: true
+        type: string
+      mimir_continuous_test_image:
+        description: "Mimir continuous test image (e.g., grafana/mimir-continuous-test:main-abcdef)"
+        required: true
+        type: string
+      target_active_series:
+        description: "Target active series for workload"
+        required: false
+        default: "100000"
+        type: string
+      target_sps:
+        description: "Target samples per second for workload"
+        required: false
+        default: "50000"
+        type: string
+      workload_duration:
+        description: "Workload duration (e.g., 30m, 2h)"
+        required: false
+        default: "30m"
+        type: string
+
+jobs:
+  benchmark_amd64:
+    name: Benchmark AMD64
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [amd64]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set Architecture Environment Variable
+        run: echo "ARCHITECTURE=${{ matrix.architecture }}" >> $GITHUB_ENV
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21' # Specify a Go version
+
+      - name: Install KinD
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3 # Matches version used in other workflows
+        with:
+          version: v3.17.2
+        id: helm
+
+      - name: Create Kubeconfig Directory
+        run: mkdir -p $HOME/.kube
+
+      - name: Run Benchmark Orchestration Script
+        env:
+          KUBECONFIG: ${{ env.HOME }}/.kube/config
+        run: |
+          bash ./tools/benchmark/orchestrate_benchmark_run.sh \
+            --architecture "${{ env.ARCHITECTURE }}" \
+            --kubeconfig "${{ env.KUBECONFIG }}" \
+            --mimir-image-tag "${{ github.event.inputs.mimir_image_tag }}" \
+            --mimir-continuous-test-image "${{ github.event.inputs.mimir_continuous_test_image }}" \
+            --target-active-series "${{ github.event.inputs.target_active_series }}" \
+            --target-sps "${{ github.event.inputs.target_sps }}" \
+            --workload-duration "${{ github.event.inputs.workload_duration }}" \
+            --output-dir "${{ runner.temp }}/benchmark_results"
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ env.ARCHITECTURE }}
+          path: ${{ runner.temp }}/benchmark_results/${{ env.ARCHITECTURE }}
+          if-no-files-found: error # Fail if results are not found
+
+  benchmark_arm64:
+    name: Benchmark ARM64
+    runs-on: ubuntu-latest # Assuming x86 runner, QEMU is needed for ARM64 KinD node
+    strategy:
+      matrix:
+        architecture: [arm64]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set Architecture Environment Variable
+        run: echo "ARCHITECTURE=${{ matrix.architecture }}" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64 # Ensure ARM64 emulation is available
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install KinD
+        run: |
+          # For ARM64 KinD nodes, we still download the amd64 kind CLI to run on the x86 runner
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.17.2
+        id: helm
+
+      - name: Create Kubeconfig Directory
+        run: mkdir -p $HOME/.kube
+
+      - name: Run Benchmark Orchestration Script
+        env:
+          KUBECONFIG: ${{ env.HOME }}/.kube/config
+        run: |
+          bash ./tools/benchmark/orchestrate_benchmark_run.sh \
+            --architecture "${{ env.ARCHITECTURE }}" \
+            --kubeconfig "${{ env.KUBECONFIG }}" \
+            --mimir-image-tag "${{ github.event.inputs.mimir_image_tag }}" \
+            --mimir-continuous-test-image "${{ github.event.inputs.mimir_continuous_test_image }}" \
+            --target-active-series "${{ github.event.inputs.target_active_series }}" \
+            --target-sps "${{ github.event.inputs.target_sps }}" \
+            --workload-duration "${{ github.event.inputs.workload_duration }}" \
+            --output-dir "${{ runner.temp }}/benchmark_results"
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ env.ARCHITECTURE }}
+          path: ${{ runner.temp }}/benchmark_results/${{ env.ARCHITECTURE }}
+          if-no-files-found: error

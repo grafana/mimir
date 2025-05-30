@@ -30,8 +30,12 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+      - name: Get Image Tag
+        id: image_tag_step
+        run: echo "image_tag=$(make image-tag)" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
+      image_tag: ${{ steps.image_tag_step.outputs.image_tag }}
       # Determine if we will deploy (aka push) the image to the registry.
       is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
 
@@ -235,6 +239,236 @@ jobs:
           path: |
             ./mimir_race_image_distroless
 
+  helm-upgrade-test-arm64:
+    name: Helm Upgrade Test ARM64
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install Docker Client
+        run: ./.github/workflows/scripts/install-docker.sh
+
+      - name: Set up Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v3.17.2
+
+      - name: Install KinD
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+
+      - name: Create ARM64 KinD Cluster
+        run: |
+          kind create cluster --image kindest/node:v1.27.3-arm64 --name mimir-arm64
+          kubectl cluster-info --context kind-mimir-arm64
+          kubectl get nodes -o wide
+
+      - name: Download Docker Images artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Docker Images
+          path: /tmp/docker-images-artifact
+
+      - name: Extract Docker images
+        run: |
+          mkdir -p /tmp/images
+          tar xvf /tmp/docker-images-artifact/images.tar -C /tmp/images
+          ls -R /tmp/images
+
+      - name: Install skopeo
+        run: |
+          # skopeo is often not pre-installed on runners
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Load ARM64 images into KinD
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+        run: |
+          # Assuming OCI images are in /tmp/images and named e.g., mimir.oci, mimirtool.oci
+          # Adjust names based on actual artifact structure and 'make list-image-targets'
+          # The build job builds multi-arch images, skopeo should handle selecting the arm64 variant if present.
+          # If OCI archives are single-architecture (arm64), then skopeo copy is direct.
+          # If they are multi-arch indexes, skopeo copy to docker-daemon might need --arch arm64 if the daemon isn't arm64.
+          # However, kind load docker-image expects the image to be in the local docker daemon first.
+          
+          # List of images to load (these are educated guesses, verify with `make list-image-targets` output)
+          # The OCI files should ideally be named like the targets, e.g., mimir.oci, mimir-proxy.oci
+          # Get image names from 'make list-image-targets' output, filtering out known non-runtime images
+          # This command replicates the logic from the 'build' job to get the correct list of image basenames.
+          RAW_IMAGE_TARGETS=$(make list-image-targets | grep -v -E '/mimir-build-image/|/mimir-rules-action/' || true)
+          FORMATTED_IMAGE_TARGETS=$(echo "$RAW_IMAGE_TARGETS" | sed 's|.*/||g' | tr '\n' ' ')
+          echo "Identified image targets: $FORMATTED_IMAGE_TARGETS"
+
+          # Common images that might have specific OCI names if not matching target names directly
+          # (e.g. if 'mimir' target produces 'mimir-arm64.oci' or chart expects 'mimir' but file is 'grafana-mimir.oci')
+          # For now, assume OCI file is ${target_name}.oci and chart image name is ${target_name}
+          
+          for image_name in $FORMATTED_IMAGE_TARGETS; do
+            oci_file_path="/tmp/images/${image_name}.oci"
+            if [ -f "$oci_file_path" ]; then
+              echo "Loading $image_name (from $oci_file_path) with tag $IMAGE_TAG"
+              # skopeo copy to local docker daemon, then kind load
+              # Need to ensure skopeo is available or install it.
+              # If the OCI is an index, skopeo copy should pick the right arch for the daemon (which is amd64 for the runner)
+              # but we need to ensure the arm64 version is loaded into the ARM64 kind node.
+              # A safer bet might be to directly load the specific arch if the OCI archive contains it.
+              # For now, let's assume skopeo copy + kind load docker-image works by loading the specific arch.
+              # The alternative is `kind load image-archive`, but that expects a tar of a docker save. OCI is different.
+              
+              # skopeo copy oci-archive:$oci_file_path docker-daemon:grafana/$image_name:$IMAGE_TAG
+              # kind load docker-image grafana/$image_name:$IMAGE_TAG --name mimir-arm64
+
+              # Simpler approach if OCI are single arch (arm64) or skopeo handles it for docker-daemon:
+              # If the OCI files are already ARM64 specific, this is fine.
+              # If OCI files are multi-arch, this might load the runner's arch into docker, then into kind. This is a problem.
+              # The build step creates multi-arch OCI images.
+              # We need to ensure skopeo extracts the ARM64 variant.
+              # `skopeo copy --override-arch arm64 oci-archive:${oci_file_path} docker-daemon:grafana/${image_name}:${IMAGE_TAG}`
+              # Then `kind load docker-image grafana/${image_name}:${IMAGE_TAG} --name mimir-arm64`
+
+              # Let's try to load all architectures present in the OCI to docker daemon,
+              # then kind load will pick the one matching the node.
+              # This is often simpler if the OCI is a manifest list.
+              echo "Attempting to load $oci_file_path into Kind"
+              skopeo copy "oci-archive:$oci_file_path" "docker-daemon:grafana/$image_name:$IMAGE_TAG"
+              kind load docker-image "grafana/$image_name:$IMAGE_TAG" --name mimir-arm64
+              echo "Loaded $image_name:$IMAGE_TAG into kind cluster"
+            else
+              echo "Warning: OCI file $oci_file_path not found. Skipping."
+            fi
+          done
+          # Special handling for mimirtool if its naming is different
+          if [ -f "/tmp/images/mimirtool.oci" ]; then
+             skopeo copy "oci-archive:/tmp/images/mimirtool.oci" "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
+             kind load docker-image "grafana/mimirtool:$IMAGE_TAG" --name mimir-arm64
+             echo "Loaded mimirtool:$IMAGE_TAG into kind cluster"
+          fi
+          # Verify images in Kind nodes (optional debug step)
+          # kubectl get nodes -o wide
+          # docker exec mimir-arm64-control-plane crictl images
+
+      - name: Add Grafana Helm repository
+        run: helm repo add grafana https://grafana.github.io/helm-charts && helm repo update
+
+      - name: Install previous stable Mimir Helm chart
+        run: |
+          helm install mimir-stable grafana/mimir-distributed --version 4.2.0 \
+            --namespace mimir --create-namespace \
+            --set global.platform=linux/arm64 \
+            --set minio.enabled=true \
+            --wait --timeout 10m
+          kubectl get pods -n mimir -o wide
+
+      - name: Package local Mimir Helm chart
+        run: |
+          helm package operations/helm/charts/mimir-distributed --version $IMAGE_TAG --app-version $IMAGE_TAG
+          ls mimir-distributed-*.tgz
+
+      - name: Upgrade Mimir Helm chart to current version (ARM64)
+        env:
+          IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+        run: |
+          # Identify all image subkeys from values.yaml or chart structure
+          # Example: mimir.image, alertmanager.image, ruler.image etc.
+          # For each, set image.repository and image.tag
+          # This is highly dependent on the chart's values structure.
+          # We need to list the actual image component names from the chart.
+          # E.g. grafana/mimir, grafana/alertmanager, etc.
+          # The repository will be grafana/* and tag will be $IMAGE_TAG.
+          # The key is that these images (grafana/mimir:$IMAGE_TAG, etc.) are now in the KinD nodes.
+
+          # General approach:
+          # helm upgrade [release-name] [chart-path] --namespace [namespace] \
+          #   --set image.repository=grafana/mimir --set image.tag=$IMAGE_TAG \
+          #   --set alertmanager.image.repository=grafana/alertmanager --set alertmanager.image.tag=$IMAGE_TAG \
+          #   ... (and so on for all relevant images in the chart)
+          #   --set global.platform=linux/arm64 # Ensure ARM64 scheduling if chart supports/needs it
+          #   --wait --timeout 15m
+
+          # A more robust way is to get image names from `make list-image-targets` and map them to chart values
+          RAW_IMAGE_TARGETS=$(make list-image-targets | grep -v -E '/mimir-build-image/|/mimir-rules-action/' || true)
+          FORMATTED_IMAGE_TARGETS=$(echo "$RAW_IMAGE_TARGETS" | sed 's|.*/||g' | tr '\n' ' ')
+          echo "Will attempt to override images: $FORMATTED_IMAGE_TARGETS"
+
+          helm_set_args=""
+          for image_name in $FORMATTED_IMAGE_TARGETS; do
+            # Skip 'minio' for Helm overrides as it's usually a sub-chart with different value structure,
+            # and we're enabling it separately.
+            if [ "$image_name" = "minio" ]; then
+              continue
+            fi
+            # Construct the --set argument for this image
+            # This assumes a common chart structure like: <image_name>.image.repository, <image_name>.image.tag
+            # This might need adjustment if the chart uses a different structure (e.g. 'proxy' for 'mimir-proxy')
+            # For components like 'query-frontend', the chart might use 'queryFrontend'.
+            # We'll try a direct mapping first.
+            helm_set_args="$helm_set_args --set ${image_name}.image.repository=grafana/${image_name}"
+            helm_set_args="$helm_set_args --set ${image_name}.image.tag=${IMAGE_TAG}"
+            helm_set_args="$helm_set_args --set ${image_name}.image.platform=linux/arm64"
+          done
+
+          # Special handling for mimir-proxy if its chart name is 'proxy'
+          if [[ "$FORMATTED_IMAGE_TARGETS" == *"mimir-proxy"* ]]; then
+             # Remove any generic mimir-proxy.image.repository if it was added
+             helm_set_args=$(echo "$helm_set_args" | sed 's/--set mimir-proxy.image.repository=grafana\/mimir-proxy//g')
+             helm_set_args=$(echo "$helm_set_args" | sed 's/--set mimir-proxy.image.tag=[^ ]*//g')
+             helm_set_args=$(echo "$helm_set_args" | sed 's/--set mimir-proxy.image.platform=[^ ]*//g')
+             # Add the specific proxy override
+             helm_set_args="$helm_set_args --set proxy.image.repository=grafana/mimir-proxy --set proxy.image.tag=${IMAGE_TAG} --set proxy.image.platform=linux/arm64"
+          fi
+          if [[ "$FORMATTED_IMAGE_TARGETS" == *"query-frontend"* ]]; then
+             helm_set_args=$(echo "$helm_set_args" | sed 's/--set query-frontend.image.repository=grafana\/query-frontend//g')
+             helm_set_args=$(echo "$helm_set_args" | sed 's/--set query-frontend.image.tag=[^ ]*//g')
+             helm_set_args=$(echo "$helm_set_args" | sed 's/--set query-frontend.image.platform=[^ ]*//g')
+             helm_set_args="$helm_set_args --set queryFrontend.image.repository=grafana/query-frontend --set queryFrontend.image.tag=${IMAGE_TAG} --set queryFrontend.image.platform=linux/arm64"
+          fi
+          
+          # Add other fixed overrides
+          helm_set_args="$helm_set_args --set minio.enabled=true --set global.platform=linux/arm64"
+
+          echo "Using Helm upgrade arguments: $helm_set_args"
+
+          helm upgrade mimir-stable ./mimir-distributed-${IMAGE_TAG}.tgz --namespace mimir \
+            $helm_set_args \
+            --wait --timeout 15m
+          kubectl get pods -n mimir -o wide
+
+      - name: Validate Mimir Pod Readiness
+        run: |
+          # Check for key components. Adjust as necessary.
+          kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mimir,app.kubernetes.io/component=ingester -n mimir --timeout=5m
+          kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mimir,app.kubernetes.io/component=distributor -n mimir --timeout=5m
+          kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mimir,app.kubernetes.io/component=querier -n mimir --timeout=5m
+          kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mimir,app.kubernetes.io/component=alertmanager -n mimir --timeout=5m
+          kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=mimir,app.kubernetes.io/component=ruler -n mimir --timeout=5m
+          echo "Key Mimir pods are ready."
+
+      - name: Run Helm Test (if available)
+        run: |
+          if helm test mimir-stable -n mimir --timeout 5m; then
+            echo "Helm tests passed."
+          else
+            echo "Helm tests failed or timed out. Dumping logs..."
+            kubectl logs -n mimir -l app.kubernetes.io/instance=mimir-stable --tail=1000 || true # Dump all pod logs for the release
+            exit 1 # Fail the job
+          fi
+
   integration:
     needs: [goversion, build, prepare]
     runs-on: ubuntu-latest
@@ -269,11 +503,10 @@ jobs:
         run: tar xvf images.tar -C /
       - name: Load Mimirtool Image into Docker
         run: |
-          export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
           # note that this doesn't use skopeo version from our build-image, because we don't use build-image when running integration tests.
           # that's why we use docker run to run latest version.
-          docker run -v /tmp/images:/tmp/images -v /var/run/docker.sock:/var/run/docker.sock quay.io/skopeo/stable:v1.15.1 copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
+          docker run -v /tmp/images:/tmp/images -v /var/run/docker.sock:/var/run/docker.sock quay.io/skopeo/stable:v1.15.1 copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:${{ needs.prepare.outputs.image_tag }}"
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
@@ -301,8 +534,7 @@ jobs:
           command: |
             export IMAGE_TAG_RACE=$(make image-tag-race)
             export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
-            export IMAGE_TAG=$(make image-tag)
-            export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
+            export MIMIRTOOL_IMAGE="grafana/mimirtool:${{ needs.prepare.outputs.image_tag }}"
             export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
             echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
             echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
@@ -341,4 +573,4 @@ jobs:
         uses: grafana/shared-workflows/actions/dockerhub-login@13fb504e3bfe323c1188bf244970d94b2d336e86 # v1.0.1
       - name: Push Docker Images
         run: |
-          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
+          ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ ${{ needs.prepare.outputs.image_tag }}
