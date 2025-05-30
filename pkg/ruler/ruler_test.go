@@ -8,6 +8,7 @@ package ruler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -40,6 +41,7 @@ import (
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
@@ -555,7 +557,8 @@ func TestGetRules(t *testing.T) {
 
 			// Sync rules on each ruler.
 			for _, r := range rulerAddrMap {
-				r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+				err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+				require.NoError(t, err)
 			}
 
 			// Call GetRules() on each ruler.
@@ -1206,6 +1209,66 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 			}
 		})
 	}
+}
+
+func TestRuler_InitialSync_RetryOnFail(t *testing.T) {
+	cfg := defaultRulerConfig(t)
+	store := &testRuleStore{}
+	reg := prometheus.NewPedanticRegistry()
+	ruler := prepareRuler(t, cfg, store, withPrometheusRegisterer(reg))
+
+	// Override the backoff config to fail the test faster.
+	ruler.syncBackoffConfig.MinBackoff = 10 * time.Millisecond
+	ruler.syncBackoffConfig.MaxRetries = 2
+
+	wantErr := errors.New("test failed")
+	store.On("ListAllUsers", mock.Anything, mock.Anything).
+		Twice(). // This ruler instance retries two times.
+		Return([]string{}, wantErr)
+
+	require.ErrorIs(t, services.StartAndAwaitRunning(context.Background(), ruler), wantErr)
+
+	// Two initial syncs because of the retry.
+	verifySyncRulesMetric(t, reg, 2, 0)
+}
+
+type testRuleStore struct {
+	mock.Mock
+}
+
+func (s *testRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Option) ([]string, error) {
+	args := s.Called(ctx, opts)
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (s *testRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+	args := s.Called(ctx, userID, namespace, opts)
+	return args.Get(0).(rulespb.RuleGroupList), args.Error(1)
+}
+
+func (s *testRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (missing rulespb.RuleGroupList, err error) {
+	args := s.Called(ctx, groupsToLoad)
+	return args.Get(0).(rulespb.RuleGroupList), args.Error(1)
+}
+
+func (s *testRuleStore) GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error) {
+	args := s.Called(ctx, userID, namespace, group)
+	return args.Get(0).(*rulespb.RuleGroupDesc), args.Error(1)
+}
+
+func (s *testRuleStore) SetRuleGroup(ctx context.Context, userID, namespace string, group *rulespb.RuleGroupDesc) error {
+	args := s.Called(ctx, userID, namespace, group)
+	return args.Error(0)
+}
+
+func (s *testRuleStore) DeleteRuleGroup(ctx context.Context, userID, namespace string, group string) error {
+	args := s.Called(ctx, userID, namespace, group)
+	return args.Error(0)
+}
+
+func (s *testRuleStore) DeleteNamespace(ctx context.Context, userID, namespace string) error {
+	args := s.Called(ctx, userID, namespace)
+	return args.Error(0)
 }
 
 func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleTheCaseTheTenantShardHasChanged(t *testing.T) {

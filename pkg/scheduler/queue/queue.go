@@ -15,9 +15,9 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 )
 
@@ -58,9 +58,9 @@ type SchedulerRequest struct {
 
 	Ctx        context.Context
 	CancelFunc context.CancelCauseFunc
-	QueueSpan  opentracing.Span
+	QueueSpan  trace.Span
 
-	ParentSpanContext opentracing.SpanContext
+	ParentSpanContext trace.SpanContext
 }
 
 func (sr *SchedulerRequest) Key() RequestKey {

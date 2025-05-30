@@ -1030,16 +1030,16 @@ func b40() *release {
 	setmin(40, 1)
 	setmin(41, 1)
 
-	now.incmax(0, 12) // KAFKA-14563 755adf8a566 KIP-890
-	now.incmax(2, 10) // KAFKA-15859 560076ba9e8 KIP-1075
-	now.incmax(3, 13) // KAFKA-17885 52d2fa5c8b3 KIP-1102
-	now.incmax(15, 6) // KAFKA-17550 e7d986e48c2 KIP-1043
-	now.incmax(26, 5) // KAFKA-14562 ede0c94aaae KIP-890
-	now.incmax(28, 5) // KAFKA-14563 755adf8a566 KIP-890
+	now.incmax(0, 12) // 12 produce KAFKA-14563 755adf8a566 KIP-890
+	now.incmax(2, 10) // 10 list offsets KAFKA-15859 560076ba9e8 KIP-1075
+	now.incmax(3, 13) // 13 metadata KAFKA-17885 52d2fa5c8b3 KIP-1102
+	now.incmax(15, 6) // 6 describe groups KAFKA-17550 e7d986e48c2 KIP-1043
+	now.incmax(26, 5) // 5 end txn KAFKA-14562 ede0c94aaae KIP-890
+	now.incmax(28, 5) // 5 txn offset commit KAFKA-14563 755adf8a566 KIP-890
 	now.incmax(57, 2) // documented on controller
 	now.incmax(60, 2) // documented on controller
-	now.incmax(68, 1) // KAFKA-17592 ab0df20489a KIP-848; includes KAFKA-17116 6f040cabc7c KIP-1082 in same release
-	now.incmax(69, 1) // KAFKA-17750 fe88232b07c KIP-858
+	now.incmax(68, 1) // 1 consumer group heartbeat KAFKA-17592 ab0df20489a KIP-848; includes KAFKA-17116 6f040cabc7c KIP-1082 in same release
+	now.incmax(69, 1) // 1 consumer group describe KAFKA-17750 fe88232b07c KIP-858
 
 	return now
 }

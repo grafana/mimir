@@ -17,8 +17,8 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -143,7 +143,7 @@ func newLimitsMiddleware(l Limits, logger log.Logger) MetricsQueryMiddleware {
 }
 
 func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
+	log, ctx := spanlogger.New(ctx, l.logger, tracer, "limits")
 	defer log.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -235,9 +235,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.AddSpanTags(span)
-	}
+	request.AddSpanTags(trace.SpanFromContext(ctx))
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -283,7 +281,7 @@ type roundTripperHandler struct {
 }
 
 func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	spanLogger, ctx := spanlogger.NewWithLogger(ctx, rth.logger, "roundTripperHandler.Do")
+	spanLogger, ctx := spanlogger.New(ctx, rth.logger, tracer, "roundTripperHandler.Do")
 	defer spanLogger.Finish()
 
 	request, err := rth.codec.EncodeMetricsQueryRequest(ctx, r)

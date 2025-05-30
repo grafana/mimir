@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250523172940-c9115f6be261
+	github.com/grafana/dskit v0.0.0-20250527065258-f84dc58e0bd9
 	github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -26,9 +26,9 @@ require (
 	github.com/minio/minio-go/v7 v7.0.91
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/opentracing-contrib/go-grpc v0.1.2
-	github.com/opentracing-contrib/go-stdlib v1.1.0
-	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
+	github.com/opentracing-contrib/go-grpc v0.1.2 // indirect
+	github.com/opentracing-contrib/go-stdlib v1.1.0 // indirect
+	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.22.0
@@ -39,7 +39,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.10.0
-	github.com/uber/jaeger-client-go v2.30.0+incompatible
+	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.38.0
@@ -77,7 +77,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250317105316-a0136a6f898d
 	github.com/tjhop/slog-gokit v0.1.4
-	github.com/twmb/franz-go v1.19.1
+	github.com/twmb/franz-go v1.19.4
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250523184014-12af19728d2e
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
@@ -85,7 +85,10 @@ require (
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.31.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0
+	go.opentelemetry.io/contrib/propagators/jaeger v1.35.0
 	go.opentelemetry.io/otel v1.35.0
+	go.opentelemetry.io/otel/sdk v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0
 	go.opentelemetry.io/proto/otlp v1.5.0
 	go.uber.org/multierr v1.11.0
@@ -177,13 +180,10 @@ require (
 	go.opentelemetry.io/collector/processor v1.31.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.10.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.35.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.60.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.60.0 // indirect
-	go.opentelemetry.io/contrib/propagators/jaeger v1.35.0 // indirect
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.29.0 // indirect
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0 // indirect
 	go.opentelemetry.io/otel/log v0.11.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.35.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
@@ -311,7 +311,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.125.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
@@ -360,3 +360,6 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
+
+// Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
+replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb

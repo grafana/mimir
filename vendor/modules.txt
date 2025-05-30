@@ -720,7 +720,7 @@ github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
-# github.com/grafana/dskit v0.0.0-20250523172940-c9115f6be261
+# github.com/grafana/dskit v0.0.0-20250527065258-f84dc58e0bd9
 ## explicit; go 1.23
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -765,7 +765,6 @@ github.com/grafana/dskit/servicediscovery
 github.com/grafana/dskit/services
 github.com/grafana/dskit/signals
 github.com/grafana/dskit/spanlogger
-github.com/grafana/dskit/spanprofiler
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/tracing
@@ -1066,7 +1065,6 @@ github.com/opentracing-contrib/go-stdlib/nethttp
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
-github.com/opentracing/opentracing-go/mocktracer
 # github.com/pierrec/lz4/v4 v4.1.22
 ## explicit; go 1.14
 github.com/pierrec/lz4/v4
@@ -1334,7 +1332,7 @@ github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/objstore v0.0.0-20250317105316-a0136a6f898d
+# github.com/thanos-io/objstore v0.0.0-20250317105316-a0136a6f898d => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
 ## explicit; go 1.22.7
 github.com/thanos-io/objstore
 github.com/thanos-io/objstore/exthttp
@@ -1343,7 +1341,7 @@ github.com/thanos-io/objstore/providers/filesystem
 github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
-github.com/thanos-io/objstore/tracing/opentracing
+github.com/thanos-io/objstore/tracing/opentelemetry
 # github.com/tjhop/slog-gokit v0.1.4
 ## explicit; go 1.21
 github.com/tjhop/slog-gokit
@@ -1353,7 +1351,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.6.1
 ## explicit; go 1.13
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.19.1
+# github.com/twmb/franz-go v1.19.4
 ## explicit; go 1.23.8
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
@@ -1574,6 +1572,7 @@ go.opentelemetry.io/otel/sdk/internal/env
 go.opentelemetry.io/otel/sdk/internal/x
 go.opentelemetry.io/otel/sdk/resource
 go.opentelemetry.io/otel/sdk/trace
+go.opentelemetry.io/otel/sdk/trace/tracetest
 # go.opentelemetry.io/otel/sdk/metric v1.35.0
 ## explicit; go 1.22.0
 go.opentelemetry.io/otel/sdk/metric
@@ -2044,3 +2043,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
+# github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb

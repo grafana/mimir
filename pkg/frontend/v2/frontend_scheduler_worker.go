@@ -403,7 +403,7 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
 func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
-	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
+	spanLogger, _ := spanlogger.New(req.ctx, w.log, tracer, "frontendSchedulerWorker.enqueueRequest")
 	spanLogger.SetTag("scheduler_address", w.conn.Target())
 	defer spanLogger.Finish()
 

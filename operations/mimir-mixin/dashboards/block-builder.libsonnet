@@ -9,18 +9,6 @@ local filename = 'mimir-block-builder.json';
     .addRow(
       $.row('Scheduler summary')
       .addPanel(
-        $.timeseriesPanel('Partition Lag') +
-        $.panelDescription(
-          'Partition Lag',
-          'Number of records in the backlog of a partition.',
-        ) +
-        $.queryPanel(
-          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-          '{{partition}}',
-        ) +
-        { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
-      )
-      .addPanel(
         $.timeseriesPanel('Jobs') +
         $.panelDescription(
           'Outstanding jobs',
@@ -28,8 +16,8 @@ local filename = 'mimir-block-builder.json';
         ) +
         $.queryPanel(
           [
-            'cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
-            'cortex_blockbuilder_scheduler_assigned_jobs{%(job)s}' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(cortex_blockbuilder_scheduler_outstanding_jobs{%(job)s})' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+            'sum(cortex_blockbuilder_scheduler_assigned_jobs{%(job)s})' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
           ],
           [
             'outstanding',
@@ -74,6 +62,37 @@ local filename = 'mimir-block-builder.json';
             'flush failed',
           ],
         )
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.timeseriesPanel('Partition Lag') +
+        $.panelDescription(
+          'Partition Lag',
+          'Number of records in the backlog of a partition.',
+        ) +
+        $.queryPanel(
+          '(cortex_blockbuilder_scheduler_partition_end_offset{%(job)s} -cortex_blockbuilder_scheduler_partition_committed_offset{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          '{{partition}}',
+        ) +
+        { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Pending Jobs by Partition') +
+        $.panelDescription(
+          'Pending jobs by partition',
+          |||
+            Number of pending jobs by a partition.
+
+            Positive number of pending jobs indicates that there is a backlog of jobs that aren't yet eligible for scheduling.
+          |||,
+        ) +
+        $.queryPanel(
+          'sum by (partition) (cortex_blockbuilder_scheduler_pending_jobs{%(job)s}) > 0' % { job: $.jobMatcher($._config.job_names.block_builder_scheduler) },
+          '{{partition}}',
+        ) +
+        { fieldConfig+: { defaults+: { custom+: { unit: 'short', fillOpacity: 0 } } } },
       )
     )
     .addRow(
@@ -126,7 +145,11 @@ local filename = 'mimir-block-builder.json';
         $.timeseriesPanel('Lag records') +
         $.panelDescription(
           'Per partition records lag',
-          'Number of records in the backlog of a partition, as seen when starting a consumption cycle.'
+          |||
+            **Deprecated**. This panel is only relevant in the stand-alone mode.
+
+            Number of records in the backlog of a partition, as seen when starting a consumption cycle.
+          |||
         ) +
         $.queryPanel(
           'max by (partition) (cortex_blockbuilder_consumer_lag_records{%(job)s}) > 0' % [$.jobMatcher($._config.job_names.block_builder)],

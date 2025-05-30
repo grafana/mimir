@@ -881,39 +881,15 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 		return
 	}
 
-	resp := kresp.(*kmsg.FetchResponse)
-
-	var (
-		fetch           Fetch
-		reloadOffsets   listOrEpochLoads
-		preferreds      cursorPreferreds
-		allErrsStripped bool
-		updateWhy       multiUpdateWhy
-		handled         = make(chan struct{})
-	)
-
-	// Theoretically, handleReqResp could take a bit of CPU time due to
-	// decompressing and processing the response. We do this in a goroutine
-	// to allow the session to be canceled at any moment.
-	//
-	// Processing the response only needs the source's nodeID and client.
-	go func() {
-		defer close(handled)
-		fetch, reloadOffsets, preferreds, allErrsStripped, updateWhy = s.handleReqResp(br, req, resp)
-	}()
-
-	select {
-	case <-handled:
-	case <-ctx.Done():
-		return
-	}
-
 	// The logic below here should be relatively quick.
 	//
 	// Note that fetch runs entirely in the context of a consumer session.
 	// loopFetch does not return until this function does, meaning we
 	// cannot concurrently issue a second fetch for partitions that are
 	// being processed below.
+
+	resp := kresp.(*kmsg.FetchResponse)
+	fetch, reloadOffsets, preferreds, allErrsStripped, updateWhy := s.handleReqResp(br, req, resp)
 
 	deleteReqUsedOffset := func(topic string, partition int32) {
 		t := req.usedOffsets[topic]
@@ -1033,10 +1009,8 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 // Parses a fetch response into a Fetch, offsets to reload, and whether
 // metadata needs updating.
 //
-// This only uses a source's broker and client, and thus does not need
-// the source mutex.
-//
-// This function, and everything it calls, is side effect free.
+// This function reads cursor fields which may be updated outside of consumer
+// sessions, thus, we need to run this only inside a consumer session.
 func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchResponse) (
 	f Fetch,
 	reloadOffsets listOrEpochLoads,

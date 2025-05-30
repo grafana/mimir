@@ -20,10 +20,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
-	"github.com/grafana/mimir/pkg/util/instrumentation"
 )
 
 const (
@@ -96,7 +96,7 @@ type clientWriter interface {
 }
 
 func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (*Client, error) {
-	var rt http.RoundTripper = instrumentation.TracerTransport{}
+	rt := http.DefaultTransport
 	if cfg.ClusterValidationLabel != "" {
 		invalidClusterLabels := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "mimir_continuous_test_client_invalid_cluster_validation_label_requests_total",
@@ -120,7 +120,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 		basicAuthUser:     cfg.BasicAuthUser,
 		basicAuthPassword: cfg.BasicAuthPassword,
 		bearerToken:       cfg.BearerToken,
-		rt:                rt,
+		rt:                otelhttp.NewTransport(rt),
 		requestDebug:      cfg.RequestDebug,
 		userAgent:         cfg.UserAgent,
 	}

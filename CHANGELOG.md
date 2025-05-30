@@ -14,6 +14,7 @@
 * [FEATURE] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: Created timestamp is ignored, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192 #11143
 * [FEATURE] Query-frontend: expand `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` configuration options to cache non-transient response failures for instant queries. #11120
 * [FEATURE] Querier, query-frontend, ruler: Enable experimental support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification. #11344
+* [ENHANCEMENT] Dashboards: Add "Added Latency" row to Writes Dashboard. #11579
 * [ENHANCEMENT] Ingester: Add support for exporting native histogram cost attribution metrics (`cortex_ingester_attributed_active_native_histogram_series` and `cortex_ingester_attributed_active_native_histogram_buckets`) with labels specified by customers to a custom Prometheus registry. #10892
 * [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879 #11072.
 * [ENHANCEMENT] Compactor: Upload block index file and multiple segment files concurrently. Concurrency scales linearly with block size up to `-compactor.max-per-block-upload-concurrency`. #10947
@@ -21,7 +22,7 @@
 * [ENHANCEMENT] Added `-ingest-storage.kafka.fetch-max-wait` configuration option to configure the maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. #11012
 * [ENHANCEMENT] Ingester: Add `cortex_ingester_tsdb_forced_compactions_in_progress` metric reporting a value of 1 when there's a forced TSDB head compaction in progress. #11006
 * [ENHANCEMENT] Ingester: Add `cortex_ingest_storage_reader_records_batch_fetch_max_bytes` metric reporting the distribution of `MaxBytes` specified in the Fetch requests sent to Kafka. #11014
-* [ENHANCEMENT] All: Add experimental support for cluster validation in HTTP calls. When it is enabled, HTTP server verifies if a request coming from an HTTP client comes from an expected cluster. This validation can be configured by the following experimental configuration options: #11010
+* [ENHANCEMENT] All: Add experimental support for cluster validation in HTTP calls. When it is enabled, HTTP server verifies if a request coming from an HTTP client comes from an expected cluster. This validation can be configured by the following experimental configuration options: #11010 #11549
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.http.enabled`
   * `-server.cluster-validation.http.soft-validation`
@@ -51,6 +52,7 @@
 * [ENHANCEMENT] Distributor: Gracefully handle type assertion of WatchPrefix in HA Tracker to continue checking for updates. #11411 #11461
 * [ENHANCEMENT] Querier: Include chunks streamed from store-gateway in Mimir Query Engine memory estimate of query memory usage. #11453 #11465
 * [ENHANCEMENT] Querier: Include chunks streamed from ingester in Mimir Query Engine memory estimate of query memory usage. #11457
+* [ENHANCEMENT] Query-frontend: Add retry mechanism for remote reads, series, and cardinality prometheus endpoints #11533
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
@@ -67,6 +69,7 @@
 * [BUGFIX] Compactor: Fix issue where `MimirBucketIndexNotUpdated` can fire even though the index has been updated within the alert threshold. #11303
 * [BUGFIX] Distributor: fix old entries in the HA Tracker with zero valued "elected at" timestamp. #11462
 * [BUGFIX] Query-scheduler: Fix issue where deregistered querier goroutines can cause a panic if their backlogged dequeue requests are serviced. #11510
+* [BUGFIX] Ruler: Failures during initial sync must be fatal for the service's startup. #11545
 * [BUGFIX] Querier and query-frontend: Fix issue where aggregation functions like `topk` and `quantile` could return incorrect results if the scalar parameter is not a constant and Prometheus' query engine is in use. #11548
 * [BUGFIX] Querier and query-frontend: Fix issue where range vector selectors could incorrectly ignore samples at the beginning of the range. #11548
 
@@ -77,6 +80,7 @@
 * [ENHANCEMENT] Dashboards: Add panels to the `Mimir / Tenants` and `Mimir / Top Tenants` dashboards showing the rate of gateway requests. #10978
 * [ENHANCEMENT] Alerts: Improve `MimirIngesterFailsToProcessRecordsFromKafka` to not fire during forced TSDB head compaction. #11006
 * [ENHANCEMENT] Alerts: Add alerts for invalid cluster validation labels. #11255 #11282 #11413
+* [ENHANCEMENT] Dashboards: Improve "Kafka 100th percentile end-to-end latency when ingesters are running (outliers)" panel, computing the baseline latency on `max(10, 10%)` of ingesters instead of a fixed 10 replicas. #11581
 * [CHANGE] Alerts: Update query for `MimirBucketIndexNotUpdated`. Use `max_over_time` to prevent alert firing when pods rotate. #11311, #11426
 * [CHANGE] Alerts: Make alerting threshold for `DistributorGcUsesTooMuchCpu` configurable. #11508.
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891

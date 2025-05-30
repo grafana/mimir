@@ -369,3 +369,10 @@ func errCodeMessage(code int16, errMessage *string) error {
 	}
 	return nil
 }
+
+type errApiVersionsReset struct {
+	err error
+}
+
+func (e *errApiVersionsReset) Error() string { return e.err.Error() }
+func (e *errApiVersionsReset) Unwrap() error { return e.err }

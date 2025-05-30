@@ -59,7 +59,7 @@ func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, te
 func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, c.logger, "genericQueryCache.RoundTrip")
+	spanLog, ctx := spanlogger.New(ctx, c.logger, tracer, "genericQueryCache.RoundTrip")
 	defer spanLog.Finish()
 
 	// Skip the cache if disabled for this request.
