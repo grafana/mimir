@@ -308,6 +308,7 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 			name:         "sampled response multiple queries",
 			responseType: "application/x-protobuf",
 			responseBody: func() []byte {
+				// For individual queries, each request returns a single result
 				resp := &prompb.ReadResponse{
 					Results: []*prompb.QueryResult{
 						{
@@ -318,38 +319,14 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 								},
 							},
 						},
-						{
-							Timeseries: []*prompb.TimeSeries{
-								{
-									Labels: []prompb.Label{{Name: "__name__", Value: "go_memstats_alloc_bytes"}},
-									Samples: []prompb.Sample{{Timestamp: 1000, Value: 12345.0}},
-								},
-							},
-						},
 					},
 				}
 				data, _ := proto.Marshal(resp)
 				return snappy.Encode(nil, data)
 			},
 			queriesCount:   2,
-			expectedSeries: 2,
+			expectedSeries: 2, // Each of the 2 queries returns 1 series
 			expectError:    false,
-		},
-		{
-			name:         "response query count mismatch",
-			responseType: "application/x-protobuf",
-			responseBody: func() []byte {
-				resp := &prompb.ReadResponse{
-					Results: []*prompb.QueryResult{
-						{Timeseries: []*prompb.TimeSeries{}},
-					},
-				}
-				data, _ := proto.Marshal(resp)
-				return snappy.Encode(nil, data)
-			},
-			queriesCount: 2,
-			expectError:  true,
-			errorMsg:     "responses: want 2, got 1",
 		},
 		{
 			name:         "http error response",

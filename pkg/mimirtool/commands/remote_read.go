@@ -16,15 +16,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/snappy"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -294,155 +291,19 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 	}, from, to, nil
 }
 
-// executeMultipleQueries sends multiple queries in a single protobuf request
-// This leverages the remote read protocol's native support for batching multiple queries
+// executeMultipleQueries executes multiple queries and combines the results
+// This is the simple approach: just run each query individually and combine results
 func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
-	if len(queries) == 1 {
-		// Use the original client for single queries to maintain full compatibility
-		return readClient.Read(ctx, queries[0], false)
-	}
-
-	// For multiple queries, we need to use batched requests
-	// The prometheus client doesn't support this yet, so we implement it ourselves
-	// but reuse as much of the existing infrastructure as possible
-	client, ok := readClient.(*remote.Client)
-	if !ok {
-		return nil, fmt.Errorf("multi-query support requires *remote.Client, got %T", readClient)
-	}
-
-	return c.sendBatchedRequest(ctx, client, queries)
-}
-
-// sendBatchedRequest sends a single HTTP request with multiple queries
-// This is the minimal implementation needed to support batching while reusing
-// the prometheus client's response handling where possible
-func (c *RemoteReadCommand) sendBatchedRequest(ctx context.Context, client *remote.Client, queries []*prompb.Query) (storage.SeriesSet, error) {
-	// Build the batched request with response type preference
-	var acceptedTypes []prompb.ReadRequest_ResponseType
-	if c.useChunks {
-		log.Debugf("Requesting chunked streaming response (STREAMED_XOR_CHUNKS)")
-		acceptedTypes = []prompb.ReadRequest_ResponseType{
-			prompb.ReadRequest_STREAMED_XOR_CHUNKS,
-			prompb.ReadRequest_SAMPLES, // fallback
-		}
-	} else {
-		log.Debugf("Requesting sampled response (SAMPLES)")
-		acceptedTypes = []prompb.ReadRequest_ResponseType{
-			prompb.ReadRequest_SAMPLES,
-		}
-	}
-
-	req := &prompb.ReadRequest{
-		Queries:               queries,
-		AcceptedResponseTypes: acceptedTypes,
-	}
-
-	// Use the same logic as prometheus client for sending the request
-	// This is copied from vendor/github.com/prometheus/prometheus/storage/remote/client.go
-	data, err := proto.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("unable to marshal read request: %w", err)
-	}
-
-	compressed := snappy.Encode(nil, data)
-
-	// Get URL using reflection (same as before)
-	clientValue := reflect.ValueOf(client).Elem()
-	urlStringField := clientValue.FieldByName("urlString")
-	if !urlStringField.IsValid() {
-		return nil, fmt.Errorf("unable to access urlString field")
-	}
-	urlString := urlStringField.String()
-
-	httpReq, err := http.NewRequest(http.MethodPost, urlString, bytes.NewReader(compressed))
-	if err != nil {
-		return nil, fmt.Errorf("unable to create request: %w", err)
-	}
-	httpReq.Header.Add("Content-Encoding", "snappy")
-	httpReq.Header.Add("Accept-Encoding", "snappy")
-	httpReq.Header.Set("Content-Type", "application/x-protobuf")
-	httpReq.Header.Set("User-Agent", "mimirtool")
-	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
-
-	httpResp, err := client.Client.Do(httpReq.WithContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("error sending request: %w", err)
-	}
-	defer httpResp.Body.Close()
-
-	if httpResp.StatusCode/100 != 2 {
-		body, _ := io.ReadAll(httpResp.Body)
-		errStr := strings.TrimSpace(string(body))
-		return nil, fmt.Errorf("remote server returned http status %s: %s", httpResp.Status, errStr)
-	}
-
-	contentType := httpResp.Header.Get("Content-Type")
-	log.Debugf("Response content type: %s", contentType)
-
-	// Handle different response types - simplified approach
-	switch {
-	case strings.HasPrefix(contentType, "application/x-protobuf"):
-		log.Debugf("Processing sampled response")
-		return c.handleSampledResponse(req, httpResp)
-	default:
-		// For chunked responses or unsupported types, fall back to individual requests
-		// This keeps the implementation simple while still providing batching for the common case
-		log.Debugf("Falling back to individual requests for content type: %s", contentType)
-		return c.fallbackToIndividualRequests(ctx, client, queries)
-	}
-}
-
-// handleSampledResponse handles batched sampled responses
-func (c *RemoteReadCommand) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.Response) (storage.SeriesSet, error) {
-	// Read and decompress response
-	compressedResp, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response: %w", err)
-	}
-
-	uncompressed, err := snappy.Decode(nil, compressedResp)
-	if err != nil {
-		return nil, fmt.Errorf("error decompressing response: %w", err)
-	}
-
-	var resp prompb.ReadResponse
-	err = proto.Unmarshal(uncompressed, &resp)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body: %w", err)
-	}
-
-	if len(resp.Results) != len(req.Queries) {
-		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
-	}
-
-	// Combine all results from all queries
-	var allSeries []storage.Series
-	for i, result := range resp.Results {
-		log.Debugf("Processing result %d/%d with %d series", i+1, len(resp.Results), len(result.Timeseries))
-		seriesSet := remote.FromQueryResult(false, result)
-		for seriesSet.Next() {
-			allSeries = append(allSeries, seriesSet.At())
-		}
-		if err := seriesSet.Err(); err != nil {
-			return nil, fmt.Errorf("error reading series from query %d: %w", i, err)
-		}
-	}
-
-	log.Infof("Combined %d series from %d queries using batched request", len(allSeries), len(req.Queries))
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
-}
-
-// fallbackToIndividualRequests handles cases where batching isn't supported
-func (c *RemoteReadCommand) fallbackToIndividualRequests(ctx context.Context, client *remote.Client, queries []*prompb.Query) (storage.SeriesSet, error) {
-	log.Infof("Using individual requests for %d queries", len(queries))
+	log.Infof("Executing %d queries", len(queries))
+	
 	var allSeries []storage.Series
 	for i, query := range queries {
-		log.Debugf("Executing individual query %d/%d", i+1, len(queries))
-		seriesSet, err := client.Read(ctx, query, false)
+		log.Debugf("Executing query %d/%d", i+1, len(queries))
+		seriesSet, err := readClient.Read(ctx, query, false)
 		if err != nil {
 			return nil, fmt.Errorf("error executing query %d: %w", i, err)
 		}
-		
+
 		// Collect all series from this query
 		for seriesSet.Next() {
 			allSeries = append(allSeries, seriesSet.At())
@@ -452,7 +313,7 @@ func (c *RemoteReadCommand) fallbackToIndividualRequests(ctx context.Context, cl
 		}
 	}
 
-	log.Infof("Combined %d series from %d individual queries", len(allSeries), len(queries))
+	log.Infof("Combined %d series from %d queries", len(allSeries), len(queries))
 	return &combinedSeriesSet{series: allSeries, index: -1}, nil
 }
 
