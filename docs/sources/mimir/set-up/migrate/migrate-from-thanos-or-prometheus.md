@@ -251,10 +251,14 @@ This may cause that incorrect results are returned for the query.
 
 1. Relabel the blocks with external labels.
 
-   Mimir doesn’t inject external labels from the `meta.json` file into query results. Therefore, you need to relabel the blocks with the required external labels in the `meta.json` file. Be sure to add `__tenant_id__` label with value of your target tenant. This is important for Mimir to successfully query the migrated data.
+   Mimir doesn’t inject external labels from the `meta.json` file into query results. Therefore, you need to relabel the blocks with the required external labels in the `meta.json` file.
 
    {{< admonition type="tip" >}}
    You can get the external labels in the `meta.json` file of each block from the CSV file that's imported, and build the rewrite configuration accordingly.
+   {{< /admonition >}}
+
+   {{< admonition type="tip" >}}
+   Be sure to add `__tenant_id__` label with value of your target tenant. This is important for Mimir to successfully query the migrated data when tenant federation is enabled and Grafana data source is configured to query multiple tenants.
    {{< /admonition >}}
 
    Create a rewrite configuration that is similar to this:
