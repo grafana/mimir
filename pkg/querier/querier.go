@@ -93,7 +93,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
-	f.StringVar(&cfg.QueryEngine, "querier.query-engine", prometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
+	f.StringVar(&cfg.QueryEngine, "querier.query-engine", mimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 
 	f.BoolVar(&cfg.FilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.")
