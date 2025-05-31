@@ -335,7 +335,7 @@ func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) 
 		}
 	}
 
-	// TODO set gauge value
+	c.metrics.tenantsDiscovered.Set(float64(len(filtered)))
 
 	return filtered, nil
 }

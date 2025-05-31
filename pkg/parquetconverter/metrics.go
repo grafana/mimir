@@ -8,7 +8,8 @@ import (
 type parquetConverterMetrics struct {
 	blocksConverted       prometheus.Counter
 	failedBlocksConverted prometheus.Counter
-	conversionDuration    prometheus.Histogram // Add this new metric
+	conversionDuration    prometheus.Histogram
+	tenantsDiscovered     prometheus.Gauge
 }
 
 func newParquetConverterMetrics(reg prometheus.Registerer) parquetConverterMetrics {
@@ -20,14 +21,28 @@ func newParquetConverterMetrics(reg prometheus.Registerer) parquetConverterMetri
 	})
 
 	m.failedBlocksConverted = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "parquet_converter_blocks_conversion_failed_total",
+		Name: "parquet_converter_blocks_converted_failed_total",
 		Help: "Total number of blocks that failed to convert to parquet format",
 	})
 
 	m.conversionDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "parquet_converter_conversion_duration_seconds",
-		Help:    "Time taken to convert a block to parquet format",
-		Buckets: prometheus.ExponentialBuckets(0.1, 2, 10), // From 100ms to ~102s
+		Name: "parquet_converter_conversion_duration_seconds",
+		Help: "Time taken to convert a block to parquet format",
+		// Buckets
+		// 1 0.008s  (8ms)
+		// 2 0.032s  (32ms)
+		// 3 0.128s  (128ms)
+		// 4 0.512s  (512ms)
+		// 5 2.048s  (2048ms)
+		// 6 8.192s  (8192ms)
+		// 7 32.768s (32768ms)
+		// 8 +Inf
+		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
+	})
+
+	m.tenantsDiscovered = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "parquet_converter_tenants_discovered",
+		Help: "Number of tenants discovered by the parquet converter",
 	})
 
 	return m

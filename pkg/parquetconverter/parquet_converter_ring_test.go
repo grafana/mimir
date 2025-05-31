@@ -121,12 +121,11 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 				require.NoError(t, g.AwaitRunning(ctx))
 			}
 
-			// At this point we expect that all converters have done the initial sync and
-			// they have synced only their own blocks, because they waited for a stable
-			// ring before starting the initial sync.
+			// At this point we expect that all converters have done the initial sync
+			// and "sync/converted" only their respective blocks. (TODO Review phrasing).
 			metrics := registries.BuildMetricFamiliesPerTenant()
-			assert.Equal(t, float64(testData.expectedBlocksLoaded), metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded"))
-			assert.Equal(t, float64(2*testData.numConverters), metrics.GetSumOfGauges("cortex_bucket_stores_tenants_discovered"))
+			assert.Equal(t, float64(testData.expectedBlocksLoaded), metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded")) // I think this should be converter total
+			assert.Equal(t, float64(2*testData.numConverters), metrics.GetSumOfGauges("parquet_converter_tenants_discovered"))
 
 			assert.Equal(t, float64(testData.numConverters*numBlocks), metrics.GetSumOfGauges("cortex_blocks_meta_synced"))
 			assert.Equal(t, float64(testData.numConverters*numUsers), metrics.GetSumOfGauges("cortex_bucket_stores_tenants_synced"))
