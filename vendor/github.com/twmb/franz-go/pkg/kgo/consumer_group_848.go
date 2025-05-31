@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,12 @@ import (
 )
 
 func (g *groupConsumer) should848() bool {
+	if wantBeta := g.cl.ctx.Value("opt_in_kafka_next_gen_balancer_beta"); wantBeta == nil { // !!! TODO REMOVE ONCE BROKER IMPROVES
+		return false
+	}
+	if g.cl.cfg.disableNextGenBalancer {
+		return false
+	}
 	// We pin to v1, introduced in Kafka 4, which fully stabilizes KIP-848.
 	if !g.cl.supportsKIP848v1() {
 		return false
@@ -53,8 +60,19 @@ func (g *groupConsumer) manage848() {
 		g.cooperative.Store(true) // next gen is always cooperative
 	}
 
+	g.mu.Lock()
 	g848 := &g848{g: g, serverAssignor: serverAssignor}
+	g.g848 = g848
+	g.mu.Unlock()
+
+	// v1+ requires the client to generate their own memberID.
+	// On v0, the server provides the ID and we join twice.
+	// We pin to v1+.
+	g.memberGen.store(newStringUUID(), 0) // 0 joins the group
+
 	var consecutiveErrors int
+	var initialFences int
+outer:
 	for {
 		initialHb, err := g848.initialJoin()
 
@@ -85,7 +103,30 @@ func (g *groupConsumer) manage848() {
 			}
 		}
 
+		// !!! TODO THIS BLOCK SHOULD NOT BE NECESSARY !!!
+		if errors.Is(err, kerr.FencedMemberEpoch) && initialFences < 1 {
+			lastMember, gen := g.memberGen.load()
+			newMember := newStringUUID()
+			g.memberGen.store(newMember, 0)
+			g.cfg.logger.Log(LogLevelInfo, "received fenced member epoch with epoch 0; clearing member ID to forcefully join as a new member",
+				"group", g.cfg.group,
+				"prior_member_id", lastMember,
+				"prior_generation", gen,
+				"new_member_id", newMember,
+				"new_generation", 0,
+			)
+			after := time.NewTimer(time.Second)
+			select {
+			case <-after.C:
+				initialFences++
+				continue outer
+			case <-g.cl.ctx.Done():
+				after.Stop()
+			}
+		}
+
 		for err == nil {
+			initialFences = 0
 			consecutiveErrors = 0
 			var nowAssigned map[string][]int32
 			// setupAssignedAndHeartbeat
@@ -102,27 +143,83 @@ func (g *groupConsumer) manage848() {
 			// logic that handles all edge conditions.
 			_, err = g.setupAssignedAndHeartbeat(initialHb, func() (time.Duration, error) {
 				req := g848.mkreq()
+				dup := *req
+				if reflect.DeepEqual(g848.lastSubscribedTopics, req.SubscribedTopicNames) && reflect.DeepEqual(g848.lastTopics, req.Topics) {
+					req.InstanceID = nil
+					req.RebalanceTimeoutMillis = -1
+					req.ServerAssignor = nil
+					req.SubscribedTopicRegex = nil
+					req.SubscribedTopicNames = nil
+					req.Topics = nil
+				}
 				resp, err := req.RequestWith(g.ctx, g.cl)
 				if err != nil {
 					return g.cfg.heartbeatInterval, err
 				}
+
+				// !!! TODO BEFORE OPTING IN BY DEFAULT !!!
+				// !!! ALSO EVALUATE COMMIT LOGIC       !!!
+				//
+				// See how the tests perform when the beartbeat is duplicated!
+				// I deliberately am not opting into next gen rebalancing until
+				// tests are reliably stable with the following lines uncommented!
+				//
+				// _, _ = resp, err
+				// resp, err = req.RequestWith(g.ctx, g.cl)
+				// if err != nil {
+				// 	return g.cfg.heartbeatInterval, err
+				// }
+				//
+				// !!! TODO DELETE
+
+				err = errCodeMessage(resp.ErrorCode, resp.ErrorMessage)
+				if errors.Is(err, kerr.FencedMemberEpoch) {
+					req = &dup
+					resp, err = req.RequestWith(g.ctx, g.cl)
+					if err != nil {
+						return g.cfg.heartbeatInterval, err
+					}
+				}
+
 				err = errCodeMessage(resp.ErrorCode, resp.ErrorMessage)
 				sleep := time.Duration(resp.HeartbeatIntervalMillis) * time.Millisecond
 				if err != nil {
 					return sleep, err
 				}
-				hbAssigned := g848.handleResp(resp)
+				hbAssigned := g848.handleResp(req, resp)
 				if hbAssigned != nil {
 					err = kerr.RebalanceInProgress
 					nowAssigned = hbAssigned
 				}
 				return sleep, err
 			})
-			if errors.Is(err, kerr.RebalanceInProgress) {
+			switch {
+			case errors.Is(err, kerr.FencedMemberEpoch):
+				member, gen := g.memberGen.load()
+				g.cfg.logger.Log(LogLevelInfo, "consumer group heartbeat saw fenced member epoch, abandoning assignment and rejoining",
+					"group", g.cfg.group,
+					"member_id", member,
+					"generation", gen,
+				)
+				nowAssigned = make(map[string][]int32)
+				g.nowAssigned.store(nil)
+				continue outer
+
+			case errors.Is(err, kerr.UnknownMemberID):
+				g.memberGen.store(newStringUUID(), 0)
+
+			case errors.Is(err, kerr.RebalanceInProgress):
 				err = nil
 			}
+
 			if nowAssigned != nil {
-				g.cfg.logger.Log(LogLevelInfo, "consumer group heartbeat detected an updated assignment; exited heartbeat loop to assign & reentering", "now_assigned", nowAssigned)
+				member, gen := g.memberGen.load()
+				g.cfg.logger.Log(LogLevelInfo, "consumer group heartbeat detected an updated assignment; exited heartbeat loop to assign & reentering",
+					"group", g.cfg.group,
+					"member_id", member,
+					"generation", gen,
+					"now_assigned", nowAssigned,
+				)
 				g.nowAssigned.store(nowAssigned)
 			}
 		}
@@ -184,7 +281,7 @@ type g848 struct {
 	serverAssignor string
 
 	lastSubscribedTopics []string
-	lastTopics           map[string][]int32
+	lastTopics           []kmsg.ConsumerGroupHeartbeatRequestTopic
 }
 
 // v1+ requires the end user to generate their own MemberID, with the
@@ -198,10 +295,9 @@ func newStringUUID() string {
 }
 
 func (g *g848) initialJoin() (time.Duration, error) {
-	// v1+ requires the client to generate their own memberID.
-	// On v0, the server provides the ID and we join twice.
-	// We pin to v1+.
-	g.g.memberGen.store(newStringUUID(), 0) // 0 joins the group
+	g.g.memberGen.storeGeneration(0)
+	g.lastSubscribedTopics = nil
+	g.lastTopics = nil
 	req := g.mkreq()
 	resp, err := req.RequestWith(g.g.ctx, g.g.cl)
 	if err == nil {
@@ -210,8 +306,15 @@ func (g *g848) initialJoin() (time.Duration, error) {
 	if err != nil {
 		return 0, err
 	}
-	nowAssigned := g.handleResp(resp)
-	g.g.cfg.logger.Log(LogLevelInfo, "consumer group initial heartbeat received assignment", "now_assigned", nowAssigned)
+	nowAssigned := g.handleResp(req, resp)
+	member, gen := g.g.memberGen.load()
+	g.g.cfg.logger.Log(LogLevelInfo, "consumer group initial heartbeat received assignment",
+		"group", g.g.cfg.group,
+		"member_id", member,
+		"generation", gen,
+		"now_assigned", nowAssigned,
+	)
+
 	// We always keep nowAssigned: the field is always nil here, so we
 	// either re-store nil or we save an update.
 	if g.g.nowAssigned.read() != nil {
@@ -221,19 +324,25 @@ func (g *g848) initialJoin() (time.Duration, error) {
 	return time.Duration(resp.HeartbeatIntervalMillis) * time.Millisecond, nil
 }
 
-func (g *g848) handleResp(resp *kmsg.ConsumerGroupHeartbeatResponse) map[string][]int32 {
+func (g *g848) handleResp(req *kmsg.ConsumerGroupHeartbeatRequest, resp *kmsg.ConsumerGroupHeartbeatResponse) map[string][]int32 {
 	if resp.MemberID != nil {
 		g.g.memberGen.store(*resp.MemberID, resp.MemberEpoch)
+		g.g.cl.cfg.logger.Log(LogLevelDebug, "storing member and epoch", "member", *resp.MemberID, "epoch", resp.MemberEpoch)
 	} else {
 		g.g.memberGen.storeGeneration(resp.MemberEpoch)
+		g.g.cl.cfg.logger.Log(LogLevelDebug, "storing epoch", "epoch", resp.MemberEpoch)
 	}
+
+	id2t := g.g.cl.id2tMap()
+	newAssigned := make(map[string][]int32)
+
+	g.lastSubscribedTopics = req.SubscribedTopicNames
+	g.lastTopics = req.Topics
 
 	if resp.Assignment == nil {
 		return nil
 	}
 
-	id2t := g.g.cl.id2tMap()
-	newAssigned := make(map[string][]int32)
 	for _, t := range resp.Assignment.Topics {
 		name := id2t[t.TopicID]
 		if name == "" {
@@ -247,6 +356,7 @@ func (g *g848) handleResp(resp *kmsg.ConsumerGroupHeartbeatResponse) map[string]
 		slices.Sort(t.Partitions)
 		newAssigned[name] = t.Partitions
 	}
+
 	current := g.g.nowAssigned.read()
 	if !mapi32sDeepEq(current, newAssigned) {
 		return newAssigned
@@ -261,7 +371,8 @@ func (g *g848) mkreq() *kmsg.ConsumerGroupHeartbeatRequest {
 
 	// Most fields in the request can be null if the field is equal to the
 	// last time we sent the request. The first time we write, we include
-	// all information.
+	// all information. We always return all information here; the caller
+	// of mkreq may strip fields as needed.
 	//
 	// Our initial set of subscribed topics is specified in our config.
 	// For non-regex consuming, topics are directly created into g.tps.
@@ -272,76 +383,39 @@ func (g *g848) mkreq() *kmsg.ConsumerGroupHeartbeatRequest {
 	// For regex topics, they cannot add or remove after client creation.
 	// We just use the initial config field.
 
-	switch req.MemberEpoch {
-	case 0:
-		req.InstanceID = g.g.cfg.instanceID
-		if g.g.cfg.rack != "" {
-			req.RackID = &g.g.cfg.rack
-		}
-		req.RebalanceTimeoutMillis = int32(g.g.cfg.rebalanceTimeout.Milliseconds())
-		req.ServerAssignor = &g.serverAssignor
-
-		tps := g.g.tps.load()
-		if g.g.cl.cfg.regex {
-			topics := g.g.cl.cfg.topics
-			patterns := make([]string, 0, len(topics))
-			for topic := range topics {
-				patterns = append(patterns, "(?:"+topic+")")
-			}
-			pattern := strings.Join(patterns, "|")
-			req.SubscribedTopicRegex = &pattern
-		} else {
-			// SubscribedTopics must always exist when epoch == 0.
-			// We specifically 'make' the slice to ensure it is non-nil.
-			subscribedTopics := make([]string, 0, len(tps))
-			for t := range tps {
-				subscribedTopics = append(subscribedTopics, t)
-			}
-			g.lastSubscribedTopics = subscribedTopics
-			req.SubscribedTopicNames = subscribedTopics
-		}
-
-		// Topics must be empty when we do the initial join.
-		// We sanity-check that we are not assigned anything.
-		if len(g.g.nowAssigned.read()) > 0 {
-			panic("issuing ConsumerGroupHeartbeat while we are currently assigned something, bug, please open an issue!")
-		}
-		g.lastTopics = noConsumerGroupHeartbeatReqTopics
-		req.Topics = []kmsg.ConsumerGroupHeartbeatRequestTopic{} // must always exist and be empty when joining
-
-	default:
-		tps := g.g.tps.load()
-
-		// SubscribedTopicRegex never changes, so we never need to
-		// re-include it.
-		if !g.g.cl.cfg.regex {
-			subscribedTopics := make([]string, 0, len(tps))
-			for t := range tps {
-				subscribedTopics = append(subscribedTopics, t)
-			}
-			if !slicesDeepEq(g.lastSubscribedTopics, subscribedTopics) {
-				req.SubscribedTopicNames = subscribedTopics
-			}
-			g.lastSubscribedTopics = subscribedTopics
-		}
-
-		nowAssigned := g.g.nowAssigned.clone() // always returns non-nil
-		if !mapi32sDeepEq(g.lastTopics, nowAssigned) {
-			req.Topics = []kmsg.ConsumerGroupHeartbeatRequestTopic{} // ALWAYS initialize: len 0 is significantly different than nil (nil means same as last time)
-			tps := g.g.tps.load()
-			for t, ps := range nowAssigned {
-				rt := kmsg.NewConsumerGroupHeartbeatRequestTopic()
-				rt.Partitions = slices.Clone(ps)
-				rt.TopicID = tps[t].load().id
-				req.Topics = append(req.Topics, rt)
-			}
-		}
-		g.lastTopics = nowAssigned
+	req.InstanceID = g.g.cfg.instanceID
+	if g.g.cfg.rack != "" {
+		req.RackID = &g.g.cfg.rack
 	}
+	req.RebalanceTimeoutMillis = int32(g.g.cfg.rebalanceTimeout.Milliseconds())
+	req.ServerAssignor = &g.serverAssignor
 
-	// TODO regex v1+
+	tps := g.g.tps.load()
+	if g.g.cl.cfg.regex {
+		topics := g.g.cl.cfg.topics
+		patterns := make([]string, 0, len(topics))
+		for topic := range topics {
+			patterns = append(patterns, "(?:"+topic+")")
+		}
+		pattern := strings.Join(patterns, "|")
+		req.SubscribedTopicRegex = &pattern
+	} else {
+		// SubscribedTopics must always exist when epoch == 0.
+		// We specifically 'make' the slice to ensure it is non-nil.
+		subscribedTopics := make([]string, 0, len(tps))
+		for t := range tps {
+			subscribedTopics = append(subscribedTopics, t)
+		}
+		req.SubscribedTopicNames = subscribedTopics
+	}
+	nowAssigned := g.g.nowAssigned.clone()                   // always returns non-nil
+	req.Topics = []kmsg.ConsumerGroupHeartbeatRequestTopic{} // ALWAYS initialize: len 0 is significantly different than nil (nil means same as last time)
+	for t, ps := range nowAssigned {
+		rt := kmsg.NewConsumerGroupHeartbeatRequestTopic()
+		rt.Partitions = slices.Clone(ps)
+		rt.TopicID = tps[t].load().id
+		req.Topics = append(req.Topics, rt)
+	}
 
 	return req
 }
-
-var noConsumerGroupHeartbeatReqTopics = make(map[string][]int32)

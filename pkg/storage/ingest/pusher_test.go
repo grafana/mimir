@@ -849,6 +849,60 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 			upstreamPushErrs: []error{nil, nil},
 			expectedCloseErr: nil,
 		},
+		"preserving sample order between requests": {
+			shardCount: 4,
+			batchSize:  4, // Large enough to hold all samples for one series
+			requests: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_a", 1, 2),
+					mockPreallocTimeseriesWithSample("series_b", 1, 2),
+					mockPreallocTimeseriesWithSample("series_c", 1, 2),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_b", 2, 3),
+					mockPreallocTimeseriesWithSample("series_a", 2, 3),
+					mockPreallocTimeseriesWithSample("series_c", 2, 3),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_b", 3, 4),
+					mockPreallocTimeseriesWithSample("series_c", 3, 4),
+					mockPreallocTimeseriesWithSample("series_a", 3, 4),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_c", 4, 5),
+					mockPreallocTimeseriesWithSample("series_b", 4, 5),
+					mockPreallocTimeseriesWithSample("series_a", 4, 5),
+				}},
+			},
+			// We expect no errors during the push calls themselves as flushing happens on Close.
+			expectedErrs: []error{nil, nil, nil, nil},
+
+			// We expect 3 final pushes after Close(), one for each shard.
+			// The exact content depends on the hashing, so we can't predict the exact order or grouping easily.
+			// We'll verify the content manually in the test logic override below.
+			expectedUpstreamPushes: []*mimirpb.WriteRequest{
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_a", 1, 2),
+					mockPreallocTimeseriesWithSample("series_a", 2, 3),
+					mockPreallocTimeseriesWithSample("series_a", 3, 4),
+					mockPreallocTimeseriesWithSample("series_a", 4, 5),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_b", 1, 2),
+					mockPreallocTimeseriesWithSample("series_b", 2, 3),
+					mockPreallocTimeseriesWithSample("series_b", 3, 4),
+					mockPreallocTimeseriesWithSample("series_b", 4, 5),
+				}},
+				{Timeseries: []mimirpb.PreallocTimeseries{
+					mockPreallocTimeseriesWithSample("series_c", 1, 2),
+					mockPreallocTimeseriesWithSample("series_c", 2, 3),
+					mockPreallocTimeseriesWithSample("series_c", 3, 4),
+					mockPreallocTimeseriesWithSample("series_c", 4, 5),
+				}},
+			},
+			upstreamPushErrs: []error{nil, nil, nil},
+			expectedCloseErr: nil,
+		},
 	}
 
 	for name, tc := range testCases {

@@ -56,9 +56,8 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 	}
 
 	d.groups = groups
-	types.SeriesMetadataSlicePool.Put(innerMetadata, d.MemoryConsumptionTracker)
-
 	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(innerMetadata, d.MemoryConsumptionTracker)
 
 	return outputMetadata, nil
 }

@@ -199,7 +199,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	}
 
 	duration := timeSince(start)
-	p.planStageLatency.WithLabelValues("plan", stageName).Observe(duration.Seconds())
+	p.planStageLatency.WithLabelValues("Plan", stageName).Observe(duration.Seconds())
 
 	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
 		return nil, err

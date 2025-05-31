@@ -338,6 +338,7 @@ func (c *parallelStoragePusher) idealShardsFor(userID string) int {
 
 // parallelStorageShards is a collection of shards that are used to parallelize the writes to the storage by series.
 // Each series is hashed to a shard that contains its own batchingQueue.
+// Each series is consistently assigned to the same shard. This allows us to preserve the order of samples of the same series between multiple PushToStorage calls.
 type parallelStorageShards struct {
 	metrics      *storagePusherMetrics
 	errorHandler *pushErrorHandler

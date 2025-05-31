@@ -395,6 +395,28 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+	// Add mappings here for config options that are being migrated to per-tenant limits.
+	// Ex:
+	// if t.Cfg.<Section>.<DeprecatedField> != <Default> {
+	//     t.Cfg.LimitsConfig.<NewField> = t.Cfg.<Section>.<DeprecatedField>
+	// }
+
+	// AlertmanagerURL and Notifier sub-options are moving from a global config to a per-tenant config.
+	// We need to preserve the option in the ruler yaml for at least two releases (that is, at least Mimir 3.0).
+	// If the ruler config is configured by the user, map it to its new place in the default limits.
+	if t.Cfg.Ruler.DeprecatedAlertmanagerURL != "" {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.AlertmanagerURL = t.Cfg.Ruler.DeprecatedAlertmanagerURL
+	}
+	if !t.Cfg.Ruler.DeprecatedNotifier.IsDefault() {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig = t.Cfg.Ruler.DeprecatedNotifier
+	}
+	// Ensure the TLS settings reader is propagated.
+	if t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader != t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader
+	}
+
+	// End mappings for per-tenant config migrations.
+
 	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -695,6 +717,9 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 		return
 	}
 
+	if t.IngesterPartitionRingWatcher != nil {
+		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
@@ -1167,7 +1192,7 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
-	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger)
+	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize continuous-test client")
 	}

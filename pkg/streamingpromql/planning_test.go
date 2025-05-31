@@ -1034,7 +1034,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
-{stage="Original plan", stage_type="plan"} 1
+{stage="Original plan", stage_type="Plan"} 1
 {stage="Parsing", stage_type="AST"} 1
 {stage="Pre-processing", stage_type="AST"} 1
 			`)

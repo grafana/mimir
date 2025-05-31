@@ -65,6 +65,25 @@ func Lz4Compression() CompressionCodec { return CompressionCodec{CodecLz4, 0} }
 // ZstdCompression enables zstd compression with the default compression level.
 func ZstdCompression() CompressionCodec { return CompressionCodec{CodecZstd, 0} }
 
+// CompressFlag is a flag to instruct the compressor.
+type CompressFlag uint16
+
+const (
+	// CompressDisableZstd instructs the compressor that zstd should not be
+	// used, even if the compressor supports it. This is used when
+	// producing to an old broker (pre Kafka v2.1) that does not yet
+	// support zstd compression. If you are confident you will only produce
+	// to new brokers, you can ignore this flag.
+	CompressDisableZstd CompressFlag = 1 + iota
+)
+
+func mkCompressFlags(produceRequestVersion int16) []CompressFlag {
+	if produceRequestVersion < 7 {
+		return []CompressFlag{CompressDisableZstd}
+	}
+	return nil
+}
+
 // Compressor is an interface that defines how produce batches are compressed.
 // You can override the default client internal compressor for more control
 // over what compressors to use, level, and memory reuse.
@@ -77,10 +96,11 @@ type Compressor interface {
 	// pool. As an example, you can look at the franz-go internal
 	// implementation of the default compressor in compression.go.
 	//
-	// Note that old brokers do not support zstd compression. If the
-	// produce request version is less than 7, zstd compression should
-	// not be used.
-	Compress(dst *bytes.Buffer, src []byte, produceRequestVersion int16) ([]byte, CompressionCodecType)
+	// Flags may optionally be provided to direct the compressor to enable
+	// or disable features. New backwards compatible flags may be
+	// introduced. If you add features to your compressor, be sure to
+	// evaluate if new flags exist to opt into or out of features.
+	Compress(dst *bytes.Buffer, src []byte, flags ...CompressFlag) ([]byte, CompressionCodecType)
 }
 
 // Decompressor is an interface that defines how fetch batches are
@@ -209,10 +229,17 @@ type zstdEncoder struct {
 	inner *zstd.Encoder
 }
 
-func (c *compressor) Compress(dst *bytes.Buffer, src []byte, produceRequestVersion int16) ([]byte, CompressionCodecType) {
+func (c *compressor) Compress(dst *bytes.Buffer, src []byte, flags ...CompressFlag) ([]byte, CompressionCodecType) {
+	var disableZstd bool
+	for _, flag := range flags {
+		if flag == CompressDisableZstd {
+			disableZstd = true
+		}
+	}
+
 	var use CompressionCodecType
 	for _, option := range c.options {
-		if option == CodecZstd && produceRequestVersion < 7 {
+		if option == CodecZstd && disableZstd {
 			continue
 		}
 		use = option

@@ -4872,8 +4872,8 @@
           "required": false,
           "desc": "List of queries to block.",
           "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldType": "blocked_queries_config...",
+          "fieldDefaultValue": [],
+          "fieldType": "list of pattern (string), regex (bool), and, optionally, reason (string)",
           "fieldCategory": "experimental"
         },
         {
