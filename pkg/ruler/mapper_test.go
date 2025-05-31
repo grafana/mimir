@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
@@ -223,8 +224,7 @@ func setupRuleSets() {
 }
 
 func Test_mapper_MapRules(t *testing.T) {
-	l := log.NewLogfmtLogger(os.Stdout)
-	l = level.NewFilter(l, level.AllowInfo())
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
 	setupRuleSets()
 	m := &mapper{
 		Path:   "/rules",
@@ -280,8 +280,7 @@ func Test_mapper_MapRules(t *testing.T) {
 }
 
 func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
-	l := log.NewLogfmtLogger(os.Stdout)
-	l = level.NewFilter(l, level.AllowInfo())
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
 	setupRuleSets()
 	m := &mapper{
 		Path:   "/rules",
@@ -351,8 +350,7 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 }
 
 func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
-	l := log.NewLogfmtLogger(os.Stdout)
-	l = level.NewFilter(l, level.AllowInfo())
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
 	setupRuleSets()
 	m := &mapper{
 		Path:   "/rules",

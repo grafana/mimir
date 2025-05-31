@@ -166,10 +166,10 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
-func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
 	keyGen := newCacheKeyBuilder(cb.bucketID, name)
 	cb.invalidation.start(ctx, name, keyGen)
-	err := cb.Bucket.Upload(ctx, name, r)
+	err := cb.Bucket.Upload(ctx, name, r, opts...)
 	if err == nil {
 		cb.invalidation.finish(ctx, name, keyGen)
 	}

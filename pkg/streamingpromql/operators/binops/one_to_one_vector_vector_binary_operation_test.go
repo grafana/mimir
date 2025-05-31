@@ -20,10 +20,10 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Most of the functionality of the binary operation operator is tested through the test scripts in
@@ -195,7 +195,7 @@ func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			o := &OneToOneVectorVectorBinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
@@ -619,7 +619,7 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
@@ -693,7 +693,7 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			timeRange := types.NewRangeQueryTimeRange(step1, step2, time.Minute)
 
 			var err error
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 
 			left1Data := types.InstantVectorSeriesData{}
 			left1Data.Floats, err = types.FPointSlicePool.Get(1, memoryConsumptionTracker)

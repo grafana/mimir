@@ -17,13 +17,13 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type InstantVectorSelector struct {
 	Selector                 *Selector
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Stats                    *types.QueryStats
 	ReturnSampleTimestamps   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps
 

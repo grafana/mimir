@@ -60,7 +60,7 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
 	}, []string{"block_time"})
 
-	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder-scheduler", util.GRPCProtocol)
+	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder", util.GRPCProtocol)
 	return m
 }
 

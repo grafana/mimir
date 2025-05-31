@@ -14,9 +14,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // OneToOneVectorVectorBinaryOperation represents a one-to-one binary operation between instant vectors such as "<expr> + <expr>" or "<expr> - <expr>".
@@ -26,7 +26,7 @@ type OneToOneVectorVectorBinaryOperation struct {
 	Right                    types.InstantVectorOperator
 	Op                       parser.ItemType
 	ReturnBool               bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	VectorMatching parser.VectorMatching
 
@@ -104,7 +104,7 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 	return g.rightSeriesIndices[len(g.rightSeriesIndices)-1]
 }
 
-func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	types.IntSlicePool.Put(g.leftSidePresence, memoryConsumptionTracker)
 	g.leftSidePresence = nil
 
@@ -125,7 +125,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	vectorMatching parser.VectorMatching,
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,

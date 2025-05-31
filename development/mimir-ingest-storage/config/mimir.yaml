@@ -29,7 +29,7 @@ ingester:
 
 block_builder:
   scheduler_config:
-    address: mimir-block-builder-scheduler-1:9095
+    address: mimir-block-builder-scheduler-0:9095
     update_interval: 5s
     max_update_age: 30m
 

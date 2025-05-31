@@ -18,6 +18,12 @@ The dashboard isolates each service on the read path into its own section and di
 
 This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
+Use this dashboard for the following use cases:
+
+- Diagnose performance issues in the read path.
+- Identify which read path component is experiencing high resource usage.
+- Monitor CPU, memory, and disk usage to identify resource bottlenecks that could affect query performance.
+
 ## Example
 
 The following example shows a Reads resources dashboard from a demo cluster.

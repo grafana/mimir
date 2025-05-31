@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) {
@@ -44,7 +44,7 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6)) // We have 6 FPoints from the inner series.
 	buffer := NewInstantVectorOperatorBuffer(inner, seriesUsed, 4, memoryConsumptionTracker)
 	ctx := context.Background()
@@ -114,7 +114,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6)) // We have 6 FPoints from the inner series.
 	buffer := NewInstantVectorOperatorBuffer(inner, nil, 6, memoryConsumptionTracker)
 	ctx := context.Background()
@@ -162,7 +162,7 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 }
 
 func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T) {
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 
 	createTestData := func(val float64) types.InstantVectorSeriesData {
 		floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)

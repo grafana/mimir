@@ -570,6 +570,10 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `sum(metric_native_histogram)`,
 			expectedShardedQueries: 1,
 		},
+		`sum(histogram_sum(metric_native_histogram))`: {
+			query:                  `sum(histogram_sum(metric_native_histogram))`,
+			expectedShardedQueries: 1,
+		},
 		`sum by (group_1) (metric_native_histogram)`: {
 			query:                  `sum by (group_1) (metric_native_histogram)`,
 			expectedShardedQueries: 1,

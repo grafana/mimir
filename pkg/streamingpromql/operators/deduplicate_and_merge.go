@@ -9,15 +9,15 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var errVectorContainsMetricsWithSameLabels = errors.New("vector cannot contain metrics with the same labelset")
 
 type DeduplicateAndMerge struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// If true, there are definitely no duplicate series from the inner operator, so we can just
 	// return them as-is.
@@ -30,7 +30,7 @@ type DeduplicateAndMerge struct {
 
 var _ types.InstantVectorOperator = &DeduplicateAndMerge{}
 
-func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *DeduplicateAndMerge {
+func NewDeduplicateAndMerge(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DeduplicateAndMerge {
 	return &DeduplicateAndMerge{Inner: inner, MemoryConsumptionTracker: memoryConsumptionTracker}
 }
 

@@ -217,14 +217,14 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 	if alert.Annotations[models.OrgIDAnnotation] != "" {
 		orgID, err := strconv.ParseInt(alert.Annotations[models.OrgIDAnnotation], 10, 0)
 		if err != nil {
-			level.Debug(logger).Log("msg", "failed to parse org ID annotation", "error", err.Error())
+			level.Debug(logger).Log("msg", "failed to parse org ID annotation", "err", err.Error())
 		} else {
 			extended.OrgID = &orgID
 		}
 	}
 
 	if generatorURL, err := url.Parse(extended.GeneratorURL); err != nil {
-		level.Warn(logger).Log("msg", "failed to parse generator URL while extending template data", "url", extended.GeneratorURL, "error", err.Error())
+		level.Warn(logger).Log("msg", "failed to parse generator URL while extending template data", "url", extended.GeneratorURL, "err", err.Error())
 	} else if orgID := alert.Annotations[models.OrgIDAnnotation]; len(orgID) > 0 {
 		// Refactor note: We only modify the URL if there is something to add. Otherwise, the original string is kept.
 		setQueryParam(generatorURL, "orgId", orgID)
@@ -234,7 +234,7 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 	if alert.Annotations != nil {
 		if s, ok := alert.Annotations[models.ValuesAnnotation]; ok {
 			if err := json.Unmarshal([]byte(s), &extended.Values); err != nil {
-				level.Warn(logger).Log("msg", "failed to unmarshal values annotation", "error", err.Error())
+				level.Warn(logger).Log("msg", "failed to unmarshal values annotation", "err", err.Error())
 			}
 		}
 
@@ -248,7 +248,7 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 	}
 	baseURL, err := url.Parse(externalURL)
 	if err != nil {
-		level.Warn(logger).Log("msg", "failed to parse external URL while extending template data", "url", externalURL, "error", err.Error())
+		level.Warn(logger).Log("msg", "failed to parse external URL while extending template data", "url", externalURL, "err", err.Error())
 		return extended
 	}
 
@@ -375,7 +375,7 @@ func TmplText(ctx context.Context, tmpl *Template, alerts []*types.Alert, l log.
 	if groupKey, err := notify.ExtractGroupKey(ctx); err == nil {
 		data.GroupKey = groupKey.String()
 	} else {
-		level.Debug(l).Log("msg", "failed to extract group key from context", "error", err.Error())
+		level.Debug(l).Log("msg", "failed to extract group key from context", "err", err.Error())
 	}
 
 	return func(name string) (s string) {

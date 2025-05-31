@@ -6,12 +6,19 @@ import (
 	"context"
 	"testing"
 
+	"github.com/grafana/dskit/tracing"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/uber/jaeger-client-go"
 )
+
+func init() {
+	// Install OTel tracing, we need it for the tests.
+	_, err := tracing.NewOTelFromJaegerEnv("test")
+	if err != nil {
+		panic(err)
+	}
+}
 
 func TestQueryTrackerUnlimitedMaxConcurrency(t *testing.T) {
 	qt := newQueryTracker(nil)
@@ -31,11 +38,7 @@ func TestActivityDescription(t *testing.T) {
 	assert.Equal(t, "query=query string", generateActivityDescription(ctx, "query string"))
 	assert.Equal(t, "tenant=user query=query string", generateActivityDescription(user.InjectOrgID(ctx, "user"), "query string"))
 
-	tr, closers := jaeger.NewTracer("test", jaeger.NewConstSampler(true), jaeger.NewNullReporter())
-	defer func() { _ = closers.Close() }()
-	opentracing.SetGlobalTracer(tr)
-
-	_, ctxWithTrace := opentracing.StartSpanFromContext(ctx, "operation")
+	ctxWithTrace, _ := tracer.Start(ctx, "operation")
 	{
 		activity := generateActivityDescription(ctxWithTrace, "query string")
 		assert.Contains(t, activity, "traceID=")

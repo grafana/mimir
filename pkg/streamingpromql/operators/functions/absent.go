@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Absent is an operator that implements the absent() function.
@@ -22,7 +22,7 @@ type Absent struct {
 	TimeRange                types.QueryTimeRange
 	Labels                   labels.Labels
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	presence           []bool
@@ -32,7 +32,7 @@ type Absent struct {
 var _ types.InstantVectorOperator = &Absent{}
 
 // NewAbsent creates a new Absent.
-func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
+func NewAbsent(inner types.InstantVectorOperator, labels labels.Labels, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
 	return &Absent{
 		TimeRange:                timeRange,
 		Inner:                    inner,

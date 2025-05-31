@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -48,17 +50,15 @@ type kafkaContext struct {
 // alert notifications to Kafka.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	images   images.Provider
 	ns       receivers.WebhookSender
 	tmpl     *templates.Template
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -76,20 +76,21 @@ func (kn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 // Use the v2 API to send the alert notification.
 func (kn *Notifier) notifyWithAPIV2(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := kn.GetLogger(ctx)
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, kn.tmpl, as, kn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, kn.tmpl, as, l, &tmplErr)
 
 	topicURL := kn.settings.Endpoint + "/topics/" + tmpl(kn.settings.Topic)
 	if tmplErr != nil {
-		kn.log.Warn("failed to template Kafka url", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Kafka url", "err", tmplErr.Error())
 	}
 
-	body, err := kn.buildBody(ctx, tmpl, as...)
+	body, err := kn.buildBody(ctx, l, tmpl, as...)
 	if err != nil {
 		return false, err
 	}
 	if tmplErr != nil {
-		kn.log.Warn("failed to template Kafka message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Kafka message", "err", tmplErr.Error())
 	}
 
 	cmd := &receivers.SendWebhookSettings{
@@ -104,8 +105,8 @@ func (kn *Notifier) notifyWithAPIV2(ctx context.Context, as ...*types.Alert) (bo
 		Password: kn.settings.Password,
 	}
 
-	if err := kn.ns.SendWebhook(ctx, cmd); err != nil {
-		kn.log.Error("Failed to send notification to Kafka", "error", err, "body", body)
+	if err := kn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "Failed to send notification to Kafka", "err", err, "body", body)
 		return false, err
 	}
 	return true, nil
@@ -113,22 +114,23 @@ func (kn *Notifier) notifyWithAPIV2(ctx context.Context, as ...*types.Alert) (bo
 
 // Use the v3 API to send the alert notification.
 func (kn *Notifier) notifyWithAPIV3(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := kn.GetLogger(ctx)
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, kn.tmpl, as, kn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, kn.tmpl, as, l, &tmplErr)
 
 	// For v3 the Produce URL is like this,
 	// <Endpoint>/v3/clusters/<KafkaClusterID>/topics/<Topic>/records
 	topicURL := kn.settings.Endpoint + "/v3/clusters/" + tmpl(kn.settings.KafkaClusterID) + "/topics/" + tmpl(kn.settings.Topic) + "/records"
 	if tmplErr != nil {
-		kn.log.Warn("failed to template Kafka url", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Kafka url", "err", tmplErr.Error())
 	}
 
-	body, err := kn.buildV3Body(ctx, tmpl, as...)
+	body, err := kn.buildV3Body(ctx, l, tmpl, as...)
 	if err != nil {
 		return false, err
 	}
 	if tmplErr != nil {
-		kn.log.Warn("failed to template Kafka message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Kafka message", "err", tmplErr.Error())
 	}
 
 	cmd := &receivers.SendWebhookSettings{
@@ -148,8 +150,8 @@ func (kn *Notifier) notifyWithAPIV3(ctx context.Context, as ...*types.Alert) (bo
 	// Can be implemented nicely using receivers. The v3 API can be used in streaming mode
 	// by setting “Transfer-Encoding: chunked” header.
 	// For as long as the connection is kept open, the server will keep accepting records.
-	if err := kn.ns.SendWebhook(ctx, cmd); err != nil {
-		kn.log.Error("Failed to send notification to Kafka", "error", err, "body", body)
+	if err := kn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "Failed to send notification to Kafka", "err", err, "body", body)
 		return false, err
 	}
 	return true, nil
@@ -192,16 +194,16 @@ func (kn *Notifier) SendResolved() bool {
 	return !kn.GetDisableResolveMessage()
 }
 
-func (kn *Notifier) buildBody(ctx context.Context, tmpl func(string) string, as ...*types.Alert) (string, error) {
+func (kn *Notifier) buildBody(ctx context.Context, l log.Logger, tmpl func(string) string, as ...*types.Alert) (string, error) {
 	if kn.settings.APIVersion == apiVersionV3 {
-		return kn.buildV3Body(ctx, tmpl, as...)
+		return kn.buildV3Body(ctx, l, tmpl, as...)
 	}
-	return kn.buildV2Body(ctx, tmpl, as...)
+	return kn.buildV2Body(ctx, l, tmpl, as...)
 }
 
-func (kn *Notifier) buildV2Body(ctx context.Context, tmpl func(string) string, as ...*types.Alert) (string, error) {
+func (kn *Notifier) buildV2Body(ctx context.Context, l log.Logger, tmpl func(string) string, as ...*types.Alert) (string, error) {
 	var record kafkaRecord
-	if err := kn.buildKafkaRecord(ctx, &record, tmpl, as...); err != nil {
+	if err := kn.buildKafkaRecord(ctx, l, &record, tmpl, as...); err != nil {
 		return "", err
 	}
 	records := kafkaBody{
@@ -216,9 +218,9 @@ func (kn *Notifier) buildV2Body(ctx context.Context, tmpl func(string) string, a
 	return string(body), nil
 }
 
-func (kn *Notifier) buildV3Body(ctx context.Context, tmpl func(string) string, as ...*types.Alert) (string, error) {
+func (kn *Notifier) buildV3Body(ctx context.Context, l log.Logger, tmpl func(string) string, as ...*types.Alert) (string, error) {
 	var record kafkaRecord
-	if err := kn.buildKafkaRecord(ctx, &record, tmpl, as...); err != nil {
+	if err := kn.buildKafkaRecord(ctx, l, &record, tmpl, as...); err != nil {
 		return "", err
 	}
 	records := map[string]kafkaV3Record{
@@ -234,19 +236,19 @@ func (kn *Notifier) buildV3Body(ctx context.Context, tmpl func(string) string, a
 	return string(body), nil
 }
 
-func (kn *Notifier) buildKafkaRecord(ctx context.Context, record *kafkaRecord, tmpl func(string) string, as ...*types.Alert) error {
+func (kn *Notifier) buildKafkaRecord(ctx context.Context, l log.Logger, record *kafkaRecord, tmpl func(string) string, as ...*types.Alert) error {
 	record.Client = "Grafana"
 	record.Description = tmpl(kn.settings.Description)
 	record.Details = tmpl(kn.settings.Details)
 
 	state := buildState(as...)
-	kn.log.Debug("notifying Kafka", "alert_state", state)
+	level.Debug(l).Log("msg", "notifying Kafka", "alert_state", state)
 	record.AlertState = state
 
-	ruleURL := receivers.JoinURLPath(kn.tmpl.ExternalURL.String(), "/alerting/list", kn.log)
+	ruleURL := receivers.JoinURLPath(kn.tmpl.ExternalURL.String(), "/alerting/list", l)
 	record.ClientURL = ruleURL
 
-	contexts := buildContextImages(ctx, kn.log, kn.images, as...)
+	contexts := buildContextImages(ctx, l, kn.images, as...)
 	if len(contexts) > 0 {
 		record.Contexts = contexts
 	}
@@ -268,7 +270,7 @@ func buildState(as ...*types.Alert) receivers.AlertStateType {
 	return receivers.AlertStateAlerting
 }
 
-func buildContextImages(ctx context.Context, l logging.Logger, imageProvider images.Provider, as ...*types.Alert) []kafkaContext {
+func buildContextImages(ctx context.Context, l log.Logger, imageProvider images.Provider, as ...*types.Alert) []kafkaContext {
 	var contexts []kafkaContext
 	_ = images.WithStoredImages(ctx, l, imageProvider,
 		func(_ int, image images.Image) error {

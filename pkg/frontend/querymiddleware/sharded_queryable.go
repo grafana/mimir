@@ -334,6 +334,10 @@ func ResponseToSamples(resp *PrometheusResponse) ([]SampleStream, error) {
 		return nil, errors.New(resp.Error)
 	}
 
+	if resp.Data == nil {
+		return nil, errors.New("response data is nil")
+	}
+
 	switch resp.Data.ResultType {
 	case string(parser.ValueTypeString),
 		string(parser.ValueTypeScalar),

@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type Selector struct {
@@ -32,7 +32,7 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier storage.Querier
 	series  *seriesList
@@ -139,10 +139,10 @@ type seriesList struct {
 	lastSeriesBatch *seriesBatch
 
 	length                   int
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func newSeriesList(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *seriesList {
+func newSeriesList(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *seriesList {
 	firstBatch := getSeriesBatch()
 
 	return &seriesList{

@@ -7,10 +7,12 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -19,7 +21,6 @@ import (
 // alert notifications to Google chat.
 type Notifier struct {
 	*receivers.Base
-	log        logging.Logger
 	ns         receivers.WebhookSender
 	images     images.Provider
 	tmpl       *templates.Template
@@ -32,10 +33,9 @@ var (
 	timeNow = time.Now
 )
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, appVersion string) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, appVersion string) *Notifier {
 	return &Notifier{
-		Base:       receivers.NewBase(meta),
-		log:        logger,
+		Base:       receivers.NewBase(meta, logger),
 		ns:         sender,
 		images:     images,
 		tmpl:       template,
@@ -46,10 +46,11 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify send an alert notification to Google Chat.
 func (gcn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	gcn.log.Debug("executing Google Chat notification")
+	l := gcn.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending notification")
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, gcn.tmpl, as, gcn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, gcn.tmpl, as, l, &tmplErr)
 
 	var widgets []widget
 
@@ -60,12 +61,12 @@ func (gcn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, erro
 	}
 
 	if tmplErr != nil {
-		gcn.log.Warn("failed to template Google Chat message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Google Chat message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
-	ruleURL := receivers.JoinURLPath(gcn.tmpl.ExternalURL.String(), "/alerting/list", gcn.log)
-	if gcn.isURLAbsolute(ruleURL) {
+	ruleURL := receivers.JoinURLPath(gcn.tmpl.ExternalURL.String(), "/alerting/list", l)
+	if gcn.isURLAbsolute(ruleURL, l) {
 		// Add a button widget (link to Grafana).
 		widgets = append(widgets, buttonWidget{
 			Buttons: []button{
@@ -82,7 +83,7 @@ func (gcn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, erro
 			},
 		})
 	} else {
-		gcn.log.Warn("Grafana external URL setting is missing or invalid. Skipping 'open in grafana' button to prevent Google from displaying empty alerts.", "ruleURL", ruleURL)
+		level.Warn(l).Log("msg", "Grafana external URL setting is missing or invalid. Skipping 'open in grafana' button to prevent Google from displaying empty alerts.", "ruleURL", ruleURL)
 	}
 
 	// Add text paragraph widget for the build version and timestamp.
@@ -106,18 +107,18 @@ func (gcn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, erro
 			},
 		},
 	}
-	if screenshots := gcn.buildScreenshotCard(ctx, as); screenshots != nil {
+	if screenshots := gcn.buildScreenshotCard(ctx, as, l); screenshots != nil {
 		res.Cards = append(res.Cards, *screenshots)
 	}
 
 	if tmplErr != nil {
-		gcn.log.Warn("failed to template GoogleChat message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template GoogleChat message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
 	u := tmpl(gcn.settings.URL)
 	if tmplErr != nil {
-		gcn.log.Warn("failed to template GoogleChat URL", "error", tmplErr.Error(), "fallback", gcn.settings.URL)
+		level.Warn(l).Log("msg", "failed to template GoogleChat URL", "err", tmplErr.Error(), "fallback", gcn.settings.URL)
 		u = gcn.settings.URL
 	}
 
@@ -135,8 +136,8 @@ func (gcn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, erro
 		Body: string(body),
 	}
 
-	if err := gcn.ns.SendWebhook(ctx, cmd); err != nil {
-		gcn.log.Error("Failed to send Google Hangouts Chat alert", "error", err, "webhook", gcn.Name)
+	if err := gcn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "failed to send Google Hangouts Chat alert", "err", err)
 		return false, err
 	}
 
@@ -147,23 +148,23 @@ func (gcn *Notifier) SendResolved() bool {
 	return !gcn.GetDisableResolveMessage()
 }
 
-func (gcn *Notifier) isURLAbsolute(urlToCheck string) bool {
+func (gcn *Notifier) isURLAbsolute(urlToCheck string, l log.Logger) bool {
 	parsed, err := url.Parse(urlToCheck)
 	if err != nil {
-		gcn.log.Warn("could not parse URL", "urlToCheck", urlToCheck)
+		level.Warn(l).Log("msg", "could not parse URL", "urlToCheck", urlToCheck)
 		return false
 	}
 
 	return parsed.IsAbs()
 }
 
-func (gcn *Notifier) buildScreenshotCard(ctx context.Context, alerts []*types.Alert) *card {
+func (gcn *Notifier) buildScreenshotCard(ctx context.Context, alerts []*types.Alert, l log.Logger) *card {
 	card := card{
 		Header:   header{Title: "Screenshots"},
 		Sections: []section{},
 	}
 
-	_ = images.WithStoredImages(ctx, gcn.log, gcn.images,
+	_ = images.WithStoredImages(ctx, l, gcn.images,
 		func(index int, image images.Image) error {
 			if len(image.URL) == 0 {
 				return nil

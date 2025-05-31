@@ -8,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
-	memTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	memTracker := limiter.NewMemoryConsumptionTracker(0, nil)
 
 	a := &Absent{
 		TimeRange: types.QueryTimeRange{

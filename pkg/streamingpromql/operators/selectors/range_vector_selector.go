@@ -15,8 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type RangeVectorSelector struct {
@@ -33,7 +33,7 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorSelector {
 	return &RangeVectorSelector{
 		Selector:   selector,
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
@@ -102,6 +102,7 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
+
 	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())
 
 	return m.stepData, nil

@@ -63,6 +63,12 @@ func isRetryableBrokerErr(err error) bool {
 	// EOF can be returned if a broker kills a connection unexpectedly, and
 	// we can retry that. Same for ErrClosed.
 	if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+		// If the FIRST read is EOF, that is usually not a good sign,
+		// often it's from bad SASL. We err on the side of pessimism
+		// and do not retry.
+		if ee := (*ErrFirstReadEOF)(nil); errors.As(err, &ee) {
+			return false
+		}
 		return true
 	}
 	// We could have a retryable producer ID failure, which then bubbled up
@@ -363,3 +369,10 @@ func errCodeMessage(code int16, errMessage *string) error {
 	}
 	return nil
 }
+
+type errApiVersionsReset struct {
+	err error
+}
+
+func (e *errApiVersionsReset) Error() string { return e.err.Error() }
+func (e *errApiVersionsReset) Unwrap() error { return e.err }

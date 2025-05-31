@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // DuplicationBuffer buffers the results of an inner operator that is used by multiple consuming operators.
@@ -17,7 +17,7 @@ import (
 // DuplicationBuffer is not thread-safe.
 type DuplicationBuffer struct {
 	Inner                    types.InstantVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	consumerCount int
 
@@ -31,7 +31,7 @@ type DuplicationBuffer struct {
 	prepared bool
 }
 
-func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *DuplicationBuffer {
+func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DuplicationBuffer {
 	return &DuplicationBuffer{
 		Inner:                    inner,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
@@ -162,8 +162,13 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 	// If this consumer was the lagging consumer, free any data that was being buffered for it.
 	for b.nextSeriesIndex[consumerIndex] < lowestNextSeriesIndexOfOtherConsumers {
 		seriesIdx := b.nextSeriesIndex[consumerIndex]
-		d := b.buffer.Remove(seriesIdx)
-		types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+
+		// Only try to remove the buffered series if it was actually buffered (we might not have stored it if an error occurred reading the series).
+		if b.buffer.IsPresent(seriesIdx) {
+			d := b.buffer.Remove(seriesIdx)
+			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+		}
+
 		b.nextSeriesIndex[consumerIndex]++
 	}
 

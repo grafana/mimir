@@ -239,6 +239,7 @@ loop:
 		}
 
 		retryWhy, err := cl.updateMetadata()
+		lastAt = time.Now()
 		if retryWhy != nil || err != nil {
 			// If err is non-nil, the metadata request failed
 			// itself and already retried 3x; we do not loop more.
@@ -281,12 +282,13 @@ loop:
 		if err == nil {
 			cl.metawait.signal()
 			cl.consumer.doOnMetadataUpdate()
-			lastAt = time.Now()
 			consecutiveErrors = 0
 			continue
 		}
 
 		consecutiveErrors++
+		// We sleep a bit in case the max metadata age is very small;
+		// typically this sleep is inconsequential.
 		after := time.NewTimer(cl.cfg.retryBackoff(consecutiveErrors))
 	backoff:
 		select {

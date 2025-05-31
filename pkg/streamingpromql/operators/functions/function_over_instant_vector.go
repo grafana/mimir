@@ -11,8 +11,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // FunctionOverInstantVector performs a function over each series in an instant vector.
@@ -23,7 +23,7 @@ type FunctionOverInstantVector struct {
 	Inner types.InstantVectorOperator
 	// Any scalar arguments will be read once and passed to Func.SeriesDataFunc.
 	ScalarArgs               []types.ScalarOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverInstantVectorDefinition
 
 	// scalarArgsData stores the processed ScalarArgs during SeriesMetadata.
@@ -40,7 +40,7 @@ var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
 	scalarArgs []types.ScalarOperator,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	f FunctionOverInstantVectorDefinition,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,

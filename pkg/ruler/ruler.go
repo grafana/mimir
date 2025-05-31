@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -38,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -60,6 +62,8 @@ const (
 	// RulerRingKey is the key under which we store the rulers ring in the KVStore.
 	RulerRingKey = "ring"
 )
+
+var tracer = otel.Tracer("pkg/ruler")
 
 type rulesSyncReason string
 
@@ -347,6 +351,8 @@ type Ruler struct {
 
 	allowedTenants *util.AllowList
 
+	syncBackoffConfig backoff.Config
+
 	registry prometheus.Registerer
 	logger   log.Logger
 }
@@ -369,6 +375,11 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		inboundSyncQueue:  newRulerSyncQueue(cfg.InboundSyncQueuePollInterval),
 		allowedTenants:    util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants),
 		metrics:           newRulerMetrics(reg),
+		syncBackoffConfig: backoff.Config{
+			MinBackoff: 3 * time.Second,
+			MaxBackoff: 15 * time.Second,
+			MaxRetries: 3,
+		},
 	}
 
 	ruler.outboundSyncQueueProcessor = newRulerSyncQueueProcessor(ruler.outboundSyncQueue, ruler.notifySyncRules)
@@ -459,7 +470,9 @@ func (r *Ruler) starting(ctx context.Context) (err error) {
 	level.Info(r.logger).Log("msg", "ruler is JOINING in the ring")
 
 	// Here during joining, we can download rules from object storage and sync them to the local rule manager
-	r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+	if err := r.initialSync(ctx); err != nil {
+		return errors.Wrap(err, "unable to do initial sync")
+	}
 
 	if err = r.lifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
 		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
@@ -539,12 +552,13 @@ func (r *Ruler) run(ctx context.Context) error {
 	defer ringTicker.Stop()
 
 	for {
+		var syncErr error
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-periodicTicker.C:
 			// Sync rules for all users.
-			r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+			syncErr = r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
@@ -552,15 +566,39 @@ func (r *Ruler) run(ctx context.Context) error {
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
 				ringLastState = currRingState
-				r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
+				syncErr = r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
 			}
 		case userIDs := <-r.inboundSyncQueue.poll():
 			// Sync rules for users who changed their configs.
-			r.syncRules(ctx, userIDs, rulerSyncReasonAPIChange, false)
+			syncErr = r.syncRules(ctx, userIDs, rulerSyncReasonAPIChange, false)
 		case err := <-r.subservicesWatcher.Chan():
 			return errors.Wrap(err, "ruler subservice failed")
 		}
+		if syncErr != nil {
+			level.Error(r.logger).Log("msg", "unable to sync rules", "err", syncErr)
+		}
 	}
+}
+
+func (r *Ruler) initialSync(ctx context.Context) error {
+	boff := backoff.New(ctx, r.syncBackoffConfig)
+
+	var lastErr error
+	for boff.Ongoing() {
+		if lastErr != nil {
+			level.Warn(r.logger).Log("msg", "unable to do initial sync; will retry", "err", lastErr, "num_retries", boff.NumRetries())
+		}
+
+		lastErr = r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+		if lastErr == nil {
+			return nil
+		}
+		boff.Wait()
+	}
+	if lastErr == nil {
+		return fmt.Errorf("initial sync: %w", boff.Err())
+	}
+	return lastErr
 }
 
 // syncRules synchronises the rules managed by this ruler instance.
@@ -569,7 +607,7 @@ func (r *Ruler) run(ctx context.Context) error {
 //
 // It's not safe to call this function concurrently.
 // We expect this function is only called from Ruler.run().
-func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) {
+func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) error {
 	var (
 		configs   map[string]rulespb.RuleGroupList
 		err       error
@@ -589,15 +627,13 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 		configs, err = r.listRuleGroupsToSyncForAllUsers(ctx, reason, cacheLookupEnabled)
 	}
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to list rules to sync", "err", err)
-		return
+		return fmt.Errorf("list rules to sync: %w", err)
 	}
 
 	// Load rule groups to sync.
 	configs, err = r.loadRuleGroupsToSync(ctx, configs)
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to load rules to sync", "err", err)
-		return
+		return fmt.Errorf("load rules to sync: %w", err)
 	}
 
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
@@ -625,6 +661,7 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 		// This will also delete local group files for users that are no longer in 'configs' map.
 		r.manager.SyncFullRuleGroups(ctx, configs)
 	}
+	return nil
 }
 
 // loadRuleGroupsToSync loads the input rule group configs. This function should be used only when
@@ -965,6 +1002,12 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse,
 		return nil, "", fmt.Errorf("no user id found in context")
 	}
 
+	// Return an error when rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
+	// to tell if a tenant doesn't have any rules loaded, or the tenant is limited from evaluating the rules.
+	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
+		return nil, "", errTenantRuleEvaluationDisabled
+	}
+
 	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
@@ -1057,12 +1100,6 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	// Return an error rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
-	// to tell if a tenant doesn't have any rules loaded, or the tenant is blocked from evaluating the rules.
-	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
-		return nil, errTenantRuleEvaluationDisabled
-	}
-
 	groupDescs, err := r.getLocalRules(ctx, userID, *in)
 	if err != nil {
 		return nil, err
@@ -1102,7 +1139,7 @@ func (fs StringFilterSet) IsFiltered(val string) bool {
 }
 
 func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesRequest) ([]*GroupStateDesc, error) {
-	spanLog, _ := spanlogger.NewWithLogger(ctx, r.logger, "Ruler.getLocalRules")
+	spanLog, _ := spanlogger.New(ctx, r.logger, tracer, "Ruler.getLocalRules")
 	defer spanLog.Finish()
 
 	// Get the rule groups from the manager. We track the time it takes because the manager needs to

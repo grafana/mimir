@@ -9,15 +9,15 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // InstantVectorToScalar is an operator that implements the scalar() function.
 type InstantVectorToScalar struct {
 	Inner                    types.InstantVectorOperator
 	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 }
@@ -27,7 +27,7 @@ var _ types.ScalarOperator = &InstantVectorToScalar{}
 func NewInstantVectorToScalar(
 	inner types.InstantVectorOperator,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *InstantVectorToScalar {
 	return &InstantVectorToScalar{

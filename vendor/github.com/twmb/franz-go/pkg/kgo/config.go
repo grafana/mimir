@@ -507,7 +507,7 @@ func defaultCfg() cfg {
 			return func(fails int) time.Duration {
 				const (
 					min = 250 * time.Millisecond
-					max = 5 * time.Second / 2
+					max = 5 * time.Second
 				)
 				if fails <= 0 {
 					return min
