@@ -132,14 +132,15 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	return s.stepData, nil
 }
 
-// samplesProcessedInSubquery returns the number of samples processed in a time range selected by parent query step from subquery results.
+// samplesProcessedInSubquery returns the number of samples from subquery results within the (start, end] range,
+// matching how points are selected for stepData.RangeStart and stepData.RangeEnd.
 func (s *Subquery) samplesProcessedInSubquery(start, end int64) int64 {
 	startIndex := 0
 	if start >= s.SubqueryTimeRange.StartT {
-		startIndex = int((start-s.SubqueryTimeRange.StartT)/s.SubqueryTimeRange.IntervalMilliseconds) + 1
+		startIndex = int(s.SubqueryTimeRange.PointIndex(start)) + 1 // add 1 to exclude the start point
 	}
 
-	endIndex := int((end - s.SubqueryTimeRange.StartT) / s.SubqueryTimeRange.IntervalMilliseconds)
+	endIndex := int(s.SubqueryTimeRange.PointIndex(end))
 	if endIndex >= len(s.subqueryStats.TotalSamplesPerStep) {
 		endIndex = len(s.subqueryStats.TotalSamplesPerStep) - 1
 	}

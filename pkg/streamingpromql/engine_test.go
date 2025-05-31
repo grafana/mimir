@@ -3420,7 +3420,6 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamples:        45,
 			expectedTotalSamplesPerStep: []int64{1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5},
 		},
-
 		"subquery range equals subquery interval": {
 			expr:                        `dense_series[1m:1m]`,
 			expectedTotalSamples:        1,
