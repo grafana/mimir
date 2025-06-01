@@ -34,7 +34,7 @@ type Subquery struct {
 	parentQueryStats *types.QueryStats
 	subqueryStats    *types.QueryStats
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.RangeVectorOperator = &Subquery{}

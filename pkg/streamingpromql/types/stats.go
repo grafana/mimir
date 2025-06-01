@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
@@ -34,10 +34,10 @@ type QueryStats struct {
 	EnablePerStepStats bool
 	timeRange          QueryTimeRange
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func NewQueryStats(timeRange QueryTimeRange, enablePerStepStats bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (*QueryStats, error) {
+func NewQueryStats(timeRange QueryTimeRange, enablePerStepStats bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (*QueryStats, error) {
 	qs := &QueryStats{
 		EnablePerStepStats:       enablePerStepStats,
 		timeRange:                timeRange,

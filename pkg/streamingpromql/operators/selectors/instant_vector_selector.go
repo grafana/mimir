@@ -33,7 +33,7 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, returnSampleTimestamps bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
 		Selector:                 selector,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
