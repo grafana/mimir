@@ -166,7 +166,8 @@ func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 
 func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	s.parentQueryStats = params.QueryStats
-	// Child Samples will be counted later when processing subquery results.
+	// Final aggregation into parent stats happens in samplesProcessedInSubquery().
+	// Child samples alwyas counted per step to make the aggregation correcly.
 	childStats, err := types.NewQueryStats(s.SubqueryTimeRange, true, s.memoryConsumptionTracker)
 	if err != nil {
 		return fmt.Errorf("could not create stats for subquery: %w", err)
