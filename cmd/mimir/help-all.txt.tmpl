@@ -2214,7 +2214,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.query-engine string
-    	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "prometheus")
+    	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "mimir")
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration

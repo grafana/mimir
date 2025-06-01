@@ -2162,7 +2162,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
