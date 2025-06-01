@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/prometheus/prometheus/model/histogram"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // QueryStats tracks statistics about the execution of a single query.
