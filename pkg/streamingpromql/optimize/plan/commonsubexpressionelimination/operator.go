@@ -179,11 +179,9 @@ func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PreparePa
 	if b.prepared {
 		return nil
 	}
-
 	if err := b.Inner.Prepare(ctx, params); err != nil {
 		return err
 	}
-
 	b.prepared = true
 	return nil
 }
