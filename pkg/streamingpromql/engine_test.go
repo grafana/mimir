@@ -3281,6 +3281,12 @@ func TestQueryStats(t *testing.T) {
 			stale_series  0 1 2 3 4 5 stale 7 8 9 10
 			nan_series    NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
 			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
+			classic_histogram_series{le="0.1"}   0+1x10
+			classic_histogram_series{le="1"}     0+5x10
+			classic_histogram_series{le="10"}    0+8x10
+			classic_histogram_series{le="100"}   0+12x10
+			classic_histogram_series{le="1000"}  0+21x10
+			classic_histogram_series{le="+Inf"}  0+21x10
 	`)
 
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) *promstats.QuerySamples {
@@ -3469,6 +3475,28 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamples:        3,
 			isInstantQuery:              false,
 			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+		},
+		"classic histogram quantile": {
+			expr:                        `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples:        30,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{30},
+		},
+		"classic histogram quantile – range query": {
+			expr:                        `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples:        270,
+			expectedTotalSamplesPerStep: []int64{6, 12, 18, 24, 30, 30, 30, 30, 30, 30, 30},
+		},
+		"classic histogram fraction": {
+			expr:                        `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples:        30,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{30},
+		},
+		"classic histogram fraction – range query": {
+			expr:                        `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples:        270,
+			expectedTotalSamplesPerStep: []int64{6, 12, 18, 24, 30, 30, 30, 30, 30, 30, 30},
 		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
