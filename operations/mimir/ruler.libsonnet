@@ -33,6 +33,10 @@
 
       // Increased from 2s to 10s in order to accommodate writing large rule results ot he ingester.
       'distributor.remote-timeout': '10s',
+
+      // Don't depend on Memcached on startup.
+      'blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures': true,
+      'ruler-storage.cache.memcached.dns-ignore-startup-failures': true,
     },
 
   ruler_env_map:: {

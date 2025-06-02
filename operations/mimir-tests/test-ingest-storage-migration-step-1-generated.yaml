@@ -971,6 +971,7 @@ spec:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -1077,6 +1078,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.dns-ignore-startup-failures=true
         - -query-frontend.results-cache.memcached.max-item-size=5242880
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
@@ -1265,6 +1267,7 @@ spec:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -1285,6 +1288,7 @@ spec:
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -ruler-storage.cache.memcached.dns-ignore-startup-failures=true
         - -ruler-storage.cache.memcached.max-async-concurrency=50
         - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.cache.memcached.timeout=500ms
@@ -1375,6 +1379,7 @@ spec:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
@@ -1479,6 +1484,7 @@ spec:
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=memcached
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
+        - -query-frontend.results-cache.memcached.dns-ignore-startup-failures=true
         - -query-frontend.results-cache.memcached.max-item-size=5242880
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
@@ -2879,6 +2885,7 @@ spec:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
@@ -2886,6 +2893,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -2893,6 +2901,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -3020,6 +3029,7 @@ spec:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
@@ -3027,6 +3037,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -3034,6 +3045,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150
@@ -3163,6 +3175,7 @@ spec:
       - args:
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
@@ -3170,6 +3183,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
@@ -3177,6 +3191,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
+        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections=150

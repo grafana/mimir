@@ -35,6 +35,11 @@
 
       // Relax pressure on KV store when running at scale.
       'store-gateway.sharding-ring.heartbeat-period': '1m',
+
+      // Don't depend on Memcached on startup.
+      'blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures': true,
+      'blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures': true,
+      'blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures': true,
     } +
     (if !$._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': false,
