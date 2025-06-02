@@ -626,9 +626,13 @@ func TestGetRules(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			// Sync rules on each ruler.
-			for _, r := range rulerAddrMap {
-				// Use rulerSyncReasonPeriodic to ensure rules are distributed among ACTIVE rulers.
-				r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+			for rID, r := range rulerAddrMap {
+				if tc.rulerState[rID] == ring.JOINING {
+					// Use rulerSyncReasonInitial for JOINING rulers to simulate what happens on ruler startup.
+					r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+				} else {
+					r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+				}
 			}
 
 			// Call GetRules() on each ruler.
