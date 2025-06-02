@@ -471,8 +471,8 @@ func TestGetRules(t *testing.T) {
 	}
 
 	allRulesByUser := map[string]rulespb.RuleGroupList{}
-	for _, rule := range rules {
-		allRulesByUser[rule.User] = append(allRulesByUser[rule.User], rule)
+	for _, r := range rules {
+		allRulesByUser[r.User] = append(allRulesByUser[r.User], r)
 	}
 
 	testCases := map[string]testCase{
@@ -626,14 +626,36 @@ func TestGetRules(t *testing.T) {
 			}
 
 			// Call GetRules() on each ruler.
-			for u := range allRulesByUser {
+			for u, userRules := range allRulesByUser {
 				ctx := user.InjectOrgID(ctx, u)
+				expectedRuleDescs := []*rulespb.RuleGroupDesc{}
+				for _, userRule := range userRules {
+					// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules
+					expectedRuleDescs = append(expectedRuleDescs, &rulespb.RuleGroupDesc{
+						Namespace:     userRule.Namespace,
+						Name:          userRule.Name,
+						User:          u,
+						Interval:      userRule.Interval,
+						SourceTenants: userRule.SourceTenants,
+					})
+				}
 
 				for rID, r := range rulerAddrMap {
-					rules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
+					actualRules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
 					require.NoError(t, err)
-					require.Equal(t, len(allRulesByUser[u]), len(rules.Groups), "rules are not equal for %s, %s", u, rID)
 
+					require.Equal(t, len(userRules), len(actualRules.Groups), "rules are not equal for %s, %s", u, rID)
+
+					var actualRuleDescs []*rulespb.RuleGroupDesc
+					for _, g := range actualRules.Groups {
+						actualRuleDescs = append(actualRuleDescs, g.Group)
+					}
+					sort.Slice(actualRuleDescs, func(i, j int) bool {
+						return actualRuleDescs[i].Name < actualRuleDescs[j].Name
+					})
+					require.Equal(t, expectedRuleDescs, actualRuleDescs)
+
+					// Check call count for rulers (this verifies that JOINING rulers should be ignored)
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 					if tc.shuffleShardSize > 0 {
 						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
