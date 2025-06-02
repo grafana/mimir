@@ -258,7 +258,7 @@ This may cause that incorrect results are returned for the query.
    {{< /admonition >}}
 
    {{< admonition type="tip" >}}
-   Be sure to add `__tenant_id__` label with value of your target tenant. This is important for Mimir to successfully query the migrated data when tenant federation is enabled and Grafana data source is configured to query multiple tenants.
+   Add the `__tenant_id__` label with the value of your target tenant. This is important for Mimir to successfully query the migrated data when you enable tenant federation and configure the Grafana data source to query multiple tenants.
    {{< /admonition >}}
 
    Create a rewrite configuration that is similar to this:
