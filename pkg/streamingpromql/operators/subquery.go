@@ -127,28 +127,33 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	s.stepData.RangeStart = rangeStart
 	s.stepData.RangeEnd = rangeEnd
 
-	s.parentQueryStats.IncrementSamplesAtTimestamp(s.stepData.StepT, s.samplesProcessedInSubquery(s.stepData.RangeStart, s.stepData.RangeEnd))
+	s.parentQueryStats.IncrementSamplesAtTimestamp(
+		s.stepData.StepT,
+		s.samplesProcessedInSubqueryPerParentStep(s.stepData),
+	)
 
 	return s.stepData, nil
 }
 
-// samplesProcessedInSubquery returns the number of samples from subquery results within the (start, end] range,
-// matching how points are selected for stepData.RangeStart and stepData.RangeEnd.
-func (s *Subquery) samplesProcessedInSubquery(start, end int64) int64 {
-	startIndex := 0
-	if start >= s.SubqueryTimeRange.StartT {
-		startIndex = int(s.SubqueryTimeRange.PointIndex(start)) + 1 // add 1 to exclude the start point
-	}
-
-	endIndex := int(s.SubqueryTimeRange.PointIndex(end))
-	if endIndex >= len(s.subqueryStats.TotalSamplesPerStep) {
-		endIndex = len(s.subqueryStats.TotalSamplesPerStep) - 1
-	}
-
+// samplesProcessedInSubqueryPerParentStep returns the number of samples processed by subquery
+// within the parent query step range.
+func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVectorStepData) int64 {
 	sum := int64(0)
+	startIndex := int64(0)
+	if step.RangeStart >= s.SubqueryTimeRange.StartT {
+		// Calculate index of a first step with T > step.RangeStart
+		startIndex = (step.RangeStart-s.SubqueryTimeRange.StartT)/(s.SubqueryTimeRange.IntervalMilliseconds) + 1
+	} else {
+		// If step.RangeStart < s.SubqueryTimeRange.StartT, it means it's outside SubqueryTimeRange.
+		// First step after step.RangeStart is 0.
+	}
+
+	endIndex := (step.RangeEnd - s.SubqueryTimeRange.StartT) / s.SubqueryTimeRange.IntervalMilliseconds
+
 	for i := startIndex; i <= endIndex; i++ {
 		sum += s.subqueryStats.TotalSamplesPerStep[i]
 	}
+
 	return sum
 }
 
