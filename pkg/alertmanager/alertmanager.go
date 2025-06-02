@@ -712,7 +712,7 @@ func (am *Alertmanager) loadTemplates(tmpls []string, options ...template.Option
 	return loadTemplates(tmpls, options...)
 }
 
-func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl *template.Template) ([]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl alertingNotify.TemplatesProvider) ([]*nfstatus.Integration, error) {
 	am.emailCfgMtx.RLock()
 	emailCfg := am.emailCfg
 	am.emailCfgMtx.RUnlock()
@@ -728,10 +728,15 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 	return buildGrafanaReceiverIntegrations(emailCfg, rcv, tmpl, am.logger, am.wrapNotifier, opts...)
 }
 
-func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
+func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmplProvider alertingNotify.TemplatesProvider, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
 	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err := tmplProvider.GetTemplate(alertingTemplates.GrafanaKind)
 	if err != nil {
 		return nil, err
 	}
