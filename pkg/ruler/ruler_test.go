@@ -455,7 +455,13 @@ func TestGetRules(t *testing.T) {
 	}
 
 	makeRule := func(user string, i int) *rulespb.RuleGroupDesc {
-		return &rulespb.RuleGroupDesc{User: user, Namespace: "namespace", Name: fmt.Sprintf("%d", i), Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second}
+		return &rulespb.RuleGroupDesc{
+			User:      user,
+			Namespace: "namespace",
+			Name:      fmt.Sprintf("%d", i),
+			Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")},
+			Interval:  10 * time.Second,
+		}
 	}
 
 	rules := []*rulespb.RuleGroupDesc{
@@ -621,16 +627,16 @@ func TestGetRules(t *testing.T) {
 
 			// Sync rules on each ruler.
 			for _, r := range rulerAddrMap {
-				// Use rulerSyncReasonPeriodic to ensure rules are distributed among ACTIVE rulers
+				// Use rulerSyncReasonPeriodic to ensure rules are distributed among ACTIVE rulers.
 				r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
 			}
 
 			// Call GetRules() on each ruler.
 			for u, userRules := range allRulesByUser {
 				ctx := user.InjectOrgID(ctx, u)
-				expectedRuleDescs := []*rulespb.RuleGroupDesc{}
+				var expectedRuleDescs []*rulespb.RuleGroupDesc
 				for _, userRule := range userRules {
-					// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules
+					// getLocalRules() doesn't set the Rules field, therefore doing the same with the expected rules.
 					expectedRuleDescs = append(expectedRuleDescs, &rulespb.RuleGroupDesc{
 						Namespace:     userRule.Namespace,
 						Name:          userRule.Name,
@@ -655,7 +661,7 @@ func TestGetRules(t *testing.T) {
 					})
 					require.Equal(t, expectedRuleDescs, actualRuleDescs)
 
-					// Check call count for rulers (this verifies that JOINING rulers should be ignored)
+					// Check call count for rulers (this verifies that JOINING rulers should be ignored).
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 					if tc.shuffleShardSize > 0 {
 						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
@@ -678,7 +684,7 @@ func TestGetRules(t *testing.T) {
 				for user, groups := range tc.expectedRulesByRuler[rID] {
 					expectedRules[user] = rulespb.RuleGroupList{}
 					for _, group := range groups {
-						// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules
+						// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules.
 						expectedRules[user] = append(expectedRules[user], &rulespb.RuleGroupDesc{
 							Namespace:     group.Namespace,
 							Name:          group.Name,
