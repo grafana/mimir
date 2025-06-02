@@ -2247,7 +2247,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2300,7 +2300,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2353,7 +2353,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2406,7 +2406,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
