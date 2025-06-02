@@ -3266,7 +3266,7 @@ func TestQueryStats(t *testing.T) {
 
 	planningOpts := opts
 	planningOpts.UseQueryPlanning = true
-	mimirEngineWithPlanning, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	mimirEngineWithPlanning, err := NewEngine(planningOpts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	start := timestamp.Time(0)
@@ -3315,6 +3315,9 @@ func TestQueryStats(t *testing.T) {
 		expectedTotalSamples        int64
 		expectedTotalSamplesPerStep []int64
 		skipCompareWithPrometheus   string
+		// ...WithPlanner expectations are optional and should be set only if a query with planning reports different stats
+		expectedTotalSamplesWithPlanner        int64
+		expectedTotalSamplesPerStepWithPlanner []int64
 	}{
 		"instant vector selector with point at every time step": {
 			expr:                        `dense_series{}`,
@@ -3463,7 +3466,6 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamples:        11,
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
 		},
-
 		"subquery resolution greater than subquery interval": {
 			expr:                        `dense_series{}[1m:5m]`,
 			expectedTotalSamples:        1,
@@ -3475,6 +3477,17 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamples:        3,
 			isInstantQuery:              false,
 			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+		},
+		"subquery not aligned with parent query": {
+			expr:                        `dense_series{}[5m:44s]`,
+			expectedTotalSamples:        7,
+			isInstantQuery:              true,
+			expectedTotalSamplesPerStep: []int64{7},
+		},
+		"subquery not aligned with parent query - range query": {
+			expr:                        `max_over_time(dense_series{}[5m:44s])`,
+			expectedTotalSamples:        57,
+			expectedTotalSamplesPerStep: []int64{1, 2, 3, 5, 6, 6, 7, 7, 6, 7, 7},
 		},
 		"classic histogram quantile": {
 			expr:                        `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
@@ -3497,6 +3510,14 @@ func TestQueryStats(t *testing.T) {
 			expr:                        `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
 			expectedTotalSamples:        270,
 			expectedTotalSamplesPerStep: []int64{6, 12, 18, 24, 30, 30, 30, 30, 30, 30, 30},
+		},
+		"common subexpression elimination": {
+			expr:                                   `sum(dense_series) + sum(dense_series)`,
+			isInstantQuery:                         true,
+			expectedTotalSamples:                   2,
+			expectedTotalSamplesPerStep:            []int64{2},
+			expectedTotalSamplesWithPlanner:        1,
+			expectedTotalSamplesPerStepWithPlanner: []int64{1},
 		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
@@ -3539,8 +3560,13 @@ func TestQueryStats(t *testing.T) {
 
 			t.Run("with query planner", func(t *testing.T) {
 				mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, testCase.expr, testCase.isInstantQuery)
-				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+				if testCase.expectedTotalSamplesWithPlanner != 0 {
+					require.Equal(t, testCase.expectedTotalSamplesWithPlanner, mimirSamplesStatsWithPlanning.TotalSamples)
+					require.Equal(t, testCase.expectedTotalSamplesPerStepWithPlanner, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+				} else {
+					require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+					require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+				}
 			})
 		})
 	}
@@ -3593,345 +3619,345 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	}
 
 	cases := []struct {
-		Query                       string
-		Start                       time.Time
-		End                         time.Time
-		Interval                    time.Duration
+		query                       string
+		start                       time.Time
+		end                         time.Time
+		interval                    time.Duration
 		expectedTotalSamples        int64
 		expectedTotalSamplesPerStep []int64
-		// ...WithPlanner expectations are optional and should be set only if query with planning reports different stats
+		// ...WithPlanner expectations are optional and should be set only if a query with planning reports different stats
 		expectedTotalSamplesWithPlanner        int64
 		expectedTotalSamplesPerStepWithPlanner []int64
 	}{
 		{
-			Query:                       `"literal string"`,
-			Start:                       time.Unix(21, 0),
+			query:                       `"literal string"`,
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        0,
 			expectedTotalSamplesPerStep: []int64{0},
 		},
 		{
-			Query:                       "1",
-			Start:                       time.Unix(21, 0),
+			query:                       "1",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        0,
 			expectedTotalSamplesPerStep: []int64{0},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds",
-			Start:                       time.Unix(21, 0),
+			query:                       "metricWith1SampleEvery10Seconds",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       "metricWith1HistogramEvery10Seconds",
-			Start:                       time.Unix(21, 0),
+			query:                       "metricWith1HistogramEvery10Seconds",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        13, // 1 histogram HPoint of size 13 / 10 seconds
 			expectedTotalSamplesPerStep: []int64{13},
 		},
 		{
 			// timestamp function has a special handling.
-			Query:                       "timestamp(metricWith1SampleEvery10Seconds)",
-			Start:                       time.Unix(21, 0),
+			query:                       "timestamp(metricWith1SampleEvery10Seconds)",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       "timestamp(metricWith1HistogramEvery10Seconds)",
-			Start:                       time.Unix(21, 0),
+			query:                       "timestamp(metricWith1HistogramEvery10Seconds)",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 float sample (because of timestamp) / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds",
-			Start:                       time.Unix(22, 0),
+			query:                       "metricWith1SampleEvery10Seconds",
+			start:                       time.Unix(22, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds offset 10s",
-			Start:                       time.Unix(21, 0),
+			query:                       "metricWith1SampleEvery10Seconds offset 10s",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds @ 15",
-			Start:                       time.Unix(21, 0),
+			query:                       "metricWith1SampleEvery10Seconds @ 15",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
-			Start:                       time.Unix(21, 0),
+			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds{a="1"} @ 19`,
-			Start:                       time.Unix(21, 0),
+			query:                       `metricWith3SampleEvery10Seconds{a="1"} @ 19`,
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        1, // 1 sample / 10 seconds
 			expectedTotalSamplesPerStep: []int64{1},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds{a="1"}[20s] @ 19`,
-			Start:                       time.Unix(21, 0),
+			query:                       `metricWith3SampleEvery10Seconds{a="1"}[20s] @ 19`,
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        2, // (1 sample / 10 seconds) * 20s
 			expectedTotalSamplesPerStep: []int64{2},
 		},
 		{
-			Query:                       "metricWith3SampleEvery10Seconds",
-			Start:                       time.Unix(21, 0),
+			query:                       "metricWith3SampleEvery10Seconds",
+			start:                       time.Unix(21, 0),
 			expectedTotalSamples:        3, // 3 samples / 10 seconds
 			expectedTotalSamplesPerStep: []int64{3},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds[60s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1SampleEvery10Seconds[60s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{6},
 		},
 		{
-			Query:                       "metricWith1HistogramEvery10Seconds[60s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1HistogramEvery10Seconds[60s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{78},
 		},
 		{
-			Query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        24, // (1 sample / 10 seconds * 60 seconds) * 4
 			expectedTotalSamplesPerStep: []int64{24},
 		},
 		{
-			Query:                       "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
 			expectedTotalSamplesPerStep: []int64{26},
 		},
 		{
-			Query:                       "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        312, // (1 histogram (size 13) / 10 seconds * 60 seconds) * 4
 			expectedTotalSamplesPerStep: []int64{312},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds[60s] @ 30",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1SampleEvery10Seconds[60s] @ 30",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        4, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
 			expectedTotalSamplesPerStep: []int64{4},
 		},
 		{
-			Query:                       "metricWith1HistogramEvery10Seconds[60s] @ 30",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1HistogramEvery10Seconds[60s] @ 30",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
 			expectedTotalSamplesPerStep: []int64{52},
 		},
 		{
-			Query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
-			Start:                       time.Unix(201, 0),
+			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
 			expectedTotalSamplesPerStep: []int64{12},
 		},
 		{
-			Query:                       "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
-			Start:                       time.Unix(201, 0),
+			query:                       "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
 			expectedTotalSamplesPerStep: []int64{12},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds[60s] offset 10s",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1SampleEvery10Seconds[60s] offset 10s",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{6},
 		},
 		{
-			Query:                       "metricWith3SampleEvery10Seconds[60s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith3SampleEvery10Seconds[60s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        18, // 3 sample / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{18},
 		},
 		{
-			Query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s])",
-			Start:                       time.Unix(201, 0),
+			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s])",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{6},
 		},
 		{
-			Query:                       "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
-			Start:                       time.Unix(201, 0),
+			query:                       "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{6},
 		},
 		{
-			Query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s])",
-			Start:                       time.Unix(201, 0),
+			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s])",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        18, // 3 sample / 10 seconds * 60 seconds
 			expectedTotalSamplesPerStep: []int64{18},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds[60s:5s]",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1SampleEvery10Seconds[60s:5s]",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        12, // 1 sample per query * 12 queries (60/5)
 			expectedTotalSamplesPerStep: []int64{12},
 		},
 		{
-			Query:                       "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
-			Start:                       time.Unix(201, 0),
+			query:                       "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        12, // 1 sample per query * 12 queries (60/5)
 			expectedTotalSamplesPerStep: []int64{12},
 		},
 		{
-			Query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
-			Start:                       time.Unix(201, 0),
+			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			start:                       time.Unix(201, 0),
 			expectedTotalSamples:        36, // 3 sample per query * 12 queries (60/5)
 			expectedTotalSamplesPerStep: []int64{36},
 		},
 		{
-			Query:                                  "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			Start:                                  time.Unix(201, 0),
+			query:                                  "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                                  time.Unix(201, 0),
 			expectedTotalSamples:                   72, // 2 * (3 sample per query * 12 queries (60/5))
 			expectedTotalSamplesPerStep:            []int64{72},
 			expectedTotalSamplesWithPlanner:        36, // 72/2 due to common subexpression elimination
 			expectedTotalSamplesPerStepWithPlanner: []int64{36},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        4, // 1 sample per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
-			Start:                       time.Unix(204, 0),
-			End:                         time.Unix(223, 0),
-			Interval:                    5 * time.Second,
+			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
+			start:                       time.Unix(204, 0),
+			end:                         time.Unix(223, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        4, // 1 sample per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
 		},
 		{
-			Query:                       `metricWith1HistogramEvery10Seconds`,
-			Start:                       time.Unix(204, 0),
-			End:                         time.Unix(223, 0),
-			Interval:                    5 * time.Second,
+			query:                       `metricWith1HistogramEvery10Seconds`,
+			start:                       time.Unix(204, 0),
+			end:                         time.Unix(223, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        52, // 1 histogram (size 13 HPoint) per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{13, 13, 13, 13},
 		},
 		{
 			// timestamp function has a special handling
-			Query:                       "timestamp(metricWith1SampleEvery10Seconds)",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "timestamp(metricWith1SampleEvery10Seconds)",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        4, // 1 sample per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
 		},
 		{
 			// timestamp function has a special handling
-			Query:                       "timestamp(metricWith1HistogramEvery10Seconds)",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "timestamp(metricWith1HistogramEvery10Seconds)",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        4, // 1 sample per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
 		},
 		{
-			Query:                       `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
-			Start:                       time.Unix(991, 0),
-			End:                         time.Unix(1021, 0),
-			Interval:                    10 * time.Second,
+			query:                       `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
+			start:                       time.Unix(991, 0),
+			end:                         time.Unix(1021, 0),
+			interval:                    10 * time.Second,
 			expectedTotalSamples:        2, // 1 sample per query * 2 steps with data
 			expectedTotalSamplesPerStep: []int64{1, 1, 0, 0},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds{a="1"} offset 10s`,
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       `metricWith3SampleEvery10Seconds{a="1"} offset 10s`,
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        4, // 1 sample per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
 		},
 		{
-			Query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
 			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
 		},
 		{
-			Query:                       `metricWith3SampleEvery10Seconds`,
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       `metricWith3SampleEvery10Seconds`,
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        12, // 3 sample per query * 4 steps
 			expectedTotalSamplesPerStep: []int64{3, 3, 3, 3},
 		},
 		{
-			Query:                       `max_over_time(metricWith3SampleEvery10Seconds[60s])`,
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       `max_over_time(metricWith3SampleEvery10Seconds[60s])`,
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        72, // (3 sample / 10 seconds * 60 seconds) * 4 steps = 72
 			expectedTotalSamplesPerStep: []int64{18, 18, 18, 18},
 		},
 		{
-			Query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        144, // 3 sample per query * 12 queries (60/5) * 4 steps
 			expectedTotalSamplesPerStep: []int64{36, 36, 36, 36},
 		},
 		{
-			Query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s:5s])",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s:5s])",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // 1 sample per query * 12 queries (60/5) * 4 steps
 			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
 		},
 		{
-			Query:                       "sum by (b) (max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "sum by (b) (max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // 1 sample per query * 12 queries (60/5) * 4 steps
 			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
 		},
 		{
-			Query:                                  "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			Start:                                  time.Unix(201, 0),
-			End:                                    time.Unix(220, 0),
-			Interval:                               5 * time.Second,
+			query:                                  "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                                  time.Unix(201, 0),
+			end:                                    time.Unix(220, 0),
+			interval:                               5 * time.Second,
 			expectedTotalSamples:                   288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
 			expectedTotalSamplesPerStep:            []int64{72, 72, 72, 72},
 			expectedTotalSamplesWithPlanner:        144, //  288/2 due to common sub-expression elimination
 			expectedTotalSamplesPerStepWithPlanner: []int64{36, 36, 36, 36},
 		},
 		{
-			Query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
-			Start:                       time.Unix(201, 0),
-			End:                         time.Unix(220, 0),
-			Interval:                    5 * time.Second,
+			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
 			expectedTotalSamples:        192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
 			expectedTotalSamplesPerStep: []int64{48, 48, 48, 48},
 		},
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.Query, func(t *testing.T) {
-			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, tc.Query, tc.Start, tc.End, tc.Interval)
+		t.Run(tc.query, func(t *testing.T) {
+			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, tc.query, tc.start, tc.end, tc.interval)
 			require.Equal(t, tc.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
 			require.Equal(t, tc.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per step samples does not match value from Prometheus' engine")
 
 			t.Run("without query planner", func(t *testing.T) {
-				mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.Query, tc.Start, tc.End, tc.Interval)
+				mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
 				require.Equal(t, tc.expectedTotalSamples, mimirSamplesStats.TotalSamples)
 				require.Equal(t, tc.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
 			})
 
 			t.Run("with query planner", func(t *testing.T) {
-				mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, tc.Query, tc.Start, tc.End, tc.Interval)
+				mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, tc.query, tc.start, tc.end, tc.interval)
 				if tc.expectedTotalSamplesWithPlanner != 0 {
 					require.Equal(t, tc.expectedTotalSamplesWithPlanner, mimirSamplesStatsWithPlanning.TotalSamples)
 					require.Equal(t, tc.expectedTotalSamplesPerStepWithPlanner, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
