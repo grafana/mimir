@@ -370,11 +370,15 @@ func (am *Alertmanager) TestTemplatesHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	am.templatesMtx.RLock()
-	tmpls := make([]alertingTemplates.TemplateDefinition, len(am.templates))
-	copy(tmpls, am.templates)
+	factory, err := alertingTemplates.NewFactory(am.templates, am.logger, am.cfg.ExternalURL.String(), am.cfg.UserID)
 	am.templatesMtx.RUnlock()
-
-	response, err := alertingNotify.TestTemplate(r.Context(), c, tmpls, am.cfg.ExternalURL.String(), am.logger)
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("error initializing configured templates: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
+	response, err := alertingNotify.TestTemplate(r.Context(), c, factory, am.logger)
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing templates: %s", err.Error()),
@@ -398,13 +402,10 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	am.templatesMtx.RLock()
-	tmpls := make([]string, 0, len(am.templates))
-	for _, tmpl := range am.templates {
-		tmpls = append(tmpls, tmpl.Template)
-	}
+	factory, err := alertingTemplates.NewFactory(am.templates, am.logger, am.cfg.ExternalURL.String(), am.cfg.UserID)
 	am.templatesMtx.RUnlock()
 
-	response, status, err := alertingNotify.TestReceivers(r.Context(), c, tmpls, am.buildGrafanaReceiverIntegrations, am.tmplExternalURL.String())
+	response, status, err := alertingNotify.TestReceivers(r.Context(), c, am.buildGrafanaReceiverIntegrations, factory)
 	if err != nil {
 		http.Error(w,
 			fmt.Sprintf("error testing receivers: %s", err.Error()),
