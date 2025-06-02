@@ -288,28 +288,7 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						continue
 					}
 
-					mark, err := ReadConversionMark(ctx, m.ULID, uBucket, ulogger)
-					if err != nil {
-						level.Error(ulogger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", m.ULID.String())
-						continue
-					}
-
-					if mark.Version == CurrentVersion {
-						continue
-					}
-
-					if err := os.RemoveAll(c.rootDir()); err != nil {
-						level.Error(ulogger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
-					}
-
-					bdir := filepath.Join(c.dirForUser(u), m.ULID.String())
-					level.Info(ulogger).Log("msg", "downloading block", "block", m.ULID.String(), "maxTime", m.MaxTime)
-					if err := block.Download(ctx, ulogger, uBucket, m.ULID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
-						level.Error(ulogger).Log("msg", "error downloading block", "err", err)
-						continue
-					}
-
-					c.processBlock(ctx, m, bdir, uBucket, ulogger)
+					c.processBlock(ctx, u, m, uBucket, ulogger)
 				}
 			}
 		}
@@ -317,17 +296,41 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 }
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
-func (c *ParquetConverter) processBlock(ctx context.Context, meta *block.Meta, localBlockDir string, uBucket objstore.InstrumentedBucket, logger log.Logger) {
+func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
 	start := time.Now()
 	var err error
+	var skipped bool
 	defer func() {
 		duration := time.Since(start)
 		c.metrics.conversionDuration.Observe(duration.Seconds())
-		c.metrics.blocksConverted.Inc()
 		if err != nil {
 			c.metrics.blocksConvertedFailed.Inc()
+		} else if !skipped {
+			c.metrics.blocksConverted.Inc()
 		}
 	}()
+
+	mark, err := ReadConversionMark(ctx, meta.ULID, uBucket, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", meta.ULID.String())
+		return
+	}
+
+	if mark.Version == CurrentVersion {
+		skipped = true
+		return
+	}
+
+	if err := os.RemoveAll(c.rootDir()); err != nil {
+		level.Error(logger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+	}
+
+	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
+	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
+	if err := block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
+		level.Error(logger).Log("msg", "error downloading block", "err", err)
+		return
+	}
 
 	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger)
 	if err != nil {

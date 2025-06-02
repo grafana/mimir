@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package parquetconverter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -16,6 +19,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -26,7 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
-	"github.com/grafana/mimir/pkg/util/test"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -59,13 +63,13 @@ func prepareWithMockConverter(t *testing.T, cfg Config, bucketClient objstore.Bu
 }
 
 // TestParquetConverter_InitialSyncWithWaitRing tests the parquet converter start case.
-// When several parquet-converters start up at once, we expect each one to only load
-// own certain blocks, regardless which parquet-converter joined the ring first or last.
+// When several parquet-converters start up at once, we expect each one to take conversion
+// ownership of a subset of all blocks.
 func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
-	test.VerifyNoLeak(t)
+	utiltest.VerifyNoLeak(t)
 
 	const numUsers = 2
-	const numBlocks = 7
+	const numBlocks = 8
 
 	// We run the test with 1, 2, and 3 converters to ensure that the sharding works correctly
 	for numConverters := 1; numConverters <= 3; numConverters++ {
@@ -78,8 +82,8 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 			// Create isolated bucket and blocks for this test case
 			bucketClientOnDisk, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 			now := time.Now()
-			mockTSDB(t, path.Join(storageDir, "user-1"), 24, 3, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
-			mockTSDB(t, path.Join(storageDir, "user-2"), 24, 4, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
+			mockTSDB(t, path.Join(storageDir, "user-1"), 24, numBlocks/2, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
+			mockTSDB(t, path.Join(storageDir, "user-2"), 24, numBlocks/2, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
 
 			// Uploading the blocks to in memory storage - otherwise we run out of file descriptors during the test
 			// The default limit for fsd is 1024 on linux.
@@ -112,20 +116,13 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 				converterCfg.ShardingRing.Common.KVStore.Mock = ringStore
 				converterCfg.ShardingRing.Common.InstanceID = instanceID
 				converterCfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
-				converterCfg.ShardingRing.WaitStabilityMinDuration = 0
-				converterCfg.ShardingRing.WaitStabilityMaxDuration = 0
-				converterCfg.ShardingRing.WaitActiveInstanceTimeout = 30 * time.Second
-				converterCfg.ConversionInterval = 1 * time.Second
+				converterCfg.ShardingRing.WaitStabilityMinDuration = 2 * time.Second
+				converterCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 
 				c, reg := prepareWithMockConverter(t, converterCfg, objstore.WithNoopInstr(bucketClient))
 				t.Cleanup(func() {
-					if c.State() == services.Failed {
-						// Don't try to stop a service that already failed
-						t.Logf("Converter %s failed with error: %v", instanceID, c.FailureCase())
-						return
-					}
 					err := services.StopAndAwaitTerminated(context.Background(), c)
-					if err != nil && c.State() == services.Failed {
+					if err != nil && errors.Is(err, context.Canceled) {
 						return
 					}
 					assert.NoError(t, err)
@@ -140,22 +137,29 @@ func TestParquetConverter_InitialSyncWithWaitRing(t *testing.T) {
 				require.NoError(t, g.StartAsync(ctx))
 			}
 
-			// Wait until all converters are running (sequentially to avoid deadlock).
+			// Wait until all converters are running.
 			for _, g := range converters {
-				err := g.AwaitRunning(ctx)
-				require.NoError(t, err)
+				require.NoError(t, g.AwaitRunning(ctx))
 			}
-
-			time.Sleep(2 * time.Second) // Wait for converters to do the initial pass through the blocks.
 
 			// At this point we expect that all converters have joined the ring, discovered all tenants, and converted
 			// blocks for all users.
-			metrics := registries.BuildMetricFamiliesPerTenant()
+
 			// All converters should have discovered the same number of tenants.
-			assert.Equal(t, float64(numUsers*numConverters), metrics.GetSumOfGauges("cortex_parquet_converter_tenants_discovered"), "number of discovered tenants didnt match")
+			test.Poll(t, 10*time.Second, true, func() interface{} {
+				metrics := registries.BuildMetricFamiliesPerTenant()
+				users := metrics.GetSumOfGauges("cortex_parquet_converter_tenants_discovered")
+				return users == float64(numUsers*numConverters)
+			})
+
 			// The number of blocks synced should be equal to the number of blocks in the TSDB proving that despite the
 			// number of converters the blocks are sharded across them.
-			assert.Equal(t, float64(numBlocks), metrics.GetSumOfCounters("cortex_parquet_converter_blocks_converted_total"), "number of blocks converted didnt match")
+			test.Poll(t, 10*time.Second, true, func() interface{} {
+				metrics := registries.BuildMetricFamiliesPerTenant()
+				numConvertedBlocks := metrics.GetSumOfCounters("cortex_parquet_converter_blocks_converted_total")
+				return numConvertedBlocks == numBlocks
+			})
+
 		})
 	}
 }

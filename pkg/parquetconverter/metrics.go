@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package parquetconverter
 
 import (
@@ -29,15 +31,18 @@ func newParquetConverterMetrics(reg prometheus.Registerer) parquetConverterMetri
 		Name: "cortex_parquet_converter_conversion_duration_seconds",
 		Help: "Time taken to convert a block to parquet format",
 		// Buckets
-		// 1 0.008s  (8ms)
-		// 2 0.032s  (32ms)
-		// 3 0.128s  (128ms)
-		// 4 0.512s  (512ms)
-		// 5 2.048s  (2048ms)
-		// 6 8.192s  (8192ms)
-		// 7 32.768s (32768ms)
-		// 8 +Inf
-		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
+		// 1 0.500s  (500ms)
+		// 2 1.000s  (1000ms)
+		// 3 2.000s  (2000ms)
+		// 4 4.000s  (4000ms)
+		// 5 8.000s  (8000ms)
+		// 6 16.000s  (16000ms)
+		// 7 32.000s  (32000ms)
+		// 8 64.000s  (64000ms)
+		// 9 128.000s  (128000ms)
+		// 10 256.000s  (256000ms)
+		// 11 +Inf
+		Buckets: prometheus.ExponentialBuckets(0.5, 2, 10),
 	})
 
 	m.tenantsDiscovered = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
