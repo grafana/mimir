@@ -1534,7 +1534,7 @@ func TestRuler_notifySyncRules_IgnoresLeavingRulers(t *testing.T) {
 				})))
 			}
 
-			for rID, _ := range tc.rulers {
+			for rID := range tc.rulers {
 				createAndStartRuler(rID)
 			}
 
