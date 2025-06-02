@@ -448,10 +448,18 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 
 func TestGetRules(t *testing.T) {
 	type testCase struct {
-		shuffleShardSize     int
-		tokensByRuler        map[string][]uint32
-		rulerState           map[string]ring.InstanceState // if not set, assumed to be active
+		shuffleShardSize int
+		tokensByRuler    map[string][]uint32
+
+		// If not set for a ruler, the ruler is assumed to be active.
+		rulerState           map[string]ring.InstanceState
 		expectedRulesByRuler map[string]map[string]rulespb.RuleGroupList
+
+		// If not set for a user, call count assumed to be total number of rulers if shuffle sharding is disabled, and
+		// shuffle shard size if shuffle sharding is enabled.
+		expectedPoolClientCallsByUser map[string]int32
+
+		expectedErr string
 	}
 
 	makeRule := func(user string, i int) *rulespb.RuleGroupDesc {
@@ -508,9 +516,9 @@ func TestGetRules(t *testing.T) {
 			shuffleShardSize: 2,
 			tokensByRuler: map[string][]uint32{
 				"ruler1": append(
-					// User token to control the users using ruler1 as part of their subring
+					// User token to control the users using ruler1 as part of their subring.
 					[]uint32{userToken("user1", 0) + 1},
-					// Group tokens to control which rules go to ruler1
+					// Group tokens to control which rules go to ruler1.
 					generateTokenForGroups(1, rules[0], rules[1])...,
 				),
 				"ruler2": append(
@@ -540,7 +548,8 @@ func TestGetRules(t *testing.T) {
 			tokensByRuler: map[string][]uint32{
 				"ruler1": append(
 					generateTokenForGroups(1, rules[0], rules[1], rules[3]),
-					// add tokens for rules from ruler3 (as that's joining)
+					// Add tokens for rules from ruler3. As ruler3 is JOINING, it will be ignored when distributing
+					// rules and the next ruler in the ring will be used for rules that "should" be on ruler3.
 					generateTokenForGroups(2, rules[6], rules[7], rules[8])...),
 				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
 				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
@@ -560,6 +569,117 @@ func TestGetRules(t *testing.T) {
 				},
 				"ruler3": {},
 			},
+		},
+		"Shuffle Shard Size 2 with 1 joining ruler": {
+			shuffleShardSize: 2,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					[]uint32{userToken("user1", 0) + 1},
+					append(
+						generateTokenForGroups(1, rules[0], rules[1]),
+						generateTokenForGroups(3, rules[2])...)...,
+				),
+				"ruler2": append( // ruler2 is in JOINING state so will be ignored when distributing rules.
+					[]uint32{userToken("user1", 1) + 1, userToken("user2", 0) + 1},
+					generateTokenForGroups(1, rules[2])...,
+				),
+				"ruler3": append(
+					[]uint32{userToken("user2", 1) + 1, userToken("user3", 0) + 1},
+					generateTokenForGroups(1, rules[3], rules[4], rules[5], rules[6], rules[7], rules[8])...,
+				),
+				// While ruler4 registers some tokens for all users, it doesn't actually evaluate any rules.
+				// ruler1 and ruler2 are selected for subring for user1 and user2, even though ruler2 is in the JOINING
+				// state (this means all the rules are evaluated on ruler1).
+				// This does form part of user3's subring but user3's single rule is evaluated on ruler3.
+				"ruler4": append(
+					[]uint32{userToken("user1", 2) + 1, userToken("user2", 2) + 1, userToken("user3", 1) + 1},
+					generateTokenForGroups(2, rules[2])...,
+				),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler2": ring.JOINING,
+			},
+			expectedPoolClientCallsByUser: map[string]int32{
+				// ruler2 is part of user1 and user2's subrings, but is in the JOINING state, so it's skipped when getting rules.
+				"user1": 1,
+				"user2": 1,
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1], rules[2]},
+				},
+				"ruler2": {},
+				"ruler3": {
+					"user2": {rules[3], rules[4], rules[5], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+				"ruler4": {},
+			},
+		},
+		"Shuffle Shard Size 0 with 1 leaving ruler": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+					// Add tokens for rules from ruler3. As ruler3 is LEAVING, it will be ignored when distributing
+					// rules and the next ruler in the ring will be used for rules that "should" be on ruler3.
+					generateTokenForGroups(2, rules[6], rules[7], rules[8])...),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler3": ring.LEAVING,
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+					"user2": {rules[3], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+					"user2": {rules[4], rules[5]},
+				},
+				"ruler3": {},
+			},
+		},
+		"Shuffle Shard Size 0 with no active rulers": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					generateTokenForGroups(1, rules[0], rules[1], rules[3])),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler1": ring.JOINING,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.JOINING,
+			},
+			expectedErr: "empty ring",
+		},
+		"Shuffle Shard Size 2 with no active rulers": {
+			shuffleShardSize: 2,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					[]uint32{userToken("user1", 0) + 1},
+					generateTokenForGroups(1, rules[0], rules[1])...,
+				),
+				"ruler2": append(
+					[]uint32{userToken("user1", 1) + 1, userToken("user2", 0) + 1, userToken("user3", 0) + 1},
+					generateTokenForGroups(1, rules[2])...,
+				),
+				"ruler3": append(
+					[]uint32{userToken("user2", 1) + 1, userToken("user3", 1) + 1},
+					generateTokenForGroups(1, rules[3], rules[4], rules[5], rules[6], rules[7], rules[8])...,
+				),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler1": ring.JOINING,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.JOINING,
+			},
+			expectedErr: "empty ring",
 		},
 	}
 
@@ -594,7 +714,7 @@ func TestGetRules(t *testing.T) {
 			}
 
 			activeRulers := 0
-			for rID, _ := range tc.expectedRulesByRuler {
+			for rID, _ := range tc.tokensByRuler {
 				createAndStartRuler(rID)
 				if tc.rulerState[rID] == ring.ACTIVE {
 					activeRulers++
@@ -652,6 +772,10 @@ func TestGetRules(t *testing.T) {
 
 				for rID, r := range rulerAddrMap {
 					actualRules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
+					if tc.expectedErr != "" {
+						require.EqualError(t, err, tc.expectedErr)
+						continue
+					}
 					require.NoError(t, err)
 
 					require.Equal(t, len(userRules), len(actualRules.Groups), "rules are not equal for %s, %s", u, rID)
@@ -667,13 +791,20 @@ func TestGetRules(t *testing.T) {
 
 					// Check call count for rulers (this verifies that JOINING rulers should be ignored).
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
-					if tc.shuffleShardSize > 0 {
-						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
+					if expectedCalls, ok := tc.expectedPoolClientCallsByUser[u]; ok {
+						require.Equal(t, expectedCalls, mockPoolClient.numberOfCalls.Load())
+					} else if tc.shuffleShardSize > 0 {
+						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load(), "Unexpected call count when calling GetRules on %s for user %s", rID, u)
 					} else {
 						require.Equal(t, int32(activeRulers), mockPoolClient.numberOfCalls.Load())
 					}
 					mockPoolClient.numberOfCalls.Store(0)
 				}
+			}
+
+			// Don't do additional checks if GetRules() is expected to return an error.
+			if tc.expectedErr != "" {
+				return
 			}
 
 			// Ensure rule groups have been sharded among rulers.

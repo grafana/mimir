@@ -87,4 +87,3 @@ func (h *HealthCheck) List(ctx context.Context, _ *grpc_health_v1.HealthListRequ
 		},
 	}, nil
 }
-
