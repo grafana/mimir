@@ -898,7 +898,31 @@ func (cl *Client) supportsKeyVersion(key, version int16) bool {
 		cl.loadSeeds(),
 	} {
 		for _, b := range brokers {
-			if v := b.loadVersions(); v != nil && v.versions[key] >= version {
+			if v := b.loadVersions(); v != nil && v.maxVers[key] >= version {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (cl *Client) supportsKIP890p2() bool {
+	return cl.supportsFeature("transaction.version", 2)
+}
+
+// Same as above. A cluster returns a max version for a feature only once the
+// entire cluster supports the feature. This should only be used *after* at
+// least one successful response.
+func (cl *Client) supportsFeature(name string, version int16) bool {
+	cl.brokersMu.RLock()
+	defer cl.brokersMu.RUnlock()
+
+	for _, brokers := range [][]*broker{
+		cl.brokers,
+		cl.loadSeeds(),
+	} {
+		for _, b := range brokers {
+			if v := b.loadVersions(); v != nil && v.features[name] >= version {
 				return true
 			}
 		}
@@ -2283,6 +2307,7 @@ func (b *Broker) request(ctx context.Context, retry bool, req kmsg.Request) (kms
 // given broker ID.
 type issueShard struct {
 	req    kmsg.Request
+	pin    *pinReq
 	broker int32
 	any    bool
 
@@ -2434,15 +2459,13 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 
 		for i := range issues {
 			myIssue := issues[i]
-			myUnderlyingReq := myIssue.req
 			var isPinned bool
-			if pinned, ok := myIssue.req.(*pinReq); ok {
-				myUnderlyingReq = pinned.Request
-				isPinned = true
+			if isPinned = myIssue.pin != nil; isPinned {
+				ctx = context.WithValue(ctx, ctxPinReq, myIssue.pin)
 			}
 
 			if myIssue.err != nil {
-				addShard(shard(nil, myUnderlyingReq, nil, myIssue.err))
+				addShard(shard(nil, myIssue.req, nil, myIssue.err))
 				continue
 			}
 
@@ -2459,14 +2482,14 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 					broker, err = cl.brokerOrErr(ctx, myIssue.broker, errUnknownBroker)
 				}
 				if err != nil {
-					addShard(shard(nil, myUnderlyingReq, nil, err)) // failure to load a broker is a failure to issue a request
+					addShard(shard(nil, myIssue.req, nil, err)) // failure to load a broker is a failure to issue a request
 					return
 				}
 
 				resp, err := broker.waitResp(ctx, myIssue.req)
 				var errIsFromResp bool
 				if err == nil {
-					err = sharder.onResp(myUnderlyingReq, resp) // perform some potential cleanup, and potentially receive an error to retry
+					err = sharder.onResp(myIssue.req, resp) // perform some potential cleanup, and potentially receive an error to retry
 					if ke := (*kerr.Error)(nil); errors.As(err, &ke) {
 						errIsFromResp = true
 					}
@@ -2493,7 +2516,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 						goto start
 					}
 					l.Log(LogLevelDebug, "sharded request failed, resharding and reissuing", "req", kmsg.Key(myIssue.req.Key()).Name(), "time_since_start", time.Since(start), "tries", tries, "err", err)
-					issue(reqTry{tries, myUnderlyingReq, err})
+					issue(reqTry{tries, myIssue.req, err})
 					return
 				}
 
@@ -2505,7 +2528,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				if errIsFromResp {
 					err = nil
 				}
-				addShard(shard(broker, myUnderlyingReq, resp, err)) // the error was not retryable
+				addShard(shard(broker, myIssue.req, resp, err)) // the error was not retryable
 			}()
 		}
 	}
@@ -3058,11 +3081,12 @@ func (cl *offsetFetchSharder) shard(ctx context.Context, kreq kmsg.Request, last
 			for _, group := range req.Groups {
 				req := offsetFetchGroupToReq(req.RequireStable, group)
 				issues = append(issues, issueShard{
-					req:    &pinReq{Request: req, pinMax: true, max: 7},
+					req:    req,
+					pin:    &pinReq{pinMax: true, max: 7},
 					broker: id,
 				})
 			}
-		} else if len(req.Groups) == 1 {
+		} else if len(req.Groups) <= 1 {
 			single := offsetFetchGroupToReq(req.RequireStable, req.Groups[0])
 			single.Groups = req.Groups
 			issues = append(issues, issueShard{
@@ -3071,7 +3095,8 @@ func (cl *offsetFetchSharder) shard(ctx context.Context, kreq kmsg.Request, last
 			})
 		} else {
 			issues = append(issues, issueShard{
-				req:    &pinReq{Request: req, pinMin: len(req.Groups) > 1, min: 8},
+				req:    req,
+				pin:    &pinReq{pinMin: true, min: 8},
 				broker: id,
 			})
 		}
@@ -3189,7 +3214,8 @@ func (*findCoordinatorSharder) shard(_ context.Context, kreq kmsg.Request, lastE
 			return []issueShard{{req: req, any: true}}, false, nil
 		}
 		return []issueShard{{
-			req: &pinReq{Request: req, pinMin: true, min: 4},
+			req: req,
+			pin: &pinReq{pinMin: true, min: 4},
 			any: true,
 		}}, true, nil // this is "reshardable", in that we will split the request next
 	}
@@ -3200,7 +3226,8 @@ func (*findCoordinatorSharder) shard(_ context.Context, kreq kmsg.Request, lastE
 		sreq.CoordinatorType = req.CoordinatorType
 		sreq.CoordinatorKey = key
 		issues = append(issues, issueShard{
-			req: &pinReq{Request: sreq, pinMax: true, max: 3},
+			req: req,
+			pin: &pinReq{pinMax: true, max: 3},
 			any: true,
 		})
 	}
@@ -3706,7 +3733,8 @@ func (cl *addPartitionsToTxnSharder) shard(ctx context.Context, kreq kmsg.Reques
 	for id, req := range brokerReqs {
 		if len(req.Transactions) <= 1 || len(req.Transactions) == 1 && !req.Transactions[0].VerifyOnly {
 			issues = append(issues, issueShard{
-				req:    &pinReq{Request: req, pinMax: true, max: 3},
+				req:    req,
+				pin:    &pinReq{pinMax: true, max: 3},
 				broker: id,
 			})
 		} else {

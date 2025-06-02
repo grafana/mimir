@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Query-frontend: Ensure that cache keys generated from cardinality estimate middleware are less than 250 bytes in length by hashing the tenant IDs that are included in them. This change invalidates all cardinality estimates in the cache. #11568
 * [CHANGE] Ruler: Remove experimental CLI flag `-ruler-storage.cache.rule-group-enabled` to enable or disable caching the contents of rule groups. Caching rule group contents is now always enabled when a cache is configured for the ruler. #10949
 * [CHANGE] Ingester: Out-of-order native histograms are now enabled whenever both native histogram and out-of-order ingestion is enabled. The `-ingester.ooo-native-histograms-ingestion-enabled` CLI flag and corresponding `ooo_native_histograms_ingestion_enabled` runtime configuration option have been removed. #10956
 * [CHANGE] Distributor: removed the `cortex_distributor_label_values_with_newlines_total` metric. #10977
@@ -11,9 +12,11 @@
 * [CHANGE] Frontend: The subquery spin-off feature is now enabled with `-query-frontend.subquery-spin-off-enabled=true` instead of `-query-frontend.instant-queries-with-subquery-spin-off=.*` #11153
 * [CHANGE] Overrides-exporter: Don't export per-tenant overrides that are set to their default values. #11173
 * [CHANGE] gRPC/HTTP clients: Rename metric `cortex_client_request_invalid_cluster_validation_labels_total` to `cortex_client_invalid_cluster_validation_label_requests_total`. #11237
+* [CHANGE] Querier: Use Mimir Query Engine (MQE) by default. Set `-querier.query-engine=prometheus` to continue using Prometheus' engine. #11501
 * [FEATURE] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: Created timestamp is ignored, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192 #11143
 * [FEATURE] Query-frontend: expand `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` configuration options to cache non-transient response failures for instant queries. #11120
 * [FEATURE] Querier, query-frontend, ruler: Enable experimental support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification. #11344
+* [ENHANCEMENT] Dashboards: Add "Added Latency" row to Writes Dashboard. #11579
 * [ENHANCEMENT] Ingester: Add support for exporting native histogram cost attribution metrics (`cortex_ingester_attributed_active_native_histogram_series` and `cortex_ingester_attributed_active_native_histogram_buckets`) with labels specified by customers to a custom Prometheus registry. #10892
 * [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879 #11072.
 * [ENHANCEMENT] Compactor: Upload block index file and multiple segment files concurrently. Concurrency scales linearly with block size up to `-compactor.max-per-block-upload-concurrency`. #10947
@@ -78,6 +81,7 @@
 * [ENHANCEMENT] Dashboards: Add panels to the `Mimir / Tenants` and `Mimir / Top Tenants` dashboards showing the rate of gateway requests. #10978
 * [ENHANCEMENT] Alerts: Improve `MimirIngesterFailsToProcessRecordsFromKafka` to not fire during forced TSDB head compaction. #11006
 * [ENHANCEMENT] Alerts: Add alerts for invalid cluster validation labels. #11255 #11282 #11413
+* [ENHANCEMENT] Dashboards: Improve "Kafka 100th percentile end-to-end latency when ingesters are running (outliers)" panel, computing the baseline latency on `max(10, 10%)` of ingesters instead of a fixed 10 replicas. #11581
 * [CHANGE] Alerts: Update query for `MimirBucketIndexNotUpdated`. Use `max_over_time` to prevent alert firing when pods rotate. #11311, #11426
 * [CHANGE] Alerts: Make alerting threshold for `DistributorGcUsesTooMuchCpu` configurable. #11508.
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891

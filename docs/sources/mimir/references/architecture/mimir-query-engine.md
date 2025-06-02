@@ -7,19 +7,19 @@ weight: 100
 
 # Grafana Mimir query engine
 
-The Mimir Query Engine (MQE) is an experimental alternative to Prometheus' query engine.
+The Mimir Query Engine (MQE) is an alternative to Prometheus' query engine.
 You can use it in [queriers](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier)
 to evaluate PromQL queries.
 
 MQE produces equivalent results to Prometheus' engine, generally uses less memory and CPU
 than Prometheus' engine, and evaluates queries at least as fast, if not faster.
-It supports almost all stable PromQL features and transparently falls back to Prometheus'
+It supports all stable PromQL features and transparently falls back to Prometheus'
 engine for queries that use unsupported features.
 
 ## How to enable MQE
 
-MQE is experimental and disabled by default. To enable it, either set the
-`-querier.query-engine=mimir` CLI flag on queriers or set the equivalent YAML
+MQE is enabled by default. To disable it, either set the
+`-querier.query-engine=prometheus` CLI flag on queriers or set the equivalent YAML
 configuration file option.
 
 ## Fallback to Prometheus' engine
@@ -72,7 +72,7 @@ has no impact if MQE is disabled or if the query falls back to Prometheus' engin
 
 The following are known differences between MQE and Prometheus' engine:
 
-### Binary operations that produces no series
+### Binary operations that produce no series
 
 If MQE can determine that a binary operation such as `+`, `-`, `/` or `and` produce no series
 based on the series labels on both sides, it skips evaluating both sides.

@@ -60,8 +60,9 @@ type producer struct {
 
 	batchPromises ringBatchPromise
 
-	txnMu sync.Mutex
-	inTxn bool
+	txnMu   sync.Mutex
+	inTxn   bool
+	tx890p2 bool
 }
 
 // BufferedProduceRecords returns the number of records currently buffered for
