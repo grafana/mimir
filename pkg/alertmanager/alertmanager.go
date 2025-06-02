@@ -404,6 +404,12 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 	am.templatesMtx.RLock()
 	factory, err := alertingTemplates.NewFactory(am.templates, am.logger, am.cfg.ExternalURL.String(), am.cfg.UserID)
 	am.templatesMtx.RUnlock()
+	if err != nil {
+		http.Error(w,
+			fmt.Sprintf("error initializing templates: %s", err.Error()),
+			http.StatusInternalServerError)
+		return
+	}
 
 	response, status, err := alertingNotify.TestReceivers(r.Context(), c, am.buildGrafanaReceiverIntegrations, factory)
 	if err != nil {
@@ -642,30 +648,21 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 
 	// Cached templates.
 	var tmpl *template.Template
-	var gTmpl *template.Template
-	templates := make([]string, 0, len(tmpls))
-	for _, t := range tmpls {
-		templates = append(templates, t.Template)
+	factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
+	if err != nil {
+		return nil, err
 	}
-
+	cached := alertingTemplates.NewCachedFactory(factory)
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		switch rcv.Type() {
 		case definition.GrafanaReceiverType:
-			// Create the Grafana template struct if it has not already been created.
-			if gTmpl == nil {
-				gTmpl, err = alertingTemplates.FromContent(templates, WithCustomFunctions(am.cfg.UserID))
-				if err != nil {
-					return nil, err
-				}
-				gTmpl.ExternalURL = tmplExternalURL
-			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), gTmpl, am.logger, am.wrapNotifier, grafanaOpts...)
+			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
 		case definition.AlertmanagerReceiverType:
 			if tmpl == nil {
-				tmpl, err = loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
+				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
 					return nil, err
 				}
@@ -687,11 +684,13 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	// are valid.
 	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
 	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
-	if tmpl == nil && gTmpl == nil {
-		_, err := am.loadTemplates(templates, WithCustomFunctions(am.cfg.UserID))
-		if err != nil {
-			return nil, err
-		}
+	if am.isGrafanaTenant() {
+		_, err = cached.GetTemplate(alertingTemplates.GrafanaKind)
+	} else if tmpl == nil {
+		_, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	return integrationsMap, nil
@@ -700,16 +699,6 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 // isGrafanaTenant returns true if the Alertmanager is a Grafana tenant.
 func (am *Alertmanager) isGrafanaTenant() bool {
 	return am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(am.cfg.UserID, am.cfg.GrafanaAlertmanagerTenantSuffix)
-}
-
-// loadTemplates creates a template.Template from several in-memory default template files and user-provided templates.
-// If the AM is a Grafana tenant, it uses the alertingTemplates package to load templates as that includes additional
-// default templates and functions.
-func (am *Alertmanager) loadTemplates(tmpls []string, options ...template.Option) (*template.Template, error) {
-	if am.isGrafanaTenant() {
-		return alertingTemplates.FromContent(tmpls, options...)
-	}
-	return loadTemplates(tmpls, options...)
 }
 
 func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl alertingNotify.TemplatesProvider) ([]*nfstatus.Integration, error) {
