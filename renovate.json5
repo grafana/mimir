@@ -27,6 +27,7 @@
           "github.com/charleskorn/go-grpc",
           "google.golang.org/grpc",
           "github.com/charleskorn/objstore",
+          "github.com/grafana/mimir-otlptranslator",
         ],
         "enabled": false
       },
