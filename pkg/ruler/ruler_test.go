@@ -650,8 +650,7 @@ func TestGetRules(t *testing.T) {
 		"Shuffle Shard Size 0 with no active rulers": {
 			shuffleShardSize: 0,
 			tokensByRuler: map[string][]uint32{
-				"ruler1": append(
-					generateTokenForGroups(1, rules[0], rules[1], rules[3])),
+				"ruler1": generateTokenForGroups(1, rules[0], rules[1], rules[3]),
 				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
 				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
 			},
@@ -718,7 +717,7 @@ func TestGetRules(t *testing.T) {
 			}
 
 			activeRulers := 0
-			for rID, _ := range tc.tokensByRuler {
+			for rID := range tc.tokensByRuler {
 				createAndStartRuler(rID)
 				if tc.rulerState[rID] == ring.ACTIVE {
 					activeRulers++
@@ -753,9 +752,11 @@ func TestGetRules(t *testing.T) {
 			for rID, r := range rulerAddrMap {
 				if tc.rulerState[rID] == ring.JOINING {
 					// Use rulerSyncReasonInitial for JOINING rulers to simulate what happens on ruler startup.
-					r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+					err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+					require.NoError(t, err)
 				} else {
-					r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+					err := r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+					require.NoError(t, err)
 				}
 			}
 
