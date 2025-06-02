@@ -456,7 +456,20 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL)
+	// Fixing kinds of templates. If not specified, assume the tenant to get default kind
+	fixed := make([]alertingTemplates.TemplateDefinition, 0, len(tmpls))
+	tenantKind := alertingTemplates.MimirKind
+	if am.isGrafanaTenant() {
+		tenantKind = alertingTemplates.GrafanaKind
+	}
+	for _, tmpl := range tmpls {
+		if !alertingTemplates.IsKnownKind(tmpl.Kind) {
+			tmpl.Kind = tenantKind
+		}
+		fixed = append(fixed, tmpl)
+	}
+
+	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, fixed, tmplExternalURL)
 	if err != nil {
 		return err
 	}
@@ -513,7 +526,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	am.receiversMtx.Unlock()
 
 	am.templatesMtx.Lock()
-	am.templates = tmpls
+	am.templates = fixed
 	am.tmplExternalURL = tmplExternalURL
 	am.templatesMtx.Unlock()
 

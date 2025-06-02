@@ -712,8 +712,10 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		},
 		UpdatedAt: now,
 	}
+	expected := testTemplate
+	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
 	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], testTemplate)
+	require.Equal(t, am.templates[0], expected)
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:
@@ -743,6 +745,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 	testTemplate = alertingTemplates.TemplateDefinition{
 		Name:     "test",
 		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
 	}
 	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
 }
