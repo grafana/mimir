@@ -14,10 +14,6 @@ type PrepareParams struct {
 	QueryStats *QueryStats
 }
 
-func (p *PrepareParams) Clone() PrepareParams {
-	return PrepareParams{}
-}
-
 // Operator represents all operators.
 type Operator interface {
 	// ExpressionPosition returns the position of the PromQL expression that this operator represents.
