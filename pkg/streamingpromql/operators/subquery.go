@@ -140,12 +140,10 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVectorStepData) int64 {
 	sum := int64(0)
 	startIndex := int64(0)
+	// if step.RangeStart within SubqueryTimeRange - Calculate index of a first step with T > step.RangeStart
+	// Otherwise, it's outside SubqueryTimeRange - first step after step.RangeStart is 0.
 	if step.RangeStart >= s.SubqueryTimeRange.StartT {
-		// Calculate index of a first step with T > step.RangeStart
 		startIndex = (step.RangeStart-s.SubqueryTimeRange.StartT)/(s.SubqueryTimeRange.IntervalMilliseconds) + 1
-	} else {
-		// If step.RangeStart < s.SubqueryTimeRange.StartT, it means it's outside SubqueryTimeRange.
-		// First step after step.RangeStart is 0.
 	}
 
 	endIndex := (step.RangeEnd - s.SubqueryTimeRange.StartT) / s.SubqueryTimeRange.IntervalMilliseconds
