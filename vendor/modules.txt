@@ -686,8 +686,8 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250522092815-92adaaa0147a
-## explicit; go 1.22
+# github.com/grafana/alerting v0.0.0-20250604192009-6bf6277b5b8d
+## explicit; go 1.23.0
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
 github.com/grafana/alerting/http
@@ -723,6 +723,7 @@ github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
+github.com/grafana/alerting/templates/mimir
 # github.com/grafana/dskit v0.0.0-20250604095747-77dd0d353b21
 ## explicit; go 1.23.0
 github.com/grafana/dskit/backoff
