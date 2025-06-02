@@ -583,10 +583,8 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 					continue
 				}
 			}
-			stopAfter = numSamples - (appendIDsToConsider - index)
-			if stopAfter < 0 {
-				stopAfter = 0 // Stopped in a previous chunk.
-			}
+			// Stopped in a previous chunk.
+			stopAfter = max(numSamples-(appendIDsToConsider-index), 0)
 			break
 		}
 	}

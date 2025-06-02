@@ -28,13 +28,20 @@ import (
 	"time"
 
 	"github.com/prometheus/otlptranslator"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/util/annotations"
 )
+
+type PromoteResourceAttributes struct {
+	promoteAll bool
+	attrs      map[string]struct{}
+}
 
 type Settings struct {
 	Namespace                         string
@@ -44,7 +51,7 @@ type Settings struct {
 	AddMetricSuffixes                 bool
 	SendMetadata                      bool
 	AllowUTF8                         bool
-	PromoteResourceAttributes         []string
+	PromoteResourceAttributes         *PromoteResourceAttributes
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
@@ -288,6 +295,49 @@ func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelA
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
+	attrs := otlpCfg.PromoteResourceAttributes
+	if otlpCfg.PromoteAllResourceAttributes {
+		attrs = otlpCfg.IgnoreResourceAttributes
+	}
+	attrsMap := make(map[string]struct{}, len(attrs))
+	for _, s := range attrs {
+		attrsMap[s] = struct{}{}
+	}
+	return &PromoteResourceAttributes{
+		promoteAll: otlpCfg.PromoteAllResourceAttributes,
+		attrs:      attrsMap,
+	}
+}
+
+// promotedAttributes returns labels for promoted resourceAttributes.
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []mimirpb.LabelAdapter {
+	if s == nil {
+		return nil
+	}
+
+	var promotedAttrs []mimirpb.LabelAdapter
+	if s.promoteAll {
+		promotedAttrs = make([]mimirpb.LabelAdapter, 0, resourceAttributes.Len())
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	} else {
+		promotedAttrs = make([]mimirpb.LabelAdapter, 0, len(s.attrs))
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; exists {
+				promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	}
+	sort.Stable(ByLabelName(promotedAttrs))
+	return promotedAttrs
 }
 
 type labelsStringer []mimirpb.LabelAdapter

@@ -30,9 +30,15 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+type PromoteResourceAttributes struct {
+	promoteAll bool
+	attrs      map[string]struct{}
+}
 
 type Settings struct {
 	Namespace                         string
@@ -42,7 +48,7 @@ type Settings struct {
 	AddMetricSuffixes                 bool
 	SendMetadata                      bool
 	AllowUTF8                         bool
-	PromoteResourceAttributes         []string
+	PromoteResourceAttributes         *PromoteResourceAttributes
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
@@ -286,6 +292,49 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+func NewPromoteResourceAttributes(otlpCfg config.OTLPConfig) *PromoteResourceAttributes {
+	attrs := otlpCfg.PromoteResourceAttributes
+	if otlpCfg.PromoteAllResourceAttributes {
+		attrs = otlpCfg.IgnoreResourceAttributes
+	}
+	attrsMap := make(map[string]struct{}, len(attrs))
+	for _, s := range attrs {
+		attrsMap[s] = struct{}{}
+	}
+	return &PromoteResourceAttributes{
+		promoteAll: otlpCfg.PromoteAllResourceAttributes,
+		attrs:      attrsMap,
+	}
+}
+
+// promotedAttributes returns labels for promoted resourceAttributes.
+func (s *PromoteResourceAttributes) promotedAttributes(resourceAttributes pcommon.Map) []prompb.Label {
+	if s == nil {
+		return nil
+	}
+
+	var promotedAttrs []prompb.Label
+	if s.promoteAll {
+		promotedAttrs = make([]prompb.Label, 0, resourceAttributes.Len())
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	} else {
+		promotedAttrs = make([]prompb.Label, 0, len(s.attrs))
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; exists {
+				promotedAttrs = append(promotedAttrs, prompb.Label{Name: name, Value: value.AsString()})
+			}
+			return true
+		})
+	}
+	sort.Stable(ByLabelName(promotedAttrs))
+	return promotedAttrs
 }
 
 type labelsStringer []prompb.Label
