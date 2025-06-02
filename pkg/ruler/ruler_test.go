@@ -89,6 +89,7 @@ func defaultRulerConfig(t testing.TB) Config {
 type mockRulerClient struct {
 	ruler           *Ruler
 	rulesCallsCount *atomic.Int32
+	syncCallsCount  *atomic.Int32
 }
 
 func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc.CallOption) (*RulesResponse, error) {
@@ -97,14 +98,16 @@ func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc
 }
 
 func (c *mockRulerClient) SyncRules(ctx context.Context, in *SyncRulesRequest, _ ...grpc.CallOption) (*SyncRulesResponse, error) {
+	c.syncCallsCount.Inc()
 	return c.ruler.SyncRules(ctx, in)
 }
 
 type mockRulerClientsPool struct {
 	ClientsPool
-	cfg           Config
-	rulerAddrMap  map[string]*Ruler
-	numberOfCalls atomic.Int32
+	cfg                Config
+	rulerAddrMap       map[string]*Ruler
+	numberOfRulesCalls atomic.Int32
+	numberOfSyncCalls  atomic.Int32
 }
 
 func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
@@ -112,7 +115,8 @@ func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (Rul
 		if r.lifecycler.GetInstanceAddr() == inst.Addr {
 			return &mockRulerClient{
 				ruler:           r,
-				rulesCallsCount: &p.numberOfCalls,
+				rulesCallsCount: &p.numberOfRulesCalls,
+				syncCallsCount:  &p.numberOfSyncCalls,
 			}, nil
 		}
 	}
@@ -792,13 +796,13 @@ func TestGetRules(t *testing.T) {
 					// Check call count for rulers (this verifies that JOINING rulers should be ignored).
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
 					if expectedCalls, ok := tc.expectedPoolClientCallsByUser[u]; ok {
-						require.Equal(t, expectedCalls, mockPoolClient.numberOfCalls.Load())
+						require.Equal(t, expectedCalls, mockPoolClient.numberOfRulesCalls.Load())
 					} else if tc.shuffleShardSize > 0 {
-						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load(), "Unexpected call count when calling GetRules on %s for user %s", rID, u)
+						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfRulesCalls.Load(), "Unexpected call count when calling GetRules on %s for user %s", rID, u)
 					} else {
-						require.Equal(t, int32(activeRulers), mockPoolClient.numberOfCalls.Load())
+						require.Equal(t, int32(activeRulers), mockPoolClient.numberOfRulesCalls.Load())
 					}
-					mockPoolClient.numberOfCalls.Store(0)
+					mockPoolClient.numberOfRulesCalls.Store(0)
 				}
 			}
 
@@ -1475,7 +1479,7 @@ func TestRuler_InitialSync_RetryOnFail(t *testing.T) {
 	verifySyncRulesMetric(t, reg, 2, 0)
 }
 
-func TestRuler_notifySyncRules_DoesNotErrorIfLeaving(t *testing.T) {
+func TestRuler_notifySyncRules_IgnoresLeavingRulers(t *testing.T) {
 	type testCase struct {
 		rulers            map[string]ring.InstanceState
 		expectedSyncCalls int32
@@ -1555,10 +1559,10 @@ func TestRuler_notifySyncRules_DoesNotErrorIfLeaving(t *testing.T) {
 
 			for _, r := range rulerAddrMap {
 				r.notifySyncRules(ctx, []string{"user1"})
-				// Check call count for rulers (this verifies that LEAVING rulers should be ignored).
+				// Check call count for rulers (LEAVING rulers should be ignored).
 				mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
-				require.Equal(t, tc.expectedSyncCalls, mockPoolClient.numberOfCalls.Load())
-				mockPoolClient.numberOfCalls.Store(0)
+				require.Equal(t, tc.expectedSyncCalls, mockPoolClient.numberOfSyncCalls.Load())
+				mockPoolClient.numberOfSyncCalls.Store(0)
 			}
 		})
 	}
