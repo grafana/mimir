@@ -6,7 +6,6 @@
 package types
 
 import (
-	"fmt"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -47,7 +46,7 @@ func NewQueryStats(timeRange QueryTimeRange, enablePerStepStats bool, memoryCons
 	if enablePerStepStats {
 		s, err := Int64SlicePool.Get(qs.timeRange.StepCount, qs.memoryConsumptionTracker)
 		if err != nil {
-			return nil, fmt.Errorf("failed to allocate TotalSamplesPerStep: %w", err)
+			return nil, err
 		}
 		qs.TotalSamplesPerStep = s[:qs.timeRange.StepCount]
 	}
@@ -83,9 +82,7 @@ func (qs *QueryStats) IncrementSamplesAtTimestamp(t, samples int64) {
 // TotalSamplesPerStep slice, preserving its length and capacity for reuse.
 func (qs *QueryStats) Clear() {
 	qs.TotalSamples = 0
-	if qs.TotalSamplesPerStep != nil {
-		clear(qs.TotalSamplesPerStep)
-	}
+	clear(qs.TotalSamplesPerStep)
 }
 
 func (qs *QueryStats) Close() {

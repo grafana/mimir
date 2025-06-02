@@ -84,7 +84,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption)
 	stats, err := types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats(), memoryConsumptionTracker)
 	if err != nil {
-		return nil, fmt.Errorf("could not get create stats for query: %w", err)
+		return nil, err
 	}
 	q := &Query{
 		queryable:                queryable,
