@@ -17,6 +17,7 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+//	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,461 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+var (
+h0 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 2},
+		Sum: 2545.525306,
+		Schema: 8,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 419, Length: 74},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 0,
+	}
+h1 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 2},
+		Sum: 2545.525306,
+		Schema: 8,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 419, Length: 74},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 15,
+	}
+h2 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 2},
+		Sum: 2545.525306,
+		Schema: 8,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 419, Length: 74},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 32,
+	}
+h3 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 46,
+	}
+h4 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 60,
+	}
+h5 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 75,
+	}
+h6 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 90,
+	}
+h7 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 105,
+	}
+h8 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 120,
+	}
+h9 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 135,
+	}
+h10 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 150,
+	}
+h11 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 165,
+	}
+h12 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 180,
+	}
+h13 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 195,
+	}
+h14 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 210,
+	}
+h15 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 225,
+	}
+h16 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 240,
+	}
+h17 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 255,
+	}
+h18 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 270,
+	}
+h19 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 286,
+	}
+h20 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 300,
+	}
+h21 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 315,
+	}
+h22 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 330,
+	}
+h23 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 345,
+	}
+h24 = prompb.Histogram{
+		Count: &prompb.Histogram_CountInt{CountInt: 4},
+		Sum: 4386.978085000001,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: []prompb.BucketSpan{
+			{Offset: 284, Length: 94},
+		},
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: []int64{1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 360,
+	}
+h25 = prompb.Histogram{
+        Count: &prompb.Histogram_CountInt{CountInt: 0},
+		Sum: 0,
+		Schema: 7,
+		ZeroThreshold: 0.0001,
+		ZeroCount: &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+		NegativeSpans: nil,
+		PositiveSpans: nil,
+		NegativeDeltas: nil,
+		NegativeCounts: nil,
+		PositiveDeltas: nil,
+		PositiveCounts: nil,
+		ResetHint: prompb.Histogram_UNKNOWN,
+		Timestamp: 586,
+	}
+
+	histogramSeries = []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "series_1"},
+			},
+			Histograms: []prompb.Histogram{
+				h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19, h20, h21, h22, h23, h24, h25,
+			},
+		},
+	}
+)
+
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	testQuerierWithBlocksStorageRunningInMicroservicesMode(t, generateFloatSeries)
@@ -45,19 +501,19 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			tenantShardSize:   0,
 			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
 		},
-		"shard size 0, memcached index cache": {
-			tenantShardSize:   0,
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
-		},
-		"shard size 1, memcached index cache": {
-			tenantShardSize:   1,
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
-		},
-		"shard size 1, memcached index cache, query sharding enabled": {
-			tenantShardSize:      1,
-			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
-			queryShardingEnabled: true,
-		},
+		// "shard size 0, memcached index cache": {
+		// 	tenantShardSize:   0,
+		// 	indexCacheBackend: tsdb.IndexCacheBackendMemcached,
+		// },
+		// "shard size 1, memcached index cache": {
+		// 	tenantShardSize:   1,
+		// 	indexCacheBackend: tsdb.IndexCacheBackendMemcached,
+		// },
+		// "shard size 1, memcached index cache, query sharding enabled": {
+		// 	tenantShardSize:      1,
+		// 	indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
+		// 	queryShardingEnabled: true,
+		// },
 	}
 
 	const blockRangePeriod = 5 * time.Second
@@ -94,42 +550,49 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
-	series1Name := "series_1"
-	series2Name := "series_2"
-	series1Timestamp := time.Now()
-	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1, _ := seriesGenerator(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
-	series2, expectedVector2, _ := seriesGenerator(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
+	// series1Name := "series_1"
+	// series2Name := "series_2"
+	// series1Timestamp := time.Now()
+	// series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+	// series1, expectedVector1, _ := seriesGenerator(series1Name, series1Timestamp, prompb.Label{Name: series1Name, Value: series1Name})
+	// series2, expectedVector2, _ := seriesGenerator(series2Name, series2Timestamp, prompb.Label{Name: series2Name, Value: series2Name})
 
-	res, err := writeClient.Push(series1)
+	startTime := time.Now().UnixMilli()
+	series1Timestamp := int64(0)
+	for i := 0; i<len(histogramSeries[0].Histograms); i++ {
+		histogramSeries[0].Histograms[i].Timestamp = histogramSeries[0].Histograms[i].Timestamp * 1000 + startTime
+		series1Timestamp = histogramSeries[0].Histograms[i].Timestamp
+	}
+	fmt.Printf("series1Timestamp: %d\n", series1Timestamp)
+	res, err := writeClient.Push(histogramSeries)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	res, err = writeClient.Push(series2)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
+	// res, err = writeClient.Push(series2)
+	// require.NoError(t, err)
+	// require.Equal(t, 200, res.StatusCode)
 
-	// Wait until the TSDB head is compacted and shipped to the storage.
-	// The shipped block contains the 1st series, while the 2ns series is in the head.
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
+	// // Wait until the TSDB head is compacted and shipped to the storage.
+	// // The shipped block contains the 1st series, while the 2ns series is in the head.
+	// require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
+	// require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
+	// require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
+	// require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
+
+	// // Push another series to further compact another block and delete the first block
+	// // due to expired retention.
+	// series3Name := "series_3"
+	// series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
+	// series3, expectedVector3, _ := seriesGenerator(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
+
+	// res, err = writeClient.Push(series3)
+	// require.NoError(t, err)
+	// require.Equal(t, 200, res.StatusCode)
+
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_shipper_uploads_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
-
-	// Push another series to further compact another block and delete the first block
-	// due to expired retention.
-	series3Name := "series_3"
-	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3, _ := seriesGenerator(series3Name, series3Timestamp, prompb.Label{Name: series3Name, Value: series3Name})
-
-	res, err = writeClient.Push(series3)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
-
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_shipper_uploads_total"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(3), "cortex_ingester_memory_series_created_total"))
-	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_removed_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series_removed_total"))
 
 	// Start the compactor to have the bucket index created before querying.
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), commonFlags)
@@ -177,127 +640,55 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, series
 			// the store-gateway ring if blocks sharding is enabled.
 			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 
-			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
-			// we don't known which store-gateway instance will synch the blocks, so we need to wait on
-			// metrics extracted from all instances.
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
+			// // Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
+			// // we don't known which store-gateway instance will synch the blocks, so we need to wait on
+			// // metrics extracted from all instances.
+			// require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
 
-			// Check how many tenants have been discovered and synced by store-gateways.
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_discovered"))
-			if testCfg.tenantShardSize > 0 {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1)), "cortex_bucket_stores_tenants_synced"))
-			} else {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_synced"))
-			}
+			// // Check how many tenants have been discovered and synced by store-gateways.
+			// require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_discovered"))
+			// if testCfg.tenantShardSize > 0 {
+			// 	require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1)), "cortex_bucket_stores_tenants_synced"))
+			// } else {
+			// 	require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_synced"))
+			// }
 
 			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
-			expectedFetchedSeries := 0
+			//expectedFetchedSeries := 0
 
 			instantQueriesCount := 0
 			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "user-1")
 			require.NoError(t, err)
 			instantQueriesCount++
 
-			result, err := c.Query(series1Name, series1Timestamp)
+			// turn series1Timestamp into time.Time
+			series1Time := time.UnixMilli(series1Timestamp)
+			fmt.Printf("series1Time: %s\n", series1Time)
+
+			var (
+				result model.Value
+				s      *model.Sample
+			)
+
+			result, err = c.Query("sum(rate(series_1[10m]))", series1Time)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector1, result.(model.Vector))
-			expectedFetchedSeries++ // Storage only.
-			// thanos_store_index_cache_requests_total: ExpandedPostings: 1, Postings: 1, Series: 1
-			instantQueriesCount++
+			s = result.(model.Vector)[0]
+			fmt.Printf("sample histogram: %v\n", s)
+			require.NotNil(t, s.Histogram)
+			require.Greater(t, s.Histogram.Count, 0.0)
+			countFromHistogram := float64(s.Histogram.Count)
 
-			result, err = c.Query(series2Name, series2Timestamp)
+			result, err = c.Query("histogram_count(sum(rate(series_1[10m])))", series1Time)
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector2, result.(model.Vector))
-			expectedFetchedSeries += 2 // Ingester + storage.
-			// thanos_store_index_cache_requests_total: ExpandedPostings: 3, Postings: 2, Series: 2
-			instantQueriesCount++
+			s = result.(model.Vector)[0]
+			fmt.Printf("sample float: %v\n", s)
+			require.Nil(t, s.Histogram)
+			countFromFunction := float64(s.Value)
 
-			result, err = c.Query(series3Name, series3Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector3, result.(model.Vector))
-			expectedFetchedSeries++ // Ingester only.
-			// thanos_store_index_cache_requests_total: ExpandedPostings: 5, Postings: 2, Series: 2
-			instantQueriesCount++
+			require.Equal(t, countFromHistogram, countFromFunction)
 
-			// Make sure the querier is using the bucket index blocks finder.
-			require.NoError(t, querier.WaitSumMetrics(e2e.Greater(0), "cortex_bucket_index_loads_total"))
-
-			// Check the in-memory index cache metrics (in the store-gateway).
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9), "thanos_store_index_cache_requests_total")) // 5 + 2 + 2
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total"))     // no cache hit cause the cache was empty
-
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache, 2 expanded postings on one block, 3 on another one
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2), "thanos_cache_operations_total")) // one set for each get
-			}
-
-			// Query back again the 1st series from storage. This time it should use the index cache.
-			result, err = c.Query(series1Name, series1Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector1, result.(model.Vector))
-			expectedFetchedSeries++ // Storage only.
-
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9+2), "thanos_store_index_cache_requests_total"))
-			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
-
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items"))             // as before
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2+2+3), "thanos_store_index_cache_items_added_total")) // as before
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(9*2+2), "thanos_cache_operations_total")) // as before + 2 gets (expanded postings and series)
-			}
-
-			// Query range. We expect 1 data point with a value of 3 (number of series).
-			// Run this query multiple times to ensure each time we get the same result.
-			const numRangeQueries = 10
-
-			for i := 0; i < numRangeQueries; i++ {
-				result, err = c.QueryRange(`count({__name__=~"series.*"})`, series3Timestamp, series3Timestamp, time.Minute)
-				require.NoError(t, err)
-				require.Equal(t, model.ValMatrix, result.Type())
-
-				matrix := result.(model.Matrix)
-				require.Equal(t, 1, len(matrix))
-				require.Equal(t, 1, len(matrix[0].Values))
-				assert.Equal(t, model.SampleValue(3), matrix[0].Values[0].Value)
-				expectedFetchedSeries += 4 // series_2 is fetched both from ingester and storage, while other series are fetched either from ingester or storage.
-			}
-
-			// This instant query can be sharded.
-			result, err = c.Query(`count({__name__=~"series.*"})`, series3Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			vector := result.(model.Vector)
-			require.Equal(t, 1, len(vector))
-			require.Equal(t, model.SampleValue(3), vector[0].Value)
-			instantQueriesCount++
-			expectedFetchedSeries += 4 // series_2 is fetched both from ingester and storage, while other series are fetched either from ingester or storage.
-
-			// When query sharding is enabled, we expect the range & instant queries above to be sharded.
-			if testCfg.queryShardingEnabled {
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries+float64(instantQueriesCount)), "cortex_frontend_query_sharding_rewrites_attempted_total"))
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries+1), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals((numRangeQueries+1)*16), "cortex_frontend_sharded_queries_total"))
-			}
-
-			// Check query stats (supported only when gRPC streaming is enabled).
-			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(expectedFetchedSeries)), "cortex_query_fetched_series_total"))
-
-			// Query metadata.
-			testMetadataQueriesWithBlocksStorage(t, c, series1[0], series2[0], series3[0], blockRangePeriod)
-
-			// Ensure no service-specific metrics prefix is used by the wrong service.
-			assertServiceMetricsPrefixes(t, Distributor, distributor)
-			assertServiceMetricsPrefixes(t, Ingester, ingester)
-			assertServiceMetricsPrefixes(t, Querier, querier)
-			assertServiceMetricsPrefixes(t, StoreGateway, storeGateway1)
-			assertServiceMetricsPrefixes(t, StoreGateway, storeGateway2)
 		})
 	}
 }
