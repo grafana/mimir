@@ -460,7 +460,6 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpcStreamMiddleware = append(grpcStreamMiddleware, grpcServerLimit.StreamServerInterceptor)
 	}
 
-	metrics.GRPCConcurrentStreamsLimit.WithLabelValues().Set(float64(cfg.GRPCServerMaxConcurrentStreams))
 	grpcOptions := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(grpcMiddleware...),
 		grpc.ChainStreamInterceptor(grpcStreamMiddleware...),
@@ -486,7 +485,6 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 				metrics.ReceivedMessageSize,
 				metrics.SentMessageSize,
 				metrics.InflightRequests,
-				metrics.GRPCConcurrentStreamsByConnMax,
 			)),
 		)
 	}
