@@ -1475,6 +1475,95 @@ func TestRuler_InitialSync_RetryOnFail(t *testing.T) {
 	verifySyncRulesMetric(t, reg, 2, 0)
 }
 
+func TestRuler_notifySyncRules_DoesNotErrorIfLeaving(t *testing.T) {
+	type testCase struct {
+		rulers            map[string]ring.InstanceState
+		expectedSyncCalls int32
+	}
+
+	testCases := map[string]testCase{
+		"1/3 LEAVING rulers": {
+			rulers: map[string]ring.InstanceState{
+				"ruler1": ring.ACTIVE,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.ACTIVE,
+			},
+			expectedSyncCalls: 2,
+		},
+		"all LEAVING rulers": {
+			rulers: map[string]ring.InstanceState{
+				"ruler1": ring.LEAVING,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.LEAVING,
+			},
+			expectedSyncCalls: 0,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var (
+				registryByRuler = map[string]*prometheus.Registry{}
+				rulerAddrMap    = map[string]*Ruler{}
+				storage         = newMockRuleStore(nil)
+				ctx             = context.Background()
+			)
+
+			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+			createAndStartRuler := func(id string) *Ruler {
+				cfg := defaultRulerConfig(t)
+				cfg.Ring.Common.InstanceID = id
+				cfg.Ring.Common.InstanceAddr = id
+				cfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+				cfg.Ring.NumTokens = 0          // Join the ring with no tokens.
+				cfg.PollInterval = time.Hour    // No periodic syncing.
+				cfg.RingCheckPeriod = time.Hour // No syncing on ring change.
+
+				reg := prometheus.NewPedanticRegistry()
+				registryByRuler[id] = reg
+
+				return prepareRuler(t, cfg, storage, withStart(), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+				})))
+			}
+
+			for rID, _ := range tc.rulers {
+				createAndStartRuler(rID)
+			}
+
+			// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
+			for _, reg := range registryByRuler {
+				verifySyncRulesMetric(t, reg, 1, 0)
+			}
+
+			// Inject the tokens for each ruler.
+			require.NoError(t, kvStore.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+				d, _ := in.(*ring.Desc)
+				if d == nil {
+					d = ring.NewDesc()
+				}
+				for rID, state := range tc.rulers {
+					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", []uint32{1}, state, time.Now(), false, time.Time{})
+				}
+				return d, true, nil
+			}))
+
+			// Wait a bit to make sure ruler's ring is updated.
+			time.Sleep(100 * time.Millisecond)
+
+			for _, r := range rulerAddrMap {
+				r.notifySyncRules(ctx, []string{"user1"})
+				// Check call count for rulers (this verifies that LEAVING rulers should be ignored).
+				mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
+				require.Equal(t, tc.expectedSyncCalls, mockPoolClient.numberOfCalls.Load())
+				mockPoolClient.numberOfCalls.Store(0)
+			}
+		})
+	}
+}
+
 type testRuleStore struct {
 	mock.Mock
 }
