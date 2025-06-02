@@ -471,19 +471,23 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	// Validate template files.
-	tmpls := make([]string, 0, len(grafanaConfig.Templates))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0, len(grafanaConfig.Templates))
 	for _, tmpl := range grafanaConfig.Templates {
-		tmpls = append(tmpls, tmpl.Body)
+		tmpls = append(tmpls, alertingTemplates.TemplateDefinition{
+			Name:     tmpl.Filename,
+			Template: tmpl.Body,
+			Kind:     alertingTemplates.GrafanaKind,
+		})
 	}
-
-	tmpl, err := alertingTemplates.FromContent(tmpls, WithCustomFunctions(user))
+	factory, err := alertingTemplates.NewFactory(tmpls, logger, "http://localhost", user) // use fake URL to avoid errors.
 	if err != nil {
 		return err
 	}
+	cached := alertingTemplates.NewCachedFactory(factory)
 
 	noopWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier { return notifier }
 	for _, rcv := range userAmConfig.Receivers {
-		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), tmpl, logger, noopWrapper)
+		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, noopWrapper)
 		if err != nil {
 			return err
 		}
