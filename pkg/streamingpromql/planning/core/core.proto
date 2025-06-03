@@ -125,6 +125,8 @@ message VectorSelectorDetails {
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+
+  bool skipHistogramBuckets = 5;
 }
 
 message MatrixSelectorDetails {
@@ -133,6 +135,8 @@ message MatrixSelectorDetails {
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   google.protobuf.Duration range = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
+
+  bool skipHistogramBuckets = 6;
 }
 
 message SubqueryDetails {

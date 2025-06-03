@@ -19,7 +19,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
 }
 
 func (v *VectorSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -48,7 +48,8 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
-		v.Offset == otherVectorSelector.Offset
+		v.Offset == otherVectorSelector.Offset &&
+		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
@@ -70,6 +71,7 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 			Offset:                   v.Offset.Milliseconds(),
 			LookbackDelta:            params.LookbackDelta,
 			Matchers:                 matchers,
+			SkipHistogramBuckets:     v.SkipHistogramBuckets,
 			ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		},
