@@ -47,6 +47,32 @@ var (
 	RingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
+// blockConverter defines the interface for converting blocks to parquet format.
+type blockConverter interface {
+	ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) error
+}
+
+type defaultBlockConverter struct{}
+
+func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) error {
+	tsdbBlock, err := tsdb.OpenBlock(
+		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
+	)
+	if err != nil {
+		return err
+	}
+
+	_, err = convert.ConvertTSDBBlock(
+		ctx,
+		bkt,
+		meta.MinTime,
+		meta.MaxTime,
+		[]convert.Convertible{tsdbBlock},
+		convert.WithName(meta.ULID.String()),
+	)
+	return err
+}
+
 type Config struct {
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
@@ -84,13 +110,16 @@ type ParquetConverter struct {
 	ring                   *ring.Ring
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
+
+	blockConverter blockConverter
+	metrics        parquetConverterMetrics
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "parquet-converter", logger, registerer)
 	}
-	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits)
+	return newParquetConverter(cfg, logger, registerer, bucketClientFactory, limits, defaultBlockConverter{})
 }
 func newParquetConverter(
 	cfg Config,
@@ -98,6 +127,7 @@ func newParquetConverter(
 	registerer prometheus.Registerer,
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
 	limits *validation.Overrides,
+	blockConverter blockConverter,
 ) (*ParquetConverter, error) {
 	cfg.allowedTenants = util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants)
 	c := &ParquetConverter{
@@ -106,6 +136,8 @@ func newParquetConverter(
 		logger:              log.With(logger, "component", "parquet-converter"),
 		registerer:          registerer,
 		limits:              limits,
+		blockConverter:      blockConverter,
+		metrics:             newParquetConverterMetrics(registerer),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -218,9 +250,6 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 			}
 
 			for _, u := range users {
-				if !c.Cfg.allowedTenants.IsAllowed(u) {
-					continue
-				}
 				ulogger := util_log.WithUserID(u, c.logger)
 				uBucket := bucket.NewUserBucketClient(u, c.bucketClient, c.limits)
 
@@ -259,40 +288,61 @@ func (c *ParquetConverter) running(ctx context.Context) error {
 						continue
 					}
 
-					mark, err := ReadConversionMark(ctx, m.ULID, uBucket, ulogger)
-					if err != nil {
-						level.Error(ulogger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", m.ULID.String())
-						continue
-					}
-
-					if mark.Version == CurrentVersion {
-						continue
-					}
-
-					if err := os.RemoveAll(c.rootDir()); err != nil {
-						level.Error(ulogger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
-					}
-
-					bdir := filepath.Join(c.dirForUser(u), m.ULID.String())
-					level.Info(ulogger).Log("msg", "downloading block", "block", m.ULID.String(), "maxTime", m.MaxTime)
-					if err := block.Download(ctx, ulogger, uBucket, m.ULID, bdir, objstore.WithFetchConcurrency(10)); err != nil {
-						level.Error(ulogger).Log("msg", "error downloading block", "err", err)
-						continue
-					}
-
-					err = convertBlock(ctx, m, bdir, uBucket, ulogger)
-					if err != nil {
-						level.Error(ulogger).Log("msg", "failed to convert block", "block", m.ULID.String(), "err", err)
-					} else {
-						level.Info(ulogger).Log("msg", "converted block", "block", m.ULID.String())
-					}
-					err = WriteConversionMark(ctx, m.ULID, uBucket)
-					if err != nil {
-						level.Error(ulogger).Log("msg", "failed to write conversion mark", "block", m.ULID.String(), "err", err)
-					}
+					c.processBlock(ctx, u, m, uBucket, ulogger)
 				}
 			}
 		}
+	}
+}
+
+// processBlock handles the conversion of a single block with proper metrics tracking.
+func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta *block.Meta, uBucket objstore.InstrumentedBucket, logger log.Logger) {
+	start := time.Now()
+	var err error
+	var skipped bool
+	defer func() {
+		duration := time.Since(start)
+		c.metrics.conversionDuration.Observe(duration.Seconds())
+		if err != nil {
+			c.metrics.blocksConvertedFailed.Inc()
+		} else if !skipped {
+			c.metrics.blocksConverted.Inc()
+		}
+	}()
+
+	mark, err := ReadConversionMark(ctx, meta.ULID, uBucket, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to read conversion mark, skipping", "err", err, "block", meta.ULID.String())
+		return
+	}
+
+	if mark.Version == CurrentVersion {
+		skipped = true
+		return
+	}
+
+	if err := os.RemoveAll(c.rootDir()); err != nil {
+		level.Error(logger).Log("msg", "failed to remove work directory", "path", c.rootDir(), "err", err)
+	}
+
+	localBlockDir := filepath.Join(c.dirForUser(userID), meta.ULID.String())
+	level.Info(logger).Log("msg", "downloading block", "block", meta.ULID.String(), "maxTime", meta.MaxTime)
+	if err := block.Download(ctx, logger, uBucket, meta.ULID, localBlockDir, objstore.WithFetchConcurrency(10)); err != nil {
+		level.Error(logger).Log("msg", "error downloading block", "err", err)
+		return
+	}
+
+	err = c.blockConverter.ConvertBlock(ctx, meta, localBlockDir, uBucket, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to convert block", "block", meta.ULID.String(), "err", err)
+		return
+	}
+
+	level.Info(logger).Log("msg", "converted block", "block", meta.ULID.String())
+
+	err = WriteConversionMark(ctx, meta.ULID, uBucket)
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to write conversion mark", "block", meta.ULID.String(), "err", err)
 	}
 }
 
@@ -305,6 +355,7 @@ func (c *ParquetConverter) stopping(_ error) error {
 	return nil
 }
 
+// discoverUsers scans the bucket for users and returns a list of user IDs that are allowed to be converted.
 func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) {
 	var users []string
 
@@ -314,7 +365,20 @@ func (c *ParquetConverter) discoverUsers(ctx context.Context) ([]string, error) 
 		return nil
 	})
 
-	return users, err
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]string, 0, len(users))
+	for _, user := range users {
+		if c.Cfg.allowedTenants.IsAllowed(user) {
+			filtered = append(filtered, user)
+		}
+	}
+
+	c.metrics.tenantsDiscovered.Set(float64(len(filtered)))
+
+	return filtered, nil
 }
 
 // dirForUser returns the directory to be used to download and convert the blocks for a user
@@ -350,23 +414,4 @@ func (c *ParquetConverter) ownBlock(id string) (bool, error) {
 	}
 
 	return rs.Instances[0].Addr == c.ringLifecycler.GetInstanceAddr(), nil
-}
-
-func convertBlock(ctx context.Context, meta *block.Meta, localBlockDir string, bkt objstore.Bucket, logger log.Logger) (err error) {
-	tsdbBlock, err := tsdb.OpenBlock(
-		util_log.SlogFromGoKit(logger), localBlockDir, nil, tsdb.DefaultPostingsDecoderFactory,
-	)
-	if err != nil {
-		return err
-	}
-
-	_, err = convert.ConvertTSDBBlock(
-		ctx,
-		bkt,
-		meta.MinTime,
-		meta.MaxTime,
-		[]convert.Convertible{tsdbBlock},
-		convert.WithName(meta.ULID.String()),
-	)
-	return err
 }
