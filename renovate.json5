@@ -1,7 +1,7 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": [
-      "config:base"
+      "config:recommended"
     ],
     "baseBranches": ["main", "release-2.16", "release-2.15"],
     "postUpdateOptions": [
