@@ -719,7 +719,8 @@ func TestGetRules(t *testing.T) {
 			activeRulers := 0
 			for rID := range tc.tokensByRuler {
 				createAndStartRuler(rID)
-				if tc.rulerState[rID] == ring.ACTIVE {
+				state, ok := tc.rulerState[rID]
+				if (ok && state == ring.ACTIVE) || !ok {
 					activeRulers++
 				}
 			}
@@ -789,10 +790,7 @@ func TestGetRules(t *testing.T) {
 					for _, g := range actualRules.Groups {
 						actualRuleDescs = append(actualRuleDescs, g.Group)
 					}
-					sort.Slice(actualRuleDescs, func(i, j int) bool {
-						return actualRuleDescs[i].Name < actualRuleDescs[j].Name
-					})
-					require.Equal(t, expectedRuleDescs, actualRuleDescs)
+					require.ElementsMatch(t, expectedRuleDescs, actualRuleDescs)
 
 					// Check call count for rulers (this verifies that JOINING rulers should be ignored).
 					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
