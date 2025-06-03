@@ -339,6 +339,11 @@ func (o *failingOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
+func (o *failingOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
+}
+
 func (o *failingOperator) Close() {
 	// Nothing to do.
 }

@@ -434,7 +434,6 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		Queryable:                q.queryable,
 		MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		Annotations:              q.annotations,
-		Stats:                    q.stats,
 		LookbackDelta:            q.lookbackDelta,
 	}
 

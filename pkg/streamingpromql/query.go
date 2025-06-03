@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/stats"
+	promstats "github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
@@ -81,12 +81,17 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption)
+	stats, err := types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats(), memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 	q := &Query{
 		queryable:                queryable,
 		engine:                   e,
-		memoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		memoryConsumptionTracker: memoryConsumptionTracker,
 		annotations:              annotations.New(),
-		stats:                    &types.QueryStats{},
+		stats:                    stats,
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 	}
@@ -179,22 +184,18 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
 		lookbackDelta := q.lookbackDelta
-
-		return &selectors.InstantVectorSelector{
+		selector := &selectors.Selector{
+			Queryable:                q.queryable,
+			TimeRange:                timeRange,
+			Timestamp:                e.Timestamp,
+			Offset:                   e.OriginalOffset.Milliseconds(),
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 e.LabelMatchers,
+			ExpressionPosition:       e.PositionRange(),
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			Selector: &selectors.Selector{
-				Queryable:     q.queryable,
-				TimeRange:     timeRange,
-				Timestamp:     e.Timestamp,
-				Offset:        e.OriginalOffset.Milliseconds(),
-				LookbackDelta: lookbackDelta,
-				Matchers:      e.LabelMatchers,
+		}
 
-				ExpressionPosition:       e.PositionRange(),
-				MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			},
-			Stats: q.stats,
-		}, nil
+		return selectors.NewInstantVectorSelector(selector, q.memoryConsumptionTracker, false), nil
 	case *parser.AggregateExpr:
 		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
@@ -409,7 +410,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
-		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
+		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
 		step := e.Step
@@ -427,6 +428,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 		subquery := operators.NewSubquery(
 			inner,
 			timeRange,
+			subqueryTimeRange,
 			e.Timestamp,
 			e.OriginalOffset,
 			e.Range,
@@ -611,6 +613,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		level.Info(logger).Log(msg...)
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
+
+	err = q.root.Prepare(ctx, &types.PrepareParams{
+		QueryStats: q.stats,
+	})
+	if err != nil {
+		return &promql.Result{Err: fmt.Errorf("failed to prepare query: %w", err)}
+	}
 
 	switch root := q.root.(type) {
 	case types.RangeVectorOperator:
@@ -836,6 +845,7 @@ func (q *Query) Close() {
 	if q.cancel != nil {
 		q.cancel(errQueryClosed)
 	}
+	q.stats.Close()
 
 	if q.result == nil {
 		return
@@ -874,11 +884,15 @@ func (q *Query) Statement() parser.Statement {
 	return q.statement
 }
 
-func (q *Query) Stats() *stats.Statistics {
-	return &stats.Statistics{
-		Timers: stats.NewQueryTimers(),
-		Samples: &stats.QuerySamples{
-			TotalSamples: q.stats.TotalSamples,
+func (q *Query) Stats() *promstats.Statistics {
+	return &promstats.Statistics{
+		Timers: promstats.NewQueryTimers(),
+		// TODO: Returned promstats.QuerySamples won't report TotalSamplesPerStepMap() properly.
+		// See this for details: https://github.com/grafana/mimir/pull/11416#discussion_r2110930357
+		Samples: &promstats.QuerySamples{
+			TotalSamples:        q.stats.TotalSamples,
+			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
+			EnablePerStepStats:  q.stats.EnablePerStepStats,
 		},
 	}
 }

@@ -53,6 +53,11 @@ func (s *Time) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
+func (s *Time) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
+}
+
 func (s *Time) Close() {
 	// Nothing to do.
 }

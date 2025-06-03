@@ -105,6 +105,18 @@ func (m *FunctionOverInstantVector) NextSeries(ctx context.Context) (types.Insta
 	return m.Func.SeriesDataFunc(series, m.scalarArgsData, m.timeRange, m.MemoryConsumptionTracker)
 }
 
+func (m *FunctionOverInstantVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if err := m.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	for _, sa := range m.ScalarArgs {
+		if err := sa.Prepare(ctx, params); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *FunctionOverInstantVector) Close() {
 	m.Inner.Close()
 

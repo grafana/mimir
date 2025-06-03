@@ -73,7 +73,7 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.Stats)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

@@ -451,6 +451,14 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }
 
+func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := h.f.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return h.inner.Prepare(ctx, params)
+}
+
 func (h *HistogramFunction) Close() {
 	h.inner.Close()
 	h.f.Close()
@@ -482,6 +490,7 @@ type histogramFunction interface {
 	LoadArguments(ctx context.Context) error
 	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
 	ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64
+	Prepare(ctx context.Context, params *types.PrepareParams) error
 	Close()
 }
 
@@ -533,6 +542,10 @@ func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, h *hist
 	return promql.HistogramQuantile(ph, h)
 }
 
+func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return q.phArg.Prepare(ctx, params)
+}
+
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
 
@@ -576,6 +589,14 @@ func (f *histogramFraction) ComputeNativeHistogramResult(pointIndex int, h *hist
 	upper := f.upperValues.Samples[pointIndex].F
 
 	return promql.HistogramFraction(lower, upper, h)
+}
+
+func (f *histogramFraction) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := f.lowerArg.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return f.upperArg.Prepare(ctx, params)
 }
 
 func (f *histogramFraction) Close() {

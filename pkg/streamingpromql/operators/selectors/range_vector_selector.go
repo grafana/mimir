@@ -33,10 +33,9 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RangeVectorSelector {
 	return &RangeVectorSelector{
 		Selector:   selector,
-		Stats:      stats,
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:   &types.RangeVectorStepData{},
@@ -104,7 +103,7 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
 
-	m.Stats.TotalSamples += int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount()
+	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())
 
 	return m.stepData, nil
 }
@@ -158,6 +157,11 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			return fmt.Errorf("unknown value type %s", valueType.String())
 		}
 	}
+}
+
+func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	m.Stats = params.QueryStats
+	return nil
 }
 
 func (m *RangeVectorSelector) Close() {

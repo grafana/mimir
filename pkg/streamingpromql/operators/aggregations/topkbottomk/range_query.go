@@ -412,6 +412,13 @@ func (t *RangeQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
+func (t *RangeQuery) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if err := t.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return t.Param.Prepare(ctx, params)
+}
+
 func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()

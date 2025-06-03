@@ -118,6 +118,10 @@ func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
 }
 
+func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return a.Inner.Prepare(ctx, params)
+}
+
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
 

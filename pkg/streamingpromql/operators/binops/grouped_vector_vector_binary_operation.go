@@ -755,6 +755,14 @@ func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.Posit
 	return g.expressionPosition
 }
 
+func (a *GroupedVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := a.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return a.Right.Prepare(ctx, params)
+}
+
 func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Left.Close()
 	g.Right.Close()

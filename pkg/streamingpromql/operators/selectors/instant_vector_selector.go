@@ -33,6 +33,13 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps bool) *InstantVectorSelector {
+	return &InstantVectorSelector{
+		Selector:                 selector,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		ReturnSampleTimestamps:   returnSampleTimestamps,
+	}
+}
 func (v *InstantVectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.Selector.ExpressionPosition
 }
@@ -66,7 +73,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	lastHistogramT := int64(math.MinInt64)
 	var lastHistogram *histogram.FloatHistogram
 
+	stepIndex := -1
 	for stepT := v.Selector.TimeRange.StartT; stepT <= v.Selector.TimeRange.EndT; stepT += v.Selector.TimeRange.IntervalMilliseconds {
+		stepIndex++
 		var t int64
 		var f float64
 		var h *histogram.FloatHistogram
@@ -153,7 +162,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			lastHistogram = h
 
 			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
-			v.Stats.TotalSamples += types.EquivalentFloatSampleCount(h)
+			v.Stats.IncrementSamplesAtStep(stepIndex, types.EquivalentFloatSampleCount(h))
+
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
@@ -164,6 +174,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 					return types.InstantVectorSeriesData{}, err
 				}
 			}
+			v.Stats.IncrementSamplesAtStep(stepIndex, 1)
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
 		}
 	}
@@ -172,9 +183,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 	}
 
-	v.Stats.TotalSamples += int64(len(data.Floats))
-
 	return data, nil
+}
+
+func (m *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	m.Stats = params.QueryStats
+	return nil
 }
 
 func (v *InstantVectorSelector) Close() {
