@@ -23,11 +23,6 @@
       - "9091:9091"
     "volumes":
       - "./config:/etc/agent-config"
-  "jaeger":
-    "image": "jaegertracing/all-in-one:1.62.0"
-    "ports":
-      - "16686:16686"
-      - "14268"
   "kafka_1":
     "environment":
       - "CLUSTER_ID=zH1GDqcNTzGMDCXm5VZQdg"
@@ -118,12 +113,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=backend"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-backend-0"
     "image": "mimir"
     "ports":
@@ -148,12 +138,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=backend"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-backend-1"
     "image": "mimir"
     "ports":
@@ -178,12 +163,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=block-builder"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-block-builder-0"
     "image": "mimir"
     "ports":
@@ -208,12 +188,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=block-builder-scheduler"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-block-builder-scheduler-0"
     "image": "mimir"
     "ports":
@@ -238,12 +213,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=read"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-read-0"
     "image": "mimir"
     "ports":
@@ -268,12 +238,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=read"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-read-1"
     "image": "mimir"
     "ports":
@@ -298,12 +263,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=write"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-write-zone-a-0"
     "image": "mimir"
     "ports":
@@ -329,12 +289,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=write"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-write-zone-a-1"
     "image": "mimir"
     "ports":
@@ -360,12 +315,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=write"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-write-zone-a-2"
     "image": "mimir"
     "ports":
@@ -391,12 +341,7 @@
       "minio":
         "condition": "service_started"
     "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=ingester"
+      - "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://tempo:4318/v1/traces"
     "hostname": "mimir-write-zone-c-61"
     "image": "mimir"
     "ports":
@@ -441,3 +386,14 @@
     "image": "docker.redpanda.com/redpandadata/console:latest"
     "ports":
       - "8090:8080"
+  "tempo":
+    "command":
+      - "-config.file=/etc/config/tempo.yaml"
+    "image": "grafana/tempo:latest"
+    "ports":
+      - "3200"
+      - "9095"
+      - "4317"
+      - "4318"
+    "volumes":
+      - "./config:/etc/config"
