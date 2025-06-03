@@ -46,8 +46,11 @@ OpenTelemetry configuration follows the standard documentation from [OpenTelemet
 
 The `OTEL_TRACES_EXPORTER` environment variable specifies which trace exporter to use:
 - `otlp` (default): OpenTelemetry Protocol exporter
-- `jaeger`: Jaeger exporter
 - `none`: No trace exporter
+
+{{< admonition type="note" >}}
+The `jaeger` exporter option is not available as it was deprecated by the OpenTelemetry project in 2023. Instead, use the `otlp` exporter since Jaeger supports OTLP ingestion natively.
+{{< /admonition >}}
 
 #### Sampling Configuration
 
@@ -90,7 +93,11 @@ export OTEL_TRACES_SAMPLER_ARG="endpoint=http://jaeger:14250,pollingIntervalMs=5
 export OTEL_PROPAGATORS="tracecontext,baggage,jaeger"
 ```
 
-### Jaeger Configuration (Legacy)
+### Jaeger Configuration (Deprecated)
+
+{{< admonition type="caution" >}}
+Jaeger tracing configuration using `JAEGER_*` environment variables is deprecated since Mimir 2.17. Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively.
+{{< /admonition >}}
 
 To configure Grafana Mimir with Jaeger format tracing, set any of the following environment variables:
 
