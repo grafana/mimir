@@ -575,8 +575,8 @@ github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
 github.com/grafana/otel-profiling-go v0.5.1/go.mod h1:ftN/t5A/4gQI19/8MoWurBEtC6gFw8Dns1sJZ9W4Tls=
-github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6 h1:yvz/Ps9RhzFpPW0vNj7VgxWsznZxzi+94Y/5COUvTes=
-github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6/go.mod h1:FGdGvhI40Dq+CTQaSzK9evuve774cgOUdGfVO04OXkw=
+github.com/grafana/prometheus-alertmanager v0.25.1-0.20250603160012-dc4d855f22b8 h1:B5dA2eivA34OBDP5cG+0YkSQY7C4tK/YJ73I4hsrglk=
+github.com/grafana/prometheus-alertmanager v0.25.1-0.20250603160012-dc4d855f22b8/go.mod h1:O/QP1BCm0HHIzbKvgMzqb5sSyH88rzkFk84F4TfJjBU=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.8 h1:iwOtYXeeVSAeYefJNaxDytgjKtUuKQbJqgAIjlnicKg=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.8/go.mod h1:2+l7K7twW49Ct4wFluZD3tZ6e0SjanjcUUBPVD/UuGU=
 github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b h1:oMAq12GxTpwo9jxbnG/M4F/HdpwbibTaVoxNA0NZprY=
