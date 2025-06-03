@@ -16,12 +16,14 @@ Distributed tracing is a valuable tool for troubleshooting the behavior of Grafa
 Grafana Mimir supports distributed tracing using [OpenTelemetry](https://opentelemetry.io/docs/languages/go/getting-started/) and provides backward compatibility with [Jaeger](https://www.jaegertracing.io/) configuration.
 
 Mimir automatically detects which tracing configuration method to use based on the environment variables you set:
+
 - **OpenTelemetry format**: Uses standard OTel environment variables for modern tracing backends
 - **Jaeger format**: Uses Jaeger-specific environment variables for backward compatibility
 
 ## Dependencies
 
 Set up a tracing backend to collect and store traces from Grafana Mimir:
+
 - **For OpenTelemetry**: Use any OTLP-compatible tracing backend such as Jaeger, Tempo, or cloud-based solutions
 - **For Jaeger**: Set up a Jaeger deployment including either the Jaeger all-in-one binary or a distributed system of agents, collectors, and queriers
 
@@ -45,6 +47,7 @@ OpenTelemetry configuration follows the standard documentation from [OpenTelemet
 #### Traces Exporter Configuration
 
 The `OTEL_TRACES_EXPORTER` environment variable specifies which trace exporter to use:
+
 - `otlp` (default): OpenTelemetry Protocol exporter
 - `none`: No trace exporter
 
@@ -55,6 +58,7 @@ The `jaeger` exporter option is not available as it was deprecated by the OpenTe
 #### Sampling Configuration
 
 Configure sampling behavior using the `OTEL_TRACES_SAMPLER` environment variable:
+
 - `always_on`: Sample all traces
 - `always_off`: Sample no traces
 - `traceidratio`: Sample traces based on trace ID ratio
@@ -65,6 +69,7 @@ Configure sampling behavior using the `OTEL_TRACES_SAMPLER` environment variable
 - `parentbased_jaeger_remote`: Use parent-based Jaeger remote sampling
 
 For `jaeger_remote` and `parentbased_jaeger_remote` samplers, you must also set `OTEL_TRACES_SAMPLER_ARG` with the configuration in the format:
+
 ```
 endpoint=http://localhost:14250,pollingIntervalMs=5000,initialSamplingRate=0.25
 ```
@@ -72,6 +77,7 @@ endpoint=http://localhost:14250,pollingIntervalMs=5000,initialSamplingRate=0.25
 #### Propagation Configuration
 
 Configure trace context propagation using `OTEL_PROPAGATORS`:
+
 - `tracecontext`: W3C Trace Context (default)
 - `baggage`: W3C Baggage (default)
 - `jaeger`: Jaeger propagation (default)
@@ -108,6 +114,7 @@ To configure Grafana Mimir with Jaeger format tracing, set any of the following 
 #### Required Environment Variables
 
 You must specify at least one of the following environment variables for Jaeger configuration to be enabled:
+
 - `JAEGER_AGENT_HOST`
 - `JAEGER_ENDPOINT`
 - `JAEGER_SAMPLER_MANAGER_HOST_PORT`
@@ -115,6 +122,7 @@ You must specify at least one of the following environment variables for Jaeger 
 #### Sampling Configuration
 
 Configure sampling using Jaeger-specific environment variables:
+
 - `JAEGER_SAMPLER_TYPE`: Sampling strategy (`const`, `probabilistic`, `remote`)
 - `JAEGER_SAMPLER_PARAM`: Sampling parameter value
 - `JAEGER_SAMPLER_MANAGER_HOST_PORT`: Remote sampling endpoint
@@ -148,6 +156,7 @@ For a complete list of Jaeger environment variables, refer to the [Jaeger Client
 ### Enabling Sampling
 
 Enable sampling in the appropriate components:
+
 - The ingester and ruler self-initiate traces and should have sampling explicitly enabled
 - You can enable sampling for the distributor and query-frontend in Grafana Mimir or in an upstream service, like a proxy or gateway running in front of Grafana Mimir
 
