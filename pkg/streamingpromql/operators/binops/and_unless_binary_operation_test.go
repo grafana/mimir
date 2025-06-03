@@ -310,7 +310,7 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			}
 
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
@@ -432,7 +432,7 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 			for name, testCase := range testCases {
 				t.Run(name, func(t *testing.T) {
 					timeRange := types.NewInstantQueryTimeRange(time.Now())
-					memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+					memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 					left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 					right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 					vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
