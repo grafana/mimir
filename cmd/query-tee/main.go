@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -86,8 +87,8 @@ func initTracing() io.Closer {
 		name = "query-tee"
 	}
 
-	trace, err := tracing.NewOTelFromJaegerEnv(name)
-	if err != nil {
+	trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger)
+	if err != nil && !errors.Is(err, tracing.ErrBlankTraceConfiguration) {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		return nil
 	}
