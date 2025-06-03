@@ -368,7 +368,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		// Do a long query to test the split and cache middleware.
 		if userID == 0 {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_split_queries_total"))
-			end := time.Now()
+			end := now
 			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
 			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
 			require.NoError(t, err)
@@ -439,8 +439,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 4
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	// +1 because one split query ends up touching the ingester.
-	// +2 because the spun off subquery ends up as additional ingester queries.
-	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 3
+	// +1 because the spun off subquery ends up as additional ingester queries.
+	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 2
 	if cfg.queryStatsEnabled {
 		expectedQueriesCount++
 		expectedIngesterQueriesCount++
