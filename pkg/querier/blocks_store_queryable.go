@@ -310,7 +310,6 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 		consistency:              q.consistency,
 		logger:                   q.logger,
 		queryStoreAfter:          q.queryStoreAfter,
-		streamReadersMtx:         &sync.Mutex{},
 	}, nil
 }
 
@@ -329,7 +328,7 @@ type blocksStoreQuerier struct {
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
 
-	streamReadersMtx *sync.Mutex
+	streamReadersMtx sync.Mutex
 	closed           bool
 	streamReaders    []*storeGatewayStreamReader
 }

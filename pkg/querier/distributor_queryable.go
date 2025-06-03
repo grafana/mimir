@@ -68,13 +68,12 @@ type distributorQueryable struct {
 
 func (d distributorQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	return &distributorQuerier{
-		logger:           d.logger,
-		distributor:      d.distributor,
-		mint:             mint,
-		maxt:             maxt,
-		queryMetrics:     d.queryMetrics,
-		cfgProvider:      d.cfgProvider,
-		streamReadersMtx: &sync.Mutex{},
+		logger:       d.logger,
+		distributor:  d.distributor,
+		mint:         mint,
+		maxt:         maxt,
+		queryMetrics: d.queryMetrics,
+		cfgProvider:  d.cfgProvider,
 	}, nil
 }
 
@@ -85,7 +84,7 @@ type distributorQuerier struct {
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
 
-	streamReadersMtx *sync.Mutex
+	streamReadersMtx sync.Mutex
 	closed           bool
 	streamReaders    []*client.SeriesChunksStreamReader
 }
@@ -198,7 +197,6 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
-	// Store the stream readers so we can free their buffers when we're done using this Querier.
 	q.streamReadersMtx.Lock()
 	defer q.streamReadersMtx.Unlock()
 
@@ -211,6 +209,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		return storage.ErrSeriesSet(errAlreadyClosed)
 	}
 
+	// Store the stream readers so we can free their buffers when we're done using this Querier.
 	q.streamReaders = append(q.streamReaders, results.StreamReaders...)
 
 	if len(sets) == 0 {

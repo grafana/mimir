@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"text/template"
 	"time"
@@ -1757,7 +1756,6 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						logger:             log.NewNopLogger(),
 						metrics:            newBlocksStoreQueryableMetrics(reg),
 						limits:             testData.limits,
-						streamReadersMtx:   &sync.Mutex{},
 					}
 
 					matchers := []*labels.Matcher{
@@ -1883,7 +1881,6 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 		logger:             log.NewNopLogger(),
 		metrics:            newBlocksStoreQueryableMetrics(reg),
 		limits:             &blocksStoreLimitsMock{},
-		streamReadersMtx:   &sync.Mutex{},
 	}
 
 	// For simplicity, we close the querier before issuing the Select call, but in the real world,
