@@ -55,7 +55,7 @@ func TestParquetConverter(t *testing.T) {
 	c, _ := prepare(t, cfg, objstore.WithNoopInstr(bucketClient))
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
-	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
 
 	test.Poll(t, 10*time.Second, true, func() interface{} {
 		parquetFiles := 0
@@ -73,7 +73,7 @@ func TestParquetConverter(t *testing.T) {
 
 }
 
-func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetConverter, prometheus.Gatherer) {
+func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetConverter, *prometheus.Registry) {
 	var limits validation.Limits
 	flagext.DefaultValues(&limits)
 	overrides := validation.NewOverrides(limits, nil)
@@ -86,7 +86,7 @@ func prepare(t *testing.T, cfg Config, bucketClient objstore.Bucket) (*ParquetCo
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
-	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides)
+	c, err := newParquetConverter(cfg, log.NewLogfmtLogger(logs), registry, bucketClientFactory, overrides, defaultBlockConverter{})
 	require.NoError(t, err)
 
 	return c, registry
