@@ -50,7 +50,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					for name, readSeries := range map[string]bool{"read one series": true, "read no series": false} {
 						t.Run(name, func(t *testing.T) {
-							memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+							memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 
 							inner := &operators.TestOperator{
 								Series: inputSeries,
