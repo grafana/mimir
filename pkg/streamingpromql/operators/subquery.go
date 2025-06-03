@@ -4,7 +4,6 @@ package operators
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -173,7 +172,7 @@ func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) err
 	// Child samples always counted per step to count parent stats correctly.
 	childStats, err := types.NewQueryStats(s.SubqueryTimeRange, true, s.memoryConsumptionTracker)
 	if err != nil {
-		return fmt.Errorf("could not create stats for subquery: %w", err)
+		return err
 	}
 	s.subqueryStats = childStats
 	childParams := types.PrepareParams{
