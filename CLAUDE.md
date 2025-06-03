@@ -9,6 +9,7 @@ Grafana Mimir is a horizontally scalable, highly available, multi-tenant time se
 ## Development Commands
 
 ### Building and Testing
+
 ```bash
 # Build all binaries
 make exes
@@ -36,13 +37,14 @@ make doc
 ```
 
 ### Local Development Environment
+
 ```bash
 # Start monolithic mode (easiest for development)
 cd development/mimir-monolithic-mode
 make compose-up
 
 # Start microservices mode (full architecture)
-cd development/mimir-microservices-mode  
+cd development/mimir-microservices-mode
 make compose-up
 
 # Start with ingest storage (newer architecture)
@@ -54,6 +56,7 @@ make compose-down
 ```
 
 ### Code Generation
+
 ```bash
 # Generate protobuf code
 make clean-protos BUILD_IN_CONTAINER=false
@@ -68,22 +71,26 @@ make reference-help
 Mimir follows a microservices architecture with these core components:
 
 ### Data Path Components
+
 - **Distributor** (`pkg/distributor/`) - Receives and routes incoming metrics to ingesters
 - **Ingester** (`pkg/ingester/`) - Handles metric ingestion, maintains in-memory time series, and writes blocks to storage
 - **Store Gateway** (`pkg/storegateway/`) - Serves queries from long-term object storage blocks
 - **Compactor** (`pkg/compactor/`) - Compacts and optimizes storage blocks in object storage
 
-### Query Path Components  
+### Query Path Components
+
 - **Query Frontend** (`pkg/frontend/`) - Provides query API, caching, and request splitting
 - **Query Scheduler** (`pkg/scheduler/`) - Schedules and load-balances queries across queriers
 - **Querier** (`pkg/querier/`) - Executes queries against ingesters and store gateways
 
 ### Additional Services
+
 - **Ruler** (`pkg/ruler/`) - Evaluates recording and alerting rules
 - **Alertmanager** (`pkg/alertmanager/`) - Routes and manages alerts
 - **Block Builder** (`pkg/blockbuilder/`) - Builds blocks in ingest storage architecture
 
 ### Storage Architecture
+
 - **Short-term storage**: In-memory in ingesters, with WAL and periodic flushing
 - **Long-term storage**: Immutable blocks in object storage (S3, GCS, Azure, Swift)
 - **Metadata**: Ring-based service discovery, with optional external storage for metadata
@@ -91,23 +98,26 @@ Mimir follows a microservices architecture with these core components:
 ## Key Entry Points
 
 - `cmd/mimir/main.go` - Main Mimir binary (supports all deployment modes)
-- `cmd/mimirtool/main.go` - CLI tool for operations and management  
+- `cmd/mimirtool/main.go` - CLI tool for operations and management
 - `cmd/query-tee/main.go` - Query comparison tool for testing
 - `pkg/mimir/mimir.go` - Core service orchestration and module management
 
 ## Testing Patterns
 
 ### Unit Tests
+
 - Place test files alongside source code as `*_test.go`
 - Use table-driven tests for multiple scenarios
 - Mock external dependencies using interfaces
 
 ### Integration Tests
+
 - Located in `integration/` directory
 - Use `e2emimir` package for creating test clusters
 - Test complete user workflows end-to-end
 
 ### Key Test Utilities
+
 - `integration/e2emimir/` - Framework for spinning up test clusters
 - `pkg/*/testutil/` - Component-specific test utilities
 - Use `testify` for assertions and test suites
@@ -115,6 +125,7 @@ Mimir follows a microservices architecture with these core components:
 ## Configuration System
 
 Mimir uses a hierarchical configuration system:
+
 - YAML configuration files with embedded defaults
 - Runtime configuration for tenant-specific overrides (`pkg/mimir/runtime_config.go`)
 - Feature flags and gradual rollouts supported
@@ -123,6 +134,7 @@ Mimir uses a hierarchical configuration system:
 ## Multi-tenancy Design
 
 Everything in Mimir is designed around tenant isolation:
+
 - Tenant ID extracted from HTTP headers or JWT tokens
 - Per-tenant limits and configurations
 - Data isolation at storage and query levels
@@ -131,22 +143,27 @@ Everything in Mimir is designed around tenant isolation:
 ## Development Tips
 
 ### Working with Rings
+
 Most services use hash rings for sharding and service discovery. Key concepts:
+
 - Ring state stored in KV store (etcd, Consul, or memberlist gossip)
 - Consistent hashing for data distribution
 - Replication factors for availability
 
 ### Storage Operations
+
 - Blocks are immutable once written to object storage
 - Use tools in `tools/` directory for debugging storage issues
 - `tools/listblocks` and `tools/mark-blocks` are particularly useful
 
 ### Debugging Queries
+
 - Enable query stats in configuration for detailed query analysis
 - Use `pkg/querier/stats_renderer.go` for understanding query execution
 - Query-tee tool useful for comparing query results between versions
 
 ### Common Gotchas
+
 - Services must be started in correct order in microservices mode
 - Ring propagation can take time - allow for eventual consistency
 - Object storage operations have different consistency guarantees
