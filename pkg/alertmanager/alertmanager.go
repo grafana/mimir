@@ -536,6 +536,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		&dispatcherLimits{tenant: am.cfg.UserID, limits: am.cfg.Limits},
 		log.With(am.logger, "component", "dispatcher", "insight", "true"),
 		am.dispatcherMetrics,
+		nil,
 	)
 
 	go am.dispatcher.Run()
