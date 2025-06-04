@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# count_values() tests
+load 6m
+  series{idx="0", case="Inf"}   Inf  Inf  Inf
+  series{idx="0", case="-Inf"}  -Inf -Inf _
+
+# Prometheus uses UTF-8 validation as of v0.62.0.
+# Mimir only supports classic/legacy  label names.
+eval range from 0 to 12m step 6m count_values("(value)", series)
+  expect fail msg: invalid label name "(value)"

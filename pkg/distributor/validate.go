@@ -410,7 +410,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
+	if !validation.IsValidMetricName(unsafeMetricName) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
@@ -436,7 +436,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	lastLabelName := ""
 	for _, l := range ls {
-		if !skipLabelValidation && !model.LabelName(l.Name).IsValid() {
+		if !skipLabelValidation && !validation.IsValidLabelName(l.Name) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))

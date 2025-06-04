@@ -12,13 +12,13 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type CountValues struct {
@@ -152,7 +152,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !model.LabelName(c.resolvedLabelName).IsValid() {
+	if !validation.IsValidLabelName(c.resolvedLabelName) {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 

@@ -47,9 +47,16 @@ linters:
       comparison: true
     forbidigo:
       # We can't use faillint for a rule like this, because it does not support matching methods on structs or interfaces (see https://github.com/fatih/faillint/issues/18)
+      analyze-types: true
       forbid:
         - pattern: ^.*\.CloseSend.*$
           msg: Do not use CloseSend on a server-streaming gRPC stream. Use util.CloseAndExhaust instead. See the documentation on CloseAndExhaust for further explanation.
+        - pattern: ^.*model\.LabelName\.IsValid$
+          pkg: ^github.com/prometheus/common/model$
+          msg: it depends on model.NameValidationScheme. Use pkg/validation.IsValidLabelName instead.
+        - pattern: ^.*model\.IsValidMetricName$
+          pkg: ^github.com/prometheus/common/model$
+          msg: it depends on model.NameValidationScheme. Use pkg/validation.IsValidMetricName instead.
     gocritic:
       disable-all: true
       enabled-checks:
