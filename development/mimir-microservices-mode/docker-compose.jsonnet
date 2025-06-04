@@ -40,7 +40,7 @@ std.manifestYamlDoc({
     enable_query_tee: false,
 
     // If true, start parquet-converter
-    enable_parquet: false
+    enable_parquet: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -150,12 +150,12 @@ std.manifestYamlDoc({
   },
 
   parquet_converter:: {
-  'parquet-converter': mimirService({
-    name: 'parquet-converter',
-    target: 'parquet-converter',
-    httpPort: 8040,
-  }),
-},
+    'parquet-converter': mimirService({
+      name: 'parquet-converter',
+      target: 'parquet-converter',
+      httpPort: 8040,
+    }),
+  },
 
   rulers(count):: if count <= 0 then {} else {
     ['ruler-%d' % id]: mimirService({
