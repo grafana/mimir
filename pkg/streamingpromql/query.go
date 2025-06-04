@@ -66,7 +66,7 @@ type Query struct {
 	result *promql.Result
 }
 
-func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange) (*Query, error) {
+func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange, originalExpression string) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
@@ -84,11 +84,12 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 	q := &Query{
 		queryable:                queryable,
 		engine:                   e,
-		memoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		memoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, originalExpression),
 		annotations:              annotations.New(),
 		stats:                    &types.QueryStats{},
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
+		originalExpression:       originalExpression,
 	}
 
 	return q, nil
@@ -116,12 +117,11 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 		}
 	}
 
-	q, err := e.newQuery(ctx, queryable, opts, timeRange)
+	q, err := e.newQuery(ctx, queryable, opts, timeRange, qs)
 	if err != nil {
 		return nil, err
 	}
 
-	q.originalExpression = qs
 	q.statement = &parser.EvalStmt{
 		Expr:          expr,
 		Start:         start,

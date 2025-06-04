@@ -28,7 +28,7 @@ func TestFromContextWithFallback(t *testing.T) {
 
 	t.Run("exists", func(t *testing.T) {
 		ctx := context.Background()
-		existing := NewMemoryConsumptionTracker(0, nil)
+		existing := NewMemoryConsumptionTracker(0, nil, "")
 		require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512)))
 
 		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
@@ -40,7 +40,7 @@ func TestFromContextWithFallback(t *testing.T) {
 
 func TestAddToContext(t *testing.T) {
 	ctx := context.Background()
-	existing := NewMemoryConsumptionTracker(0, nil)
+	existing := NewMemoryConsumptionTracker(0, nil, "")
 	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512)))
 
 	ctx = AddMemoryTrackerToContext(ctx, existing)
@@ -51,7 +51,7 @@ func TestAddToContext(t *testing.T) {
 
 func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 	reg, metric := createRejectedMetric()
-	tracker := NewMemoryConsumptionTracker(0, metric)
+	tracker := NewMemoryConsumptionTracker(0, metric, "foo + bar")
 
 	require.NoError(t, tracker.IncreaseMemoryConsumption(128))
 	require.Equal(t, uint64(128), tracker.CurrentEstimatedMemoryConsumptionBytes())
@@ -79,13 +79,13 @@ func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 
 	assertRejectedQueriesCount(t, reg, 0)
 
-	// Test reducing memory consumption to a negative panics
-	require.Panics(t, func() { tracker.DecreaseMemoryConsumption(150) })
+	// Test reducing memory consumption to a negative value panics
+	require.PanicsWithValue(t, `Estimated memory consumption of this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150) })
 }
 
 func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	reg, metric := createRejectedMetric()
-	tracker := NewMemoryConsumptionTracker(11, metric)
+	tracker := NewMemoryConsumptionTracker(11, metric, "foo + bar")
 
 	// Add some memory consumption beneath the limit.
 	require.NoError(t, tracker.IncreaseMemoryConsumption(8))
@@ -131,8 +131,8 @@ func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	require.Equal(t, uint64(11), tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueriesCount(t, reg, 1)
 
-	// Test reducing memory consumption to a negative panics
-	require.Panics(t, func() { tracker.DecreaseMemoryConsumption(150) })
+	// Test reducing memory consumption to a negative value panics
+	require.PanicsWithValue(t, `Estimated memory consumption of this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar`, func() { tracker.DecreaseMemoryConsumption(150) })
 }
 
 func assertRejectedQueriesCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
@@ -159,7 +159,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	const memoryLimit = 1024 * 1024 * 1024
 
 	b.Run("no limits single threaded", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(0, nil)
+		l := NewMemoryConsumptionTracker(0, nil, "")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = l.IncreaseMemoryConsumption(uint64(b.N))
@@ -174,7 +174,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 			Name: "cortex_test_rejections_total",
 		})
 
-		l := NewMemoryConsumptionTracker(memoryLimit, counter)
+		l := NewMemoryConsumptionTracker(memoryLimit, counter, "")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if err := l.IncreaseMemoryConsumption(uint64(b.N)); err == nil {
@@ -186,7 +186,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("no limits multiple threads", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(0, nil)
+		l := NewMemoryConsumptionTracker(0, nil, "")
 		wg := sync.WaitGroup{}
 		run := atomic.NewBool(true)
 
@@ -217,7 +217,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 			Name: "cortex_test_rejections_total",
 		})
 
-		l := NewMemoryConsumptionTracker(memoryLimit, counter)
+		l := NewMemoryConsumptionTracker(memoryLimit, counter, "")
 		wg := sync.WaitGroup{}
 		run := atomic.NewBool(true)
 
