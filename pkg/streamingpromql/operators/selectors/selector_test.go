@@ -21,7 +21,7 @@ import (
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
-	list := newSeriesList(limiter.NewMemoryConsumptionTracker(0, nil))
+	list := newSeriesList(limiter.NewMemoryConsumptionTracker(0, nil, ""))
 	require.Equal(t, 0, list.Len())
 
 	series1 := mockSeries{labels.FromStrings("series", "1")}
@@ -57,7 +57,7 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 
 	for _, seriesCount := range cases {
 		t.Run(fmt.Sprintf("N=%v", seriesCount), func(t *testing.T) {
-			list := newSeriesList(limiter.NewMemoryConsumptionTracker(0, nil))
+			list := newSeriesList(limiter.NewMemoryConsumptionTracker(0, nil, ""))
 
 			seriesAdded := make([]storage.Series, 0, seriesCount)
 
@@ -118,7 +118,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			Queryable:                queryable,
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil),
+			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
 		}
 
 		_, err := s.SeriesMetadata(context.Background())
@@ -139,7 +139,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 			Queryable:                queryable,
 			TimeRange:                timeRange,
 			Range:                    selectorRange,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil),
+			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
 		}
 
 		_, err := s.SeriesMetadata(context.Background())

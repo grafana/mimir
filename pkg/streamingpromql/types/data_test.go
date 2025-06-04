@@ -27,7 +27,7 @@ func TestInstantVectorSeriesData_Clone(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 	cloned, err := original.Clone(memoryConsumptionTracker)
 
 	require.NoError(t, err)

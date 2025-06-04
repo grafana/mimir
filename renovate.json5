@@ -1,7 +1,7 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": [
-      "config:base"
+      "config:recommended"
     ],
     "baseBranches": ["main", "release-2.16", "release-2.15"],
     "postUpdateOptions": [
@@ -26,6 +26,7 @@
           "github.com/grafana/opentracing-contrib-go-stdlib",
           "github.com/charleskorn/go-grpc",
           "github.com/charleskorn/objstore",
+          "github.com/grafana/mimir-otlptranslator",
         ],
         "enabled": false
       },
