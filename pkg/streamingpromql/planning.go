@@ -424,7 +424,11 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 
 	defer e.activeQueryTracker.Delete(queryID)
 
-	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange)
+	// HACK: we need an expression to use in the active query tracker, but there's no guarantee the plan we're working with
+	// is for the original expression (the plan may represent a subexpression of the original plan, for example).
+	// So we pass plan.OriginalExpression, which is good enough for now, but something to revisit later - perhaps
+	// we can use some kind of request ID?
+	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange, plan.OriginalExpression)
 	if err != nil {
 		return nil, err
 	}
@@ -436,11 +440,6 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		Annotations:              q.annotations,
 		LookbackDelta:            q.lookbackDelta,
 	}
-
-	// HACK: we need an expression to use in the active query tracker, but there's no guarantee the plan we're working with
-	// is for the original expression (the plan may represent a subexpression of the original plan, for example).
-	// This is good enough for now, but something to revisit later - perhaps we can use some kind of request ID?
-	q.originalExpression = plan.OriginalExpression
 
 	q.statement = &parser.EvalStmt{
 		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.

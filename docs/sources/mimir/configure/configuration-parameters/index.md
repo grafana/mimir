@@ -5345,7 +5345,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (experimental) Allow client creation even if initial DNS resolution fails.
 # CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = false]
+[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### redis

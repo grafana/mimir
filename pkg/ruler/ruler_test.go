@@ -89,6 +89,7 @@ func defaultRulerConfig(t testing.TB) Config {
 type mockRulerClient struct {
 	ruler           *Ruler
 	rulesCallsCount *atomic.Int32
+	syncCallsCount  *atomic.Int32
 }
 
 func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc.CallOption) (*RulesResponse, error) {
@@ -97,14 +98,16 @@ func (c *mockRulerClient) Rules(ctx context.Context, in *RulesRequest, _ ...grpc
 }
 
 func (c *mockRulerClient) SyncRules(ctx context.Context, in *SyncRulesRequest, _ ...grpc.CallOption) (*SyncRulesResponse, error) {
+	c.syncCallsCount.Inc()
 	return c.ruler.SyncRules(ctx, in)
 }
 
 type mockRulerClientsPool struct {
 	ClientsPool
-	cfg           Config
-	rulerAddrMap  map[string]*Ruler
-	numberOfCalls atomic.Int32
+	cfg                Config
+	rulerAddrMap       map[string]*Ruler
+	numberOfRulesCalls atomic.Int32
+	numberOfSyncCalls  atomic.Int32
 }
 
 func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
@@ -112,7 +115,8 @@ func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (Rul
 		if r.lifecycler.GetInstanceAddr() == inst.Addr {
 			return &mockRulerClient{
 				ruler:           r,
-				rulesCallsCount: &p.numberOfCalls,
+				rulesCallsCount: &p.numberOfRulesCalls,
+				syncCallsCount:  &p.numberOfSyncCalls,
 			}, nil
 		}
 	}
@@ -447,62 +451,248 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 }
 
 func TestGetRules(t *testing.T) {
-	// ruler ID -> (user ID -> list of groups).
-	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
-
 	type testCase struct {
 		shuffleShardSize int
+		tokensByRuler    map[string][]uint32
+
+		// If not set for a ruler, the ruler is assumed to be active.
+		rulerState           map[string]ring.InstanceState
+		expectedRulesByRuler map[string]map[string]rulespb.RuleGroupList
+
+		// If not set for a user, call count assumed to be total number of rulers if shuffle sharding is disabled, and
+		// shuffle shard size if shuffle sharding is enabled.
+		expectedPoolClientCallsByUser map[string]int32
+
+		expectedErr string
 	}
 
-	expectedRulesByRuler := expectedRulesMap{
-		"ruler1": map[string]rulespb.RuleGroupList{
-			"user1": {
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "first", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "second", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-		},
-		"ruler2": map[string]rulespb.RuleGroupList{
-			"user1": {
-				&rulespb.RuleGroupDesc{User: "user1", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "first", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "second", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-		},
-		"ruler3": map[string]rulespb.RuleGroupList{
-			"user3": {
-				&rulespb.RuleGroupDesc{User: "user3", Namespace: "namespace", Name: "third", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-			"user2": {
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "forth", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-				&rulespb.RuleGroupDesc{User: "user2", Namespace: "namespace", Name: "fifty", Rules: []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")}, Interval: 10 * time.Second},
-			},
-		},
+	makeRule := func(user string, i int) *rulespb.RuleGroupDesc {
+		return &rulespb.RuleGroupDesc{
+			User:      user,
+			Namespace: "namespace",
+			Name:      fmt.Sprintf("%d", i),
+			Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up")},
+			Interval:  10 * time.Second,
+		}
+	}
+
+	rules := []*rulespb.RuleGroupDesc{
+		makeRule("user1", 1), // 0
+		makeRule("user1", 2), // 1
+		makeRule("user1", 3), // 2
+		makeRule("user2", 1), // 3
+		makeRule("user2", 2), // 4
+		makeRule("user2", 3), // 5
+		makeRule("user2", 4), // 6
+		makeRule("user2", 5), // 7
+		makeRule("user3", 1), // 8
+	}
+
+	allRulesByUser := map[string]rulespb.RuleGroupList{}
+	for _, r := range rules {
+		allRulesByUser[r.User] = append(allRulesByUser[r.User], r)
 	}
 
 	testCases := map[string]testCase{
 		"Shuffle Shard Size 0": {
 			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+					"user2": {rules[3]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+					"user2": {rules[4], rules[5]},
+				},
+				"ruler3": {
+					"user2": {rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+			},
 		},
 		"Shuffle Shard Size 2": {
 			shuffleShardSize: 2,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					// User token to control the users using ruler1 as part of their subring.
+					[]uint32{userToken("user1", 0) + 1},
+					// Group tokens to control which rules go to ruler1.
+					generateTokenForGroups(1, rules[0], rules[1])...,
+				),
+				"ruler2": append(
+					[]uint32{userToken("user1", 1) + 1, userToken("user2", 0) + 1, userToken("user3", 0) + 1},
+					generateTokenForGroups(1, rules[2])...,
+				),
+				"ruler3": append(
+					[]uint32{userToken("user2", 1) + 1, userToken("user3", 1) + 1},
+					generateTokenForGroups(1, rules[3], rules[4], rules[5], rules[6], rules[7], rules[8])...,
+				),
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+				},
+				"ruler3": {
+					"user2": {rules[3], rules[4], rules[5], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+			},
+		},
+		"Shuffle Shard Size 0 with 1 joining ruler": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+					// Add tokens for rules from ruler3. As ruler3 is JOINING, it will be ignored when distributing
+					// rules and the next ruler in the ring will be used for rules that "should" be on ruler3.
+					generateTokenForGroups(2, rules[6], rules[7], rules[8])...),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler3": ring.JOINING,
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+					"user2": {rules[3], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+					"user2": {rules[4], rules[5]},
+				},
+				"ruler3": {},
+			},
+		},
+		"Shuffle Shard Size 2 with 1 joining ruler": {
+			shuffleShardSize: 2,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					[]uint32{userToken("user1", 0) + 1},
+					append(
+						generateTokenForGroups(1, rules[0], rules[1]),
+						generateTokenForGroups(3, rules[2])...)...,
+				),
+				"ruler2": append( // ruler2 is in JOINING state so will be ignored when distributing rules.
+					[]uint32{userToken("user1", 1) + 1, userToken("user2", 0) + 1},
+					generateTokenForGroups(1, rules[2])...,
+				),
+				"ruler3": append(
+					[]uint32{userToken("user2", 1) + 1, userToken("user3", 0) + 1},
+					generateTokenForGroups(1, rules[3], rules[4], rules[5], rules[6], rules[7], rules[8])...,
+				),
+				// While ruler4 registers some tokens for all users, it doesn't actually evaluate any rules.
+				// ruler1 and ruler2 are selected for subring for user1 and user2, even though ruler2 is in the JOINING
+				// state (this means all the rules are evaluated on ruler1).
+				// This does form part of user3's subring but user3's single rule is evaluated on ruler3.
+				"ruler4": append(
+					[]uint32{userToken("user1", 2) + 1, userToken("user2", 2) + 1, userToken("user3", 1) + 1},
+					generateTokenForGroups(2, rules[2])...,
+				),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler2": ring.JOINING,
+			},
+			expectedPoolClientCallsByUser: map[string]int32{
+				// ruler2 is part of user1 and user2's subrings, but is in the JOINING state, so it's skipped when getting rules.
+				"user1": 1,
+				"user2": 1,
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1], rules[2]},
+				},
+				"ruler2": {},
+				"ruler3": {
+					"user2": {rules[3], rules[4], rules[5], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+				"ruler4": {},
+			},
+		},
+		"Shuffle Shard Size 0 with 1 leaving ruler": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+					// Add tokens for rules from ruler3. As ruler3 is LEAVING, it will be ignored when distributing
+					// rules and the next ruler in the ring will be used for rules that "should" be on ruler3.
+					generateTokenForGroups(2, rules[6], rules[7], rules[8])...),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler3": ring.LEAVING,
+			},
+			expectedRulesByRuler: map[string]map[string]rulespb.RuleGroupList{
+				"ruler1": {
+					"user1": {rules[0], rules[1]},
+					"user2": {rules[3], rules[6], rules[7]},
+					"user3": {rules[8]},
+				},
+				"ruler2": {
+					"user1": {rules[2]},
+					"user2": {rules[4], rules[5]},
+				},
+				"ruler3": {},
+			},
+		},
+		"Shuffle Shard Size 0 with no active rulers": {
+			shuffleShardSize: 0,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": generateTokenForGroups(1, rules[0], rules[1], rules[3]),
+				"ruler2": generateTokenForGroups(1, rules[2], rules[4], rules[5]),
+				"ruler3": generateTokenForGroups(1, rules[6], rules[7], rules[8]),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler1": ring.JOINING,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.JOINING,
+			},
+			expectedErr: "empty ring",
+		},
+		"Shuffle Shard Size 2 with no active rulers": {
+			shuffleShardSize: 2,
+			tokensByRuler: map[string][]uint32{
+				"ruler1": append(
+					[]uint32{userToken("user1", 0) + 1},
+					generateTokenForGroups(1, rules[0], rules[1])...,
+				),
+				"ruler2": append(
+					[]uint32{userToken("user1", 1) + 1, userToken("user2", 0) + 1, userToken("user3", 0) + 1},
+					generateTokenForGroups(1, rules[2])...,
+				),
+				"ruler3": append(
+					[]uint32{userToken("user2", 1) + 1, userToken("user3", 1) + 1},
+					generateTokenForGroups(1, rules[3], rules[4], rules[5], rules[6], rules[7], rules[8])...,
+				),
+			},
+			rulerState: map[string]ring.InstanceState{
+				"ruler1": ring.JOINING,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.JOINING,
+			},
+			expectedErr: "empty ring",
 		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			var (
-				allRulesByUser   = map[string]rulespb.RuleGroupList{}
-				allRulesByRuler  = map[string]rulespb.RuleGroupList{}
-				allTokensByRuler = map[string][]uint32{}
-				registryByRuler  = map[string]*prometheus.Registry{}
-				rulerAddrMap     = map[string]*Ruler{}
-				storage          = newMockRuleStore(allRulesByUser)
-				ctx              = context.Background()
+				registryByRuler = map[string]*prometheus.Registry{}
+				rulerAddrMap    = map[string]*Ruler{}
+				storage         = newMockRuleStore(allRulesByUser)
+				ctx             = context.Background()
 			)
 
 			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
@@ -526,12 +716,12 @@ func TestGetRules(t *testing.T) {
 				})))
 			}
 
-			for rID, r := range expectedRulesByRuler {
+			activeRulers := 0
+			for rID := range tc.tokensByRuler {
 				createAndStartRuler(rID)
-				for user, rules := range r {
-					allRulesByUser[user] = append(allRulesByUser[user], rules...)
-					allRulesByRuler[rID] = append(allRulesByRuler[rID], rules...)
-					allTokensByRuler[rID] = generateTokenForGroups(rules, 1)
+				state, ok := tc.rulerState[rID]
+				if (ok && state == ring.ACTIVE) || !ok {
+					activeRulers++
 				}
 			}
 
@@ -546,8 +736,12 @@ func TestGetRules(t *testing.T) {
 				if d == nil {
 					d = ring.NewDesc()
 				}
-				for rID, tokens := range allTokensByRuler {
-					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+				for rID, tokens := range tc.tokensByRuler {
+					state, ok := tc.rulerState[rID]
+					if !ok {
+						state = ring.ACTIVE
+					}
+					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, state, time.Now(), false, time.Time{})
 				}
 				return d, true, nil
 			}))
@@ -556,41 +750,93 @@ func TestGetRules(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			// Sync rules on each ruler.
-			for _, r := range rulerAddrMap {
-				err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
-				require.NoError(t, err)
+			for rID, r := range rulerAddrMap {
+				if tc.rulerState[rID] == ring.JOINING {
+					// Use rulerSyncReasonInitial for JOINING rulers to simulate what happens on ruler startup.
+					err := r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+					require.NoError(t, err)
+				} else {
+					err := r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+					require.NoError(t, err)
+				}
 			}
 
 			// Call GetRules() on each ruler.
-			for u := range allRulesByUser {
+			for u, userRules := range allRulesByUser {
 				ctx := user.InjectOrgID(ctx, u)
-
-				for _, r := range rulerAddrMap {
-					rules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
-					require.NoError(t, err)
-					require.Equal(t, len(allRulesByUser[u]), len(rules.Groups))
-
-					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
-					if tc.shuffleShardSize > 0 {
-						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfCalls.Load())
-					} else {
-						require.Equal(t, int32(len(rulerAddrMap)), mockPoolClient.numberOfCalls.Load())
-					}
-					mockPoolClient.numberOfCalls.Store(0)
+				var expectedRuleDescs []*rulespb.RuleGroupDesc
+				for _, userRule := range userRules {
+					// getLocalRules() doesn't set the Rules field, therefore doing the same with the expected rules.
+					expectedRuleDescs = append(expectedRuleDescs, &rulespb.RuleGroupDesc{
+						Namespace:     userRule.Namespace,
+						Name:          userRule.Name,
+						User:          u,
+						Interval:      userRule.Interval,
+						SourceTenants: userRule.SourceTenants,
+					})
 				}
+
+				for rID, r := range rulerAddrMap {
+					actualRules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
+					if tc.expectedErr != "" {
+						require.EqualError(t, err, tc.expectedErr)
+						continue
+					}
+					require.NoError(t, err)
+
+					require.Equal(t, len(userRules), len(actualRules.Groups), "rules are not equal for %s, %s", u, rID)
+
+					var actualRuleDescs []*rulespb.RuleGroupDesc
+					for _, g := range actualRules.Groups {
+						actualRuleDescs = append(actualRuleDescs, g.Group)
+					}
+					require.ElementsMatch(t, expectedRuleDescs, actualRuleDescs)
+
+					// Check call count for rulers (this verifies that JOINING rulers should be ignored).
+					mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
+					if expectedCalls, ok := tc.expectedPoolClientCallsByUser[u]; ok {
+						require.Equal(t, expectedCalls, mockPoolClient.numberOfRulesCalls.Load())
+					} else if tc.shuffleShardSize > 0 {
+						require.Equal(t, int32(tc.shuffleShardSize), mockPoolClient.numberOfRulesCalls.Load(), "Unexpected call count when calling GetRules on %s for user %s", rID, u)
+					} else {
+						require.Equal(t, int32(activeRulers), mockPoolClient.numberOfRulesCalls.Load())
+					}
+					mockPoolClient.numberOfRulesCalls.Store(0)
+				}
+			}
+
+			// Don't do additional checks if GetRules() is expected to return an error.
+			if tc.expectedErr != "" {
+				return
 			}
 
 			// Ensure rule groups have been sharded among rulers.
 			totalLoadedRules := 0
-			totalConfiguredRules := 0
+			totalConfiguredRules := len(rules)
 
 			for rID, r := range rulerAddrMap {
 				localRules, err := r.listRuleGroupsToSyncForAllUsers(ctx, rulerSyncReasonPeriodic, true)
 				require.NoError(t, err)
+
+				expectedRules := map[string]rulespb.RuleGroupList{}
+				for user, groups := range tc.expectedRulesByRuler[rID] {
+					expectedRules[user] = rulespb.RuleGroupList{}
+					for _, group := range groups {
+						// The mock store only sets a few RuleGroupDesc fields, therefore doing the same with the expected rules.
+						expectedRules[user] = append(expectedRules[user], &rulespb.RuleGroupDesc{
+							Namespace:     group.Namespace,
+							Name:          group.Name,
+							User:          user,
+							Interval:      group.Interval,
+							SourceTenants: group.SourceTenants,
+						})
+					}
+				}
+
+				require.Equal(t, expectedRules, localRules, "rules not equal for %s", rID)
 				for _, rules := range localRules {
 					totalLoadedRules += len(rules)
 				}
-				totalConfiguredRules += len(allRulesByRuler[rID])
 			}
 
 			require.Equal(t, totalConfiguredRules, totalLoadedRules)
@@ -1232,6 +1478,95 @@ func TestRuler_InitialSync_RetryOnFail(t *testing.T) {
 	verifySyncRulesMetric(t, reg, 2, 0)
 }
 
+func TestRuler_notifySyncRules_IgnoresLeavingRulers(t *testing.T) {
+	type testCase struct {
+		rulers            map[string]ring.InstanceState
+		expectedSyncCalls int32
+	}
+
+	testCases := map[string]testCase{
+		"1/3 LEAVING rulers": {
+			rulers: map[string]ring.InstanceState{
+				"ruler1": ring.ACTIVE,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.ACTIVE,
+			},
+			expectedSyncCalls: 2,
+		},
+		"all LEAVING rulers": {
+			rulers: map[string]ring.InstanceState{
+				"ruler1": ring.LEAVING,
+				"ruler2": ring.LEAVING,
+				"ruler3": ring.LEAVING,
+			},
+			expectedSyncCalls: 0,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			var (
+				registryByRuler = map[string]*prometheus.Registry{}
+				rulerAddrMap    = map[string]*Ruler{}
+				storage         = newMockRuleStore(nil)
+				ctx             = context.Background()
+			)
+
+			kvStore, cleanUp := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, cleanUp.Close()) })
+
+			createAndStartRuler := func(id string) *Ruler {
+				cfg := defaultRulerConfig(t)
+				cfg.Ring.Common.InstanceID = id
+				cfg.Ring.Common.InstanceAddr = id
+				cfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
+				cfg.Ring.NumTokens = 0          // Join the ring with no tokens.
+				cfg.PollInterval = time.Hour    // No periodic syncing.
+				cfg.RingCheckPeriod = time.Hour // No syncing on ring change.
+
+				reg := prometheus.NewPedanticRegistry()
+				registryByRuler[id] = reg
+
+				return prepareRuler(t, cfg, storage, withStart(), withRulerAddrMap(rulerAddrMap), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+				})))
+			}
+
+			for rID := range tc.rulers {
+				createAndStartRuler(rID)
+			}
+
+			// Pre-condition check: we expect rulers have done the initial sync (but they have no tokens in the ring at this point).
+			for _, reg := range registryByRuler {
+				verifySyncRulesMetric(t, reg, 1, 0)
+			}
+
+			// Inject the tokens for each ruler.
+			require.NoError(t, kvStore.CAS(ctx, RulerRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+				d, _ := in.(*ring.Desc)
+				if d == nil {
+					d = ring.NewDesc()
+				}
+				for rID, state := range tc.rulers {
+					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", []uint32{1}, state, time.Now(), false, time.Time{})
+				}
+				return d, true, nil
+			}))
+
+			// Wait a bit to make sure ruler's ring is updated.
+			time.Sleep(100 * time.Millisecond)
+
+			for _, r := range rulerAddrMap {
+				r.notifySyncRules(ctx, []string{"user1"})
+				// Check call count for rulers (LEAVING rulers should be ignored).
+				mockPoolClient := r.clientsPool.(*mockRulerClientsPool)
+				require.Equal(t, tc.expectedSyncCalls, mockPoolClient.numberOfSyncCalls.Load())
+				mockPoolClient.numberOfSyncCalls.Store(0)
+			}
+		})
+	}
+}
+
 type testRuleStore struct {
 	mock.Mock
 }
@@ -1606,7 +1941,7 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 	})
 }
 
-func generateTokenForGroups(groups []*rulespb.RuleGroupDesc, offset uint32) []uint32 {
+func generateTokenForGroups(offset uint32, groups ...*rulespb.RuleGroupDesc) []uint32 {
 	var tokens []uint32
 
 	for _, g := range groups {

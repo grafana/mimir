@@ -686,7 +686,7 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 	return configs, nil
 }
 
-// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synched by this ruler instance.
+// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synced by this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
 func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason, cacheLookupEnabled bool) (result map[string]rulespb.RuleGroupList, err error) {
@@ -1541,9 +1541,14 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 }
 
 // forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
+// This ignores rulers in non-op states - we don't want to error if there's a ruler in other states as those shouldn't
+// be processing rules. It is _technically_ possible for rulers that seem to be in other states to actually be
+// processing rules due to the eventual consistency of the ring, so this is a "best-effort" attempt to get and iterate
+// through all the rulers.
 // The execution breaks on first error returned by f().
 func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
-	rulers, err := ring.GetReplicationSetForOperation(op)
+	// GetSubringForOperationStates filters out instances in non-op states.
+	rulers, err := ring.GetSubringForOperationStates(op).GetReplicationSetForOperation(op)
 	if err != nil {
 		return err
 	}
