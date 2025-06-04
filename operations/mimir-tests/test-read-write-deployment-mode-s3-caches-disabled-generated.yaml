@@ -387,7 +387,6 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -407,7 +406,6 @@ spec:
         - -querier.max-partial-query-length=768h
         - -query-frontend.max-total-query-length=12000h
         - -query-frontend.query-sharding-target-series-per-shard=0
-        - -query-frontend.results-cache.memcached.dns-ignore-startup-failures=true
         - -query-scheduler.max-used-instances=2
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
@@ -559,9 +557,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures=true
-        - -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures=true
-        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -610,7 +605,6 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
-        - -ruler-storage.cache.memcached.dns-ignore-startup-failures=true
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=85
@@ -732,9 +726,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures=true
-        - -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures=true
-        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -783,7 +774,6 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
-        - -ruler-storage.cache.memcached.dns-ignore-startup-failures=true
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=85
@@ -905,9 +895,6 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures=true
-        - -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures=true
-        - -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures=true
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -956,7 +943,6 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
-        - -ruler-storage.cache.memcached.dns-ignore-startup-failures=true
         - -ruler-storage.s3.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local.:8080/alertmanager
         - -ruler.max-rule-groups-per-tenant=85

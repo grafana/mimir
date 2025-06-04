@@ -58,7 +58,6 @@ data:
           backend: memcached
           memcached:
             addresses: dnssrvnoa+enterprise-https-values-mimir-chunks-cache.citestns.svc.cluster.local.:11211
-            dns_ignore_startup_failures: true
             max_idle_connections: 150
             max_item_size: 1048576
             timeout: 750ms
@@ -66,7 +65,6 @@ data:
           backend: memcached
           memcached:
             addresses: dnssrvnoa+enterprise-https-values-mimir-index-cache.citestns.svc.cluster.local.:11211
-            dns_ignore_startup_failures: true
             max_idle_connections: 150
             max_item_size: 5242880
             timeout: 750ms
@@ -74,7 +72,6 @@ data:
           backend: memcached
           memcached:
             addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
-            dns_ignore_startup_failures: true
             max_idle_connections: 150
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
@@ -120,7 +117,6 @@ data:
         backend: memcached
         memcached:
           addresses: dnssrvnoa+enterprise-https-values-mimir-results-cache.citestns.svc.cluster.local.:11211
-          dns_ignore_startup_failures: true
           max_item_size: 5242880
           timeout: 500ms
           tls_cert_path: /certs/tls.crt
@@ -288,7 +284,6 @@ data:
         backend: memcached
         memcached:
           addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
-          dns_ignore_startup_failures: true
           max_item_size: 1048576
           timeout: 500ms
       s3:

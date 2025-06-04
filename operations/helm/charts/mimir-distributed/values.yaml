@@ -196,7 +196,6 @@ mimir:
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
             timeout: 750ms
             max_idle_connections: 150
-            dns_ignore_startup_failures: true
         {{- end }}
         {{- if index .Values "index-cache" "enabled" }}
         index_cache:
@@ -206,7 +205,6 @@ mimir:
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
             timeout: 750ms
             max_idle_connections: 150
-            dns_ignore_startup_failures: true
         {{- end }}
         {{- if index .Values "metadata-cache" "enabled" }}
         metadata_cache:
@@ -215,7 +213,6 @@ mimir:
             addresses: {{ include "mimir.metadataCacheAddress" . }}
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
             max_idle_connections: 150
-            dns_ignore_startup_failures: true
         {{- end }}
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
@@ -262,7 +259,6 @@ mimir:
           timeout: 500ms
           addresses: {{ include "mimir.resultsCacheAddress" . }}
           max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
-          dns_ignore_startup_failures: true
       cache_results: true
       query_sharding_target_series_per_shard: 2500
       {{- end }}
@@ -399,7 +395,6 @@ mimir:
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
           timeout: 500ms
-          dns_ignore_startup_failures: true
       {{- end }}
     {{- end }}
 

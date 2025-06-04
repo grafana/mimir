@@ -27,9 +27,6 @@
       // Allow DNS changes to propagate before killing off query-frontends,
       // to avoid connection failures in ruler and cortex-gw and therefore 5xx reads.
       'server.grpc.keepalive.max-connection-age': '%ds' % max_connection_age_seconds,
-
-      // Don't depend on Memcached on startup.
-      'query-frontend.results-cache.memcached.dns-ignore-startup-failures': true,
     } + $.mimirRuntimeConfigFile,
 
   query_frontend_ports:: $.util.defaultPorts,

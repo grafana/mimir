@@ -33,10 +33,6 @@
 
       // Increased from 2s to 10s in order to accommodate writing large rule results ot he ingester.
       'distributor.remote-timeout': '10s',
-
-      // Don't depend on Memcached on startup.
-      'blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures': true,
-      'ruler-storage.cache.memcached.dns-ignore-startup-failures': true,
     } + if $._config.ingest_storage_enabled then {
       // Set the max buffered bytes in the Kafka client used by the ruler based on the expected max rule evaluation response size,
       // clamping it between 1 GB (default) and 4 GB.
