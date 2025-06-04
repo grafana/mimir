@@ -10,9 +10,9 @@ datasources:
     jsonData:
       prometheusType: Mimir
       timeInterval: 5s
-  - name: Jaeger
-    type: jaeger
+  - name: Tempo
+    type: tempo
     access: proxy
-    uid: jaeger
+    uid: tempo
     orgID: 1
-    url: http://jaeger:16686/
+    url: http://tempo:3200/

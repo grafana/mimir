@@ -15,7 +15,7 @@ import (
 
 var (
 	// ErrBlankTraceConfiguration is an error to notify client to provide valid trace report agent or config server
-	ErrBlankTraceConfiguration = errors.New("no trace report agent, config server, or collector endpoint specified")
+	ErrBlankTraceConfiguration = errors.New("no OTel or Jaeger tracing environment variables configured")
 )
 
 // ExtractTraceID extracts the trace id, if any from the context.
