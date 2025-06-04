@@ -287,6 +287,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				tc.promoteResourceAttributes,
 				tc.keepIdentifyingResourceAttributes,
 				false,
+				false,
 				md,
 				log.NewNopLogger(),
 			)
@@ -362,6 +363,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 			[]string{},
 			false,
 			convertHistogramsToNHCB,
+			false,
 			md,
 			log.NewNopLogger(),
 		)
@@ -391,6 +393,222 @@ func TestConvertOTelHistograms(t *testing.T) {
 				require.Len(t, mimirTS[i].Histograms, 0)
 			}
 		}
+	}
+}
+
+func TestOTelDeltaIngestion(t *testing.T) {
+	ts := time.Unix(100, 0)
+
+	testCases := []struct {
+		name        string
+		allowDelta  bool
+		input       pmetric.Metrics
+		expected    prompb.TimeSeries
+		expectedErr string
+	}{
+		{
+			name:       "delta counter not allowed",
+			allowDelta: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+		},
+		{
+			name:       "delta counter allowed",
+			allowDelta: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetIntValue(5)
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: prompb.TimeSeries{
+				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "metric-attr", Value: "metric value"}},
+				Samples: []prompb.Sample{{Timestamp: ts.UnixMilli(), Value: 5}},
+			},
+		},
+		{
+			name:       "delta exponential histogram not allowed",
+			allowDelta: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyExponentialHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(1)
+				dp.SetSum(5)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+		},
+		{
+			name:       "delta exponential histogram allowed",
+			allowDelta: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyExponentialHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(1)
+				dp.SetSum(5)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: prompb.TimeSeries{
+				Labels: []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "metric-attr", Value: "metric value"}},
+				Histograms: []prompb.Histogram{
+					{
+						Count:         &prompb.Histogram_CountInt{CountInt: 1},
+						Sum:           5,
+						Schema:        0,
+						ZeroThreshold: 1e-128,
+						ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+						Timestamp:     ts.UnixMilli(),
+						ResetHint:     prompb.Histogram_UNKNOWN,
+					},
+				},
+			},
+		},
+		{
+			name:       "delta histogram as nhcb not allowed",
+			allowDelta: false,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(20)
+				dp.SetSum(30)
+				dp.BucketCounts().FromRaw([]uint64{10, 10, 0})
+				dp.ExplicitBounds().FromRaw([]float64{1, 2})
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expectedErr: `otlp parse error: invalid temporality and type combination for metric "test_metric"`,
+		},
+		{
+			name:       "delta histogram as nhcb allowed",
+			allowDelta: true,
+			input: func() pmetric.Metrics {
+				md := pmetric.NewMetrics()
+				rm := md.ResourceMetrics().AppendEmpty()
+				il := rm.ScopeMetrics().AppendEmpty()
+				m := il.Metrics().AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptyHistogram()
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetCount(20)
+				dp.SetSum(30)
+				dp.BucketCounts().FromRaw([]uint64{10, 10, 0})
+				dp.ExplicitBounds().FromRaw([]float64{1, 2})
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+				return md
+			}(),
+			expected: prompb.TimeSeries{
+				Labels: []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "metric-attr", Value: "metric value"}},
+				Histograms: []prompb.Histogram{
+					{
+						Count:         &prompb.Histogram_CountInt{CountInt: 20},
+						Sum:           30,
+						Schema:        -53,
+						ZeroThreshold: 0,
+						ZeroCount:     nil,
+						PositiveSpans: []prompb.BucketSpan{
+							{
+								Length: 3,
+							},
+						},
+						PositiveDeltas: []int64{10, 0, -10},
+						CustomValues:   []float64{1, 2},
+						Timestamp:      ts.UnixMilli(),
+						ResetHint:      prompb.Histogram_UNKNOWN,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := newOTLPMimirConverter()
+			mimirTS, dropped, err := otelMetricsToTimeseries(
+				context.Background(),
+				converter,
+				true,
+				false,
+				false,
+				[]string{},
+				false,
+				true,
+				tc.allowDelta,
+				tc.input,
+				log.NewNopLogger(),
+			)
+			if tc.expectedErr != "" {
+				require.EqualError(t, err, tc.expectedErr)
+				require.Len(t, mimirTS, 0)
+				require.Equal(t, 1, dropped)
+
+			} else {
+				require.NoError(t, err)
+				require.Len(t, mimirTS, 1)
+				require.Equal(t, 0, dropped)
+			}
+
+			/*var ts mimirpb.PreallocTimeseries
+			for i := range mimirTS {
+				for _, lbl := range mimirTS[i].Labels {
+					if lbl.Name != labels.MetricName {
+						continue
+					}
+
+					if lbl.Value == "target_info" {
+						continue
+					} else {
+						ts = mimirTS[i]
+						break
+					}
+				}
+			}*/
+
+		})
 	}
 }
 
