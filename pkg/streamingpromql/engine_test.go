@@ -38,6 +38,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -4054,4 +4055,97 @@ func TestQueryClose(t *testing.T) {
 	// Close the query a second time, to ensure that closing the query again does not cause any issues.
 	q.Close()
 	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestEagerLoadSelectors(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x5
+			some_other_metric 0+2x5
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	// TODO: create slow Queryable
+
+	limitsProvider := NewStaticQueryLimitsProvider(0)
+	metrics := stats.NewQueryMetrics(nil)
+	logger := log.NewNopLogger()
+	optsWithoutEagerLoading := NewTestEngineOpts()
+	engineWithoutEagerLoading, err := NewEngine(optsWithoutEagerLoading, limitsProvider, metrics, nil, logger)
+	require.NoError(t, err)
+
+	optsWithEagerLoading := NewTestEngineOpts()
+	optsWithEagerLoading.EagerLoadSelectors = true
+	engineWithEagerLoading, err := NewEngine(optsWithEagerLoading, limitsProvider, metrics, nil, logger)
+	require.NoError(t, err)
+
+	slowStorage := lazyquery.NewLazyQueryable(&slowQueryable{storage})
+
+	testCases := []string{
+		`sum(some_metric) + sum(some_other_metric)`,
+		`sum(rate(some_metric[5m])) + sum(rate(some_other_metric[5m]))`,
+	}
+
+	ctx := context.Background()
+	ts := timestamp.Time(0).Add(5 * time.Minute)
+
+	for _, expr := range testCases {
+		t.Run(expr, func(t *testing.T) {
+			// First, run without eager loading to get expected result
+			q, err := engineWithoutEagerLoading.NewInstantQuery(ctx, storage, nil, expr, ts)
+			require.NoError(t, err)
+			baselineResult := q.Exec(ctx)
+			require.NoError(t, baselineResult.Err)
+			defer q.Close()
+
+			// Run with eager loading and slow but lazy queryable (as it would in query-frontends)
+			q, err = engineWithEagerLoading.NewInstantQuery(ctx, slowStorage, nil, expr, ts)
+			require.NoError(t, err)
+			start := time.Now()
+			eagerLoadingResult := q.Exec(ctx)
+			duration := time.Since(start)
+			require.NoError(t, eagerLoadingResult.Err)
+			defer q.Close()
+
+			testutils.RequireEqualResults(t, expr, baselineResult, eagerLoadingResult, false)
+
+			// Each Select call through our mocked slow storage takes at least 2s, so if they aren't run in parallel, then the query will take over 4s to run.
+			require.Less(t, duration, 4*time.Second, "expected selectors to be evaluated in parallel")
+		})
+	}
+}
+
+type slowQueryable struct {
+	inner storage.Queryable
+}
+
+func (s *slowQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &slowQuerier{q}, nil
+}
+
+type slowQuerier struct {
+	inner storage.Querier
+}
+
+func (s *slowQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (s *slowQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (s *slowQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	time.Sleep(2 * time.Second)
+	return s.inner.Select(ctx, sortSeries, hints, matchers...)
+}
+
+func (s *slowQuerier) Close() error {
+	return s.inner.Close()
 }

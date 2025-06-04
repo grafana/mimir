@@ -67,6 +67,7 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		Offset:                   v.Offset.Milliseconds(),
 		LookbackDelta:            params.LookbackDelta,
 		Matchers:                 matchers,
+		EagerLoad:                params.EagerLoadSelectors,
 		ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
