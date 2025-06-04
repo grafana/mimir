@@ -215,6 +215,7 @@ type RulesLimits interface {
 	RulerProtectedNamespaces(userID string) []string
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
+	RulerMinRuleEvaluationInterval(userID string) time.Duration
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {

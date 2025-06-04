@@ -37,6 +37,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
 	"go.opentelemetry.io/otel"
@@ -85,6 +86,7 @@ const (
 	errAlertingRulesEvaluationDisabled          = "alerting rules evaluation is disabled for user"
 	errMaxRuleGroupsPerUserLimitExceeded        = "per-user rule groups limit (limit: %d actual: %d) exceeded"
 	errMaxRulesPerRuleGroupPerUserLimitExceeded = "per-user rules per rule group limit (limit: %d actual: %d) exceeded"
+	errMinRuleEvaluationIntervalExceeded        = "per-user minimum rule evaluation interval limit (limit: %s actual: %s) exceeded"
 
 	// errors
 	errListAllUser = "unable to list the ruler users"
@@ -1334,6 +1336,19 @@ func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) 
 		return nil
 	}
 	return fmt.Errorf(errMaxRulesPerRuleGroupPerUserLimitExceeded, limit, rules)
+}
+
+func (r *Ruler) AssertMinRuleEvaluationInterval(userID string, interval time.Duration) error {
+	limit := r.limits.RulerMinRuleEvaluationInterval(userID)
+
+	if limit <= 0 {
+		return nil
+	}
+
+	if interval >= limit {
+		return nil
+	}
+	return fmt.Errorf(errMinRuleEvaluationIntervalExceeded, model.Duration(limit).String(), model.Duration(interval).String())
 }
 
 func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Request) {
