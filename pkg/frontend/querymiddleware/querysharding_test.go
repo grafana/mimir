@@ -1672,14 +1672,12 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		{
 			name:               "downstream - storage internal error",
 			engineType:         querier.PrometheusEngine,
-			engineShardingOpts: []engineOpt{withMaxSamples(1)},
 			queryable:          queryableInternalErr,
 			expError:           apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
 			name:               "downstream - storage prometheus execution error",
 			engineType:         querier.PrometheusEngine,
-			engineShardingOpts: []engineOpt{withMaxSamples(1)},
 			queryable:          queryablePrometheusExecErr,
 			expError:           apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
@@ -1704,14 +1702,12 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		{
 			name:               "downstream - storage internal error",
 			engineType:         querier.MimirEngine,
-			engineShardingOpts: []engineOpt{withMaxSamples(1)},
 			queryable:          queryableInternalErr,
 			expError:           apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
 			name:               "downstream - storage prometheus execution error",
 			engineType:         querier.MimirEngine,
-			engineShardingOpts: []engineOpt{withMaxSamples(1)},
 			queryable:          queryablePrometheusExecErr,
 			expError:           apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
