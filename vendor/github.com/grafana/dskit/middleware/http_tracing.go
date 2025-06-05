@@ -92,7 +92,6 @@ func (t Tracer) wrapWithOTel(next http.Handler) http.Handler {
 				labeler.Add(attribute.String("http.content_type", ct))
 			}
 
-			labeler.Add(attribute.String("headers", fmt.Sprintf("%v", r.Header)))
 			// add a tag with the client's sourceIPs to the span, if a
 			// SourceIPExtractor is given.
 			if t.SourceIPs != nil {
