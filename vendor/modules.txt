@@ -158,7 +158,7 @@ github.com/alecthomas/kingpin/v2
 # github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 ## explicit; go 1.15
 github.com/alecthomas/units
-# github.com/andybalholm/brotli v1.1.0
+# github.com/andybalholm/brotli v1.1.1
 ## explicit; go 1.13
 github.com/andybalholm/brotli
 github.com/andybalholm/brotli/matchfinder
@@ -979,9 +979,6 @@ github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
-# github.com/mattn/go-runewidth v0.0.15
-## explicit; go 1.9
-github.com/mattn/go-runewidth
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
@@ -1063,11 +1060,14 @@ github.com/oklog/ulid/v2
 ## explicit
 github.com/okzk/sdnotify
 <<<<<<< HEAD
+<<<<<<< HEAD
 # github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.128.0
 =======
 # github.com/olekukonko/tablewriter v0.0.5
 ## explicit; go 1.12
 github.com/olekukonko/tablewriter
+=======
+>>>>>>> 0679eb9976 (parquet: vendor back from parquet-common (#11644))
 # github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.125.0
 >>>>>>> 60e41667eb (bring in prometheus/parquet-common code to new package (#11490))
 ## explicit; go 1.23.0
@@ -1099,7 +1099,7 @@ github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
 # github.com/oracle/oci-go-sdk/v65 v65.92.0
 ## explicit; go 1.13
-# github.com/parquet-go/parquet-go v0.25.0
+# github.com/parquet-go/parquet-go v0.25.1
 ## explicit; go 1.22
 github.com/parquet-go/parquet-go
 github.com/parquet-go/parquet-go/bloom
@@ -1159,6 +1159,11 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
 ## explicit; go 1.14
 github.com/power-devops/perfstat
+# github.com/prometheus-community/parquet-common v0.0.0-20250605151408-f0d4c82ca811
+## explicit; go 1.23.4
+github.com/prometheus-community/parquet-common/convert
+github.com/prometheus-community/parquet-common/schema
+github.com/prometheus-community/parquet-common/util
 # github.com/prometheus/alertmanager v0.28.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
 ## explicit; go 1.23.0
 github.com/prometheus/alertmanager/api
@@ -1323,9 +1328,6 @@ github.com/puzpuzpuz/xsync/v3
 # github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
 ## explicit
 github.com/rainycape/unidecode
-# github.com/rivo/uniseg v0.4.7
-## explicit; go 1.18
-github.com/rivo/uniseg
 # github.com/rs/cors v1.11.0
 ## explicit; go 1.13
 github.com/rs/cors
@@ -2132,7 +2134,7 @@ k8s.io/kube-openapi/pkg/validation/spec
 k8s.io/kube-openapi/pkg/validation/strfmt
 k8s.io/kube-openapi/pkg/validation/strfmt/bson
 k8s.io/kube-openapi/pkg/validation/validate
-# k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+# k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078
 ## explicit; go 1.18
 k8s.io/utils/clock
 k8s.io/utils/internal/third_party/forked/golang/net

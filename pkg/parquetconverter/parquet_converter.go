@@ -23,11 +23,11 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/parquet-common/convert"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/parquet/convert"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
