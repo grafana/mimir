@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -61,6 +62,7 @@ func (d defaultBlockConverter) ConvertBlock(ctx context.Context, meta *block.Met
 	if err != nil {
 		return err
 	}
+	defer runutil.CloseWithErrCapture(&err, tsdbBlock, "close tsdb block")
 
 	_, err = convert.ConvertTSDBBlock(
 		ctx,
