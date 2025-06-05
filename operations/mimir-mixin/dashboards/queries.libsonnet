@@ -18,6 +18,24 @@ local filename = 'mimir-queries.json';
       { label: 'Main', value: $.jobMatcher($._config.job_names.main_read_path) },
       { label: 'Remote ruler', value: $.jobMatcher($._config.job_names.remote_ruler_read_path) },
     ])
+    .addRowIf(
+      $._config.gateway_enabled,
+      $.row('Gateway')
+      .addPanel(
+        $.timeseriesPanel('Queries / sec by read path') +
+        $.panelDescription(
+          'Queries / sec by read path',
+          |||
+            Queries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.
+          |||
+        ) +
+        $.queryPanel(
+          'label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{%s}[$__rate_interval]))), "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")' % $.jobMatcher($._config.job_names.gateway),
+          '{{proxy}}'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+    )
     .addRow(
       $.row('Query-frontend')
       .addPanel(

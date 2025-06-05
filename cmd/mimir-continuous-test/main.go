@@ -43,7 +43,7 @@ func main() {
 	level.Warn(util_log.Logger).Log("msg", "The mimir-continuous-test binary you are using is deprecated. Please use the Mimir binary module `mimir -target=continuous-test`.")
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-	if trace, err := tracing.NewOTelOrJaegerFromEnv("mimir-continuous-test", util_log.Logger); err != nil && !errors.Is(err, tracing.ErrBlankTraceConfiguration) {
+	if trace, err := tracing.NewOTelOrJaegerFromEnv("mimir-continuous-test", util_log.Logger); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 	} else {
 		defer trace.Close()
