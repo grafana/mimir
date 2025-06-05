@@ -640,6 +640,8 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
 	configs = filterRuleGroupsByEnabled(configs, r.limits, r.logger)
+	// Apply any changes required by tenant limits.
+	configs = applyRuleGroupLimits(configs, r.limits, r.logger)
 
 	// Sync the rule groups.
 	if len(userIDs) > 0 {
@@ -988,6 +990,24 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 			"group", missingGroup.GetName())
 	}
 
+	return filtered
+}
+
+func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) (filtered map[string]rulespb.RuleGroupList) {
+	for userID, groups := range configs {
+		filtered[userID] = groups
+		tenantMinInterval := limits.RulerMinRuleEvaluationInterval(userID)
+		if tenantMinInterval <= 0 {
+			continue
+		}
+
+		for _, group := range filtered[userID] {
+			if group.Interval < tenantMinInterval {
+				group.Interval = tenantMinInterval
+				// TODO: log
+			}
+		}
+	}
 	return filtered
 }
 
