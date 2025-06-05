@@ -100,7 +100,8 @@ func newWithSchedulerClient(
 		}
 	}
 
-	b.Service = services.NewBasicService(b.starting, b.runningPullMode, b.stoppingPullMode)
+	b.Service = services.NewBasicService(b.starting, b.running, b.stopping)
+
 	return b, nil
 }
 
@@ -159,7 +160,7 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 	return nil
 }
 
-func (b *BlockBuilder) stoppingPullMode(_ error) error {
+func (b *BlockBuilder) stopping(_ error) error {
 	b.kafkaClient.Close()
 	b.schedulerClient.Close()
 
@@ -169,9 +170,8 @@ func (b *BlockBuilder) stoppingPullMode(_ error) error {
 	return nil
 }
 
-// runningPullMode is a service `running` function for pull mode, where we learn
-// about jobs from a block-builder-scheduler. We consume one job at a time.
-func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
+// running learns about the jobs from a block-builder-scheduler, and consumes one job at a time.
+func (b *BlockBuilder) running(ctx context.Context) error {
 	// We control our own context here. We'll stop processing jobs when the
 	// service context is cancelled, but let any in-flight jobs complete.
 
@@ -227,14 +227,14 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 	builder := NewTSDBBuilder(logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
 
-	return b.consumePartitionSectionPullMode(ctx, logger, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
+	return b.consumePartitionSection(ctx, logger, builder, spec.Partition, spec.StartOffset, spec.EndOffset)
 }
 
-// consumePartitionSectionPullMode is for the use of scheduler based architecture.
+// consumePartitionSection is for the use of scheduler-based architecture.
 // startOffset is inclusive, endOffset is exclusive, and must be valid offsets and not something in the future (endOffset can be technically 1 offset in the future).
 // All the records and samples between these offsets will be consumed and put into a block.
-// The returned lastConsumedOffset is the offset of the last record consumed. It is the caller's responsibility to commit this offset.
-func (b *BlockBuilder) consumePartitionSectionPullMode(
+// The returned lastConsumedOffset is the offset of the last record consumed.
+func (b *BlockBuilder) consumePartitionSection(
 	ctx context.Context,
 	logger log.Logger,
 	builder *TSDBBuilder,
