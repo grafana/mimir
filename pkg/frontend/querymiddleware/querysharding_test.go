@@ -1670,16 +1670,16 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			queryable:          queryableSlow,
 		},
 		{
-			name:               "downstream - storage internal error",
-			engineType:         querier.PrometheusEngine,
-			queryable:          queryableInternalErr,
-			expError:           apierror.New(apierror.TypeInternal, "some internal error"),
+			name:       "downstream - storage internal error",
+			engineType: querier.PrometheusEngine,
+			queryable:  queryableInternalErr,
+			expError:   apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
-			name:               "downstream - storage prometheus execution error",
-			engineType:         querier.PrometheusEngine,
-			queryable:          queryablePrometheusExecErr,
-			expError:           apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
+			name:       "downstream - storage prometheus execution error",
+			engineType: querier.PrometheusEngine,
+			queryable:  queryablePrometheusExecErr,
+			expError:   apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
 
 		// MQE equivalents when applicable. For example, MQE doesn't have a sample limit
@@ -1700,16 +1700,16 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			queryable:          queryableSlow,
 		},
 		{
-			name:               "downstream - storage internal error",
-			engineType:         querier.MimirEngine,
-			queryable:          queryableInternalErr,
-			expError:           apierror.New(apierror.TypeInternal, "some internal error"),
+			name:       "downstream - storage internal error",
+			engineType: querier.MimirEngine,
+			queryable:  queryableInternalErr,
+			expError:   apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
-			name:               "downstream - storage prometheus execution error",
-			engineType:         querier.MimirEngine,
-			queryable:          queryablePrometheusExecErr,
-			expError:           apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
+			name:       "downstream - storage prometheus execution error",
+			engineType: querier.MimirEngine,
+			queryable:  queryablePrometheusExecErr,
+			expError:   apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
 	} {
 		t.Run(fmt.Sprintf("%s engine=%s", tc.name, tc.engineType), func(t *testing.T) {
