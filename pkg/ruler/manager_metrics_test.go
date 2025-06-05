@@ -159,6 +159,8 @@ func populateManager(base float64) *prometheus.Registry {
 	metrics.IterationsMissed.WithLabelValues("group_two").Add(base)
 	metrics.EvalTotal.WithLabelValues("group_one").Add(base)
 	metrics.EvalTotal.WithLabelValues("group_two").Add(base)
+	metrics.EvalMissed.WithLabelValues("group_one").Add(base)
+	metrics.EvalMissed.WithLabelValues("group_two").Add(base)
 	metrics.EvalFailures.WithLabelValues("group_one").Add(base)
 	metrics.EvalFailures.WithLabelValues("group_two").Add(base)
 
