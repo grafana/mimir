@@ -571,6 +571,8 @@ github.com/grafana/gomemcache v0.0.0-20250428181140-a78a5f9b0a0e h1:U+881aNy2wY4
 github.com/grafana/gomemcache v0.0.0-20250428181140-a78a5f9b0a0e/go.mod h1:j/s0jkda4UXTemDs7Pgw/vMT06alWc42CHisvYac0qw=
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700 h1:0t7iOQ5ZkBuItHW0VnRpr/upV0JkSg/mEkBCnlrPTjU=
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700/go.mod h1:Ri9p/tRShbjYnpNf4FFPXG7wxEGY4Nrcn6E7jrVa//4=
+github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5 h1:H4Del07v9UAYJgky9oeRY1oNqs6dh8lmHRUWiGCKXoE=
+github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5/go.mod h1:v1PzmPjSnNkmZSDvKJ9OmsWcmWMEF5+JdllEcXrRfzM=
 github.com/grafana/mimir-prometheus v1.8.2-0.20250602172627-3f093cd74ca2 h1:UmYcUEn20U7XzY7EWgFeu8qLD882c9LaMs4PcbW6LYQ=
 github.com/grafana/mimir-prometheus v1.8.2-0.20250602172627-3f093cd74ca2/go.mod h1:wxNDaTwYlAYXHIlsXbCj1xQZik2CB+GGqYW6LUJq6s4=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
@@ -918,8 +920,6 @@ github.com/prometheus/common/sigv4 v0.1.0 h1:qoVebwtwwEhS85Czm2dSROY5fTo2PAPEVdD
 github.com/prometheus/common/sigv4 v0.1.0/go.mod h1:2Jkxxk9yYvCkE5G1sQT7GuEXm57JrvHu9k5YwTjsNtI=
 github.com/prometheus/exporter-toolkit v0.14.0 h1:NMlswfibpcZZ+H0sZBiTjrA3/aBFHkNZqE+iCj5EmRg=
 github.com/prometheus/exporter-toolkit v0.14.0/go.mod h1:Gu5LnVvt7Nr/oqTBUC23WILZepW0nffNo10XdhQcwWA=
-github.com/prometheus/otlptranslator v0.0.0-20250527173959-2573485683d5 h1:LCbPeVKZSu9RS4CsaDCOmDCcribskJ8c6H5u1VvyxY0=
-github.com/prometheus/otlptranslator v0.0.0-20250527173959-2573485683d5/go.mod h1:v1PzmPjSnNkmZSDvKJ9OmsWcmWMEF5+JdllEcXrRfzM=
 github.com/prometheus/procfs v0.0.0-20181005140218-185b4288413d/go.mod h1:c3At6R/oaqEKCNdg8wHV1ftS6bRYblBhIjjI8uT2IGk=
 github.com/prometheus/procfs v0.0.2/go.mod h1:TjEm7ze935MbeOT/UhFTIMYKhuLP4wbCsTZCD3I8kEA=
 github.com/prometheus/procfs v0.0.8/go.mod h1:7Qr8sr6344vo1JqZ6HhLceV9o3AJ1Ff+GxbHq6oeK9A=
