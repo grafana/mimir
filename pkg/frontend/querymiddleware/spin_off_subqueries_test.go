@@ -52,7 +52,7 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		"subquery max with downstream join": {
 			query: `max_over_time(
 							rate(metric_counter[1m])
-						[2d:1m]
+						[2h:1m]
 					)
 					* on (group_1) group_left()
 					max by (group_1)(
@@ -63,58 +63,58 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		"subquery max": {
 			query: `max_over_time(
 							rate(metric_counter[1m])
-						[2d:1m]
+						[2h:1m]
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery max with offset": {
 			query: `max_over_time(
 							rate(metric_counter[1m])
-						[2d:1m] offset 1d
+						[2h:1m] offset 1h
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery min": {
 			query: `min_over_time(
 							rate(metric_counter[1m])
-						[2d:1m]
+						[2h:1m]
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery min 2": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[2h:2m])`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery min with small offset": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[1d:1m] offset 20s)`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[1h:1m] offset 20s)`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery min with offset": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d)`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[1h:1m] offset 1h)`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery min: offset query time -10m": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[2h:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           -10 * time.Minute,
 		},
 		"subquery min: offset query time +10m": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[2h:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           10 * time.Minute,
 		},
 		"subquery min: offset query time -33s": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[2h:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           -33 * time.Second,
 		},
 		"subquery min: offset query time +33s": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[2h:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           33 * time.Second,
 		},
 		"subquery min: offset query time +1h": {
-			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
+			query:                     `min_over_time((changes(metric_counter[5m]))[2h:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           1 * time.Hour,
 		},
@@ -125,18 +125,18 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 								rate(metric_counter[10m])
 							[5m:1m])
 						[2m:])
-					[2d:])`,
+					[2h:])`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"double subquery deriv": {
-			query:                     `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[2d:] )`,
+			query:                     `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[2h:] )`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"subquery min_over_time with aggr": {
 			query: `min_over_time(
 						sum by(group_1) (
 							rate(metric_counter[5m])
-						)[2d:]
+						)[2h:]
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
@@ -144,11 +144,11 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 			query: `
 sum by (group_1) (
       sum_over_time(
-        avg by (group_1) (metric_counter{group_2="1"})[1d:5m] offset 1m
+        avg by (group_1) (metric_counter{group_2="1"})[1h:5m] offset 1m
       )
     *
       avg by (group_1) (
-        avg_over_time(metric_counter{group_2="2"}[1d:5m] offset 1m)
+        avg_over_time(metric_counter{group_2="2"}[1h:5m] offset 1m)
       )
   *
     0.083333
@@ -157,7 +157,7 @@ sum by (group_1) (
 		},
 	}
 
-	queryable := setupSubquerySpinOffTestSeries(t, 2*24*time.Hour)
+	queryable := setupSubquerySpinOffTestSeries(t, 2*time.Hour)
 	runSubquerySpinOffTests(t, tests, queryable)
 }
 
@@ -166,13 +166,13 @@ func TestSubquerySpinOff_LongRangeQuery(t *testing.T) {
 		"subquery max: multiple range queries": {
 			query: `max_over_time(
 							rate(metric_counter[1m])
-						[10d:1m]
+						[10h:1m]
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
 	}
 
-	queryable := setupSubquerySpinOffTestSeries(t, 10*24*time.Hour)
+	queryable := setupSubquerySpinOffTestSeries(t, 10*time.Hour)
 	runSubquerySpinOffTests(t, tests, queryable)
 }
 
@@ -266,8 +266,6 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
-
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				downstream := &downstreamHandler{engine: eng, queryable: queryable}
 				req := &PrometheusInstantQueryRequest{
