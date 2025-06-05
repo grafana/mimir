@@ -469,12 +469,19 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	if am.isGrafanaTenant() {
 		tenantKind = alertingTemplates.GrafanaKind
 	}
+	mimir, grafana := 0, 0
 	for _, tmpl := range tmpls {
 		if !alertingTemplates.IsKnownKind(tmpl.Kind) {
 			tmpl.Kind = tenantKind
 		}
 		fixed = append(fixed, tmpl)
+		if tmpl.Kind == alertingTemplates.MimirKind {
+			mimir++
+		} else if tmpl.Kind == alertingTemplates.GrafanaKind {
+			grafana++
+		}
 	}
+	level.Info(am.logger).Log("msg", "template definitions loaded", "mimir", mimir, "grafana", grafana, "total", len(fixed))
 
 	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, fixed, tmplExternalURL)
 	if err != nil {
