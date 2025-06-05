@@ -214,6 +214,16 @@
         },
         {
           "kind": "field",
+          "name": "grpc_collect_max_streams_by_conn",
+          "required": false,
+          "desc": "If true, the max streams by connection gauge will be collected.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "server.grpc-collect-max-streams-by-conn",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "proxy_protocol_enabled",
           "required": false,
           "desc": "Enables PROXY protocol.",
