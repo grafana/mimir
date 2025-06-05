@@ -82,15 +82,16 @@ type Config struct {
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
 
-	HTTPListenNetwork    string `yaml:"http_listen_network"`
-	HTTPListenAddress    string `yaml:"http_listen_address"`
-	HTTPListenPort       int    `yaml:"http_listen_port"`
-	HTTPConnLimit        int    `yaml:"http_listen_conn_limit"`
-	GRPCListenNetwork    string `yaml:"grpc_listen_network"`
-	GRPCListenAddress    string `yaml:"grpc_listen_address"`
-	GRPCListenPort       int    `yaml:"grpc_listen_port"`
-	GRPCConnLimit        int    `yaml:"grpc_listen_conn_limit"`
-	ProxyProtocolEnabled bool   `yaml:"proxy_protocol_enabled"`
+	HTTPListenNetwork           string `yaml:"http_listen_network"`
+	HTTPListenAddress           string `yaml:"http_listen_address"`
+	HTTPListenPort              int    `yaml:"http_listen_port"`
+	HTTPConnLimit               int    `yaml:"http_listen_conn_limit"`
+	GRPCListenNetwork           string `yaml:"grpc_listen_network"`
+	GRPCListenAddress           string `yaml:"grpc_listen_address"`
+	GRPCListenPort              int    `yaml:"grpc_listen_port"`
+	GRPCConnLimit               int    `yaml:"grpc_listen_conn_limit"`
+	GRPCCollectMaxStreamsByConn bool   `yaml:"grpc_collect_max_streams_by_conn"`
+	ProxyProtocolEnabled        bool   `yaml:"proxy_protocol_enabled"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
 	MinVersion    string    `yaml:"tls_min_version"`
@@ -189,6 +190,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.GRPCListenAddress, "server.grpc-listen-address", "", "gRPC server listen address.")
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
 	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
+	f.BoolVar(&cfg.GRPCCollectMaxStreamsByConn, "server.grpc-collect-max-streams-by-conn", true, "If true, the max streams by connection gauge will be collected.")
 	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
 	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
@@ -273,6 +275,8 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if logger == nil {
 		logger = log.NewGoKitWithLevel(cfg.LogLevel, cfg.LogFormat)
 	}
+
+	reg := cfg.registererOrDefault()
 
 	gatherer := cfg.Gatherer
 	if gatherer == nil {
@@ -483,10 +487,11 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	if cfg.GRPCServerStatsTrackingEnabled {
 		grpcOptions = append(grpcOptions,
 			grpc.StatsHandler(middleware.NewStatsHandler(
+				reg,
 				metrics.ReceivedMessageSize,
 				metrics.SentMessageSize,
 				metrics.InflightRequests,
-				metrics.GRPCConcurrentStreamsByConnMax,
+				cfg.GRPCCollectMaxStreamsByConn,
 			)),
 		)
 	}
