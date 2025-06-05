@@ -806,7 +806,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
 	var eng promql.QueryEngine
-	switch t.Cfg.Querier.QueryEngine {
+	switch t.Cfg.Frontend.QueryEngine {
 	case querier.PrometheusEngine:
 		eng = promql.NewEngine(promOpts)
 	case querier.MimirEngine:
@@ -815,7 +815,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
 
-		if t.Cfg.Querier.EnableQueryEngineFallback {
+		if t.Cfg.Frontend.EnableQueryEngineFallback {
 			eng = streamingpromqlcompat.NewEngineWithFallback(streamingEngine, promql.NewEngine(promOpts), nil, util_log.Logger)
 		} else {
 			eng = streamingEngine

@@ -79,14 +79,6 @@ const (
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	//sharedWithQueryFrontend := func(help string) string {
-	//	if !strings.HasSuffix(help, " ") {
-	//		help = help + " "
-	//	}
-	//
-	//	return help + "This config option should be set on query-frontend too when query sharding is enabled."
-	//}
-
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")

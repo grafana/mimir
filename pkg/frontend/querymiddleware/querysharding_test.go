@@ -1691,7 +1691,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			name:                 "downstream - timeout",
 			engineType:           querier.MimirEngine,
 			engineDownstreamOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
-			expError:             apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
+			expError:             apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
 			queryable:            queryableSlow,
 		},
 		{
@@ -2697,12 +2697,6 @@ func (ssi *ThreadSafeStorageSeriesIterator) Next() chunkenc.ValueType {
 
 func (ssi *ThreadSafeStorageSeriesIterator) Err() error {
 	return nil
-}
-
-// newEngine creates and return a new promql.Engine used for testing.
-func newEngine(t *testing.T) promql.QueryEngine {
-	_, eng := newEngineForTesting(t, querier.PrometheusEngine)
-	return eng
 }
 
 func TestRemoveAnnotationPositionInformation(t *testing.T) {
