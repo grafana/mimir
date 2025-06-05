@@ -403,7 +403,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 		name        string
 		allowDelta  bool
 		input       pmetric.Metrics
-		expected    prompb.TimeSeries
+		expected    mimirpb.TimeSeries
 		expectedErr string
 	}{
 		{
@@ -441,9 +441,9 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				dp.Attributes().PutStr("metric-attr", "metric value")
 				return md
 			}(),
-			expected: prompb.TimeSeries{
-				Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "metric-attr", Value: "metric value"}},
-				Samples: []prompb.Sample{{Timestamp: ts.UnixMilli(), Value: 5}},
+			expected: mimirpb.TimeSeries{
+				Labels:  []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Samples: []mimirpb.Sample{{TimestampMs: ts.UnixMilli(), Value: 5}},
 			},
 		},
 		{
@@ -480,21 +480,21 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				dp := sum.DataPoints().AppendEmpty()
 				dp.SetCount(1)
 				dp.SetSum(5)
-				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 				dp.Attributes().PutStr("metric-attr", "metric value")
 				return md
 			}(),
-			expected: prompb.TimeSeries{
-				Labels: []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "metric-attr", Value: "metric value"}},
-				Histograms: []prompb.Histogram{
+			expected: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Histograms: []mimirpb.Histogram{
 					{
-						Count:         &prompb.Histogram_CountInt{CountInt: 1},
+						Count:         &mimirpb.Histogram_CountInt{CountInt: 1},
 						Sum:           5,
 						Schema:        0,
 						ZeroThreshold: 1e-128,
-						ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: 0},
+						ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: 0},
 						Timestamp:     ts.UnixMilli(),
-						ResetHint:     prompb.Histogram_UNKNOWN,
+						ResetHint:     mimirpb.Histogram_GAUGE,
 					},
 				},
 			},
@@ -537,20 +537,20 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				dp.SetSum(30)
 				dp.BucketCounts().FromRaw([]uint64{10, 10, 0})
 				dp.ExplicitBounds().FromRaw([]float64{1, 2})
-				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 				dp.Attributes().PutStr("metric-attr", "metric value")
 				return md
 			}(),
-			expected: prompb.TimeSeries{
-				Labels: []prompb.Label{{Name: "__name__", Value: "test_metric"}, {Name: "metric-attr", Value: "metric value"}},
-				Histograms: []prompb.Histogram{
+			expected: mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}, {Name: "metric_attr", Value: "metric value"}},
+				Histograms: []mimirpb.Histogram{
 					{
-						Count:         &prompb.Histogram_CountInt{CountInt: 20},
+						Count:         &mimirpb.Histogram_CountInt{CountInt: 20},
 						Sum:           30,
 						Schema:        -53,
 						ZeroThreshold: 0,
 						ZeroCount:     nil,
-						PositiveSpans: []prompb.BucketSpan{
+						PositiveSpans: []mimirpb.BucketSpan{
 							{
 								Length: 3,
 							},
@@ -558,7 +558,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 						PositiveDeltas: []int64{10, 0, -10},
 						CustomValues:   []float64{1, 2},
 						Timestamp:      ts.UnixMilli(),
-						ResetHint:      prompb.Histogram_UNKNOWN,
+						ResetHint:      mimirpb.Histogram_GAUGE,
 					},
 				},
 			},
@@ -585,29 +585,12 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				require.EqualError(t, err, tc.expectedErr)
 				require.Len(t, mimirTS, 0)
 				require.Equal(t, 1, dropped)
-
 			} else {
 				require.NoError(t, err)
 				require.Len(t, mimirTS, 1)
 				require.Equal(t, 0, dropped)
+				require.Equal(t, tc.expected, *mimirTS[0].TimeSeries)
 			}
-
-			/*var ts mimirpb.PreallocTimeseries
-			for i := range mimirTS {
-				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name != labels.MetricName {
-						continue
-					}
-
-					if lbl.Value == "target_info" {
-						continue
-					} else {
-						ts = mimirTS[i]
-						break
-					}
-				}
-			}*/
-
 		})
 	}
 }
