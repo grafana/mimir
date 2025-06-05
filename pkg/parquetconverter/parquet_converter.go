@@ -27,7 +27,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/parquet/convert"
+	"github.com/prometheus-community/parquet-common/convert"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"

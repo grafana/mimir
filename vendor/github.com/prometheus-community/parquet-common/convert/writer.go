@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus-community/parquet-common/blob/382b6ec8ae40fb5dcdcabd8019f69a4be1cd8869/convert/writer.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package convert
 
@@ -10,7 +18,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/grafana/dskit/cancellation"
 	"github.com/hashicorp/go-multierror"
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
@@ -18,8 +25,8 @@ import (
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/parquet/schema"
-	"github.com/grafana/mimir/pkg/parquet/util"
+	"github.com/prometheus-community/parquet-common/schema"
+	"github.com/prometheus-community/parquet-common/util"
 )
 
 type ShardedWriter struct {
@@ -86,8 +93,8 @@ func (c *ShardedWriter) convertShard(ctx context.Context) (bool, error) {
 }
 
 func (c *ShardedWriter) writeFile(ctx context.Context, schema *schema.TSDBSchema, rowsToWrite int) (int64, error) {
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("error while writing file"))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	fileOpts := []parquet.WriterOption{
 		parquet.SortingWriterConfig(
@@ -328,7 +335,7 @@ func (b *bufferedReader) readRows() {
 				b.c <- rows[:n]
 			}
 			if err != nil {
-				if errors.Is(err, io.EOF) {
+				if err == io.EOF {
 					close(b.c)
 					return
 				}

@@ -158,7 +158,7 @@ github.com/alecthomas/kingpin/v2
 # github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 ## explicit; go 1.15
 github.com/alecthomas/units
-# github.com/andybalholm/brotli v1.1.0
+# github.com/andybalholm/brotli v1.1.1
 ## explicit; go 1.13
 github.com/andybalholm/brotli
 github.com/andybalholm/brotli/matchfinder
@@ -967,7 +967,7 @@ github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
-# github.com/mattn/go-runewidth v0.0.15
+# github.com/mattn/go-runewidth v0.0.16
 ## explicit; go 1.9
 github.com/mattn/go-runewidth
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
@@ -1050,7 +1050,7 @@ github.com/oklog/ulid/v2
 # github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 ## explicit
 github.com/okzk/sdnotify
-# github.com/olekukonko/tablewriter v0.0.5
+# github.com/olekukonko/tablewriter v0.0.5 => github.com/olekukonko/tablewriter v0.0.5
 ## explicit; go 1.12
 github.com/olekukonko/tablewriter
 # github.com/open-telemetry/opentelemetry-collector-contrib/internal/exp/metrics v0.125.0
@@ -1143,6 +1143,11 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
 ## explicit; go 1.14
 github.com/power-devops/perfstat
+# github.com/prometheus-community/parquet-common v0.0.0-20250601120936-48a47ec1c4f7
+## explicit; go 1.23.4
+github.com/prometheus-community/parquet-common/convert
+github.com/prometheus-community/parquet-common/schema
+github.com/prometheus-community/parquet-common/util
 # github.com/prometheus/alertmanager v0.28.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
 ## explicit; go 1.22
 github.com/prometheus/alertmanager/api
@@ -2039,7 +2044,7 @@ k8s.io/kube-openapi/pkg/validation/spec
 k8s.io/kube-openapi/pkg/validation/strfmt
 k8s.io/kube-openapi/pkg/validation/strfmt/bson
 k8s.io/kube-openapi/pkg/validation/validate
-# k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+# k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078
 ## explicit; go 1.18
 k8s.io/utils/clock
 k8s.io/utils/internal/third_party/forked/golang/net
@@ -2092,3 +2097,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250424093311-7163931461c6
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250501145537-53ceaec28820
 # github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
+# github.com/olekukonko/tablewriter => github.com/olekukonko/tablewriter v0.0.5

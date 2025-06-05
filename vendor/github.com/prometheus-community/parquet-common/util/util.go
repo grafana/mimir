@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus-community/parquet-common/blob/382b6ec8ae40fb5dcdcabd8019f69a4be1cd8869/util/util.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package util
 
@@ -27,8 +35,8 @@ func CloneRows(rows []parquet.Row) []parquet.Row {
 // https://github.com/thanos-io/thanos/blob/2a5a856e34adb2653dda700c4d87637236afb2dd/pkg/store/bucket.go#L3466
 
 type Part struct {
-	Start uint64
-	End   uint64
+	Start int
+	End   int
 
 	ElemRng [2]int
 }
@@ -38,14 +46,14 @@ type Partitioner interface {
 	// input ranges
 	// It supports overlapping ranges.
 	// NOTE: It expects range to be sorted by start time.
-	Partition(length int, rng func(int) (uint64, uint64)) []Part
+	Partition(length int, rng func(int) (int, int)) []Part
 }
 
 type gapBasedPartitioner struct {
-	maxGapSize uint64
+	maxGapSize int
 }
 
-func NewGapBasedPartitioner(maxGapSize uint64) Partitioner {
+func NewGapBasedPartitioner(maxGapSize int) Partitioner {
 	return gapBasedPartitioner{
 		maxGapSize: maxGapSize,
 	}
@@ -54,7 +62,7 @@ func NewGapBasedPartitioner(maxGapSize uint64) Partitioner {
 // Partition partitions length entries into n <= length ranges that cover all
 // input ranges by combining entries that are separated by reasonably small gaps.
 // It is used to combine multiple small ranges from object storage into bigger, more efficient/cheaper ones.
-func (g gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) (parts []Part) {
+func (g gapBasedPartitioner) Partition(length int, rng func(int) (int, int)) (parts []Part) {
 	j := 0
 	k := 0
 	for k < length {

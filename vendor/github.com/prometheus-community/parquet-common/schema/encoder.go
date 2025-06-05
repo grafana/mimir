@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus-community/parquet-common/blob/382b6ec8ae40fb5dcdcabd8019f69a4be1cd8869/schema/encoder.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package schema
 
@@ -15,7 +23,6 @@ import (
 	"sort"
 
 	"github.com/dennwc/varint"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -88,11 +95,12 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 
 				chkIdx := e.schema.DataColumIdx(t)
 				reEncodedChunksAppenders[chkIdx][chunkenc.EncXOR].Append(t, v)
-				if t < reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1].MinTime {
-					reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1].MinTime = t
+				chunk := reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1]
+				if t < chunk.MinTime {
+					chunk.MinTime = t
 				}
-				if t > reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1].MaxTime {
-					reEncodedChunks[chkIdx][chunkenc.EncXOR][len(reEncodedChunks[chkIdx][chunkenc.EncXOR])-1].MaxTime = t
+				if t > chunk.MaxTime {
+					chunk.MaxTime = t
 				}
 			}
 		case chunkenc.EncFloatHistogram:
@@ -117,11 +125,12 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 					reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram])-1].Chunk = newC
 				}
 
-				if t < reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram])-1].MinTime {
-					reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram])-1].MinTime = t
+				chunk := reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram])-1]
+				if t < chunk.MinTime {
+					chunk.MinTime = t
 				}
-				if t > reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram])-1].MaxTime {
-					reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncFloatHistogram])-1].MaxTime = t
+				if t > chunk.MaxTime {
+					chunk.MaxTime = t
 				}
 			}
 		case chunkenc.EncHistogram:
@@ -146,11 +155,12 @@ func (e *PrometheusParquetChunksEncoder) Encode(it chunks.Iterator) ([][]byte, e
 					reEncodedChunks[chkIdx][chunkenc.EncHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncHistogram])-1].Chunk = newC
 				}
 
-				if t < reEncodedChunks[chkIdx][chunkenc.EncHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncHistogram])-1].MinTime {
-					reEncodedChunks[chkIdx][chunkenc.EncHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncHistogram])-1].MinTime = t
+				chunk := reEncodedChunks[chkIdx][chunkenc.EncHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncHistogram])-1]
+				if t < chunk.MinTime {
+					chunk.MinTime = t
 				}
-				if t > reEncodedChunks[chkIdx][chunkenc.EncHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncHistogram])-1].MaxTime {
-					reEncodedChunks[chkIdx][chunkenc.EncHistogram][len(reEncodedChunks[chkIdx][chunkenc.EncHistogram])-1].MaxTime = t
+				if t > chunk.MaxTime {
+					chunk.MaxTime = t
 				}
 			}
 		default:
@@ -193,13 +203,15 @@ func NewPrometheusParquetChunksDecoder(pool chunkenc.Pool) *PrometheusParquetChu
 }
 
 func (e *PrometheusParquetChunksDecoder) Decode(data []byte, mint, maxt int64) ([]chunks.Meta, error) {
-	result := make([]chunks.Meta, 0, len(data))
+	// We usually have only 1 chunk per column as the chunks got re-encoded. Lets create a slice with capacity of 5
+	// just in case of re-encoding.
+	result := make([]chunks.Meta, 0, 5)
 
 	b := bytes.NewBuffer(data)
 
 	for {
 		chkEnc, err := binary.ReadUvarint(b)
-		if errors.Is(err, io.EOF) {
+		if err == io.EOF {
 			break
 		}
 

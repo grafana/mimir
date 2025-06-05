@@ -49,6 +49,7 @@ require (
 	google.golang.org/grpc v1.72.2
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
+	github.com/prometheus-community/parquet-common v0.0.0-20250601120936-48a47ec1c4f7
 )
 
 require (
@@ -114,7 +115,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
-	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/at-wat/mqtt-go v0.19.4 // indirect
 	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
@@ -150,7 +151,7 @@ require (
 	github.com/knadh/koanf/providers/confmap v1.0.0 // indirect
 	github.com/knadh/koanf/v2 v2.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/mattn/go-runewidth v0.0.15 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
 	github.com/minio/crc64nvme v1.0.1 // indirect
@@ -331,7 +332,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
-	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
+	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
@@ -370,3 +371,6 @@ replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptra
 
 // Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
 replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
+
+// The version of parquet we're using v0.25.0 requires downgrading this dependency.
+replace github.com/olekukonko/tablewriter => github.com/olekukonko/tablewriter v0.0.5

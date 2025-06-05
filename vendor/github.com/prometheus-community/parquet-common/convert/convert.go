@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus-community/parquet-common/blob/382b6ec8ae40fb5dcdcabd8019f69a4be1cd8869/convert/convert.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package convert
 
@@ -25,7 +33,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/parquet/schema"
+	"github.com/prometheus-community/parquet-common/schema"
 )
 
 var DefaultConvertOpts = convertOpts{
@@ -294,10 +302,13 @@ func sortedPostings(ctx context.Context, indexr tsdb.IndexReader, compare func(a
 }
 
 func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
+	type chkBytesOrError struct {
+		chkBytes [][]byte
+		err      error
+	}
 	type chunkSeriesPromise struct {
-		s              storage.ChunkSeries
-		chunkBytesChan chan [][]byte
-		err            error
+		s storage.ChunkSeries
+		c chan chkBytesOrError
 	}
 
 	c := make(chan chunkSeriesPromise, rr.concurrency)
@@ -310,8 +321,8 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 			it := s.Iterator(nil)
 
 			promise := chunkSeriesPromise{
-				s:              s,
-				chunkBytesChan: make(chan [][]byte, 1),
+				s: s,
+				c: make(chan chkBytesOrError, 1),
 			}
 
 			select {
@@ -321,8 +332,7 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 			}
 			go func() {
 				chkBytes, err := rr.encoder.Encode(it)
-				promise.err = err
-				promise.chunkBytesChan <- chkBytes
+				promise.c <- chkBytesOrError{chkBytes: chkBytes, err: err}
 			}()
 			i++
 		}
@@ -337,9 +347,12 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 
 	for promise := range c {
 		j++
-		if promise.err != nil {
-			return i, promise.err
+
+		chkBytesOrErr := <-promise.c
+		if err := chkBytesOrErr.err; err != nil {
+			return 0, fmt.Errorf("unable encode chunks: %w", err)
 		}
+		chkBytes := chkBytesOrErr.chkBytes
 
 		rr.rowBuilder.Reset()
 		lblsIdxs = lblsIdxs[:0]
@@ -353,7 +366,6 @@ func (rr *TsdbRowReader) ReadRows(buf []parquet.Row) (int, error) {
 
 		rr.rowBuilder.Add(colIndex.ColumnIndex, parquet.ValueOf(schema.EncodeIntSlice(lblsIdxs)))
 
-		chkBytes := <-promise.chunkBytesChan
 		// skip series that have no chunks in the requested time
 		if allChunksEmpty(chkBytes) {
 			continue

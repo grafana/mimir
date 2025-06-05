@@ -1,12 +1,20 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus-community/parquet-common/blob/382b6ec8ae40fb5dcdcabd8019f69a4be1cd8869/util/strutil.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package util
 
 import (
-	"slices"
+	"sort"
 	"strings"
 )
 
@@ -29,8 +37,8 @@ func MergeSlices(limit int, a ...[]string) []string {
 // If limit is set, only the first limit results will be returned. 0 to disable.
 func MergeUnsortedSlices(limit int, a ...[]string) []string {
 	for _, s := range a {
-		if !slices.IsSorted(s) {
-			slices.Sort(s)
+		if !sort.StringsAreSorted(s) {
+			sort.Strings(s)
 		}
 	}
 	return MergeSlices(limit, a...)

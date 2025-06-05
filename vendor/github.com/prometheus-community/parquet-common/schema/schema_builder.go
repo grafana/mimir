@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus-community/parquet-common/blob/382b6ec8ae40fb5dcdcabd8019f69a4be1cd8869/schema/schema_builder.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package schema
 
@@ -155,13 +163,14 @@ func (s *TSDBSchema) LabelsProjection() (*TSDBProjection, error) {
 		g[c[0]] = lc.Node
 	}
 	return &TSDBProjection{
-		Schema: WithCompression(parquet.NewSchema("labels-projection", g)),
+		Schema:       WithCompression(parquet.NewSchema("labels-projection", g)),
+		ExtraOptions: []parquet.WriterOption{parquet.SkipPageBounds(ColIndexes)},
 	}, nil
 }
 
 func (s *TSDBSchema) ChunksProjection() (*TSDBProjection, error) {
 	g := make(parquet.Group)
-	skipPageBoundsOpts := make([]parquet.WriterOption, 0, len(s.DataColsIndexes))
+	writeOptions := make([]parquet.WriterOption, 0, len(s.DataColsIndexes))
 
 	for _, c := range s.Schema.Columns() {
 		if ok := IsDataColumn(c[0]); !ok {
@@ -172,11 +181,11 @@ func (s *TSDBSchema) ChunksProjection() (*TSDBProjection, error) {
 			return nil, fmt.Errorf("column %v not found", c)
 		}
 		g[c[0]] = lc.Node
-		skipPageBoundsOpts = append(skipPageBoundsOpts, parquet.SkipPageBounds(c...))
+		writeOptions = append(writeOptions, parquet.SkipPageBounds(c...))
 	}
 
 	return &TSDBProjection{
 		Schema:       WithCompression(parquet.NewSchema("chunk-projection", g)),
-		ExtraOptions: skipPageBoundsOpts,
+		ExtraOptions: writeOptions,
 	}, nil
 }
