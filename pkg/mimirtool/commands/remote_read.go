@@ -366,6 +366,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 
 	contentType := httpResp.Header.Get("Content-Type")
 	log.Debugf("Response content type: %s", contentType)
+	log.Debugf("Response headers %v", httpResp.Header)
 
 	// Handle different response types
 	switch {
