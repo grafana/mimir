@@ -37,6 +37,67 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Queries / sec by read path\nQueries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 1,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))), \"proxy\", \"Remote ruler read path\", \"proxy\", \"^alternate_query_proxy$\"),\"proxy\", \"Main read path\", \"proxy\", \"^query_proxy$\")",
+                        "format": "time_series",
+                        "legendFormat": "{{proxy}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Queries / sec by read path",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Gateway",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
                   "description": "### Queue duration\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
@@ -61,7 +122,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 1,
+                  "id": 2,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -140,7 +201,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 2,
+                  "id": 3,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -220,7 +281,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 3,
+                  "id": 4,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -270,7 +331,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -331,7 +392,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -411,7 +472,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -461,7 +522,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 7,
+                  "id": 8,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -522,7 +583,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 8,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -571,7 +632,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -621,7 +682,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 10,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -683,7 +744,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 12,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -732,7 +793,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 12,
+                  "id": 13,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -823,7 +884,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
+                  "id": 14,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -884,7 +945,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 14,
+                  "id": 15,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -945,7 +1006,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 15,
+                  "id": 16,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1018,7 +1079,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 17,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1097,7 +1158,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 18,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1194,7 +1255,7 @@
                         }
                      ]
                   },
-                  "id": 18,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1244,7 +1305,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1304,7 +1365,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 21,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1395,7 +1456,7 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1449,7 +1510,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 23,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1541,7 +1602,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1595,7 +1656,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1643,7 +1704,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1703,7 +1764,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1751,7 +1812,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1801,7 +1862,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1862,7 +1923,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1941,7 +2002,7 @@
                         }
                      ]
                   },
-                  "id": 30,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2026,7 +2087,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2092,7 +2153,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2140,7 +2201,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 34,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2220,7 +2281,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 35,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2312,7 +2373,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2361,7 +2422,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2410,7 +2471,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
