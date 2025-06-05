@@ -287,9 +287,9 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 
 	return func(ctx context.Context) (storage.SeriesSet, error) {
 		log.Infof("Querying time from=%s to=%s with %d selectors", from.Format(time.RFC3339), to.Format(time.RFC3339), len(c.selectors))
-	for i, selector := range c.selectors {
-		log.Debugf("Selector %d: %s", i+1, selector)
-	}
+		for i, selector := range c.selectors {
+			log.Debugf("Selector %d: %s", i+1, selector)
+		}
 		return c.executeMultipleQueries(ctx, readClient, pbQueries)
 	}, from, to, nil
 }
@@ -365,6 +365,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 
 	contentType := httpResp.Header.Get("Content-Type")
 	log.Debugf("Response content type: %s", contentType)
+	log.Debugf("Response headers %v", httpResp.Header)
 
 	// Handle different response types
 	switch {
