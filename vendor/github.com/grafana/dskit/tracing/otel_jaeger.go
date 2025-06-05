@@ -45,23 +45,18 @@ const (
 // - JAEGER_AGENT_HOST
 // - JAEGER_ENDPOINT
 // - JAEGER_SAMPLER_MANAGER_HOST_PORT
-// Otherwise, it will initialize tracing with the OTel auto exporter, as per OTel docs, if any of the following environment variables are set:
-// - OTEL_EXPORTER_OTLP_ENDPOINT
-// - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-// - OTEL_TRACES_SAMPLER
-// - OTEL_TRACES_EXPORTER
+//
+// Otherwise, it will initialize tracing with the OTel auto exporter using the environment variables defined in the OTel docs.
+// If you want to explicitly disable OTel auto exporter, you can set the environment variable `OTEL_TRACES_EXPORTER` to `none`.
 func NewOTelOrJaegerFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (io.Closer, error) {
 	if env, found := findNonEmptyEnv(envJaegerAgentHost, envJaegerEndpoint, envJaegerSamplerManagerHostPort); found {
 		level.Info(logger).Log("msg", "Configuring tracing with Jaeger exporter", "detected_env_var", env)
 		return newOTelFromJaegerEnv(serviceName, logger, opts...)
 	}
-	if env, found := findNonEmptyEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_TRACES_SAMPLER", "OTEL_TRACES_EXPORTER"); found {
-		level.Info(logger).Log("msg", "Configuring tracing with OTel auto exporter", "detected_env_var", env)
-		return NewOTelFromEnv(serviceName, logger, opts...)
-	}
-	level.Info(logger).Log("msg", "No Jaeger or OTel auto exporter configuration found, tracing will not be configured")
 
-	return ioCloser(func() error { return nil }), ErrBlankTraceConfiguration
+	level.Info(logger).Log("msg", "Configuring tracing with OTel auto exporter")
+
+	return NewOTelFromEnv(serviceName, logger, opts...)
 }
 
 func findNonEmptyEnv(envVars ...string) (string, bool) {
@@ -90,7 +85,7 @@ func newOTelFromJaegerEnv(serviceName string, logger log.Logger, options ...OTel
 		return nil, errors.Wrap(err, "could not load jaeger tracer configuration")
 	}
 	if cfg.samplingServerURL == "" && cfg.agentHostPort == "" && cfg.jaegerEndpoint == "" {
-		return nil, ErrBlankTraceConfiguration
+		return nil, ErrBlankJaegerTraceConfiguration
 	}
 	return cfg.initJaegerTracerProvider(serviceName, logger, options...)
 }

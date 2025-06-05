@@ -195,7 +195,7 @@ func main() {
 			}
 		}
 
-		if trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger); err != nil && !errors.Is(err, tracing.ErrBlankTraceConfiguration) {
+		if trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
 			defer trace.Close()
