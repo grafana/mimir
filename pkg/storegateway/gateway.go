@@ -73,7 +73,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
 
-	f.BoolVar(&cfg.ParquetEnabled, "store-gateway.enabled-tenants", false, "Whether to query Parquet files for block instead of the native Prometheus TSDB files.")
+	f.BoolVar(&cfg.ParquetEnabled, "store-gateway.parquet-enabled", false, "Whether to query Parquet files for block instead of the native Prometheus TSDB files.")
 }
 
 // Validate the Config.
@@ -206,9 +206,17 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		level.Info(logger).Log("msg", "store-gateway using disabled users", "disabled", gatewayCfg.DisabledTenants)
 	}
 
-	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
-	if err != nil {
-		return nil, errors.Wrap(err, "create bucket stores")
+	if gatewayCfg.ParquetEnabled {
+		level.Info(logger).Log("msg", "store-gateway using parquet block format")
+		g.stores, err = NewParquetBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "create parquet bucket stores")
+		}
+	} else {
+		g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "create bucket stores")
+		}
 	}
 
 	g.Service = services.NewBasicService(g.starting, g.running, g.stopping)

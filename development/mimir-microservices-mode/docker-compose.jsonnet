@@ -184,6 +184,7 @@ std.manifestYamlDoc({
       name: 'store-gateway-' + id,
       target: 'store-gateway',
       httpPort: 8010 + id,
+      extraArguments: if $._config.enable_parquet then '-store-gateway.parquet-enabled=true' else '',
       jaegerApp: 'store-gateway-%d' % id,
     })
     for id in std.range(1, count)
