@@ -51,10 +51,6 @@ type BlockBuilder struct {
 	// the current job iteration number. For tests.
 	jobIteration atomic.Int64
 
-	assignedPartitionIDs []int32
-	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
-	fallbackOffsetMillis int64
-
 	blockBuilderMetrics blockBuilderMetrics
 	tsdbBuilderMetrics  tsdbBuilderMetrics
 }
@@ -144,9 +140,6 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 	if err := os.MkdirAll(b.cfg.DataDir, os.ModePerm); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
-
-	// Fallback offset is a millisecond timestamp used to look up a real offset if partition doesn't have a commit.
-	b.fallbackOffsetMillis = time.Now().Add(-b.cfg.LookbackOnNoCommit).UnixMilli()
 
 	b.kafkaClient, err = ingest.NewKafkaReaderClient(
 		b.cfg.Kafka,

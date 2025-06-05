@@ -3,7 +3,6 @@
 package blockbuilder
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -20,14 +19,6 @@ import (
 type Config struct {
 	InstanceID string `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
 	DataDir    string `yaml:"data_dir"`
-
-	// TODO(v): remove the following group of options; they aren't used anymore
-	PartitionAssignment       map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
-	ConsumerGroup             string             `yaml:"consumer_group"`
-	ConsumeInterval           time.Duration      `yaml:"consume_interval"`
-	ConsumeIntervalBuffer     time.Duration      `yaml:"consume_interval_buffer"`
-	LookbackOnNoCommit        time.Duration      `yaml:"lookback_on_no_commit" category:"advanced"`
-	NoPartiallyConsumedRegion bool               `yaml:"no_partially_consumed_region" category:"experimental"`
 
 	SchedulerConfig SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
 
@@ -53,14 +44,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	}
 
 	f.StringVar(&cfg.InstanceID, "block-builder.instance-id", hostname, "Instance id.")
-	f.Var(newPartitionAssignmentVar(&cfg.PartitionAssignment), "block-builder.partition-assignment", "Static partition assignment. Format is a JSON encoded map[instance-id][]partitions).")
 	f.StringVar(&cfg.DataDir, "block-builder.data-dir", "./data-block-builder/", "Directory to temporarily store blocks during building. This directory is wiped out between the restarts.")
-	f.StringVar(&cfg.ConsumerGroup, "block-builder.consumer-group", "block-builder", "The Kafka consumer group used to keep track of the consumed offsets for assigned partitions.")
-	f.DurationVar(&cfg.ConsumeInterval, "block-builder.consume-interval", time.Hour, "Interval between consumption cycles.")
-	f.DurationVar(&cfg.ConsumeIntervalBuffer, "block-builder.consume-interval-buffer", 15*time.Minute, "Extra buffer between subsequent consumption cycles. To avoid small blocks the block-builder consumes until the last hour boundary of the consumption interval, plus the buffer.")
-	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder.lookback-on-no-commit", 12*time.Hour, "How much of the historical records to look back when there is no kafka commit for a partition.")
 	f.IntVar(&cfg.ApplyMaxGlobalSeriesPerUserBelow, "block-builder.apply-max-global-series-per-user-below", 0, "Apply the global series limit per partition if the global series limit for the user is <= this given value. 0 means limits are disabled. If a user's limit is more than the given value, then the limits are not applied as well.")
-	f.BoolVar(&cfg.NoPartiallyConsumedRegion, "block-builder.no-partially-consumed-region", false, "Get rid of the 'last seen' logic and instead consume everything between two offsets to build the block.")
+
 	cfg.SchedulerConfig.RegisterFlags(f)
 }
 
@@ -88,27 +74,4 @@ func (cfg *Config) Validate() error {
 	}
 
 	return nil
-}
-
-type partitionAssignmentVar map[string][]int32
-
-func newPartitionAssignmentVar(p *map[string][]int32) *partitionAssignmentVar {
-	return (*partitionAssignmentVar)(p)
-}
-
-func (v *partitionAssignmentVar) Set(s string) error {
-	if s == "" {
-		return nil
-	}
-	val := make(map[string][]int32)
-	err := json.Unmarshal([]byte(s), &val)
-	if err != nil {
-		return fmt.Errorf("unmarshal partition assignment: %w", err)
-	}
-	*v = val
-	return nil
-}
-
-func (v partitionAssignmentVar) String() string {
-	return fmt.Sprintf("%v", map[string][]int32(v))
 }
