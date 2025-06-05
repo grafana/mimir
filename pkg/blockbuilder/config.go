@@ -18,20 +18,20 @@ import (
 )
 
 type Config struct {
-	InstanceID          string             `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
-	PartitionAssignment map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
-	DataDir             string             `yaml:"data_dir"`
+	InstanceID string `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
+	DataDir    string `yaml:"data_dir"`
 
-	ConsumerGroup         string        `yaml:"consumer_group"`
-	ConsumeInterval       time.Duration `yaml:"consume_interval"`
-	ConsumeIntervalBuffer time.Duration `yaml:"consume_interval_buffer"`
-	LookbackOnNoCommit    time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
+	// TODO(v): remove the following group of options; they aren't used anymore
+	PartitionAssignment       map[string][]int32 `yaml:"partition_assignment" category:"experimental"`
+	ConsumerGroup             string             `yaml:"consumer_group"`
+	ConsumeInterval           time.Duration      `yaml:"consume_interval"`
+	ConsumeIntervalBuffer     time.Duration      `yaml:"consume_interval_buffer"`
+	LookbackOnNoCommit        time.Duration      `yaml:"lookback_on_no_commit" category:"advanced"`
+	NoPartiallyConsumedRegion bool               `yaml:"no_partially_consumed_region" category:"experimental"`
 
 	SchedulerConfig SchedulerConfig `yaml:"scheduler_config" doc:"description=Configures block-builder-scheduler RPC communications."`
 
 	ApplyMaxGlobalSeriesPerUserBelow int `yaml:"apply_max_global_series_per_user_below" category:"experimental"`
-
-	NoPartiallyConsumedRegion bool `yaml:"no_partially_consumed_region" category:"experimental"`
 
 	// Config parameters defined outside the block-builder config and are injected dynamically.
 	Kafka         ingest.KafkaConfig       `yaml:"-"`
@@ -80,21 +80,11 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("scheduler grpc config: %w", err)
 	}
 
-	if len(cfg.PartitionAssignment) == 0 {
-		return fmt.Errorf("partition assignment is required")
-	}
-	if _, ok := cfg.PartitionAssignment[cfg.InstanceID]; !ok {
-		return fmt.Errorf("instance id %q must be present in partition assignment", cfg.InstanceID)
+	if cfg.InstanceID == "" {
+		return fmt.Errorf("instance id is required")
 	}
 	if cfg.DataDir == "" {
 		return fmt.Errorf("data-dir is required")
-	}
-	// TODO(codesome): validate the consumption interval. Must be <=2h and can divide 2h into an integer.
-	if cfg.ConsumeInterval < 0 {
-		return fmt.Errorf("consume-interval cannot be negative")
-	}
-	if cfg.LookbackOnNoCommit < 0 {
-		return fmt.Errorf("lookback-on-no-commit cannot be negative")
 	}
 
 	return nil

@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBlockBuilder(t *testing.T) {
@@ -75,7 +74,7 @@ func TestBlockBuilder(t *testing.T) {
 			kafkaClient := mustKafkaClient(t, kafkaAddr)
 			kafkaClient.AddConsumeTopics(testTopic)
 
-			cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
+			cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
 			producedSamples := make(map[string][]mimirpb.Sample, 0)
 			recsPerTenant := 0
@@ -143,7 +142,7 @@ func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
 	f, err := os.CreateTemp(cfg.DataDir, "block")
 	require.NoError(t, err)
@@ -173,14 +172,37 @@ func produceSamples(ctx context.Context, t *testing.T, kafkaClient *kgo.Client, 
 	return samples
 }
 
-func blockBuilderPullModeConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
-	cfg, overrides := blockBuilderConfig(t, addr)
-	cfg.SchedulerConfig = SchedulerConfig{
-		Address:        "localhost:099", // Trigger pull mode initialization.
-		UpdateInterval: 20 * time.Millisecond,
-		MaxUpdateAge:   1 * time.Second,
+func mustKafkaClient(t *testing.T, addrs ...string) *kgo.Client {
+	writeClient, err := kgo.NewClient(
+		kgo.SeedBrokers(addrs...),
+		// We will choose the partition of each record.
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(writeClient.Close)
+	return writeClient
+}
+
+func produceRecords(
+	ctx context.Context,
+	t *testing.T,
+	kafkaClient *kgo.Client,
+	ts time.Time,
+	userID string,
+	topic string,
+	part int32,
+	val []byte,
+) kgo.ProduceResults {
+	rec := &kgo.Record{
+		Timestamp: ts,
+		Key:       []byte(userID),
+		Value:     val,
+		Topic:     topic,
+		Partition: part, // samples in this batch are split between N partitions
 	}
-	return cfg, overrides
+	produceResult := kafkaClient.ProduceSync(ctx, rec)
+	require.NoError(t, produceResult.FirstErr())
+	return produceResult
 }
 
 type mockSchedulerClient struct {
