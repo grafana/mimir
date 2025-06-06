@@ -723,7 +723,7 @@ github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
-# github.com/grafana/dskit v0.0.0-20250605125257-539ad8c3adee
+# github.com/grafana/dskit v0.0.0-20250605175458-8a9c353edab7
 ## explicit; go 1.23.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1711,6 +1711,7 @@ golang.org/x/crypto/scrypt
 # golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
 ## explicit; go 1.22.0
 golang.org/x/exp/constraints
+golang.org/x/exp/maps
 golang.org/x/exp/slices
 # golang.org/x/mod v0.24.0
 ## explicit; go 1.23.0

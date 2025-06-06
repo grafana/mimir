@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/exporter-toolkit/web"
+	"golang.org/x/exp/maps"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -146,6 +147,9 @@ type Config struct {
 	LogRequestAtInfoLevel        bool             `yaml:"log_request_at_info_level_enabled"`
 	LogRequestExcludeHeadersList string           `yaml:"log_request_exclude_headers_list"`
 
+	TraceRequestHeaders            bool   `yaml:"trace_request_headers"`
+	TraceRequestExcludeHeadersList string `yaml:"trace_request_exclude_headers_list"`
+
 	// If not set, default signal handler is used.
 	SignalHandler SignalHandler `yaml:"-"`
 
@@ -222,6 +226,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogRequestHeaders, "server.log-request-headers", false, "Optionally log request headers.")
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
+
+	f.BoolVar(&cfg.TraceRequestHeaders, "server.trace-request-headers", false, "Optionally add request headers to tracing spans.")
+	f.StringVar(&cfg.TraceRequestExcludeHeadersList, "server.trace-request-headers-exclude-list", "", fmt.Sprintf("Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: %s.", strings.Join(maps.Keys(middleware.AlwaysExcludedHeaders), ", ")))
+
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
@@ -575,9 +583,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},
-		middleware.Tracer{
-			SourceIPs: sourceIPs,
-		},
+		middleware.NewTracer(sourceIPs, cfg.TraceRequestHeaders, strings.Split(cfg.TraceRequestExcludeHeadersList, ",")),
 		defaultLogMiddleware,
 		middleware.Instrument{
 			Duration:          metrics.RequestDuration,
