@@ -318,6 +318,9 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
+    )
+    .addRow(
+      $.row('')
       .addPanel(
         $.timeseriesPanel('Rejected queries') +
         $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~"%(routes_regex)s"}[$__rate_interval]))' % { routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
@@ -326,6 +329,55 @@ local filename = 'mimir-queries.json';
           'Rejected queries',
           |||
             The proportion of all queries received by queriers that were rejected for some reason.
+          |||
+        ),
+      )
+      .addPanel(
+        $.heatmapPanel('Estimated per-query memory consumption') +
+        $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))', 'Estimated memory consumption') +
+        {
+          options+: {
+            legend+: {
+              show: false,
+            },
+            tooltip+: {
+              yHistogram: true,
+            },
+            cellValues+: {
+              unit: 'reqps',
+            },
+            yAxis+: {
+              min: 0,
+              unit: 'bytes',
+            },
+            cellGap: 0,
+            calculation+: {
+              xBuckets: {
+                mode: 'count',
+                value: 60,
+              },
+              yBuckets: {
+                mode: 'count',
+                value: 40,
+              },
+            },
+          },
+        } +
+        $.panelDescription(
+          'Estimated per-query memory consumption',
+          |||
+            The esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
+          |||
+        ),
+      )
+      .addPanel(
+        $.timeseriesPanel("Fallback to Prometheus' query engine") +
+        $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)', 'Queries') +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.panelDescription(
+          "Fallback to Prometheus' query engine",
+          |||
+            The rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.
           |||
         ),
       )
