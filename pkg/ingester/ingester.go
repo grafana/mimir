@@ -339,6 +339,9 @@ type Ingester struct {
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
 
+	// Tracks if a forced compaction is in progress
+	forcedCompactionInProgress atomic.Bool
+
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
 	usersMetadata    map[string]*userMetricsMetadata
@@ -3277,7 +3280,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	// This metric can be used in alerts and when troubleshooting.
 	if force {
 		i.metrics.forcedCompactionInProgress.Set(1)
-		defer i.metrics.forcedCompactionInProgress.Set(0)
+		i.forcedCompactionInProgress.Store(true)
+		defer func() {
+			i.metrics.forcedCompactionInProgress.Set(0)
+			i.forcedCompactionInProgress.Store(false)
+		}()
 	}
 
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
