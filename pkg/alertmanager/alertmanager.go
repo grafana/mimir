@@ -724,7 +724,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 	if err != nil {
 		return nil, err
 	}
-	level.Warn(logger).Log("tmpl", fmt.Sprintf("%#v", tmpl))
+	level.Warn(logger).Log("msg", "buildGrafanaReceiverIntegrations", fmt.Sprintf("%#v", tmpl))
 
 	emailSender, err := alertingReceivers.NewEmailSender(emailCfg)
 	if err != nil {
