@@ -366,7 +366,7 @@ local filename = 'mimir-queries.json';
         $.panelDescription(
           'Estimated per-query memory consumption',
           |||
-            The esimated memory consumption of all queries evaluated by queriers. Only applicable if MQE is enabled and the query was evaluated with MQE.
+            The esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
           |||
         ),
       )
@@ -377,7 +377,7 @@ local filename = 'mimir-queries.json';
         $.panelDescription(
           "Fallback to Prometheus' query engine",
           |||
-            The rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if MQE is enabled.
+            The rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.
           |||
         ),
       )

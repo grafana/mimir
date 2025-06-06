@@ -1280,7 +1280,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if MQE is enabled and the query was evaluated with MQE.\n\n",
+                  "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
                   "id": 20,
                   "options": {
                      "calculate": true,
@@ -1323,7 +1323,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if MQE is enabled.\n\n",
+                  "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
