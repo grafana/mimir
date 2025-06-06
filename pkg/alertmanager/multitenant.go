@@ -157,7 +157,6 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 
 	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
-
 }
 
 // Validate config and returns error on failure
@@ -964,6 +963,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			Kind:     alertingTemplates.GrafanaKind, // TODO this kind is only considered by Grafana code. Load it from TemplateDesc
 		})
 	}
+	level.Warn(am.logger).Log("msg", "debug templates", "user", cfg.User, "templates", templates)
 
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
