@@ -34,6 +34,38 @@ func AddMemoryTrackerToContext(ctx context.Context, tracker *MemoryConsumptionTr
 	return context.WithValue(ctx, interface{}(memoryConsumptionTracker), tracker)
 }
 
+type MemoryConsumptionSource int
+
+const (
+	IngesterChunks MemoryConsumptionSource = iota
+	StoreGatewayChunks
+	FPointSlices
+	HPointSlices
+	SampleSlices
+	Float64Slices
+	IntSlices
+	Int64Slices
+	BoolSlices
+	HistogramPointerSlices
+	SeriesMetadataSlices
+
+	memoryConsumptionSourceCount = SeriesMetadataSlices+1
+)
+
+var memoryConsumptionSourceNames = map[MemoryConsumptionSource]string{
+	IngesterChunks:    "ingester chunks",
+	StoreGatewayChunks: "store-gateway chunks",
+	FPointSlices:      "[]promql.FPoint",
+	HPointSlices:      "[]promql.HPoint",
+	SampleSlices:      "promql.Vector",
+	Float64Slices:     "[]float64",
+	IntSlices:         "[]int",
+	Int64Slices:       "[]int64",
+	BoolSlices:        "[]bool",
+	HistogramPointerSlices: "[]*histogram.FloatHistogram",
+	SeriesMetadataSlices:    "[]SeriesMetadata",
+}
+
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
 //
 // It also tracks the peak number of in-memory bytes for use in query statistics.
@@ -41,6 +73,8 @@ type MemoryConsumptionTracker struct {
 	maxEstimatedMemoryConsumptionBytes     uint64
 	currentEstimatedMemoryConsumptionBytes uint64
 	peakEstimatedMemoryConsumptionBytes    uint64
+
+	currentEstimatedMemoryConsumptionBySource [memoryConsumptionSourceCount]uint64
 
 	rejectionCount        prometheus.Counter
 	haveRecordedRejection bool
