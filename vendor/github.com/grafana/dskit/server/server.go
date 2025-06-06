@@ -9,10 +9,12 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // anonymous import to get the pprof handler registered
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +30,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/exporter-toolkit/web"
-	"golang.org/x/exp/maps"
 	"golang.org/x/net/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -228,7 +229,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 
 	f.BoolVar(&cfg.TraceRequestHeaders, "server.trace-request-headers", false, "Optionally add request headers to tracing spans.")
-	f.StringVar(&cfg.TraceRequestExcludeHeadersList, "server.trace-request-headers-exclude-list", "", fmt.Sprintf("Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: %s.", strings.Join(maps.Keys(middleware.AlwaysExcludedHeaders), ", ")))
+	f.StringVar(&cfg.TraceRequestExcludeHeadersList, "server.trace-request-headers-exclude-list", "", fmt.Sprintf("Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: %s.", strings.Join(slices.Sorted(maps.Keys(middleware.AlwaysExcludedHeaders)), ", ")))
 
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")

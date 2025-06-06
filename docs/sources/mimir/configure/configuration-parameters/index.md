@@ -767,7 +767,7 @@ grpc_tls_config:
 
 # Comma separated list of headers to exclude from tracing spans. Only used if
 # server.trace-request-headers is true. The following headers are always
-# excluded: Cookie, X-Csrf-Token, Authorization.
+# excluded: Authorization, Cookie, X-Csrf-Token.
 # CLI flag: -server.trace-request-headers-exclude-list
 [trace_request_exclude_headers_list: <string> | default = ""]
 
