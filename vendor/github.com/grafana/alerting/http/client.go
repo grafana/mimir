@@ -15,6 +15,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	commoncfg "github.com/prometheus/common/config"
 
 	"github.com/grafana/alerting/receivers"
 )
@@ -22,8 +23,9 @@ import (
 var ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 
 type clientConfiguration struct {
-	userAgent string
-	dialer    net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
+	userAgent    string
+	dialer       net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
+	customDialer bool
 }
 
 // defaultDialTimeout is the default timeout for the dialer, 30 seconds to match http.DefaultTransport.
@@ -63,7 +65,26 @@ func WithUserAgent(userAgent string) ClientOption {
 func WithDialer(dialer net.Dialer) ClientOption {
 	return func(c *clientConfiguration) {
 		c.dialer = dialer
+		c.customDialer = true
 	}
+}
+
+func ToHTTPClientOption(option ...ClientOption) []commoncfg.HTTPClientOption {
+	cfg := clientConfiguration{}
+	for _, opt := range option {
+		if opt == nil {
+			continue
+		}
+		opt(&cfg)
+	}
+	result := make([]commoncfg.HTTPClientOption, 0, len(option))
+	if cfg.userAgent != "" {
+		result = append(result, commoncfg.WithUserAgent(cfg.userAgent))
+	}
+	if cfg.customDialer {
+		result = append(result, commoncfg.WithDialContextFunc(cfg.dialer.DialContext))
+	}
+	return result
 }
 
 func (ns *Client) SendWebhook(ctx context.Context, l log.Logger, webhook *receivers.SendWebhookSettings) error {
