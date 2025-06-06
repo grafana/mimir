@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -4078,8 +4079,6 @@ func TestEagerLoadSelectors(t *testing.T) {
 	engineWithEagerLoading, err := NewEngine(optsWithEagerLoading, limitsProvider, metrics, nil, logger)
 	require.NoError(t, err)
 
-	slowStorage := lazyquery.NewLazyQueryable(&slowQueryable{storage})
-
 	testCases := []string{
 		`sum(some_metric) + sum(some_other_metric)`,
 		`sum(rate(some_metric[5m])) + sum(rate(some_other_metric[5m]))`,
@@ -4096,6 +4095,22 @@ func TestEagerLoadSelectors(t *testing.T) {
 			baselineResult := q.Exec(ctx)
 			require.NoError(t, baselineResult.Err)
 			defer q.Close()
+
+			startGroup := sync.WaitGroup{}
+			startGroup.Add(2) // We expected to create two queriers and run two selects
+
+			runGroup := sync.WaitGroup{}
+			runGroup.Add(1)
+
+			go func() {
+				fmt.Printf("!!! WAITING FOR START GATE IN TEST\n")
+				startGroup.Wait()
+
+				fmt.Printf("!!! COMPLETING RUN GATE IN TEST\n")
+				runGroup.Done()
+			}()
+
+			slowStorage := lazyquery.NewLazyQueryable(&slowQueryable{inner: storage, start: &startGroup, run: &runGroup})
 
 			// Run with eager loading and slow but lazy queryable (as it would in query-frontends)
 			q, err = engineWithEagerLoading.NewInstantQuery(ctx, slowStorage, nil, expr, ts)
@@ -4116,6 +4131,8 @@ func TestEagerLoadSelectors(t *testing.T) {
 
 type slowQueryable struct {
 	inner storage.Queryable
+	start *sync.WaitGroup
+	run   *sync.WaitGroup
 }
 
 func (s *slowQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -4124,11 +4141,13 @@ func (s *slowQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 		return nil, err
 	}
 
-	return &slowQuerier{q}, nil
+	return &slowQuerier{inner: q, start: s.start, run: s.run}, nil
 }
 
 type slowQuerier struct {
 	inner storage.Querier
+	start *sync.WaitGroup
+	run   *sync.WaitGroup
 }
 
 func (s *slowQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -4140,7 +4159,11 @@ func (s *slowQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints,
 }
 
 func (s *slowQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	time.Sleep(2 * time.Second)
+	fmt.Printf("!!! DECREMENTING START GATE IN QUERIER\n")
+	s.start.Done()
+	fmt.Printf("!!! WAITING FOR RUN GATE IN QUERIER\n")
+	s.run.Wait()
+	fmt.Printf("!!! RUNNING IN QUERIER\n")
 	return s.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
