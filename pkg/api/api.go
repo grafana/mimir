@@ -187,7 +187,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
-		{Desc: "Status", Path: "/multitenant_alertmanager/configs"},
+		{Desc: "Config", Path: "/multitenant_alertmanager/configs"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
