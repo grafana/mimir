@@ -4066,8 +4066,6 @@ func TestEagerLoadSelectors(t *testing.T) {
 
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
-	// TODO: create slow Queryable
-
 	limitsProvider := NewStaticQueryLimitsProvider(0)
 	metrics := stats.NewQueryMetrics(nil)
 	logger := log.NewNopLogger()
