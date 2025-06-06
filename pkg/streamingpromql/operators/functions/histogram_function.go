@@ -79,6 +79,7 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []promql.Buckets {
 		return make([]promql.Buckets, 0, size)
 	}),
+	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Buckets{})),
 	true,
 	mangleBuckets,
@@ -98,6 +99,7 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) []promql.Bucket {
 		return make([]promql.Bucket, 0, size)
 	}),
+	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Bucket{})),
 	true,
 	nil,
