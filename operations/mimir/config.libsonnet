@@ -73,7 +73,7 @@
     jaeger_agent_host: null,
 
     // Configure tracing to add HTTP request headers as span attributes.
-    trace_request_headers: true,
+    trace_request_headers: false,
     // List of HTTP request headers to exclude from tracing when trace_request_headers is enabled.
     // Thew following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
     trace_request_exclude_headers_list: [],
