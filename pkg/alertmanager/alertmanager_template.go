@@ -115,9 +115,6 @@ func loadTemplates(tmpls []alertingTemplates.TemplateDefinition, options ...temp
 	}
 
 	for _, tp := range tmpls {
-		if tp.Kind != alertingTemplates.MimirKind {
-			continue
-		}
 		if err := t.Parse(strings.NewReader(tp.Template)); err != nil {
 			return nil, err
 		}

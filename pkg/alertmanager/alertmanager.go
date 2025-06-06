@@ -463,20 +463,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 
-	// Fixing kinds of templates. If not specified, assume the tenant to get default kind
-	fixed := make([]alertingTemplates.TemplateDefinition, 0, len(tmpls))
-	tenantKind := alertingTemplates.MimirKind
-	if am.isGrafanaTenant() {
-		tenantKind = alertingTemplates.GrafanaKind
-	}
-	for _, tmpl := range tmpls {
-		if !alertingTemplates.IsKnownKind(tmpl.Kind) {
-			tmpl.Kind = tenantKind
-		}
-		fixed = append(fixed, tmpl)
-	}
-
-	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, fixed, tmplExternalURL)
+	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL)
 	if err != nil {
 		return err
 	}
@@ -533,7 +520,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 	am.receiversMtx.Unlock()
 
 	am.templatesMtx.Lock()
-	am.templates = fixed
+	am.templates = tmpls
 	am.tmplExternalURL = tmplExternalURL
 	am.templatesMtx.Unlock()
 
@@ -648,17 +635,20 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 
 	// Cached templates.
 	var tmpl *template.Template
-	factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
-	if err != nil {
-		return nil, err
-	}
-	cached := alertingTemplates.NewCachedFactory(factory)
+	var cached *alertingTemplates.CachedFactory
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
 		var integrations []*nfstatus.Integration
 		var err error
 		switch rcv.Type() {
 		case definition.GrafanaReceiverType:
+			if cached == nil {
+				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
+				if err != nil {
+					return nil, err
+				}
+				cached = alertingTemplates.NewCachedFactory(factory)
+			}
 			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
 		case definition.AlertmanagerReceiverType:
 			if tmpl == nil {
@@ -684,8 +674,13 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	// are valid.
 	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
 	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
+	var err error
 	if am.isGrafanaTenant() {
-		_, err = cached.GetTemplate(alertingTemplates.GrafanaKind)
+		var f *alertingTemplates.Factory
+		f, err = alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
+		if err == nil {
+			_, err = f.GetTemplate(alertingTemplates.GrafanaKind)
+		}
 	} else if tmpl == nil {
 		_, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 	}

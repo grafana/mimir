@@ -691,6 +691,7 @@ func TestGrafanaAlertmanager(t *testing.T) {
 	testTemplate := alertingTemplates.TemplateDefinition{
 		Name:     "test",
 		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
 	}
 
 	expectedImageURL := "http://example.com/image.png"
