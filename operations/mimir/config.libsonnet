@@ -72,6 +72,12 @@
 
     jaeger_agent_host: null,
 
+    // Configure tracing to add HTTP request headers as span attributes.
+    trace_request_headers: false,
+    // List of HTTP request headers to exclude from tracing when trace_request_headers is enabled.
+    // Thew following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
+    trace_request_exclude_headers_list: [],
+
     // Allow to configure the alertmanager disk.
     alertmanager_data_disk_size: '100Gi',
     alertmanager_data_disk_class: null,
@@ -168,7 +174,10 @@
     query_tee_node_port: null,
 
     // Common configuration parameters
-    commonConfig:: {},
+    commonConfig:: if !$._config.trace_request_headers then {} else {
+      'server.trace-request-headers': true,
+      [if std.length($._config.trace_request_exclude_headers_list) > 0 then 'server.trace-request-headers-exclude-list']: std.join(',', $._config.trace_request_exclude_headers_list),
+    },
 
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:

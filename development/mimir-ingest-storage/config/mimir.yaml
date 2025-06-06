@@ -119,3 +119,4 @@ runtime_config:
 
 server:
   log_level: debug
+  trace_request_headers: true
