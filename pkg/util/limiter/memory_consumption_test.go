@@ -251,8 +251,6 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 
 func TestMemoryConsumptionSourceNames(t *testing.T) {
 	for i := range memoryConsumptionSourceCount {
-		require.Containsf(t, memoryConsumptionSourceNames, i, "missing name for source %v", i)
+		require.NotEqual(t, unknownMemorySource, i.String(), "source %d should have a String() representation", i)
 	}
-
-	require.Len(t, memoryConsumptionSourceNames, int(memoryConsumptionSourceCount), "source names map contains more entries than expected, is memoryConsumptionSourceCount out of sync with the list of sources?")
 }

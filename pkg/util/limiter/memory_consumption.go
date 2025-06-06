@@ -58,23 +58,47 @@ const (
 	memoryConsumptionSourceCount = TopKBottomKRangeQuerySeriesSlices + 1
 )
 
-var memoryConsumptionSourceNames = map[MemoryConsumptionSource]string{
-	IngesterChunks:                      "ingester chunks",
-	StoreGatewayChunks:                  "store-gateway chunks",
-	FPointSlices:                        "[]promql.FPoint",
-	HPointSlices:                        "[]promql.HPoint",
-	Vectors:                             "promql.Vector",
-	Float64Slices:                       "[]float64",
-	IntSlices:                           "[]int",
-	IntSliceSlice:                       "[][]int",
-	Int64Slices:                         "[]int64",
-	BoolSlices:                          "[]bool",
-	HistogramPointerSlices:              "[]*histogram.FloatHistogram",
-	SeriesMetadataSlices:                "[]SeriesMetadata",
-	BucketSlices:                        "[]promql.Buckets",
-	QuantileGroupSlices:                 "[]aggregations.qGroup",
-	TopKBottomKInstantQuerySeriesSlices: "[]topkbottom.instantQuerySeries",
-	TopKBottomKRangeQuerySeriesSlices:   "[]topkbottom.rangeQuerySeries",
+const (
+	unknownMemorySource = "unknown memory source"
+)
+
+func (s MemoryConsumptionSource) String() string {
+	switch s {
+	case IngesterChunks:
+		return "ingester chunks"
+	case StoreGatewayChunks:
+		return "store-gateway chunks"
+	case FPointSlices:
+		return "[]promql.FPoint"
+	case HPointSlices:
+		return "[]promql.HPoint"
+	case Vectors:
+		return "promql.Vector"
+	case Float64Slices:
+		return "[]float64"
+	case IntSlices:
+		return "[]int"
+	case IntSliceSlice:
+		return "[][]int"
+	case Int64Slices:
+		return "[]int64"
+	case BoolSlices:
+		return "[]bool"
+	case HistogramPointerSlices:
+		return "[]*histogram.FloatHistogram"
+	case SeriesMetadataSlices:
+		return "[]SeriesMetadata"
+	case BucketSlices:
+		return "[]promql.Buckets"
+	case QuantileGroupSlices:
+		return "[]aggregations.qGroup"
+	case TopKBottomKInstantQuerySeriesSlices:
+		return "[]topkbottom.instantQuerySeries"
+	case TopKBottomKRangeQuerySeriesSlices:
+		return "[]topkbottom.rangeQuerySeries"
+	default:
+		return unknownMemorySource
+	}
 }
 
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
@@ -135,7 +159,7 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
-		panic(fmt.Sprintf("Estimated memory consumption of all instances of %v in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v", memoryConsumptionSourceNames[source], l.queryDescription))
+		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v", source, l.queryDescription))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b
