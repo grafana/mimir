@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/types"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
@@ -2504,11 +2505,16 @@ func createAlertingRule(alert, expr string) *rulespb.RuleDesc {
 // are copied when a rule group is cloned.
 func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
 	return &rulespb.RuleGroupDesc{
-		Name:      name,
-		Namespace: "test",
-		Interval:  time.Minute,
-		Rules:     rules,
-		User:      user,
+		Name:                          name,
+		Namespace:                     "test",
+		Interval:                      time.Minute,
+		Rules:                         rules,
+		User:                          user,
+		Options:                       []*types.Any{},
+		SourceTenants:                 []string{},
+		EvaluationDelay:               1 * time.Minute,
+		QueryOffset:                   1 * time.Minute,
+		AlignEvaluationTimeOnInterval: true,
 	}
 }
 

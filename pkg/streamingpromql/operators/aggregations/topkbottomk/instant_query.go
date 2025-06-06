@@ -317,6 +317,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []instantQuerySeries {
 		return make([]instantQuerySeries, 0, size)
 	}),
+	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
 	nil,
