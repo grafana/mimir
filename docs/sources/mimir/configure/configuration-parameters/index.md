@@ -3941,6 +3941,10 @@ ruler_alertmanager_client_config:
   # CLI flag: -ruler.alertmanager-client.proxy-url
   [proxy_url: <string> | default = ""]
 
+# (experimental) Minimum allowable evaluation interval for rule groups.
+# CLI flag: -ruler.min-rule-evaluation-interval
+[ruler_min_rule_evaluation_interval: <duration> | default = 0s]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
