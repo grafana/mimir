@@ -963,7 +963,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 			Kind:     alertingTemplates.GrafanaKind, // TODO this kind is only considered by Grafana code. Load it from TemplateDesc
 		})
 	}
-	level.Warn(am.logger).Log("msg", "debug templates", "user", cfg.User, "templates", templates)
+	level.Warn(am.logger).Log("msg", "debug templates", "user", cfg.User, "templates", fmt.Sprintf("%v", templates))
 
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
