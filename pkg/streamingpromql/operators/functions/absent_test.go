@@ -13,7 +13,7 @@ import (
 )
 
 func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
-	memTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 
 	a := &Absent{
 		TimeRange: types.QueryTimeRange{
