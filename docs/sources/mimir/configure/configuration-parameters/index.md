@@ -3663,6 +3663,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_query_expression_size_bytes: <int> | default = 0]
 
 # (experimental) List of queries to block.
+# Example:
+#   The following configuration blocks the query "rate(metric_counter[5m])".
+#   Setting the pattern to ".*" and regex to true blocks all queries.
+#   blocked_queries:
+#       - pattern: rate(metric_counter[5m])
+#         reason: because the query is misconfigured
 [blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.

@@ -54,11 +54,13 @@
 * [ENHANCEMENT] Ruler: Update `<prometheus-http-prefix>/api/v1/rules` and `<prometheus-http-prefix>/api/v1/alerts` to reply with HTTP error 422 if rule evaluation is completely disabled for the tenant. If only recording rule or alerting rule evaluation is disabled for the tenant, the response now includes a corresponding warning. #11321 #11495 #11511
 * [ENHANCEMENT] Add tenant configuration block `ruler_alertmanager_client_config` which allows the Ruler's Alertmanager client options to be specified on a per-tenant basis. #10816
 * [ENHANCEMENT] Store-gateway: Retry querying blocks from store-gateways with dynamic replication until trying all possible store-gateways. #11354 #11398
+* [ENHANCEMENT] Query-frontend: Add optional reason to blocked_queries config. #11407 #11434
 * [ENHANCEMENT] Distributor: Gracefully handle type assertion of WatchPrefix in HA Tracker to continue checking for updates. #11411 #11461
 * [ENHANCEMENT] Querier: Include chunks streamed from store-gateway in Mimir Query Engine memory estimate of query memory usage. #11453 #11465
 * [ENHANCEMENT] Querier: Include chunks streamed from ingester in Mimir Query Engine memory estimate of query memory usage. #11457
 * [ENHANCEMENT] Query-frontend: Add retry mechanism for remote reads, series, and cardinality prometheus endpoints #11533
 * [ENHANCEMENT] Ruler: Ignore rulers in non-operation states when getting and syncing rules #11569
+* [ENHANCEMENT] Query-frontend: add optional reason to blocked_queries config. #11407 #11434
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
