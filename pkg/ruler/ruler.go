@@ -993,22 +993,34 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 	return filtered
 }
 
-func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) (filtered map[string]rulespb.RuleGroupList) {
+func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) map[string]rulespb.RuleGroupList {
+	if configs == nil {
+		return nil
+	}
+
+	adjusted := map[string]rulespb.RuleGroupList{}
 	for userID, groups := range configs {
-		filtered[userID] = groups
+		adjusted[userID] = groups
+
 		tenantMinInterval := limits.RulerMinRuleEvaluationInterval(userID)
 		if tenantMinInterval <= 0 {
 			continue
 		}
 
-		for _, group := range filtered[userID] {
+		for _, group := range adjusted[userID] {
 			if group.Interval < tenantMinInterval {
+				level.Info(logger).Log(
+					"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
+					"user", userID,
+					"rule_group", group.Name,
+					"interval", group.Interval,
+					"min_interval", tenantMinInterval,
+				)
 				group.Interval = tenantMinInterval
-				// TODO: log
 			}
 		}
 	}
-	return filtered
+	return adjusted
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
