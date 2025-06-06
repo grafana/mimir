@@ -685,6 +685,12 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if err := a.ruler.AssertMinRuleEvaluationInterval(userID, time.Duration(rg.Interval)); err != nil {
+		level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Only list rule groups when enforcing a max number of groups for this tenant and namespace.
 	if a.ruler.IsMaxRuleGroupsLimited(userID, namespace) {
 		// Disable any caching when getting list of all rule groups since listing results
