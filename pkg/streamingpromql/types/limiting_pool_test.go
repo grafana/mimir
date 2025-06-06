@@ -22,7 +22,7 @@ const rejectedQueriesMetricName = "rejected_queries"
 
 func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 	reg, metric := createRejectedMetric()
-	tracker := limiter.NewMemoryConsumptionTracker(0, metric)
+	tracker := limiter.NewMemoryConsumptionTracker(0, metric, "")
 
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
@@ -75,7 +75,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 func TestLimitingPool_Limited(t *testing.T) {
 	reg, metric := createRejectedMetric()
 	limit := 11 * FPointSize
-	tracker := limiter.NewMemoryConsumptionTracker(limit, metric)
+	tracker := limiter.NewMemoryConsumptionTracker(limit, metric, "")
 
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
@@ -142,7 +142,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 }
 
 func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
-	tracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	tracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 
 	// Get a slice, put it back in the pool and get it back again.
 	// Make sure all elements are zero or false when we get it back.
@@ -200,7 +200,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	}()
 
 	_, metric := createRejectedMetric()
-	tracker := limiter.NewMemoryConsumptionTracker(0, metric)
+	tracker := limiter.NewMemoryConsumptionTracker(0, metric, "")
 
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []int { return make([]int, 0, size) }),

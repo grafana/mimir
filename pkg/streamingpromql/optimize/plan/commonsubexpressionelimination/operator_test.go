@@ -19,7 +19,7 @@ import (
 )
 
 func TestOperator_Buffering(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 	inner, expectedData := createTestOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -111,7 +111,7 @@ func TestOperator_Buffering(t *testing.T) {
 }
 
 func TestOperator_ClosedWithBufferedData(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 	inner, expectedData := createTestOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
@@ -181,7 +181,7 @@ func TestOperator_Cloning(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 	inner := &operators.TestOperator{
 		Series:                   []labels.Labels{labels.FromStrings(labels.MetricName, "test_series")},
 		Data:                     []types.InstantVectorSeriesData{series},
