@@ -65,14 +65,6 @@ cortex_prometheus_rule_evaluation_failures_total{rule_group="group_one",user="us
 cortex_prometheus_rule_evaluation_failures_total{rule_group="group_two",user="user1"} 1
 cortex_prometheus_rule_evaluation_failures_total{rule_group="group_two",user="user2"} 10
 cortex_prometheus_rule_evaluation_failures_total{rule_group="group_two",user="user3"} 100
-# HELP cortex_prometheus_rule_evaluations_missed_total The total number of rule evaluations missed across all rules in a group.
-# TYPE cortex_prometheus_rule_evaluations_missed_total counter
-cortex_prometheus_rule_evaluations_missed_total{rule_group="group_one",user="user1"} 1
-cortex_prometheus_rule_evaluations_missed_total{rule_group="group_one",user="user2"} 10
-cortex_prometheus_rule_evaluations_missed_total{rule_group="group_one",user="user3"} 100
-cortex_prometheus_rule_evaluations_missed_total{rule_group="group_two",user="user1"} 1
-cortex_prometheus_rule_evaluations_missed_total{rule_group="group_two",user="user2"} 10
-cortex_prometheus_rule_evaluations_missed_total{rule_group="group_two",user="user3"} 100
 # HELP cortex_prometheus_rule_evaluations_total The total number of rule evaluations.
 # TYPE cortex_prometheus_rule_evaluations_total counter
 cortex_prometheus_rule_evaluations_total{rule_group="group_one",user="user1"} 1
@@ -167,8 +159,6 @@ func populateManager(base float64) *prometheus.Registry {
 	metrics.IterationsMissed.WithLabelValues("group_two").Add(base)
 	metrics.EvalTotal.WithLabelValues("group_one").Add(base)
 	metrics.EvalTotal.WithLabelValues("group_two").Add(base)
-	metrics.EvalMissed.WithLabelValues("group_one").Add(base)
-	metrics.EvalMissed.WithLabelValues("group_two").Add(base)
 	metrics.EvalFailures.WithLabelValues("group_one").Add(base)
 	metrics.EvalFailures.WithLabelValues("group_two").Add(base)
 
