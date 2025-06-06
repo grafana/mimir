@@ -20,6 +20,7 @@ type MemoryConsumptionTracker struct {
 
 	rejectionCount        prometheus.Counter
 	haveRecordedRejection bool
+	queryDescription      string
 
 	// mtx protects all mutable state of the memory consumption tracker. We use a mutex
 	// rather than atomics because we only want to adjust the memory used after checking
@@ -27,11 +28,12 @@ type MemoryConsumptionTracker struct {
 	mtx sync.Mutex
 }
 
-func NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter) *MemoryConsumptionTracker {
+func NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
 	return &MemoryConsumptionTracker{
 		maxEstimatedMemoryConsumptionBytes: maxEstimatedMemoryConsumptionBytes,
 
-		rejectionCount: rejectionCount,
+		rejectionCount:   rejectionCount,
+		queryDescription: queryDescription,
 	}
 }
 
@@ -63,8 +65,9 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64) {
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBytes {
-		panic("Estimated memory consumption of this query is negative. This indicates something has been returned to a pool more than once, which is a bug.")
+		panic("Estimated memory consumption of this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: " + l.queryDescription)
 	}
+
 	l.currentEstimatedMemoryConsumptionBytes -= b
 }
 
