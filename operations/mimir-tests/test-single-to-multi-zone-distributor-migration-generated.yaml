@@ -780,6 +780,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -shutdown-delay=90s
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
@@ -885,6 +886,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -shutdown-delay=90s
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
@@ -995,6 +997,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -shutdown-delay=90s
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
@@ -1095,6 +1098,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -1182,6 +1186,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
@@ -1258,6 +1263,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.16.0
@@ -1392,6 +1398,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -1473,6 +1480,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -target=alertmanager
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -1577,6 +1585,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.16.0
@@ -1696,6 +1705,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -1828,6 +1838,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -1954,6 +1965,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -2294,6 +2306,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
@@ -2434,6 +2447,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
@@ -2576,6 +2590,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -server.trace-request-headers=true
         - -store-gateway.sharding-ring.heartbeat-period=1m
         - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
