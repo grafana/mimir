@@ -125,6 +125,7 @@ var qGroupPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(maxExpectedQuantileGroups, func(size int) []qGroup {
 		return make([]qGroup, 0, size)
 	}),
+	limiter.QuantileGroupSlices,
 	uint64(unsafe.Sizeof(qGroup{})),
 	false,
 	nil,

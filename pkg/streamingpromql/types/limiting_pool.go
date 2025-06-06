@@ -45,6 +45,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []promql.FPoint {
 			return make([]promql.FPoint, 0, size)
 		}),
+		limiter.FPointSlices,
 		FPointSize,
 		false,
 		nil,
@@ -54,6 +55,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []promql.HPoint {
 			return make([]promql.HPoint, 0, size)
 		}),
+		limiter.HPointSlices,
 		HPointSize,
 		false,
 		func(point promql.HPoint) promql.HPoint {
@@ -66,6 +68,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) promql.Vector {
 			return make(promql.Vector, 0, size)
 		}),
+		limiter.Vectors,
 		VectorSampleSize,
 		false,
 		nil,
@@ -75,6 +78,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []float64 {
 			return make([]float64, 0, size)
 		}),
+		limiter.Float64Slices,
 		Float64Size,
 		true,
 		nil,
@@ -84,6 +88,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []int {
 			return make([]int, 0, size)
 		}),
+		limiter.IntSlices,
 		IntSize,
 		true,
 		nil,
@@ -93,6 +98,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []int64 {
 			return make([]int64, 0, size)
 		}),
+		limiter.Int64Slices,
 		Int64Size,
 		true,
 		nil,
@@ -102,6 +108,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []bool {
 			return make([]bool, 0, size)
 		}),
+		limiter.BoolSlices,
 		BoolSize,
 		true,
 		nil,
@@ -111,6 +118,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []*histogram.FloatHistogram {
 			return make([]*histogram.FloatHistogram, 0, size)
 		}),
+		limiter.HistogramPointerSlices,
 		HistogramPointerSize,
 		true,
 		mangleHistogram,
@@ -120,6 +128,7 @@ var (
 		pool.NewBucketedPool(MaxExpectedSeriesPerResult, func(size int) []SeriesMetadata {
 			return make([]SeriesMetadata, 0, size)
 		}),
+		limiter.SeriesMetadataSlices,
 		SeriesMetadataSize,
 		true,
 		nil,
@@ -156,14 +165,16 @@ func mangleHistogram(h *histogram.FloatHistogram) *histogram.FloatHistogram {
 // assumes all native histograms are the same size, and assumes all elements of a promql.Vector are float samples.
 type LimitingBucketedPool[S ~[]E, E any] struct {
 	inner       *pool.BucketedPool[S, E]
+	source      limiter.MemoryConsumptionSource
 	elementSize uint64
 	clearOnGet  bool
 	mangle      func(E) E
 }
 
-func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], elementSize uint64, clearOnGet bool, mangle func(E) E) *LimitingBucketedPool[S, E] {
+func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E) *LimitingBucketedPool[S, E] {
 	return &LimitingBucketedPool[S, E]{
 		inner:       inner,
+		source:      source,
 		elementSize: elementSize,
 		clearOnGet:  clearOnGet,
 		mangle:      mangle,
@@ -187,7 +198,7 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiter.MemoryConsum
 	// - there's no guarantee the slice will have size 'size' when it's returned to us in putWithElementSize, so using 'size' would make the accounting below impossible
 	estimatedBytes := uint64(cap(s)) * p.elementSize
 
-	if err := tracker.IncreaseMemoryConsumption(estimatedBytes); err != nil {
+	if err := tracker.IncreaseMemoryConsumption(estimatedBytes, p.source); err != nil {
 		p.inner.Put(s)
 		return nil, err
 	}
@@ -211,7 +222,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumption
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(s)) * p.elementSize)
+	tracker.DecreaseMemoryConsumption(uint64(cap(s))*p.elementSize, p.source)
 	p.inner.Put(s)
 }
 

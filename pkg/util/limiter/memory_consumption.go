@@ -4,6 +4,7 @@ package limiter
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,29 +42,39 @@ const (
 	StoreGatewayChunks
 	FPointSlices
 	HPointSlices
-	SampleSlices
+	Vectors
 	Float64Slices
 	IntSlices
+	IntSliceSlice
 	Int64Slices
 	BoolSlices
 	HistogramPointerSlices
 	SeriesMetadataSlices
+	BucketSlices
+	QuantileGroupSlices
+	TopKBottomKInstantQuerySeriesSlices
+	TopKBottomKRangeQuerySeriesSlices
 
-	memoryConsumptionSourceCount = SeriesMetadataSlices+1
+	memoryConsumptionSourceCount = TopKBottomKRangeQuerySeriesSlices + 1
 )
 
 var memoryConsumptionSourceNames = map[MemoryConsumptionSource]string{
-	IngesterChunks:    "ingester chunks",
-	StoreGatewayChunks: "store-gateway chunks",
-	FPointSlices:      "[]promql.FPoint",
-	HPointSlices:      "[]promql.HPoint",
-	SampleSlices:      "promql.Vector",
-	Float64Slices:     "[]float64",
-	IntSlices:         "[]int",
-	Int64Slices:       "[]int64",
-	BoolSlices:        "[]bool",
-	HistogramPointerSlices: "[]*histogram.FloatHistogram",
-	SeriesMetadataSlices:    "[]SeriesMetadata",
+	IngesterChunks:                      "ingester chunks",
+	StoreGatewayChunks:                  "store-gateway chunks",
+	FPointSlices:                        "[]promql.FPoint",
+	HPointSlices:                        "[]promql.HPoint",
+	Vectors:                             "promql.Vector",
+	Float64Slices:                       "[]float64",
+	IntSlices:                           "[]int",
+	IntSliceSlice:                       "[][]int",
+	Int64Slices:                         "[]int64",
+	BoolSlices:                          "[]bool",
+	HistogramPointerSlices:              "[]*histogram.FloatHistogram",
+	SeriesMetadataSlices:                "[]SeriesMetadata",
+	BucketSlices:                        "[]promql.Buckets",
+	QuantileGroupSlices:                 "[]aggregations.qGroup",
+	TopKBottomKInstantQuerySeriesSlices: "[]topkbottom.instantQuerySeries",
+	TopKBottomKRangeQuerySeriesSlices:   "[]topkbottom.rangeQuerySeries",
 }
 
 // MemoryConsumptionTracker tracks the current memory utilisation of a single query, and applies any max in-memory bytes limit.
@@ -98,7 +109,7 @@ func NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionBytes uint64, reje
 // IncreaseMemoryConsumption attempts to increase the current memory consumption by b bytes.
 //
 // It returns an error if the query would exceed the maximum memory consumption limit.
-func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64) error {
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) error {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -111,6 +122,7 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64) error {
 		return NewMaxEstimatedMemoryConsumptionPerQueryLimitError(l.maxEstimatedMemoryConsumptionBytes)
 	}
 
+	l.currentEstimatedMemoryConsumptionBySource[source] += b
 	l.currentEstimatedMemoryConsumptionBytes += b
 	l.peakEstimatedMemoryConsumptionBytes = max(l.peakEstimatedMemoryConsumptionBytes, l.currentEstimatedMemoryConsumptionBytes)
 
@@ -118,15 +130,16 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumption(b uint64) error {
 }
 
 // DecreaseMemoryConsumption decreases the current memory consumption by b bytes.
-func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64) {
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source MemoryConsumptionSource) {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
-	if b > l.currentEstimatedMemoryConsumptionBytes {
-		panic("Estimated memory consumption of this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: " + l.queryDescription)
+	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
+		panic(fmt.Sprintf("Estimated memory consumption of all instances of %v in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v", memoryConsumptionSourceNames[source], l.queryDescription))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b
+	l.currentEstimatedMemoryConsumptionBySource[source] -= b
 }
 
 // PeakEstimatedMemoryConsumptionBytes returns the peak memory consumption in bytes.
