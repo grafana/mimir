@@ -439,6 +439,7 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		Annotations:              q.annotations,
 		LookbackDelta:            q.lookbackDelta,
+		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
 	}
 
 	q.statement = &parser.EvalStmt{

@@ -191,6 +191,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			Offset:                   e.OriginalOffset.Milliseconds(),
 			LookbackDelta:            lookbackDelta,
 			Matchers:                 e.LabelMatchers,
+			EagerLoad:                q.engine.eagerLoadSelectors,
 			ExpressionPosition:       e.PositionRange(),
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
@@ -405,6 +406,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			Offset:    vectorSelector.OriginalOffset.Milliseconds(),
 			Range:     e.Range,
 			Matchers:  vectorSelector.LabelMatchers,
+			EagerLoad: q.engine.eagerLoadSelectors,
 
 			ExpressionPosition:       e.PositionRange(),
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,

@@ -75,9 +75,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:         opts.Pedantic,
-		useQueryPlanning: opts.UseQueryPlanning,
-		planner:          planner,
+		pedantic:           opts.Pedantic,
+		eagerLoadSelectors: opts.EagerLoadSelectors,
+		useQueryPlanning:   opts.UseQueryPlanning,
+		planner:            planner,
 	}, nil
 }
 
@@ -100,6 +101,8 @@ type Engine struct {
 	//
 	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
+
+	eagerLoadSelectors bool
 
 	useQueryPlanning bool
 	planner          *QueryPlanner

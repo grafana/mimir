@@ -26,6 +26,7 @@ type Operator interface {
 	Close()
 
 	// Prepare prepares the operator for execution. It must be called before calling methods like `SeriesMetadata` or `NextSeries`.
+	// It must only be called once.
 	Prepare(ctx context.Context, params *PrepareParams) error
 }
 

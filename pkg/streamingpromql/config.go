@@ -18,6 +18,12 @@ type EngineOpts struct {
 	// Should only be used in tests.
 	Pedantic bool `yaml:"-"`
 
+	// Prometheus' engine evaluates all selectors (ie. calls Querier.Select()) before evaluating any part of the query.
+	// We rely on this behavior in query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
+	// When sharding is just another optimization pass, we'll be able to trigger this eager loading from the sharding operator,
+	// but for now, we use this option to change the behavior of selectors.
+	EagerLoadSelectors bool `yaml:"-"`
+
 	UseQueryPlanning                     bool `yaml:"use_query_planning" category:"experimental"`
 	EnableCommonSubexpressionElimination bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
 }
