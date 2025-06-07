@@ -100,25 +100,34 @@ type SymbolTableBuilder struct {
 	count   uint32
 	symbols map[string]uint32
 	offset  uint32
+	common  map[string]uint32
 }
 
 func NewSymbolTableBuilder(symbols []string) *SymbolTableBuilder {
-	return NewSymbolTableBuilderWithOffset(symbols, 0)
+	return NewSymbolTableBuilderWithCommon(symbols, 0, nil)
 }
 
-func NewSymbolTableBuilderWithOffset(symbols []string, offset uint32) *SymbolTableBuilder {
+func NewSymbolTableBuilderWithCommon(symbols []string, offset uint32, commonSymbols []string) *SymbolTableBuilder {
 	symbolsMap := make(map[string]uint32)
 	for i, sym := range symbols {
 		symbolsMap[sym] = uint32(i) + offset
+	}
+	commonSymbolsMap := make(map[string]uint32)
+	for i, commonSym := range commonSymbols {
+		commonSymbolsMap[commonSym] = uint32(i)
 	}
 	return &SymbolTableBuilder{
 		count:   uint32(len(symbols)),
 		symbols: symbolsMap,
 		offset:  offset,
+		common:  commonSymbolsMap,
 	}
 }
 
 func (symbols *SymbolTableBuilder) GetSymbol(sym string) uint32 {
+	if i, ok := symbols.common[sym]; ok {
+		return i
+	}
 	if i, ok := symbols.symbols[sym]; ok {
 		return i
 	}
