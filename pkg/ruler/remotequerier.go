@@ -36,6 +36,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/ruler/httphttp"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -68,6 +69,9 @@ type QueryFrontendConfig struct {
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 
+	// HTTPClientConfig contains HTTP specific config options.
+	HTTPClientConfig httphttp.Config `yaml:"http_client_config" doc:"description=Configures the HTTP client used to communicate between the rulers and query-frontends."`
+
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 
 	MaxRetriesRate float64 `yaml:"max_retries_rate"`
@@ -83,6 +87,8 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
+	c.HTTPClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.http-client-config", f)
+
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
 }
@@ -96,7 +102,20 @@ func (c *QueryFrontendConfig) Validate() error {
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
-func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
+func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, bool, error) {
+	if strings.HasPrefix(cfg.Address, "http://") || strings.HasPrefix(cfg.Address, "https://") {
+		client, err := DialQueryFrontendHTTP(cfg, reg, logger)
+
+		return client, true, err
+	}
+
+	client, err := DialQueryFrontendGRPC(cfg, reg, logger)
+
+	return client, false, err
+}
+
+// DialQueryFrontendGRPC creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
+func DialQueryFrontendGRPC(cfg QueryFrontendConfig, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
 	opts, err := cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
@@ -117,6 +136,11 @@ func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logge
 		return nil, err
 	}
 	return httpgrpc.NewHTTPClient(conn), nil
+}
+
+// DialQueryFrontendHTTP creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
+func DialQueryFrontendHTTP(cfg QueryFrontendConfig, _ prometheus.Registerer, _ log.Logger) (httpgrpc.HTTPClient, error) {
+	return httphttp.NewHTTPClient(cfg.Address, &cfg.HTTPClientConfig, opentracing.GlobalTracer()), nil
 }
 
 // Middleware provides a mechanism to inspect outgoing remote querier requests.
