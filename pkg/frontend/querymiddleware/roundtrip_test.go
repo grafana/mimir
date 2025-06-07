@@ -30,15 +30,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -77,18 +76,15 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
 		newTestPrometheusCodec(),
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -127,6 +123,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 	codec := newTestPrometheusCodec()
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		makeTestConfig(func(cfg *Config) {
 			cfg.ShardedQueries = true
@@ -135,12 +132,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		mockLimits{totalShards: totalShards},
 		codec,
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -457,21 +450,16 @@ func TestTripperware_Metrics(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 			reg := prometheus.NewPedanticRegistry()
 			tw, err := NewTripperware(
 				Config{},
 				log.NewNopLogger(),
-				mockLimits{
-					alignQueriesWithStep: testData.stepAlignEnabled,
-				},
+				mockLimits{alignQueriesWithStep: testData.stepAlignEnabled},
 				newTestPrometheusCodec(),
 				nil,
-				promql.EngineOpts{
-					Logger:     promslog.NewNopLogger(),
-					Reg:        nil,
-					MaxSamples: 1000,
-					Timeout:    time.Minute,
-				},
+				engine,
+				engineOpts,
 				nil,
 				reg,
 			)
@@ -512,6 +500,7 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	tw, err := NewTripperware(
 		Config{},
 		log.NewNopLogger(),
@@ -531,12 +520,8 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 		},
 		newTestPrometheusCodec(),
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -597,18 +582,17 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
+	engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	queryRangeMiddlewares, queryInstantMiddlewares, remoteReadMiddlewares := newQueryMiddlewares(
 		cfg,
 		log.NewNopLogger(),
-		mockLimits{
-			alignQueriesWithStep: true,
-		},
+		mockLimits{alignQueriesWithStep: true},
 		newTestPrometheusCodec(),
 		nil,
 		nil,
 		nil,
-		promql.NewEngine(promql.EngineOpts{}),
-		defaultStepFunc,
+		engine,
+		engineOpts,
 		nil,
 		nil,
 	)
@@ -815,19 +799,17 @@ func TestTripperware_RemoteRead(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			engineOpts, engine := newEngineForTesting(t, querier.PrometheusEngine)
 			reg := prometheus.NewPedanticRegistry()
+
 			tw, err := NewTripperware(
 				makeTestConfig(),
 				log.NewNopLogger(),
 				tc.limits,
 				newTestPrometheusCodec(),
 				nil,
-				promql.EngineOpts{
-					Logger:     promslog.NewNopLogger(),
-					Reg:        nil,
-					MaxSamples: 1000,
-					Timeout:    time.Minute,
-				},
+				engine,
+				engineOpts,
 				nil,
 				reg,
 			)
@@ -919,6 +901,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		},
 	}
 
+	promOpts, promEngine := newEngineForTesting(t, querier.PrometheusEngine)
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -957,12 +940,8 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 		mockLimits{},
 		NewPrometheusCodec(nil, 0, formatJSON, nil),
 		nil,
-		promql.EngineOpts{
-			Logger:     promslog.NewNopLogger(),
-			Reg:        nil,
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		promEngine,
+		promOpts,
 		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
 		nil,
 	)
