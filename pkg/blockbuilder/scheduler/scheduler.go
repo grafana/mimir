@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -211,6 +212,8 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 type partitionState struct {
 	offset    int64
 	jobBucket time.Time
+	// latestPlannedOffset tracks the highest offset we've planned to process
+	latestPlannedOffset int64
 
 	pendingJobs *list.List
 }
@@ -318,6 +321,16 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				StartOffset: or.start,
 				EndOffset:   or.end,
 			}
+
+			// Validate and update the last end offset
+			if err := ps.updateLastSeenEndOffset(spec.StartOffset, spec.EndOffset); err != nil {
+				level.Error(s.logger).Log("msg", "job continuity validation failed",
+					"partition", partition, "job_id", jobID, "err", err)
+				// Skip this job and continue with the next one
+				ps.pendingJobs.Remove(e)
+				continue
+			}
+
 			if err := s.jobs.add(jobID, spec); err != nil {
 				if errors.Is(err, errJobCreationDisallowed) || errors.Is(err, errJobAlreadyExists) {
 					// We've hit the limit for this partition.
@@ -335,7 +348,6 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	s.mu.Unlock()
 
 	// And update the pending jobs metric.
-
 	for partition, count := range pending {
 		s.metrics.pendingJobs.WithLabelValues(fmt.Sprint(partition)).Set(float64(count))
 	}
@@ -489,9 +501,10 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var consumeOffset int64
 
-			if committedOff, ok := committed.Lookup(t, partition); ok {
+			if ps, ok := s.partState[partition]; ok {
+				consumeOffset = ps.latestPlannedOffset
+			} else if committedOff, ok := committed.Lookup(t, partition); ok {
 				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
-
 				consumeOffset = committedOff.At
 			} else {
 				// Nothing committed for this partition. Rewind to fallback offset instead.
@@ -823,17 +836,74 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 // finalizeObservations considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
 func (s *BlockBuilderScheduler) finalizeObservations() {
+	// Group observations by partition for gap analysis
+	partitionObservations := make(map[int32][]*observation)
+
 	for _, rj := range s.observations {
-		if rj.complete {
-			// Completed.
-			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset)
-		} else {
-			// An in-progress job.
-			// These don't affect offsets, they just get added to the job queue.
-			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
+		partitionObservations[rj.spec.Partition] = append(partitionObservations[rj.spec.Partition], rj)
+	}
+
+	for partition, observations := range partitionObservations {
+		ps := s.getPartitionState(partition)
+
+		// Get the committed offset for this partition
+		var committedOffset int64
+		if committed, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok {
+			committedOffset = committed.At
+		}
+
+		// Initialize latest planned offset to committed offset
+		ps.latestPlannedOffset = committedOffset
+
+		if len(observations) == 0 {
+			// No observations, keep latest planned offset at committed offset
+			continue
+		}
+
+		// Sort observations by start offset
+		sort.Slice(observations, func(i, j int) bool {
+			return observations[i].spec.StartOffset < observations[j].spec.StartOffset
+		})
+
+		// Find the highest continuous offset
+		currentOffset := committedOffset
+		highestContinuous := committedOffset
+
+		for _, obs := range observations {
+			if obs.spec.StartOffset > currentOffset {
+				// Found a gap, can't continue the continuous range
+				break
+			}
+			if obs.spec.EndOffset > highestContinuous {
+				highestContinuous = obs.spec.EndOffset
+			}
+			currentOffset = obs.spec.EndOffset
+		}
+
+		ps.latestPlannedOffset = highestContinuous
+
+		// Process each observation up to the continuous offset
+		for _, rj := range observations {
+			if rj.spec.StartOffset >= highestContinuous {
+				// Skip jobs that start at or after our continuous point
+				continue
+			}
+
+			if rj.complete {
+				// Completed.
+				s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset)
+			} else {
+				// An in-progress job that's part of our continuous coverage.
+				if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
+					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
+				}
 			}
 		}
+
+		level.Info(s.logger).Log("msg", "partition observation analysis complete",
+			"partition", partition,
+			"committed_offset", committedOffset,
+			"latest_planned_offset", highestContinuous)
 	}
 }
 
@@ -870,3 +940,15 @@ func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedul
 }
 
 var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPolicy)(nil)
+
+// updateLastSeenEndOffset validates and updates the last seen endOffset for this partition.
+// Returns an error if there's a gap in the sequence.
+func (ps *partitionState) updateLastSeenEndOffset(startOffset, endOffset int64) error {
+	if ps.latestPlannedOffset != 0 && startOffset != ps.latestPlannedOffset {
+		return fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
+			ps.latestPlannedOffset, startOffset)
+	}
+
+	ps.latestPlannedOffset = endOffset
+	return nil
+}
