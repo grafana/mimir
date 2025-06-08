@@ -18,6 +18,7 @@ type schedulerMetrics struct {
 	assignedJobs             prometheus.Gauge
 	pendingJobs              *prometheus.GaugeVec
 	persistentJobFailures    prometheus.Counter
+	jobContinuityViolations  prometheus.Counter
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -64,5 +65,9 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 			Name: "cortex_blockbuilder_scheduler_pending_jobs",
 			Help: "The number of jobs in the pending queues.",
 		}, []string{"partition"}),
+		jobContinuityViolations: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_job_continuity_violations_total",
+			Help: "The number of times a job's start offset did not match the expected latest planned offset.",
+		}),
 	}
 }

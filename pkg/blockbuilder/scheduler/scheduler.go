@@ -216,6 +216,7 @@ type partitionState struct {
 	latestPlannedOffset int64
 
 	pendingJobs *list.List
+	metrics     *schedulerMetrics
 }
 
 const (
@@ -395,6 +396,7 @@ func (s *BlockBuilderScheduler) getPartitionState(partition int32) *partitionSta
 
 	ps := &partitionState{
 		pendingJobs: list.New(),
+		metrics:     &s.metrics,
 	}
 	s.partState[partition] = ps
 	return ps
@@ -945,6 +947,7 @@ var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPol
 // Returns an error if there's a gap in the sequence.
 func (ps *partitionState) updateLastSeenEndOffset(startOffset, endOffset int64) error {
 	if ps.latestPlannedOffset != 0 && startOffset != ps.latestPlannedOffset {
+		ps.metrics.jobContinuityViolations.Inc()
 		return fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
 			ps.latestPlannedOffset, startOffset)
 	}
