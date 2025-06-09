@@ -144,22 +144,6 @@ func TestLimitingPool_Limited(t *testing.T) {
 	assertRejectedQueryCount(t, reg, 1)
 }
 
-func TestFoo(t *testing.T) {
-	fmt.Printf("FPointSize: %d\n", FPointSize)
-	fmt.Printf("HPointSize: %d\n", HPointSize)
-	fmt.Printf("VectorSampleSize: %d\n", VectorSampleSize)
-	fmt.Printf("Float64Size: %d\n", Float64Size)
-	fmt.Printf("IntSize: %d\n", IntSize)
-	fmt.Printf("Int64Size: %d\n", Int64Size)
-	fmt.Printf("BoolSize: %d\n", BoolSize)
-	fmt.Printf("HistogramPointerSize: %d\n", HistogramPointerSize)
-	fmt.Printf("SeriesMetadataSize: %d\n", SeriesMetadataSize)
-	fmt.Printf("StringSize: %d\n", limiter.StringSize)
-	total := 5 * uint64(len("__name__")+len("some_metric")+len("idx")+len("1"))
-	fmt.Println(total)
-	foo := 8*(2*Float64Size+BoolSize) + 8*FPointSize + SeriesMetadataSize
-	fmt.Println(foo)
-}
 func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 
