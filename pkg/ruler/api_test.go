@@ -1679,9 +1679,10 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
+	cfg.EvaluationInterval = 1 * time.Minute
 
 	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRuleGroupsPerTenant = 2
 		defaults.RulerMaxRulesPerRuleGroup = 1
 		defaults.RulerMinRuleEvaluationInterval = model.Duration(15 * time.Second)
 	})))
@@ -1730,6 +1731,39 @@ rules:
     test: test
 `,
 			output: "per-user minimum rule evaluation interval limit (limit: 15s actual: 14s) exceeded\n",
+		},
+		{
+			name:   "zero interval is allowed despite limit",
+			status: 202,
+			input: `
+name: test
+interval: 0s
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test 
+`,
+			output: `{"status":"success","data":null,"errorType":"","error":""}`,
+		},
+		{
+			name:   "blank interval is allowed despite limit",
+			status: 202,
+			input: `
+name: test
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test 
+`,
+			output: `{"status":"success","data":null,"errorType":"","error":""}`,
 		},
 	}
 

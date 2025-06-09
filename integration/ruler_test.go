@@ -436,6 +436,12 @@ overrides:
 	)
 	require.NoError(t, user2Client.SetRuleGroup(group, "namespace-2"))
 
+	// User1 can still allow the ruler to decide the interval.
+	group = ruleGroupWithRules("group-0", 0,
+		recordingRule("series_1:count", "count(series_1)"),
+	)
+	require.NoError(t, user2Client.SetRuleGroup(group, "namespace-0"))
+
 	// User2's limit is changed to 10s
 	runtimeConfig = `
 overrides:

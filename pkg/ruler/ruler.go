@@ -1377,6 +1377,10 @@ func (r *Ruler) AssertMinRuleEvaluationInterval(userID string, interval time.Dur
 		return nil
 	}
 
+	// Zero or blank interval means to fall back to "ruler.evaluation-interval" - not actually use zero. It's an allowed value.
+	if interval == 0 {
+		return nil
+	}
 	if interval >= limit {
 		return nil
 	}
