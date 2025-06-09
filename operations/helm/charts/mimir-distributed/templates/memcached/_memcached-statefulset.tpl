@@ -46,18 +46,6 @@ spec:
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
-      {{- with $.ctx.Values.memcached.readinessProbe }}
-      readinessProbe:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with $.ctx.Values.memcached.livenessProbe }}
-      livenessProbe:
-        exec:
-          command:
-            - pgrep
-            - memcached
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" $.ctx "component" "memcached") | nindent 8 }}
       {{- with .initContainers }}
@@ -132,6 +120,18 @@ spec:
           {{- with $.ctx.Values.global.extraEnvFrom }}
           envFrom:
               {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.ctx.Values.memcached.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.ctx.Values.memcached.livenessProbe }}
+          livenessProbe:
+            exec:
+              command:
+                - pgrep
+                - memcached
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
