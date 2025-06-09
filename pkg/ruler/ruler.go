@@ -641,7 +641,7 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
 	configs = filterRuleGroupsByEnabled(configs, r.limits, r.logger)
 	// Apply any changes required by tenant limits.
-	configs = applyRuleGroupLimits(configs, r.limits, r.logger)
+	configs = applyRuleGroupLimits(configs, r.limits, r.cfg, r.logger)
 
 	// Sync the rule groups.
 	if len(userIDs) > 0 {
@@ -993,7 +993,7 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 	return filtered
 }
 
-func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) map[string]rulespb.RuleGroupList {
+func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, rulerCfg Config, logger log.Logger) map[string]rulespb.RuleGroupList {
 	if configs == nil {
 		return nil
 	}
@@ -1006,8 +1006,21 @@ func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits Rules
 		if tenantMinInterval <= 0 {
 			continue
 		}
+		if tenantMinInterval > rulerCfg.EvaluationInterval {
+			level.Warn(logger).Log(
+				"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
+				"user", userID,
+				"min_interval", tenantMinInterval,
+				"default_interval", rulerCfg.EvaluationInterval,
+			)
+		}
 
 		for _, group := range adjusted[userID] {
+			// 0 indicates to fall back to the default "ruler.evaluation-interval"
+			// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
+			if group.Interval == 0 && (tenantMinInterval <= rulerCfg.EvaluationInterval) {
+				continue
+			}
 			if group.Interval < tenantMinInterval {
 				level.Info(logger).Log(
 					"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",

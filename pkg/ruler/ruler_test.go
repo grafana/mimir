@@ -2528,8 +2528,41 @@ func TestApplyRuleGroupLimits(t *testing.T) {
 					createRuleGroupWithInterval("group1", "user2", 20*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
 				},
 				"user3": {
-					// TODO wrong, debug
 					createRuleGroupWithInterval("group1", "user3", 40*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "zero interval is unchanged",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 0, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = model.Duration(30 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 0, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "zero interval when limit is higher than default is adjusted to the limit",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 0, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = model.Duration(90 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 90*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
 				},
 			},
 		},
@@ -2538,8 +2571,11 @@ func TestApplyRuleGroupLimits(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			logger := log.NewNopLogger()
+			rulerCfg := Config{
+				EvaluationInterval: time.Minute,
+			}
 
-			actual := applyRuleGroupLimits(tc.configs, tc.limits, logger)
+			actual := applyRuleGroupLimits(tc.configs, tc.limits, rulerCfg, logger)
 			assert.Equal(t, tc.expected, actual)
 		})
 	}
