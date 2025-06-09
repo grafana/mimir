@@ -32,6 +32,12 @@ func (l *PartitionRingEditor) ChangePartitionState(ctx context.Context, partitio
 	})
 }
 
+func (l *PartitionRingEditor) RemoveOwner(ctx context.Context, partitionID int32, ownerID string) error {
+	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
+		return removeOwner(ring, partitionID, ownerID)
+	})
+}
+
 func (l *PartitionRingEditor) updateRing(ctx context.Context, update func(ring *PartitionRingDesc) (bool, error)) error {
 	return l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := GetOrCreatePartitionRingDesc(in)
@@ -61,4 +67,17 @@ func changePartitionState(ring *PartitionRingDesc, partitionID int32, toState Pa
 	}
 
 	return ring.UpdatePartitionState(partitionID, toState, time.Now()), nil
+}
+
+func removeOwner(ring *PartitionRingDesc, partitionID int32, ownerID string) (changed bool, _ error) {
+	for owner, ownedPartition := range ring.Owners {
+		if owner == ownerID && ownedPartition.OwnedPartition == partitionID {
+			ownedPartition.State = OwnerDeleted
+			ring.Owners[owner] = ownedPartition
+			changed = true
+			break
+		}
+	}
+
+	return changed, nil
 }

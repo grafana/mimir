@@ -56,7 +56,17 @@
                             <input type="hidden" name="partition_state" value="{{ $toState.String }}">
 
                             <button name="action" value="change_state" type="submit">Change state to {{ $toState.CleanName }}</button>
+        
                         </form>
+
+                         {{ range $ownerID := $partition.OwnerIDs }}
+                            <form action="" method="POST" onsubmit="return confirm('Do you confirm you want to remove owner {{ $ownerID }}?');">
+                                <input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">
+                                <input type="hidden" name="partition_id" value="{{ .ID }}">
+                                <input type="hidden" name="owner_id" value="{{ $ownerID }}">
+                                <button name="action" value="remove_owner" type="submit">Remove owner {{ $ownerID }}</button>
+                            </form>
+                        {{ end }}
                     {{ end }}
                 </td>
             </tr>
