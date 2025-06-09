@@ -223,6 +223,11 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumption
 	}
 
 	tracker.DecreaseMemoryConsumption(uint64(cap(s))*p.elementSize, p.source)
+	//if sms, isSeriesMetadataSlice := any(s).([]SeriesMetadata); isSeriesMetadataSlice {
+	//	for _, sm := range sms {
+	//		tracker.DecreaseMemoryConsumptionForLabels(sm.Labels)
+	//	}
+	//}
 	p.inner.Put(s)
 }
 
