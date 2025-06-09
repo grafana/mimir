@@ -234,6 +234,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
 		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		h.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(g.labels)
 		h.remainingGroups = append(h.remainingGroups, g.group)
 	}
 

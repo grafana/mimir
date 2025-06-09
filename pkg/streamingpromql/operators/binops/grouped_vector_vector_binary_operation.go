@@ -411,6 +411,8 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 
 	for _, o := range outputSeriesMap {
 		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: o.labels})
+		// TODO: check would re-allocation of string labels is happening here?
+		g.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(o.labels)
 		outputSeries = append(outputSeries, o.outputSeries)
 	}
 

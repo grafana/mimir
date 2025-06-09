@@ -40,6 +40,7 @@ func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) ([]types.Serie
 	metadata = append(metadata, types.SeriesMetadata{
 		Labels: labels.EmptyLabels(),
 	})
+	s.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(labels.EmptyLabels())
 
 	return metadata, nil
 }

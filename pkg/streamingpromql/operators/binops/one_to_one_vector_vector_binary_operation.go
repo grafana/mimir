@@ -325,6 +325,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 	for _, outputSeries := range outputSeriesMap {
 		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
+		b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeries.labels)
 		allSeries = append(allSeries, outputSeries.series)
 	}
 

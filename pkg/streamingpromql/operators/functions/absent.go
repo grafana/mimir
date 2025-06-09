@@ -65,6 +65,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	metadata = append(metadata, types.SeriesMetadata{
 		Labels: a.Labels,
 	})
+	a.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(a.Labels)
 
 	for range innerMetadata {
 		series, err := a.Inner.NextSeries(ctx)
