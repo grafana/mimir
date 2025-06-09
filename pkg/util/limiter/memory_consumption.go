@@ -203,19 +203,19 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	return l.currentEstimatedMemoryConsumptionBytes
 }
 
-func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lb labels.Labels) error {
-	for _, label := range lb {
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbs labels.Labels) error {
+	for _, lb := range lbs {
 		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
-		if err := l.IncreaseMemoryConsumption(uint64(len(label.Name)+len(label.Value))*StringSize, SeriesMetadataLabels); err != nil {
+		if err := l.IncreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, SeriesMetadataLabels); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lb labels.Labels) {
-	for _, label := range lb {
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbs labels.Labels) {
+	for _, lb := range lbs {
 		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
-		l.DecreaseMemoryConsumption(uint64(len(label.Name)+len(label.Value))*StringSize, SeriesMetadataLabels)
+		l.DecreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, SeriesMetadataLabels)
 	}
 }
