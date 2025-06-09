@@ -54,11 +54,13 @@
 * [ENHANCEMENT] Ruler: Update `<prometheus-http-prefix>/api/v1/rules` and `<prometheus-http-prefix>/api/v1/alerts` to reply with HTTP error 422 if rule evaluation is completely disabled for the tenant. If only recording rule or alerting rule evaluation is disabled for the tenant, the response now includes a corresponding warning. #11321 #11495 #11511
 * [ENHANCEMENT] Add tenant configuration block `ruler_alertmanager_client_config` which allows the Ruler's Alertmanager client options to be specified on a per-tenant basis. #10816
 * [ENHANCEMENT] Store-gateway: Retry querying blocks from store-gateways with dynamic replication until trying all possible store-gateways. #11354 #11398
+* [ENHANCEMENT] Query-frontend: Add optional reason to blocked_queries config. #11407 #11434
 * [ENHANCEMENT] Distributor: Gracefully handle type assertion of WatchPrefix in HA Tracker to continue checking for updates. #11411 #11461
 * [ENHANCEMENT] Querier: Include chunks streamed from store-gateway in Mimir Query Engine memory estimate of query memory usage. #11453 #11465
 * [ENHANCEMENT] Querier: Include chunks streamed from ingester in Mimir Query Engine memory estimate of query memory usage. #11457
 * [ENHANCEMENT] Query-frontend: Add retry mechanism for remote reads, series, and cardinality prometheus endpoints #11533
 * [ENHANCEMENT] Ruler: Ignore rulers in non-operation states when getting and syncing rules #11569
+* [ENHANCEMENT] Query-frontend: add optional reason to blocked_queries config. #11407 #11434
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
@@ -80,6 +82,8 @@
 * [BUGFIX] Querier and query-frontend: Fix issue where aggregation functions like `topk` and `quantile` could return incorrect results if the scalar parameter is not a constant and Prometheus' query engine is in use. #11548
 * [BUGFIX] Querier and query-frontend: Fix issue where range vector selectors could incorrectly ignore samples at the beginning of the range. #11548
 * [BUGFIX] Querier: Fix rare panic if a query is canceled while a request to ingesters or store-gateways has just begun. #11613
+* [BUGFIX] Ruler: Fix QueryOffset and AlignEvaluationTimeOnInterval being ignored when either recording or alerting rule evaluation is disabled. #11647
+* [BUGFIX] Ingester: Fix issue where ingesters could leave read-only mode during forced compactions, resulting in write errors. #11664
 
 ### Mixin
 
@@ -295,6 +299,20 @@
 
 * [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
 * [CHANGE] `mark-blocks`: Replace `markblocks` with added features including removing markers and reading block identifiers from a file. #10597
+
+## 2.15.3
+
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.23.9 to address [CVE-2025-22871](https://nvd.nist.gov/vuln/detail/CVE-2025-22871). #11537
+
+### Mimirtool
+
+* [BUGFIX] Upgrade Alpine Linux to 3.20.6, fixes CVE-2025-26519. #11530
+
+### Mimir Continuous Test
+
+* [BUGFIX] Upgrade Alpine Linux to 3.20.6, fixes CVE-2025-26519. #11530
 
 ## 2.15.2
 

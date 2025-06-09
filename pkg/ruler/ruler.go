@@ -907,15 +907,9 @@ func filterRuleGroupByEnabled(group *rulespb.RuleGroupDesc, recordingEnabled, al
 	}
 
 	// Create a copy of the group and remove some rules.
-	filtered = &rulespb.RuleGroupDesc{
-		Name:          group.Name,
-		Namespace:     group.Namespace,
-		Interval:      group.Interval,
-		Rules:         make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules),
-		User:          group.User,
-		Options:       group.Options,
-		SourceTenants: group.SourceTenants,
-	}
+	filtered = &rulespb.RuleGroupDesc{}
+	*filtered = *group
+	filtered.Rules = make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules)
 
 	for _, rule := range group.Rules {
 		if rule.Record != "" && !recordingEnabled {
