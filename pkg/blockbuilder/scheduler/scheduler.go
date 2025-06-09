@@ -271,6 +271,19 @@ func (s *partitionState) addPendingJob(job *offsetRange) {
 	s.pendingJobs.PushBack(job)
 }
 
+// updatePlannedOffset validates and updates the last planned offset for this partition.
+// Returns an error if there's an unexpected gap.
+func (ps *partitionState) updatePlannedOffset(spec schedulerpb.JobSpec) error {
+	if ps.latestPlannedOffset != 0 && spec.StartOffset != ps.latestPlannedOffset {
+		ps.metrics.jobContinuityViolations.Inc()
+		return fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
+			ps.latestPlannedOffset, spec.StartOffset)
+	}
+
+	ps.latestPlannedOffset = spec.EndOffset
+	return nil
+}
+
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
 func (s *BlockBuilderScheduler) enqueuePendingJobsWorker(ctx context.Context) {
 	enqueueTick := time.NewTicker(s.cfg.EnqueueInterval)
@@ -323,8 +336,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				EndOffset:   or.end,
 			}
 
-			// Validate and update the last end offset
-			if err := ps.updateLastSeenEndOffset(spec.StartOffset, spec.EndOffset); err != nil {
+			if err := ps.updatePlannedOffset(spec); err != nil {
 				level.Error(s.logger).Log("msg", "job continuity validation failed",
 					"partition", partition, "job_id", jobID, "err", err)
 				// Skip this job and continue with the next one
@@ -854,7 +866,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			committedOffset = committed.At
 		}
 
-		// Initialize latest planned offset to committed offset
+		// Initialize latest planned offset to the known committed offset.
 		ps.latestPlannedOffset = committedOffset
 
 		if len(observations) == 0 {
@@ -867,45 +879,24 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			return observations[i].spec.StartOffset < observations[j].spec.StartOffset
 		})
 
-		// Find the highest continuous offset
-		currentOffset := committedOffset
-		highestContinuous := committedOffset
-
+		// Find the highest continuous coverage by processing jobs in order.
+		// Stop importing jobs if we find a gap.
 		for _, obs := range observations {
-			if obs.spec.StartOffset > currentOffset {
+			if err := ps.updatePlannedOffset(obs.spec); err != nil {
 				// Found a gap, can't continue the continuous range
 				break
 			}
-			if obs.spec.EndOffset > highestContinuous {
-				highestContinuous = obs.spec.EndOffset
-			}
-			currentOffset = obs.spec.EndOffset
-		}
 
-		ps.latestPlannedOffset = highestContinuous
-
-		// Process each observation up to the continuous offset
-		for _, rj := range observations {
-			if rj.spec.StartOffset >= highestContinuous {
-				// Skip jobs that start at or after our continuous point
-				continue
-			}
-
-			if rj.complete {
+			if obs.complete {
 				// Completed.
-				s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset)
+				s.advanceCommittedOffset(obs.spec.Topic, obs.spec.Partition, obs.spec.EndOffset)
 			} else {
 				// An in-progress job that's part of our continuous coverage.
-				if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
+				if err := s.jobs.importJob(obs.key, obs.workerID, obs.spec); err != nil {
+					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", obs.key.id, "epoch", obs.key.epoch, "worker", obs.workerID, "err", err)
 				}
 			}
 		}
-
-		level.Info(s.logger).Log("msg", "partition observation analysis complete",
-			"partition", partition,
-			"committed_offset", committedOffset,
-			"latest_planned_offset", highestContinuous)
 	}
 }
 
@@ -942,16 +933,3 @@ func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedul
 }
 
 var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPolicy)(nil)
-
-// updateLastSeenEndOffset validates and updates the last seen endOffset for this partition.
-// Returns an error if there's a gap in the sequence.
-func (ps *partitionState) updateLastSeenEndOffset(startOffset, endOffset int64) error {
-	if ps.latestPlannedOffset != 0 && startOffset != ps.latestPlannedOffset {
-		ps.metrics.jobContinuityViolations.Inc()
-		return fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
-			ps.latestPlannedOffset, startOffset)
-	}
-
-	ps.latestPlannedOffset = endOffset
-	return nil
-}
