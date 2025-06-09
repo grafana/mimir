@@ -125,6 +125,12 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	}
 
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries, a.MemoryConsumptionTracker)
+	// TODO: place this as part of Put call above.
+	defer func() {
+		for _, s := range innerSeries {
+			a.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(s.Labels)
+		}
+	}()
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -163,6 +169,9 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(groups), a.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
+	}
+	for _, s := range seriesMetadata {
+		a.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(s.Labels)
 	}
 
 	a.remainingGroups = make([]*group, 0, len(groups))
