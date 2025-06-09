@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// TODO: remove this to appropriate place.
 var StringSize = uint64(unsafe.Sizeof(""))
 
 type contextKey int
