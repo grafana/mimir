@@ -37,6 +37,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
 	"go.opentelemetry.io/otel"
@@ -85,6 +86,7 @@ const (
 	errAlertingRulesEvaluationDisabled          = "alerting rules evaluation is disabled for user"
 	errMaxRuleGroupsPerUserLimitExceeded        = "per-user rule groups limit (limit: %d actual: %d) exceeded"
 	errMaxRulesPerRuleGroupPerUserLimitExceeded = "per-user rules per rule group limit (limit: %d actual: %d) exceeded"
+	errMinRuleEvaluationIntervalExceeded        = "per-user minimum rule evaluation interval limit (limit: %s actual: %s) exceeded"
 
 	// errors
 	errListAllUser = "unable to list the ruler users"
@@ -638,6 +640,8 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
 	configs = filterRuleGroupsByEnabled(configs, r.limits, r.logger)
+	// Apply any changes required by tenant limits.
+	configs = applyRuleGroupLimits(configs, r.limits, r.cfg, r.logger)
 
 	// Sync the rule groups.
 	if len(userIDs) > 0 {
@@ -989,6 +993,49 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 	return filtered
 }
 
+func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, rulerCfg Config, logger log.Logger) map[string]rulespb.RuleGroupList {
+	if configs == nil {
+		return nil
+	}
+
+	adjusted := map[string]rulespb.RuleGroupList{}
+	for userID, groups := range configs {
+		adjusted[userID] = groups
+
+		tenantMinInterval := limits.RulerMinRuleEvaluationInterval(userID)
+		if tenantMinInterval <= 0 {
+			continue
+		}
+		if tenantMinInterval > rulerCfg.EvaluationInterval {
+			level.Warn(logger).Log(
+				"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
+				"user", userID,
+				"min_interval", tenantMinInterval,
+				"default_interval", rulerCfg.EvaluationInterval,
+			)
+		}
+
+		for _, group := range adjusted[userID] {
+			// 0 indicates to fall back to the default "ruler.evaluation-interval"
+			// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
+			if group.Interval == 0 && (tenantMinInterval <= rulerCfg.EvaluationInterval) {
+				continue
+			}
+			if group.Interval < tenantMinInterval {
+				level.Info(logger).Log(
+					"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
+					"user", userID,
+					"rule_group", group.Name,
+					"interval", group.Interval,
+					"min_interval", tenantMinInterval,
+				)
+				group.Interval = tenantMinInterval
+			}
+		}
+	}
+	return adjusted
+}
+
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
 func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse, string, error) {
 	userID, err := tenant.TenantID(ctx)
@@ -1334,6 +1381,23 @@ func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) 
 		return nil
 	}
 	return fmt.Errorf(errMaxRulesPerRuleGroupPerUserLimitExceeded, limit, rules)
+}
+
+func (r *Ruler) AssertMinRuleEvaluationInterval(userID string, interval time.Duration) error {
+	limit := r.limits.RulerMinRuleEvaluationInterval(userID)
+
+	if limit <= 0 {
+		return nil
+	}
+
+	// Zero or blank interval means to fall back to "ruler.evaluation-interval" - not actually use zero. It's an allowed value.
+	if interval == 0 {
+		return nil
+	}
+	if interval >= limit {
+		return nil
+	}
+	return fmt.Errorf(errMinRuleEvaluationIntervalExceeded, model.Duration(limit).String(), model.Duration(interval).String())
 }
 
 func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Request) {

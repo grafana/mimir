@@ -5360,6 +5360,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_min_rule_evaluation_interval",
+          "required": false,
+          "desc": "Minimum allowable evaluation interval for rule groups.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.min-rule-evaluation-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",

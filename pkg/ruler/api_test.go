@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/user"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1678,10 +1679,12 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
+	cfg.EvaluationInterval = 1 * time.Minute
 
 	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRuleGroupsPerTenant = 2
 		defaults.RulerMaxRulesPerRuleGroup = 1
+		defaults.RulerMinRuleEvaluationInterval = model.Duration(15 * time.Second)
 	})))
 
 	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
@@ -1711,6 +1714,56 @@ rules:
     test: test
 `,
 			output: "per-user rules per rule group limit (limit: 1 actual: 2) exceeded\n",
+		},
+		{
+			name:   "when exceeding the rule group eval interval limit",
+			status: 400,
+			input: `
+name: test
+interval: 14s
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test
+`,
+			output: "per-user minimum rule evaluation interval limit (limit: 15s actual: 14s) exceeded\n",
+		},
+		{
+			name:   "zero interval is allowed despite limit",
+			status: 202,
+			input: `
+name: test
+interval: 0s
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test 
+`,
+			output: `{"status":"success","data":null,"errorType":"","error":""}`,
+		},
+		{
+			name:   "blank interval is allowed despite limit",
+			status: 202,
+			input: `
+name: test
+rules:
+- alert: up_alert
+  expr: sum(up{}) > 1
+  for: 30s
+  annotations:
+    test: test
+  labels:
+    test: test 
+`,
+			output: `{"status":"success","data":null,"errorType":"","error":""}`,
 		},
 	}
 
@@ -1795,6 +1848,7 @@ func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
 	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 0
 		defaults.RulerMaxRulesPerRuleGroup = 0
+		defaults.RulerMinRuleEvaluationInterval = 0
 	})))
 
 	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
