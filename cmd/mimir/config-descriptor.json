@@ -5001,13 +5001,14 @@
         },
         {
           "kind": "field",
-          "name": "cardinality_api_max_series_limit",
+          "name": "cardinality_analysis_max_results",
           "required": false,
           "desc": "Maximum number of series that can be requested in a single cardinality API request.",
           "fieldValue": null,
           "fieldDefaultValue": 500,
           "fieldFlag": "querier.cardinality-api-max-series-limit",
-          "fieldType": "int"
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

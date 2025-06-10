@@ -3732,10 +3732,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 
-# Maximum number of series that can be requested in a single cardinality API
-# request.
+# (experimental) Maximum number of series that can be requested in a single
+# cardinality API request.
 # CLI flag: -querier.cardinality-api-max-series-limit
-[cardinality_api_max_series_limit: <int> | default = 500]
+[cardinality_analysis_max_results: <int> | default = 500]
 
 # (experimental) Maximum size of an active series or active native histogram
 # series request result shard in bytes. 0 to disable.
