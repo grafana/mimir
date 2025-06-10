@@ -188,7 +188,7 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
-			series, err = types.SeriesMetadataSlice(series).AppendToOther(o.MemoryConsumptionTracker, seriesToAppend...)
+			series, err = types.SeriesMetadataSlice(series).Append(o.MemoryConsumptionTracker, seriesToAppend...)
 			if err != nil {
 				return nil, err
 			}

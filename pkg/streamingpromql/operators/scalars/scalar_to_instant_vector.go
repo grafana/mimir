@@ -37,7 +37,7 @@ func (s *ScalarToInstantVector) SeriesMetadata(_ context.Context) ([]types.Serie
 		return nil, err
 	}
 
-	metadata, err = types.SeriesMetadataSlice(metadata).Append(s.MemoryConsumptionTracker, labels.EmptyLabels())
+	metadata, err = types.SeriesMetadataSlice(metadata).Append(s.MemoryConsumptionTracker, types.SeriesMetadata{Labels: labels.EmptyLabels()})
 	if err != nil {
 		return nil, err
 	}

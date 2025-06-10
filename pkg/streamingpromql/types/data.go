@@ -22,15 +22,8 @@ type SeriesMetadata struct {
 
 type SeriesMetadataSlice []SeriesMetadata
 
-func (s SeriesMetadataSlice) Append(tracker *limiter.MemoryConsumptionTracker, lbs labels.Labels) (SeriesMetadataSlice, error) {
-	err := tracker.IncreaseMemoryConsumptionForLabels(lbs)
-	if err != nil {
-		return nil, err
-	}
-	return append(s, SeriesMetadata{Labels: lbs}), nil
-}
-
-func (s SeriesMetadataSlice) AppendToOther(tracker *limiter.MemoryConsumptionTracker, otherSeriesMetadata ...SeriesMetadata) (SeriesMetadataSlice, error) {
+// Append appends this SeriesMetadataSlice with the provided otherSeriesMetadata.
+func (s SeriesMetadataSlice) Append(tracker *limiter.MemoryConsumptionTracker, otherSeriesMetadata ...SeriesMetadata) (SeriesMetadataSlice, error) {
 	for _, metadata := range otherSeriesMetadata {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		if err != nil {

@@ -410,7 +410,7 @@ func (g *GroupedVectorVectorBinaryOperation) computeOutputSeries() ([]types.Seri
 	outputSeries := make([]*groupedBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, o := range outputSeriesMap {
-		outputMetadata, err = types.SeriesMetadataSlice(outputMetadata).Append(g.MemoryConsumptionTracker, o.labels)
+		outputMetadata, err = types.SeriesMetadataSlice(outputMetadata).Append(g.MemoryConsumptionTracker, types.SeriesMetadata{Labels: o.labels})
 		if err != nil {
 			return nil, nil, nil, -1, nil, -1, err
 		}

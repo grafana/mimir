@@ -62,7 +62,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		return nil, err
 	}
 
-	metadata, err = types.SeriesMetadataSlice(metadata).Append(a.MemoryConsumptionTracker, a.Labels)
+	metadata, err = types.SeriesMetadataSlice(metadata).Append(a.MemoryConsumptionTracker, types.SeriesMetadata{Labels: a.Labels})
 	if err != nil {
 		return nil, err
 	}
