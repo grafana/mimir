@@ -56,7 +56,7 @@ func (s *ScalarConstant) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *ScalarConstant) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (s *ScalarConstant) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil
 }
