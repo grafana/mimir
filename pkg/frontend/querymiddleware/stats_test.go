@@ -42,9 +42,6 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				}},
 			},
 			expectedMetrics: strings.NewReader(`
-			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-			cortex_query_frontend_non_step_aligned_queries_total 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1
@@ -73,9 +70,6 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				}},
 			},
 			expectedMetrics: strings.NewReader(`
-			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-			cortex_query_frontend_non_step_aligned_queries_total 1
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1
@@ -108,9 +102,6 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				)},
 			},
 			expectedMetrics: strings.NewReader(`
-			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-			cortex_query_frontend_non_step_aligned_queries_total 0
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1
@@ -160,9 +151,6 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				},
 			},
 			expectedMetrics: strings.NewReader(`
-			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-			cortex_query_frontend_non_step_aligned_queries_total 0
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 2
@@ -203,9 +191,6 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 				},
 			},
 			expectedMetrics: strings.NewReader(`
-			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-			cortex_query_frontend_non_step_aligned_queries_total 0
 			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
 			# TYPE cortex_query_frontend_regexp_matcher_count counter
 			cortex_query_frontend_regexp_matcher_count 1

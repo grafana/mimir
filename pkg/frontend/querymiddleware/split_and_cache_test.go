@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -31,8 +30,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
@@ -1743,9 +1744,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.AddSpanTags(span)
-	}
+	request.AddSpanTags(trace.SpanFromContext(r.Context()))
 
 	response, err := q.handler.Do(r.Context(), request)
 	if err != nil {
@@ -2024,14 +2023,13 @@ func Test_evaluateAtModifier(t *testing.T) {
 				[2m:])
 			[10m:])`, nil,
 		},
+		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: unexpected character in duration expression: 'b'`)},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()
-			expr, err := parser.ParseExpr(tt.in)
-			require.NoError(t, err)
 			expectedExpr, err := parser.ParseExpr(tt.expected)
 			require.NoError(t, err)
-			out, err := evaluateAtModifierFunction(expr, start, end)
+			out, err := evaluateAtModifierFunction(tt.in, start, end)
 			if tt.err != nil {
 				require.Equal(t, tt.err, err)
 				return

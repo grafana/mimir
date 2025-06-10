@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	tmplhtml "html/template"
 	"net/url"
@@ -16,7 +17,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/grafana/alerting/templates/gomplate"
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/template"
@@ -24,15 +24,58 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/models"
+	"github.com/grafana/alerting/templates/gomplate"
 )
 
-type Template = template.Template
 type KV = template.KV
 type Data = template.Data
+type Template = template.Template
 
 var (
 	// Provides current time. Can be overwritten in tests.
-	timeNow = time.Now
+	timeNow        = time.Now
+	ErrInvalidKind = errors.New("invalid template kind")
+)
+
+// Kind represents the type or category of a template. It is used to differentiate between various template kinds.
+type Kind int
+
+func (k Kind) String() string {
+	switch k {
+	case GrafanaKind:
+		return "Grafana"
+	case MimirKind:
+		return "Mimir"
+	default:
+		return "Unknown"
+	}
+}
+
+// validKinds is a set of all recognized template kinds
+var validKinds = map[Kind]struct{}{
+	GrafanaKind: {},
+	MimirKind:   {},
+}
+
+// IsKnownKind checks if the provided kind is a recognized template kind
+func IsKnownKind(kind Kind) bool {
+	_, exists := validKinds[kind]
+	return exists
+}
+
+// ValidateKind checks if the provided Kind is a valid and recognized template kind.
+// Returns an error if the kind is invalid or unrecognized.
+func ValidateKind(kind Kind) error {
+	if !IsKnownKind(kind) {
+		return fmt.Errorf("%w: %s(%d)", ErrInvalidKind, kind.String(), kind)
+	}
+	return nil
+}
+
+const (
+	kindUnknown Kind = iota
+	GrafanaKind
+	MimirKind
 )
 
 type TemplateDefinition struct {
@@ -40,6 +83,24 @@ type TemplateDefinition struct {
 	Name string
 	// Template string that contains the template text.
 	Template string
+	// Kind of the template. Determines which base templates and functions are available.
+	Kind Kind
+}
+
+func (t TemplateDefinition) Validate() error {
+	if err := ValidateKind(t.Kind); err != nil {
+		return err
+	}
+	// Validate template contents. We try to stick as close to what will actually happen when the templates are parsed
+	// by the alertmanager as possible.
+	tmpl, err := template.New(defaultOptionsPerKind(t.Kind, "grafana")...)
+	if err != nil {
+		return fmt.Errorf("failed to create template: %w", err)
+	}
+	if err := tmpl.Parse(strings.NewReader(t.Template)); err != nil {
+		return fmt.Errorf("invalid template: %w", err)
+	}
+	return nil
 }
 
 type ExtendedAlert struct {
@@ -86,25 +147,25 @@ type ExtendedData struct {
 var DefaultTemplateName = "__default__"
 
 // DefaultTemplate returns a new Template with all default templates parsed.
-func DefaultTemplate(options ...template.Option) (TemplateDefinition, error) {
+func DefaultTemplate() (TemplateDefinition, error) {
 	// We cannot simply append the text of each default file together as there can be (and are) duplicate template
 	// names. Duplicate templates should override when parsed from separate files but will fail to parse if both are in
 	// the same file.
 	// So, instead we allow tmpltext to combine the templates and then convert it to a string afterwards.
 	// The underlying template is not accessible, so we capture it via template.Option.
-	var newTextTmpl *tmpltext.Template
-	var captureTemplate template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
-		newTextTmpl = text
-	}
 
-	// Call FromContent without any user-provided templates to get the combined default template.
-	_, err := FromContent(nil, append(options, captureTemplate)...)
+	// Call fromContent without any user-provided templates to get the combined default template.
+	tmpl, err := fromContent(defaultTemplatesPerKind(GrafanaKind), defaultOptionsPerKind(GrafanaKind, "grafana")...)
 	if err != nil {
 		return TemplateDefinition{}, err
 	}
 
 	var combinedTemplate strings.Builder
-	tmpls := newTextTmpl.Templates()
+	txt, err := tmpl.Text()
+	if err != nil {
+		return TemplateDefinition{}, err
+	}
+	tmpls := txt.Templates()
 	// Sort for a consistent order.
 	slices.SortFunc(tmpls, func(a, b *tmpltext.Template) int {
 		return strings.Compare(a.Name(), b.Name())
@@ -126,6 +187,7 @@ func DefaultTemplate(options ...template.Option) (TemplateDefinition, error) {
 	return TemplateDefinition{
 		Name:     DefaultTemplateName,
 		Template: combinedTemplate.String(),
+		Kind:     GrafanaKind,
 	}, nil
 }
 
@@ -139,26 +201,9 @@ func addFuncs(text *tmpltext.Template, html *tmplhtml.Template) {
 	html.Funcs(funcs)
 }
 
-func NewTemplate(options ...template.Option) (*Template, error) {
-	return template.New(append([]template.Option{addFuncs}, options...)...)
-}
-
-func NewRawTemplate(options ...template.Option) (*tmpltext.Template, error) {
-	var tmpl *tmpltext.Template
-	var capture template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
-		tmpl = text
-	}
-
-	_, err := NewTemplate(append(options, capture)...)
-	if err != nil {
-		return nil, err
-	}
-	return tmpl, nil
-}
-
-// FromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.
-func FromContent(tmpls []string, options ...template.Option) (*Template, error) {
-	t, err := NewTemplate(options...)
+// fromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.
+func fromContent(tmpls []string, options ...template.Option) (*Template, error) {
+	t, err := template.New(options...)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +220,6 @@ func FromContent(tmpls []string, options ...template.Option) (*Template, error) 
 			return nil, err
 		}
 		f.Close()
-	}
-
-	// Parse default template string.
-	err = t.Parse(strings.NewReader(DefaultTemplateString))
-	if err != nil {
-		return nil, err
 	}
 
 	// Parse all provided templates.
@@ -217,14 +256,14 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 	if alert.Annotations[models.OrgIDAnnotation] != "" {
 		orgID, err := strconv.ParseInt(alert.Annotations[models.OrgIDAnnotation], 10, 0)
 		if err != nil {
-			level.Debug(logger).Log("msg", "failed to parse org ID annotation", "error", err.Error())
+			level.Debug(logger).Log("msg", "failed to parse org ID annotation", "err", err.Error())
 		} else {
 			extended.OrgID = &orgID
 		}
 	}
 
 	if generatorURL, err := url.Parse(extended.GeneratorURL); err != nil {
-		level.Warn(logger).Log("msg", "failed to parse generator URL while extending template data", "url", extended.GeneratorURL, "error", err.Error())
+		level.Warn(logger).Log("msg", "failed to parse generator URL while extending template data", "url", extended.GeneratorURL, "err", err.Error())
 	} else if orgID := alert.Annotations[models.OrgIDAnnotation]; len(orgID) > 0 {
 		// Refactor note: We only modify the URL if there is something to add. Otherwise, the original string is kept.
 		setQueryParam(generatorURL, "orgId", orgID)
@@ -234,7 +273,7 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 	if alert.Annotations != nil {
 		if s, ok := alert.Annotations[models.ValuesAnnotation]; ok {
 			if err := json.Unmarshal([]byte(s), &extended.Values); err != nil {
-				level.Warn(logger).Log("msg", "failed to unmarshal values annotation", "error", err.Error())
+				level.Warn(logger).Log("msg", "failed to unmarshal values annotation", "err", err.Error())
 			}
 		}
 
@@ -248,7 +287,7 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 	}
 	baseURL, err := url.Parse(externalURL)
 	if err != nil {
-		level.Warn(logger).Log("msg", "failed to parse external URL while extending template data", "url", externalURL, "error", err.Error())
+		level.Warn(logger).Log("msg", "failed to parse external URL while extending template data", "url", externalURL, "err", err.Error())
 		return extended
 	}
 
@@ -375,7 +414,7 @@ func TmplText(ctx context.Context, tmpl *Template, alerts []*types.Alert, l log.
 	if groupKey, err := notify.ExtractGroupKey(ctx); err == nil {
 		data.GroupKey = groupKey.String()
 	} else {
-		level.Debug(l).Log("msg", "failed to extract group key from context", "error", err.Error())
+		level.Debug(l).Log("msg", "failed to extract group key from context", "err", err.Error())
 	}
 
 	return func(name string) (s string) {

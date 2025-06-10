@@ -170,8 +170,8 @@ type deceivingUploadBucket struct {
 	objectBaseName string
 }
 
-func (b deceivingUploadBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	actualErr := b.Bucket.Upload(ctx, name, r)
+func (b deceivingUploadBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	actualErr := b.Bucket.Upload(ctx, name, r, opts...)
 	if actualErr != nil {
 		return actualErr
 	} else if path.Base(name) == b.objectBaseName {

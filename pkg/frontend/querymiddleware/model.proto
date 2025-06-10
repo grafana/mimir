@@ -87,6 +87,7 @@ message Options {
 
 message QueryStatistics {
   uint64 EstimatedSeriesCount = 1;
+  string UserID = 2;
 }
 
 // CachedHTTPResponse holds a generic HTTP response in the query results cache.

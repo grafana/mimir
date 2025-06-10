@@ -7,43 +7,71 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/benbjohnson/clock"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 )
 
 var ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 
-type ClientConfiguration struct {
-	UserAgent string
+type clientConfiguration struct {
+	userAgent string
+	dialer    net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
 }
 
-var DefaultClientConfiguration = ClientConfiguration{
-	UserAgent: "Grafana",
-}
+// defaultDialTimeout is the default timeout for the dialer, 30 seconds to match http.DefaultTransport.
+const defaultDialTimeout = 30 * time.Second
 
 type Client struct {
-	log   logging.Logger
-	agent string
+	cfg clientConfiguration
 }
 
-func NewClient(log logging.Logger, cfg ClientConfiguration) *Client {
+func NewClient(opts ...ClientOption) *Client {
+	cfg := clientConfiguration{
+		userAgent: "Grafana",
+		dialer:    net.Dialer{},
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	if cfg.dialer.Timeout == 0 {
+		// Mostly defensive to ensure that timeout semantics don't change when given a custom dialer without a timeout.
+		cfg.dialer.Timeout = defaultDialTimeout
+	}
 	return &Client{
-		log:   log,
-		agent: cfg.UserAgent,
+		cfg: cfg,
 	}
 }
 
-func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhookSettings) error {
+type ClientOption func(*clientConfiguration)
+
+func WithUserAgent(userAgent string) ClientOption {
+	return func(c *clientConfiguration) {
+		c.userAgent = userAgent
+	}
+}
+
+func WithDialer(dialer net.Dialer) ClientOption {
+	return func(c *clientConfiguration) {
+		c.dialer = dialer
+	}
+}
+
+func (ns *Client) SendWebhook(ctx context.Context, l log.Logger, webhook *receivers.SendWebhookSettings) error {
 	// This method was moved from https://github.com/grafana/grafana/blob/71d04a326be9578e2d678f23c1efa61768e0541f/pkg/services/notifications/webhook.go#L38
 	if webhook.HTTPMethod == "" {
 		webhook.HTTPMethod = http.MethodPost
 	}
-	ns.log.Debug("Sending webhook", "url", webhook.URL, "http method", webhook.HTTPMethod)
+	level.Debug(l).Log("msg", "sending webhook", "url", webhook.URL, "http method", webhook.HTTPMethod)
 
 	if webhook.HTTPMethod != http.MethodPost && webhook.HTTPMethod != http.MethodPut {
 		return ErrInvalidMethod
@@ -64,7 +92,7 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 	}
 
 	request.Header.Set("Content-Type", webhook.ContentType)
-	request.Header.Set("User-Agent", ns.agent)
+	request.Header.Set("User-Agent", ns.cfg.userAgent)
 
 	if webhook.User != "" && webhook.Password != "" {
 		request.Header.Set("Authorization", GetBasicAuthHeader(webhook.User, webhook.Password))
@@ -74,10 +102,10 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 		request.Header.Set(k, v)
 	}
 
-	client := NewTLSClient(webhook.TLSConfig)
+	client := NewTLSClient(webhook.TLSConfig, ns.cfg.dialer.DialContext)
 
 	if webhook.HMACConfig != nil {
-		ns.log.Debug("Adding HMAC roundtripper to client")
+		level.Debug(l).Log("msg", "Adding HMAC roundtripper to client")
 		client.Transport, err = NewHMACRoundTripper(
 			client.Transport,
 			clock.New(),
@@ -86,7 +114,7 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 			webhook.HMACConfig.TimestampHeader,
 		)
 		if err != nil {
-			ns.log.Error("Failed to add HMAC roundtripper to client", "error", err)
+			level.Error(l).Log("msg", "Failed to add HMAC roundtripper to client", "err", err)
 			return err
 		}
 	}
@@ -97,7 +125,7 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			ns.log.Warn("Failed to close response body", "err", err)
+			level.Warn(l).Log("msg", "Failed to close response body", "err", err)
 		}
 	}()
 
@@ -109,17 +137,17 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 	if webhook.Validation != nil {
 		err := webhook.Validation(body, resp.StatusCode)
 		if err != nil {
-			ns.log.Debug("Webhook failed validation", "url", url.Redacted(), "statuscode", resp.Status, "body", string(body), "error", err)
+			level.Debug(l).Log("msg", "Webhook failed validation", "url", url.Redacted(), "statuscode", resp.Status, "body", string(body), "err", err)
 			return fmt.Errorf("webhook failed validation: %w", err)
 		}
 	}
 
 	if resp.StatusCode/100 == 2 {
-		ns.log.Debug("Webhook succeeded", "url", url.Redacted(), "statuscode", resp.Status)
+		level.Debug(l).Log("msg", "Webhook succeeded", "url", url.Redacted(), "statuscode", resp.Status)
 		return nil
 	}
 
-	ns.log.Debug("Webhook failed", "url", url.Redacted(), "statuscode", resp.Status, "body", string(body))
+	level.Debug(l).Log("msg", "Webhook failed", "url", url.Redacted(), "statuscode", resp.Status, "body", string(body))
 	return fmt.Errorf("webhook response status %v", resp.Status)
 }
 

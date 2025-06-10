@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -181,19 +180,22 @@ func main() {
 
 	var ballast = ballast.Allocate(mainFlags.ballastBytes)
 
-	// In testing mode skip JAEGER setup to avoid panic due to
+	// In testing mode skip Tracing setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
 	if !testMode {
-		name := os.Getenv("JAEGER_SERVICE_NAME")
-		if name == "" {
+		var name string
+		if otelEnvName := os.Getenv("OTEL_SERVICE_NAME"); otelEnvName != "" {
+			name = otelEnvName
+		} else if jaegerEnvName := os.Getenv("JAEGER_SERVICE_NAME"); jaegerEnvName != "" {
+			name = jaegerEnvName
+		} else {
 			name = "mimir"
 			if len(cfg.Target) == 1 {
 				name += "-" + cfg.Target[0]
 			}
 		}
 
-		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3)); err != nil {
+		if trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
 			defer trace.Close()

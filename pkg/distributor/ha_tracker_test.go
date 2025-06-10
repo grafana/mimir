@@ -800,6 +800,56 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestHATrackerCheckReplicaShouldFixZeroElectedAtTimestamp(t *testing.T) {
+	const (
+		replica = "r1"
+		cluster = "c1"
+		userID  = "user"
+	)
+
+	var (
+		ctx   = context.Background()
+		codec = GetReplicaDescCodec()
+	)
+
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+	c, err := newHaTracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Second,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+	})
+
+	// Create an entry with zero ElectedAt timestamp.
+	initialReceivedAt := time.Now()
+	require.NoError(t, c.client.CAS(ctx, fmt.Sprintf("%s/%s", userID, cluster), func(in interface{}) (out interface{}, retry bool, err error) {
+		return &ReplicaDesc{
+			Replica:        replica,
+			ReceivedAt:     timestamp.FromTime(initialReceivedAt),
+			DeletedAt:      0,
+			ElectedAt:      0,
+			ElectedChanges: 0,
+		}, true, nil
+	}))
+
+	// We expect a zero value for the ElectedAt timestamp.
+	checkReplicaTimestamp(t, 2*time.Second, c, userID, cluster, replica, initialReceivedAt, time.Unix(0, 0))
+
+	// Advance time and replica timestamp. This should fix the ElectedAt timestamp too.
+	updatedReceivedAt := initialReceivedAt.Add(2 * time.Second)
+	require.NoError(t, c.checkReplica(context.Background(), userID, cluster, replica, updatedReceivedAt))
+	checkReplicaTimestamp(t, 2*time.Second, c, userID, cluster, replica, updatedReceivedAt, updatedReceivedAt)
+}
+
 // Test that writes only happen every write timeout.
 func TestHATrackerCheckReplicaMultiUser(t *testing.T) {
 	replica := "r1"

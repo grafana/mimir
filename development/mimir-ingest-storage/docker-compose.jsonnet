@@ -13,7 +13,7 @@ std.manifestYamlDoc({
     self.kafka_2 +
     self.kafka_3 +
     self.redpanda_console +
-    self.jaeger +
+    self.tempo +
     self.blockbuilder +
     self.blockbuilderscheduler +
     {},
@@ -263,21 +263,24 @@ std.manifestYamlDoc({
     },
   },
 
-  jaeger:: {
-    jaeger: {
-      // Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
-      image: 'jaegertracing/all-in-one:1.62.0',
-      ports: ['16686:16686', '14268'],
+  tempo:: {
+    tempo: {
+      image: 'grafana/tempo:latest',
+      command: ['-config.file=/etc/config/tempo.yaml'],
+      volumes: ['./config:/etc/config'],
+      ports: [
+        '3200',  // tempo: this is where metrics are scraped and where datasource queries are sent.
+        '9095',  // tempo grpc
+        '4317',  // otlp grpc
+        '4318',  // otlp http, this is the one we use for local tracing.
+      ],
     },
   },
 
-  local jaegerEnv(appName) = {
-    JAEGER_AGENT_HOST: 'jaeger',
-    JAEGER_AGENT_PORT: 6831,
-    JAEGER_SAMPLER_TYPE: 'const',
-    JAEGER_SAMPLER_PARAM: 1,
-    JAEGER_TAGS: 'app=%s' % appName,
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
+  local otelTracingEnv(appName) = {
+    // We could send traces to Alloy and let it send them to Tempo,
+    // but this is local so let's skip one hop and send them directly to Tempo.
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://tempo:4318/v1/traces',
   },
 
   // This function builds docker-compose declaration for Mimir service.
@@ -292,7 +295,7 @@ std.manifestYamlDoc({
         kafka_1: { condition: 'service_healthy' },
         kafka_2: { condition: 'service_healthy' },
       },
-      env: jaegerEnv(self.target),
+      env: otelTracingEnv(self.target),
       extraArguments: [],
       debug: false,
       debugPort: self.publishedHttpPort + 3000,

@@ -19,10 +19,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/prometheus/prometheus/util/stats"
+	promstats "github.com/prometheus/prometheus/util/stats"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
@@ -33,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -51,7 +51,7 @@ type Query struct {
 	originalExpression string
 
 	cancel                   context.CancelCauseFunc
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
 	lookbackDelta            time.Duration
@@ -66,7 +66,7 @@ type Query struct {
 	result *promql.Result
 }
 
-func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange) (*Query, error) {
+func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange, originalExpression string) (*Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
@@ -81,14 +81,20 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, originalExpression)
+	stats, err := types.NewQueryStats(timeRange, e.enablePerStepStats && opts.EnablePerStepStats(), memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 	q := &Query{
 		queryable:                queryable,
 		engine:                   e,
-		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption),
+		memoryConsumptionTracker: memoryConsumptionTracker,
 		annotations:              annotations.New(),
-		stats:                    &types.QueryStats{},
+		stats:                    stats,
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
+		originalExpression:       originalExpression,
 	}
 
 	return q, nil
@@ -116,12 +122,11 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 		}
 	}
 
-	q, err := e.newQuery(ctx, queryable, opts, timeRange)
+	q, err := e.newQuery(ctx, queryable, opts, timeRange, qs)
 	if err != nil {
 		return nil, err
 	}
 
-	q.originalExpression = qs
 	q.statement = &parser.EvalStmt{
 		Expr:          expr,
 		Start:         start,
@@ -179,22 +184,18 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
 		lookbackDelta := q.lookbackDelta
-
-		return &selectors.InstantVectorSelector{
+		selector := &selectors.Selector{
+			Queryable:                q.queryable,
+			TimeRange:                timeRange,
+			Timestamp:                e.Timestamp,
+			Offset:                   e.OriginalOffset.Milliseconds(),
+			LookbackDelta:            lookbackDelta,
+			Matchers:                 e.LabelMatchers,
+			ExpressionPosition:       e.PositionRange(),
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			Selector: &selectors.Selector{
-				Queryable:     q.queryable,
-				TimeRange:     timeRange,
-				Timestamp:     e.Timestamp,
-				Offset:        e.OriginalOffset.Milliseconds(),
-				LookbackDelta: lookbackDelta,
-				Matchers:      e.LabelMatchers,
+		}
 
-				ExpressionPosition:       e.PositionRange(),
-				MemoryConsumptionTracker: q.memoryConsumptionTracker,
-			},
-			Stats: q.stats,
-		}, nil
+		return selectors.NewInstantVectorSelector(selector, q.memoryConsumptionTracker, false), nil
 	case *parser.AggregateExpr:
 		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
@@ -409,7 +410,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
 		}
 
-		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
+		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
 
 	case *parser.SubqueryExpr:
 		step := e.Step
@@ -427,6 +428,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 		subquery := operators.NewSubquery(
 			inner,
 			timeRange,
+			subqueryTimeRange,
 			e.Timestamp,
 			e.OriginalOffset,
 			e.Range,
@@ -558,6 +560,11 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		defer q.root.Close()
 	}
 
+	// Add the memory consumption tracker to the context of this query before executing it so
+	// that we can pass it to the rest of the read path and keep track of memory used loading
+	// chunks from store-gateways or ingesters.
+	ctx = limiter.AddMemoryTrackerToContext(ctx, q.memoryConsumptionTracker)
+
 	ctx, cancel := context.WithCancelCause(ctx)
 	q.cancel = cancel
 
@@ -585,7 +592,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 		msg = append(msg,
 			"msg", "query stats",
-			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes(),
+			"estimatedPeakMemoryConsumption", int64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
 			"expr", q.originalExpression,
 		)
 
@@ -606,6 +613,13 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		level.Info(logger).Log(msg...)
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
 	}()
+
+	err = q.root.Prepare(ctx, &types.PrepareParams{
+		QueryStats: q.stats,
+	})
+	if err != nil {
+		return &promql.Result{Err: fmt.Errorf("failed to prepare query: %w", err)}
+	}
 
 	switch root := q.root.(type) {
 	case types.RangeVectorOperator:
@@ -831,6 +845,7 @@ func (q *Query) Close() {
 	if q.cancel != nil {
 		q.cancel(errQueryClosed)
 	}
+	q.stats.Close()
 
 	if q.result == nil {
 		return
@@ -859,8 +874,8 @@ func (q *Query) Close() {
 	q.result.Value = nil
 
 	if q.engine.pedantic && q.result.Err == nil {
-		if q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes() > 0 {
-			panic("Memory consumption tracker still estimates > 0 bytes used. This indicates something has not been returned to a pool.")
+		if bytesUsed := q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(); bytesUsed > 0 {
+			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool.", bytesUsed, q.originalExpression))
 		}
 	}
 }
@@ -869,11 +884,15 @@ func (q *Query) Statement() parser.Statement {
 	return q.statement
 }
 
-func (q *Query) Stats() *stats.Statistics {
-	return &stats.Statistics{
-		Timers: stats.NewQueryTimers(),
-		Samples: &stats.QuerySamples{
-			TotalSamples: q.stats.TotalSamples,
+func (q *Query) Stats() *promstats.Statistics {
+	return &promstats.Statistics{
+		Timers: promstats.NewQueryTimers(),
+		// TODO: Returned promstats.QuerySamples won't report TotalSamplesPerStepMap() properly.
+		// See this for details: https://github.com/grafana/mimir/pull/11416#discussion_r2110930357
+		Samples: &promstats.QuerySamples{
+			TotalSamples:        q.stats.TotalSamples,
+			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
+			EnablePerStepStats:  q.stats.EnablePerStepStats,
 		},
 	}
 }

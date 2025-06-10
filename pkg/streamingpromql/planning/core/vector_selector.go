@@ -60,23 +60,18 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 	if err != nil {
 		return nil, err
 	}
-
-	o := &selectors.InstantVectorSelector{
+	selector := &selectors.Selector{
+		Queryable:                params.Queryable,
+		TimeRange:                timeRange,
+		Timestamp:                TimestampFromTime(v.Timestamp),
+		Offset:                   v.Offset.Milliseconds(),
+		LookbackDelta:            params.LookbackDelta,
+		Matchers:                 matchers,
+		ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-		Selector: &selectors.Selector{
-			Queryable:                params.Queryable,
-			TimeRange:                timeRange,
-			Timestamp:                TimestampFromTime(v.Timestamp),
-			Offset:                   v.Offset.Milliseconds(),
-			LookbackDelta:            params.LookbackDelta,
-			Matchers:                 matchers,
-			ExpressionPosition:       v.ExpressionPosition.ToPrometheusType(),
-			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-		},
-		Stats: params.Stats,
 	}
 
-	return planning.NewSingleUseOperatorFactory(o), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, false)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {

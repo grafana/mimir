@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -44,6 +43,9 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -61,6 +63,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/distributor")
 
 func init() {
 	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
@@ -918,24 +922,24 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
-// Returns a boolean stating if the timeseries should be removed from the request, and an error explaining the first validation finding.
+// Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (bool, error) {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
 	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
-		return true, err
+		return err
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
 
 	if err := d.validateSamples(now, ts, userID, group); err != nil {
-		return true, err
+		return err
 	}
 
 	if err := d.validateHistograms(now, ts, userID, group); err != nil {
-		return true, err
+		return err
 	}
 
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
@@ -945,7 +949,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
 	}
 
-	return false, nil
+	return nil
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -997,11 +1001,11 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
-		span := opentracing.SpanFromContext(ctx)
-		if span != nil {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
-		}
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(
+			attribute.String("cluster", cluster),
+			attribute.String("replica", replica),
+		)
 
 		numSamples := 0
 		now := time.Now()
@@ -1223,7 +1227,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
-			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1236,9 +1240,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
 				}
-				if shouldRemove {
-					removeIndexes = append(removeIndexes, tsIdx)
-				}
+				removeIndexes = append(removeIndexes, tsIdx)
 				continue
 			}
 
@@ -1341,12 +1343,12 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			numExemplars += len(ts.Exemplars)
 		}
 
-		span := opentracing.SpanFromContext(ctx)
-		if span != nil {
-			span.SetTag("write.samples", numSamples)
-			span.SetTag("write.exemplars", numExemplars)
-			span.SetTag("write.metadata", len(req.Metadata))
-		}
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(
+			attribute.Int("write.samples", numSamples),
+			attribute.Int("write.exemplars", numExemplars),
+			attribute.Int("write.metadata", len(req.Metadata)),
+		)
 
 		d.incomingRequests.WithLabelValues(userID, req.ProtocolVersion()).Inc()
 		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
@@ -1658,10 +1660,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return nil
 	}
 
-	span := opentracing.SpanFromContext(ctx)
-	if span != nil {
-		span.SetTag("organization", userID)
-	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("organization", userID))
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
 		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
@@ -1728,6 +1728,24 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return ctx
 	}
 
+	var partitionsRequestContext func() context.Context
+	var partitionsRequestContextAndCancel func() (context.Context, context.CancelFunc)
+
+	if d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled && d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime > 0 {
+		// Create a separate context for partitions with shorter timeout during migration
+		partitionsRequestContextAndCancel = sync.OnceValues(func() (context.Context, context.CancelFunc) {
+			timeout := d.cfg.IngestStorageConfig.Migration.IngestStorageMaxWaitTime
+			return context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		})
+
+		partitionsRequestContext = func() context.Context {
+			ctx, _ := partitionsRequestContextAndCancel()
+			return ctx
+		}
+	} else {
+		partitionsRequestContext = remoteRequestContext
+	}
+
 	batchCleanup := func() {
 		// Notify the provided callback that it's now safe to run the cleanup because there are no
 		// more in-flight requests to the backend.
@@ -1736,6 +1754,10 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		// All requests have completed, so it's now safe to cancel the requests context to release resources.
 		_, cancel := remoteRequestContextAndCancel()
 		cancel()
+		if partitionsRequestContextAndCancel != nil {
+			_, cancel = partitionsRequestContextAndCancel()
+			cancel()
+		}
 	}
 
 	batchOptions := ring.DoBatchOptions{
@@ -1749,7 +1771,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
 	}
 	if ingestersSubring == nil {
-		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}
 
 	// Prepare a callback function that will call the input cleanup callback function only after
@@ -1773,7 +1795,7 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	go func() {
 		defer wg.Done()
 
-		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, partitionsRequestContext, batchOptions)
 	}()
 
 	// Wait until all backends have done.
@@ -1783,7 +1805,11 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
 	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
 	if partitionsErr != nil {
-		return partitionsErr
+		if d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled && d.cfg.IngestStorageConfig.Migration.IgnoreIngestStorageErrors {
+			level.Warn(d.log).Log("msg", "failed to write to ingest storage", "error", partitionsErr)
+		} else {
+			return partitionsErr
+		}
 	}
 	return ingestersErr
 }
@@ -2456,7 +2482,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 		// activeSeriesResponse, its return value is never used.
 		type ignored struct{}
 
-		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
+		log, ctx := spanlogger.New(ctx, d.log, tracer, "Distributor.ActiveSeries.queryIngester")
 		defer log.Finish()
 
 		stream, err := client.ActiveSeries(ctx, req)

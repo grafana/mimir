@@ -16,12 +16,12 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -342,7 +342,7 @@ func (s *splitAndCacheMiddleware) splitRequestByInterval(req MetricsQueryRequest
 // the returned extents are empty.
 // Extents created from queries that outlived current configured TTL are filtered out.
 func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now time.Time, tenantIDs []string, keys []string) [][]Extent {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.logger, "fetchCacheExtents")
+	spanLog, ctx := spanlogger.New(ctx, s.logger, tracer, "fetchCacheExtents")
 	defer spanLog.Finish()
 
 	// Fast path.
@@ -635,10 +635,10 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 			// partialStats are the statistics for this partial query, which we'll need to
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
-			var span opentracing.Span
-			span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
+			var span trace.Span
+			childCtx, span = tracer.Start(childCtx, "doRequests")
 			req.AddSpanTags(span)
-			defer span.Finish()
+			defer span.End()
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)
@@ -660,7 +660,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := evaluateAtModifierFunction(req.GetParsedQuery(), req.GetStart(), req.GetEnd())
+	query, err := evaluateAtModifierFunction(req.GetQuery(), req.GetStart(), req.GetEnd())
 	if err != nil {
 		return nil, err
 	}
@@ -695,10 +695,10 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 // evaluateAtModifierFunction parse the query and evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
 // For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
 // If the modifier is already a constant, it will be returned as is.
-func evaluateAtModifierFunction(expr parser.Expr, start, end int64) (string, error) {
-	expr, err := cloneExpr(expr) // Clone to avoid changing the original.
+func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
+	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", err
+		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		switch exprAt := n.(type) {
@@ -722,11 +722,6 @@ func evaluateAtModifierFunction(expr parser.Expr, start, end int64) (string, err
 		return nil
 	})
 	return expr.String(), nil
-}
-
-// cloneExpr is a helper function to clone an expr.
-func cloneExpr(expr parser.Expr) (parser.Expr, error) {
-	return parser.ParseExpr(expr.String())
 }
 
 // Round up to the step before the next interval boundary.

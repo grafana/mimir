@@ -37,6 +37,67 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Queries / sec by read path\nQueries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 1,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))), \"proxy\", \"Remote ruler read path\", \"proxy\", \"^alternate_query_proxy$\"),\"proxy\", \"Main read path\", \"proxy\", \"^query_proxy$\")",
+                        "format": "time_series",
+                        "legendFormat": "{{proxy}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Queries / sec by read path",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Gateway",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
                   "description": "### Queue duration\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
@@ -61,7 +122,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 1,
+                  "id": 2,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -140,7 +201,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 2,
+                  "id": 3,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -220,7 +281,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 3,
+                  "id": 4,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -270,7 +331,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 4,
+                  "id": 5,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -331,7 +392,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 5,
+                  "id": 6,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -411,7 +472,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 6,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -461,7 +522,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 7,
+                  "id": 8,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -522,7 +583,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 8,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -571,7 +632,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 9,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -621,7 +682,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 10,
+                  "id": 11,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -683,7 +744,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 12,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -732,7 +793,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 12,
+                  "id": 13,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -823,7 +884,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
+                  "id": 14,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -884,7 +945,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 14,
+                  "id": 15,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -945,7 +1006,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 15,
+                  "id": 16,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1018,7 +1079,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 17,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1030,7 +1091,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
@@ -1097,7 +1158,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 18,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1109,7 +1170,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
@@ -1194,7 +1255,7 @@
                         }
                      ]
                   },
-                  "id": 18,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1205,7 +1266,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{$read_path_matcher}[$__rate_interval]))",
@@ -1216,7 +1277,19 @@
                   ],
                   "title": "Consistency checks failed",
                   "type": "timeseries"
-               },
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Querier",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
                {
                   "datasource": "$datasource",
                   "description": "### Rejected queries\nThe proportion of all queries received by queriers that were rejected for some reason.\n\n",
@@ -1244,7 +1317,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1255,7 +1328,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
@@ -1266,13 +1339,105 @@
                   ],
                   "title": "Rejected queries",
                   "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                  "id": 21,
+                  "options": {
+                     "calculate": true,
+                     "calculation": {
+                        "xBuckets": {
+                           "mode": "count",
+                           "value": 60
+                        },
+                        "yBuckets": {
+                           "mode": "count",
+                           "value": 40
+                        }
+                     },
+                     "cellGap": 0,
+                     "cellValues": {
+                        "unit": "reqps"
+                     },
+                     "legend": {
+                        "show": false
+                     },
+                     "tooltip": {
+                        "yHistogram": true
+                     },
+                     "yAxis": {
+                        "min": 0,
+                        "unit": "bytes"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Estimated memory consumption",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Estimated per-query memory consumption",
+                  "type": "heatmap"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 22,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)",
+                        "format": "time_series",
+                        "legendFormat": "Queries",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Fallback to Prometheus' query engine",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Querier",
+            "title": "",
             "titleSize": "h6"
          },
          {
@@ -1304,7 +1469,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1395,7 +1560,7 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1449,7 +1614,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 25,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1541,7 +1706,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1595,7 +1760,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1643,7 +1808,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1703,7 +1868,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1751,7 +1916,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1801,7 +1966,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1862,7 +2027,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1941,7 +2106,7 @@
                         }
                      ]
                   },
-                  "id": 30,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2026,7 +2191,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2092,7 +2257,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2140,7 +2305,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 36,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2220,7 +2385,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 37,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2312,7 +2477,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2361,7 +2526,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2410,7 +2575,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {

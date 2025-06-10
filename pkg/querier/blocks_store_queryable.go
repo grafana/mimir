@@ -56,6 +56,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+var errAlreadyClosed = errors.New("querier already closed")
+
 // BlocksStoreSet is the interface used to get the clients to query series on a set of blocks.
 type BlocksStoreSet interface {
 	services.Service
@@ -326,7 +328,9 @@ type blocksStoreQuerier struct {
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
 
-	streamReaders []*storeGatewayStreamReader
+	streamReadersMtx sync.Mutex
+	closed           bool
+	streamReaders    []*storeGatewayStreamReader
 }
 
 // Select implements storage.Querier interface.
@@ -341,7 +345,7 @@ func (q *blocksStoreQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 }
 
 func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelNames")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -386,7 +390,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 }
 
 func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelValues")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -430,6 +434,11 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, hints
 }
 
 func (q *blocksStoreQuerier) Close() error {
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	q.closed = true
+
 	for _, r := range q.streamReaders {
 		r.FreeBuffer()
 	}
@@ -438,7 +447,7 @@ func (q *blocksStoreQuerier) Close() error {
 }
 
 func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.SelectHints, tenantID string, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.selectSorted")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Finish()
 
 	minT, maxT := sp.Start, sp.End
@@ -479,11 +488,9 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	if len(resStreamReaders) > 0 {
 		spanLog.DebugLog("msg", "starting streaming")
 
-		q.streamReaders = append(q.streamReaders, resStreamReaders...)
-
-		// If this was a streaming call, start fetching streaming chunks here.
-		for _, r := range resStreamReaders {
-			r.StartBuffering()
+		err := q.startBuffering(resStreamReaders)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
 		}
 
 		spanLog.DebugLog("msg", "streaming started, waiting for chunks estimates")
@@ -503,6 +510,29 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	return series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
 		resWarnings)
+}
+
+func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamReader) error {
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	if q.closed {
+		// We were closed while loading, give up now.
+		for _, r := range streamReaders {
+			r.Close()
+		}
+
+		return errAlreadyClosed
+	}
+
+	q.streamReaders = append(q.streamReaders, streamReaders...)
+
+	// If this was a streaming call, start fetching streaming chunks here.
+	for _, r := range streamReaders {
+		r.StartBuffering()
+	}
+
+	return nil
 }
 
 type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)
@@ -754,6 +784,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
 		streams       []storegatewaypb.StoreGateway_SeriesClient
+		memoryTracker = limiter.MemoryTrackerFromContextWithFallback(ctx)
 	)
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
@@ -761,7 +792,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
+			log, reqCtx := spanlogger.New(reqCtx, spanLog, tracer, "blocksStoreQuerier.fetchSeriesFromStores")
 			defer log.Finish()
 			log.SetTag("store_gateway_address", c.RemoteAddress())
 
@@ -870,7 +901,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			} else if len(myStreamingSeriesLabels) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeriesLabels)))
-				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeriesLabels), queryLimiter, reqStats, q.metrics, q.logger)
+				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeriesLabels), queryLimiter, memoryTracker, reqStats, q.metrics, q.logger)
 				level.Debug(log).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
 					"fetched series", len(myStreamingSeriesLabels),

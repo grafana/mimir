@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
+	"go.opentelemetry.io/otel/trace"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
@@ -225,7 +225,7 @@ type remoteReadQueryRequest struct {
 	promQuery string
 }
 
-func (r *remoteReadQueryRequest) AddSpanTags(_ opentracing.Span) {
+func (r *remoteReadQueryRequest) AddSpanTags(_ trace.Span) {
 	// No-op.
 }
 
@@ -280,16 +280,6 @@ func (r *remoteReadQueryRequest) GetPath() string {
 
 func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
-}
-
-func (r *remoteReadQueryRequest) GetParsedQuery() parser.Expr {
-	if r.promQuery != "" {
-		expr, err := parser.ParseExpr(r.promQuery)
-		if err == nil {
-			return expr
-		}
-	}
-	return nil
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {

@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -103,7 +104,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -125,7 +126,14 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	defer cancel()
 	mapper := astmapper.NewInstantQuerySplitter(mapperCtx, splitInterval, s.logger, mapperStats)
 
-	instantSplitQuery, err := mapper.Map(req.GetParsedQuery())
+	expr, err := parser.ParseExpr(req.GetQuery())
+	if err != nil {
+		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
+		s.metrics.splittingSkipped.WithLabelValues(skippedReasonParsingFailed).Inc()
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
+	}
+
+	instantSplitQuery, err := mapper.Map(expr)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 			level.Error(spanLog).Log("msg", "timeout while splitting query by instant interval, please fill in a bug report with this query, falling back to try executing without splitting", "err", err)

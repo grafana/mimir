@@ -214,6 +214,16 @@
         },
         {
           "kind": "field",
+          "name": "grpc_collect_max_streams_by_conn",
+          "required": false,
+          "desc": "If true, the max streams by connection gauge will be collected.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "server.grpc-collect-max-streams-by-conn",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "proxy_protocol_enabled",
           "required": false,
           "desc": "Enables PROXY protocol.",
@@ -703,6 +713,26 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.log-request-headers-exclude-list",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_headers",
+          "required": false,
+          "desc": "Optionally add request headers to tracing spans.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.trace-request-headers",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_exclude_headers_list",
+          "required": false,
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.trace-request-headers-exclude-list",
           "fieldType": "string"
         },
         {
@@ -2162,7 +2192,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -7054,7 +7084,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -7867,6 +7897,26 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.migration.distributor-send-to-ingesters-enabled",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ignore_ingest_storage_errors",
+              "required": false,
+              "desc": "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.migration.ignore-ingest-storage-errors",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingest_storage_max_wait_time",
+              "required": false,
+              "desc": "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.migration.ingest-storage-max-wait-time",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,
@@ -9239,7 +9289,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -9802,7 +9852,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -10389,7 +10439,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -15711,7 +15761,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -16926,6 +16976,17 @@
           "fieldFlag": "alertmanager.enable-state-cleanup",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "strict_initialization",
+          "required": false,
+          "desc": "Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.strict-initialization-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

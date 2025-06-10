@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // MergeSeries merges the series in data into a single InstantVectorSeriesData, or returns information about a conflict between series.
@@ -25,7 +25,7 @@ import (
 // series, then sourceSeriesIndices would be [0, 3, 9]. These indices are used to include source series information when a conflict occurs.
 //
 // MergeSeries re-orders both data and sourceSeriesIndices.
-func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, *MergeConflict, error) {
+func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, *MergeConflict, error) {
 	if len(data) == 1 {
 		// Fast path: if there's only one series on this side, there's no merging required.
 		return data[0], nil, nil
@@ -73,7 +73,7 @@ func MergeSeries(data []types.InstantVectorSeriesData, sourceSeriesIndices []int
 	return types.InstantVectorSeriesData{Floats: floats, Histograms: histograms}, nil, nil
 }
 
-func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]promql.FPoint, *MergeConflict, error) {
+func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *MergeConflict, error) {
 	if len(data) == 0 {
 		return nil, nil, nil
 	}
@@ -196,7 +196,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 	}
 }
 
-func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]promql.HPoint, *MergeConflict, error) {
+func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIndices []int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.HPoint, *MergeConflict, error) {
 	if len(data) == 0 {
 		return nil, nil, nil
 	}
@@ -321,7 +321,7 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 	}
 }
 
-func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	clear(s)
 	types.HPointSlicePool.Put(s, memoryConsumptionTracker)
 }

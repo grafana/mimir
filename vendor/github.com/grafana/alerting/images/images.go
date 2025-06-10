@@ -26,6 +26,8 @@ type ImageContent struct {
 }
 
 type Image struct {
+	// ID is the unique identifier for the image.
+	ID string
 	// URL is the public URL of the image. This URL should not be treated as a trusted source and should not be
 	// downloaded directly. RawData should be used to retrieve the image data.
 	URL string

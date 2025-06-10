@@ -8,13 +8,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -39,17 +41,15 @@ var (
 type Notifier struct {
 	*receivers.Base
 	tmpl     *templates.Template
-	log      logging.Logger
 	images   images.Provider
 	ns       receivers.WebhookSender
 	settings Config
 }
 
 // New is the constructor for the pushover notifier
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -59,9 +59,10 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify sends an alert notification to Slack.
 func (pn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	headers, uploadBody, err := pn.genPushoverBody(ctx, as...)
+	l := pn.GetLogger(ctx)
+	headers, uploadBody, err := pn.genPushoverBody(ctx, l, as...)
 	if err != nil {
-		pn.log.Error("Failed to generate body for pushover", "error", err)
+		level.Error(l).Log("msg", "Failed to generate body for pushover", "err", err)
 		return false, err
 	}
 
@@ -72,8 +73,8 @@ func (pn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		Body:       uploadBody.String(),
 	}
 
-	if err := pn.ns.SendWebhook(ctx, cmd); err != nil {
-		pn.log.Error("failed to send pushover notification", "error", err, "webhook", pn.Name)
+	if err := pn.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("msg", "failed to send pushover notification", "err", err)
 		return false, err
 	}
 
@@ -83,7 +84,7 @@ func (pn *Notifier) SendResolved() bool {
 	return !pn.GetDisableResolveMessage()
 }
 
-func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (map[string]string, bytes.Buffer, error) {
+func (pn *Notifier) genPushoverBody(ctx context.Context, l log.Logger, as ...*types.Alert) (map[string]string, bytes.Buffer, error) {
 	key, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return nil, bytes.Buffer{}, err
@@ -101,7 +102,7 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 	}
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, pn.tmpl, as, pn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, pn.tmpl, as, l, &tmplErr)
 
 	if err := w.WriteField("user", tmpl(pn.settings.UserKey)); err != nil {
 		return nil, b, fmt.Errorf("failed to write the user: %w", err)
@@ -113,12 +114,12 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 
 	title, truncated := receivers.TruncateInRunes(tmpl(pn.settings.Title), pushoverMaxTitleLenRunes)
 	if truncated {
-		pn.log.Warn("Truncated title", "incident", key, "max_runes", pushoverMaxTitleLenRunes)
+		level.Warn(l).Log("msg", "Truncated title", "incident", key, "max_runes", pushoverMaxTitleLenRunes)
 	}
 	message := tmpl(pn.settings.Message)
 	message, truncated = receivers.TruncateInRunes(message, pushoverMaxMessageLenRunes)
 	if truncated {
-		pn.log.Warn("Truncated message", "incident", key, "max_runes", pushoverMaxMessageLenRunes)
+		level.Warn(l).Log("msg", "Truncated message", "incident", key, "max_runes", pushoverMaxMessageLenRunes)
 	}
 	message = strings.TrimSpace(message)
 	if message == "" {
@@ -126,10 +127,10 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 		message = "(no details)"
 	}
 
-	supplementaryURL := receivers.JoinURLPath(pn.tmpl.ExternalURL.String(), "/alerting/list", pn.log)
+	supplementaryURL := receivers.JoinURLPath(pn.tmpl.ExternalURL.String(), "/alerting/list", l)
 	supplementaryURL, truncated = receivers.TruncateInRunes(supplementaryURL, pushoverMaxURLLenRunes)
 	if truncated {
-		pn.log.Warn("Truncated URL", "incident", key, "max_runes", pushoverMaxURLLenRunes)
+		level.Warn(l).Log("msg", "Truncated URL", "incident", key, "max_runes", pushoverMaxURLLenRunes)
 	}
 
 	status := types.Alerts(as...).Status()
@@ -174,9 +175,9 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 	}
 
 	if pn.settings.Upload {
-		pn.writeImageParts(ctx, w, as...)
+		pn.writeImageParts(ctx, l, w, as...)
 	} else {
-		pn.log.Debug("skip uploading image because of the configuration")
+		level.Debug(l).Log("msg", "skip uploading image because of the configuration")
 	}
 
 	var sound string
@@ -200,7 +201,7 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 	}
 
 	if tmplErr != nil {
-		pn.log.Warn("failed to template pushover message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template pushover message", "err", tmplErr.Error())
 	}
 
 	headers := map[string]string{
@@ -210,10 +211,10 @@ func (pn *Notifier) genPushoverBody(ctx context.Context, as ...*types.Alert) (ma
 	return headers, b, nil
 }
 
-func (pn *Notifier) writeImageParts(ctx context.Context, w *multipart.Writer, as ...*types.Alert) {
+func (pn *Notifier) writeImageParts(ctx context.Context, l log.Logger, w *multipart.Writer, as ...*types.Alert) {
 	// Pushover supports at most one image attachment with a maximum size of pushoverMaxFileSize.
 	// If the image is larger than pushoverMaxFileSize then return an error.
-	err := images.WithStoredImages(ctx, pn.log, pn.images, func(_ int, image images.Image) error {
+	err := images.WithStoredImages(ctx, l, pn.images, func(_ int, image images.Image) error {
 		raw, err := image.RawData(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to open the image: %w", err)
@@ -235,6 +236,6 @@ func (pn *Notifier) writeImageParts(ctx context.Context, w *multipart.Writer, as
 		return images.ErrImagesDone
 	}, as...)
 	if err != nil {
-		pn.log.Error("failed to fetch image for the notification", "error", err)
+		level.Error(l).Log("msg", "failed to fetch image for the notification", "err", err)
 	}
 }

@@ -554,6 +554,10 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
 
+# If true, the max streams by connection gauge will be collected.
+# CLI flag: -server.grpc-collect-max-streams-by-conn
+[grpc_collect_max_streams_by_conn: <boolean> | default = true]
+
 # (experimental) Enables PROXY protocol.
 # CLI flag: -server.proxy-protocol-enabled
 [proxy_protocol_enabled: <boolean> | default = false]
@@ -756,6 +760,16 @@ grpc_tls_config:
 # server.log-request-headers is true.
 # CLI flag: -server.log-request-headers-exclude-list
 [log_request_exclude_headers_list: <string> | default = ""]
+
+# Optionally add request headers to tracing spans.
+# CLI flag: -server.trace-request-headers
+[trace_request_headers: <boolean> | default = false]
+
+# Comma separated list of headers to exclude from tracing spans. Only used if
+# server.trace-request-headers is true. The following headers are always
+# excluded: Authorization, Cookie, X-Csrf-Token.
+# CLI flag: -server.trace-request-headers-exclude-list
+[trace_request_exclude_headers_list: <string> | default = ""]
 
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
@@ -1579,7 +1593,7 @@ The `querier` block configures the querier.
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.query-engine
-[query_engine: <string> | default = "prometheus"]
+[query_engine: <string> | default = "mimir"]
 
 # (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus query engine for any queries not supported by the
@@ -2581,6 +2595,12 @@ alertmanager_client:
 # removed for any tenant that does not have a configuration.
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
+
+# (experimental) Skip initializing Alertmanagers for tenants without a
+# non-default, non-empty configuration. For Grafana Alertmanager tenants,
+# configurations not marked as 'promoted' will also be skipped.
+# CLI flag: -alertmanager.strict-initialization-enabled
+[strict_initialization: <boolean> | default = false]
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
@@ -3653,6 +3673,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_query_expression_size_bytes: <int> | default = 0]
 
 # (experimental) List of queries to block.
+# Example:
+#   The following configuration blocks the query "rate(metric_counter[5m])".
+#   Setting the pattern to ".*" and regex to true blocks all queries.
+#   blocked_queries:
+#       - pattern: rate(metric_counter[5m])
+#         reason: because the query is misconfigured
 [blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
@@ -4318,6 +4344,17 @@ migration:
   # written to both backends.
   # CLI flag: -ingest-storage.migration.distributor-send-to-ingesters-enabled
   [distributor_send_to_ingesters_enabled: <boolean> | default = false]
+
+  # When enabled, errors writing to ingest storage are logged but do not affect
+  # write success or quorum. When disabled, write requests fail if ingest
+  # storage write fails.
+  # CLI flag: -ingest-storage.migration.ignore-ingest-storage-errors
+  [ignore_ingest_storage_errors: <boolean> | default = false]
+
+  # The maximum time a write request that goes through the ingest storage waits
+  # before it times out. Set to `0` to disable the timeout.
+  # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
+  [ingest_storage_max_wait_time: <duration> | default = 0s]
 ```
 
 ### blocks_storage
@@ -5333,7 +5370,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (experimental) Allow client creation even if initial DNS resolution fails.
 # CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = false]
+[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### redis

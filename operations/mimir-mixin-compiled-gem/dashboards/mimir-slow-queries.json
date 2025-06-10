@@ -1077,6 +1077,30 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "samples_processed"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "samples_processed_cache_adjusted"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "Time span"
                            },
                            "properties": [
@@ -1257,6 +1281,14 @@
                               {
                                  "destinationType": "number",
                                  "targetField": "fetched_series_count"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "samples_processed"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "samples_processed_cache_adjusted"
                               },
                               {
                                  "destinationType": "number",

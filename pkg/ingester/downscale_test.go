@@ -154,4 +154,34 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
 		require.Equal(t, http.StatusMethodNotAllowed, res.Code)
 	})
+
+	t.Run("should return Conflict when forced compaction is in progress", func(t *testing.T) {
+		t.Parallel()
+
+		ingester, r := setup(true)
+		res := httptest.NewRecorder()
+
+		// Switch entry to read-only.
+		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
+		require.Equal(t, http.StatusOK, res.Code)
+		test.Poll(t, 10*time.Second, true, func() interface{} {
+			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			require.NoError(t, err)
+			return inst.ReadOnly
+		})
+
+		ingester.forcedCompactionInProgress.Store(true)
+
+		// Try to switch back to read-write while compaction is in progress
+		res = httptest.NewRecorder()
+		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, target, nil))
+		require.Equal(t, http.StatusConflict, res.Code)
+
+		// Post-condition: entry should still be read-only
+		test.Poll(t, 10*time.Second, true, func() interface{} {
+			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			require.NoError(t, err)
+			return inst.ReadOnly
+		})
+	})
 }

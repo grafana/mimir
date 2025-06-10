@@ -88,7 +88,7 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return request
 			},
 			checkResponseErr: func(t *testing.T, err error) (cont bool) {
-				assert.True(t, apierror.IsNonRetryableAPIError(err))
+				assert.False(t, apierror.IsRetryableAPIError(err))
 				return false
 			},
 		},
@@ -103,7 +103,7 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 				return r
 			},
 			checkResponseErr: func(t *testing.T, err error) (cont bool) {
-				assert.True(t, apierror.IsNonRetryableAPIError(err))
+				assert.False(t, apierror.IsRetryableAPIError(err))
 				return false
 			},
 		},

@@ -7,7 +7,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-func init() { regKey(2, 0, 7) }
+func init() { regKey(2, 0, 10) }
 
 func (c *Cluster) handleListOffsets(b *broker, kreq kmsg.Request) (kmsg.Response, error) {
 	req := kreq.(*kmsg.ListOffsetsRequest)

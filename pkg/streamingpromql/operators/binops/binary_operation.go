@@ -18,8 +18,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // vectorMatchingGroupKeyFunc returns a function that computes the grouping key of the output group a series belongs to.
@@ -128,7 +128,7 @@ func formatConflictError(
 // Samples in data where mask has value desiredMaskValue are returned.
 //
 // The return value reuses the slices from data, and returns any unused slices to the pool.
-func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskValue bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskValue bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	filteredData := types.InstantVectorSeriesData{}
 	nextOutputFloatIndex := 0
 
@@ -201,7 +201,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 	opFunc                   binaryOperationFunc
 	leftIterator             types.InstantVectorSeriesDataIterator
 	rightIterator            types.InstantVectorSeriesDataIterator
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	expressionPosition       posrange.PositionRange
 }
@@ -209,7 +209,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 func newVectorVectorBinaryOperationEvaluator(
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (vectorVectorBinaryOperationEvaluator, error) {
