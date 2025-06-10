@@ -39,6 +39,10 @@ func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata
 	seriesPool = seriesPool[:len(t.Series)]
 	for i, l := range t.Series {
 		seriesPool[i].Labels = l
+		err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return seriesPool, nil
 }
