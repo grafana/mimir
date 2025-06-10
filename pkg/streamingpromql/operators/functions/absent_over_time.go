@@ -66,10 +66,10 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 		return nil, err
 	}
 
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: a.Labels,
-	})
-	a.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(a.Labels)
+	metadata, err = types.SeriesMetadataSlice(metadata).Append(a.MemoryConsumptionTracker, a.Labels)
+	if err != nil {
+		return nil, err
+	}
 
 	for range innerMetadata {
 		err := a.Inner.NextSeries(ctx)
