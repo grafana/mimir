@@ -95,19 +95,19 @@ func (t *testNode) Children() []Node {
 	return t.children
 }
 
-func (t *testNode) SetChildren(children []Node) error {
+func (t *testNode) SetChildren(_ []Node) error {
 	panic("not supported")
 }
 
-func (t *testNode) EquivalentTo(other Node) bool {
+func (t *testNode) EquivalentTo(_ Node) bool {
 	panic("not supported")
 }
 
-func (t *testNode) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+func (t *testNode) ChildrenTimeRange(_ types.QueryTimeRange) types.QueryTimeRange {
 	panic("not supported")
 }
 
-func (t *testNode) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error) {
+func (t *testNode) OperatorFactory(_ []types.Operator, _ types.QueryTimeRange, _ *OperatorParameters) (OperatorFactory, error) {
 	panic("not supported")
 }
 
