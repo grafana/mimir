@@ -203,6 +203,7 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	return l.currentEstimatedMemoryConsumptionBytes
 }
 
+// IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbs labels.Labels) error {
 	for _, lb := range lbs {
 		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
@@ -213,6 +214,7 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbs labels
 	return nil
 }
 
+// DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbs labels.Labels) {
 	for _, lb := range lbs {
 		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
