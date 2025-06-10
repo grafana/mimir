@@ -188,11 +188,11 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
-			series = append(series, seriesToAppend...)
-			// TODO: is there any more optimal way?
-			for _, s := range seriesToAppend {
-				o.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(s.Labels)
+			series, err = types.SeriesMetadataSlice(series).AppendToOther(o.MemoryConsumptionTracker, seriesToAppend...)
+			if err != nil {
+				return nil, err
 			}
+
 			nextLeftSeriesToRead += seriesCount
 
 			if nextRightSeriesToRead == 0 {

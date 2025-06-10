@@ -324,8 +324,11 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, outputSeries := range outputSeriesMap {
-		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
-		b.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(outputSeries.labels)
+		allMetadata, err = types.SeriesMetadataSlice(allMetadata).Append(b.MemoryConsumptionTracker, outputSeries.labels)
+		if err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+
 		allSeries = append(allSeries, outputSeries.series)
 	}
 

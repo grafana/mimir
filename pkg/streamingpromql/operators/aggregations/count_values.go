@@ -133,9 +133,10 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	c.series = make([][]promql.FPoint, 0, len(accumulator))
 
 	for _, s := range accumulator {
-		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: s.labels})
-		// TODO: check would re-allocation of string labels is happening here?
-		c.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(s.labels)
+		outputMetadata, err = types.SeriesMetadataSlice(outputMetadata).Append(c.MemoryConsumptionTracker, s.labels)
+		if err != nil {
+			return nil, err
+		}
 
 		points, err := s.toPoints(c.MemoryConsumptionTracker, c.TimeRange)
 		if err != nil {

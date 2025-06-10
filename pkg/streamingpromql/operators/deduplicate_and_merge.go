@@ -100,8 +100,10 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	}
 
 	for _, group := range outputGroups {
-		outputMetadata = append(outputMetadata, innerMetadata[group[0]])
-		d.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerMetadata[group[0]].Labels)
+		outputMetadata, err = types.SeriesMetadataSlice(outputMetadata).AppendToOther(d.MemoryConsumptionTracker, innerMetadata[group[0]])
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	return outputGroups, outputMetadata, nil
