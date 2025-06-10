@@ -21,7 +21,7 @@ metadata:
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
     {{- if $rolloutZone.prepareDownscale }}
-    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . }}
     {{- end -}}
     {{- if $rolloutZone.downscaleLeader }}
