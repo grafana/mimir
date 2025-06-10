@@ -961,6 +961,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 		templates = append(templates, alertingTemplates.TemplateDefinition{
 			Name:     tmpl.Filename,
 			Template: tmpl.Body,
+			Kind:     alertingTemplates.GrafanaKind, // TODO this kind is only considered by Grafana code. Load it from TemplateDesc
 		})
 	}
 

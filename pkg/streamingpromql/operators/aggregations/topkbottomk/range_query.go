@@ -494,6 +494,7 @@ var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []rangeQuerySeries {
 		return make([]rangeQuerySeries, 0, size)
 	}),
+	limiter.TopKBottomKRangeQuerySeriesSlices,
 	uint64(unsafe.Sizeof(rangeQuerySeries{})),
 	true,
 	nil,
@@ -503,6 +504,7 @@ var intSliceSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) [][]int {
 		return make([][]int, 0, size)
 	}),
+	limiter.IntSliceSlice,
 	uint64(unsafe.Sizeof([][]int{})),
 	true,
 	nil,

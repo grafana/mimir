@@ -5,7 +5,7 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
-	rand "math/rand/v2"
+	"math/rand/v2"
 	"testing"
 	"time"
 

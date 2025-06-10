@@ -224,6 +224,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  heatmapPanel(title):: {
+    datasource: '$datasource',
+    title: title,
+    type: 'heatmap',
+    options: {
+      calculate: true,
+    },
+  },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
     $.aliasColors({

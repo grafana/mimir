@@ -39,7 +39,7 @@ func doWithRetries[T any](ctx context.Context, log log.Logger, maxRetries int, m
 			return resp, nil
 		}
 
-		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
+		if !apierror.IsRetryableAPIError(err) || errors.Is(err, context.Canceled) {
 			return zero, err
 		}
 

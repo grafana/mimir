@@ -326,7 +326,7 @@ func (o *failingOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetad
 	return o.series, nil
 }
 
-func (o *failingOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (o *failingOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
 	if o.seriesRead >= o.returnErrorAtSeriesIdx {
 		return types.InstantVectorSeriesData{}, errors.New("something went wrong reading data")
 	}
@@ -339,7 +339,7 @@ func (o *failingOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (o *failingOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (o *failingOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil
 }

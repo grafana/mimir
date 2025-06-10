@@ -680,7 +680,13 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := a.ruler.AssertMaxRulesPerRuleGroup(userID, namespace, len(rg.Rules)); err != nil {
-		level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+		level.Warn(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := a.ruler.AssertMinRuleEvaluationInterval(userID, time.Duration(rg.Interval)); err != nil {
+		level.Warn(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -697,7 +703,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if err := a.ruler.AssertMaxRuleGroups(userID, namespace, len(rgs)+1); err != nil {
-			level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+			level.Warn(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

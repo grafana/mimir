@@ -38,8 +38,8 @@ type StreamingSeriesSource struct {
 }
 
 type memoryConsumptionTracker interface {
-	IncreaseMemoryConsumption(b uint64) error
-	DecreaseMemoryConsumption(b uint64)
+	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
+	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
 }
 
 func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
@@ -97,7 +97,7 @@ func (s *SeriesChunksStreamReader) Close() {
 // It is safe to call FreeBuffer multiple times, or to alternate GetChunks and FreeBuffer calls.
 func (s *SeriesChunksStreamReader) FreeBuffer() {
 	if s.lastMessage != nil {
-		s.memoryTracker.DecreaseMemoryConsumption(uint64(s.lastMessage.Size()))
+		s.memoryTracker.DecreaseMemoryConsumption(uint64(s.lastMessage.Size()), limiter.IngesterChunks)
 		s.lastMessage.FreeBuffer()
 		s.lastMessage = nil
 	}
@@ -110,7 +110,7 @@ func (s *SeriesChunksStreamReader) setLastMessage(msg *QueryStreamResponse) erro
 	if s.lastMessage != nil {
 		return fmt.Errorf("must call FreeBuffer() before storing the next message - this indicates a bug")
 	}
-	if err := s.memoryTracker.IncreaseMemoryConsumption(uint64(msg.Size())); err != nil {
+	if err := s.memoryTracker.IncreaseMemoryConsumption(uint64(msg.Size()), limiter.IngesterChunks); err != nil {
 		return err
 	}
 	s.lastMessage = msg

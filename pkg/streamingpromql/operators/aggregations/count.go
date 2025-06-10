@@ -45,10 +45,6 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 		if err != nil {
 			return err
 		}
-
-		if err != nil {
-			return err
-		}
 		g.values = g.values[:timeRange.StepCount]
 	}
 

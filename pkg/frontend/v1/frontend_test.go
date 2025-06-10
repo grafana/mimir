@@ -42,7 +42,7 @@ import (
 
 func init() {
 	// Install OTel tracing, we need it for the tests.
-	_, err := tracing.NewOTelFromJaegerEnv("test")
+	_, err := tracing.NewOTelFromEnv("test", log.NewNopLogger())
 	if err != nil {
 		panic(err)
 	}
