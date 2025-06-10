@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 var (
@@ -123,34 +125,48 @@ func NewLazyBinaryReader(
 	ctx context.Context,
 	readerFactory func() (Reader, error),
 	logger log.Logger,
-	bkt objstore.BucketReader,
+	bkt objstore.InstrumentedBucketReader,
 	dir string,
 	id ulid.ULID,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
-	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
+	indexHeaderPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
 	// If the index-header doesn't exist we should download it.
-	if _, err := os.Stat(path); err != nil {
+	if _, err := os.Stat(indexHeaderPath); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, errors.Wrap(err, "read index header")
 		}
 
-		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", path)
+		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderPath)
 
 		start := time.Now()
-		if err := WriteBinary(ctx, bkt, id, path); err != nil {
+		if err := WriteBinary(ctx, bkt, id, indexHeaderPath); err != nil {
 			return nil, errors.Wrap(err, "write index header")
 		}
 
-		level.Debug(logger).Log("msg", "built index-header file", "path", path, "elapsed", time.Since(start))
+		level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
+	}
+
+	sparseHeaderPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
+
+	if _, err := os.Stat(sparseHeaderPath); err != nil {
+		bucketSparseHeaderBytes, err := tryDownloadSparseHeader(ctx, logger, bkt, id)
+		if err == nil {
+			err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
+			if err != nil {
+				level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
+			}
+		} else {
+			level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
+		}
 	}
 
 	reader := &LazyBinaryReader{
 		logger:          logger,
-		filepath:        path,
+		filepath:        indexHeaderPath,
 		metrics:         metrics,
 		usedAt:          atomic.NewInt64(0),
 		onClosed:        onClosed,
