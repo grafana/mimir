@@ -120,7 +120,7 @@ jobs:
             - **Source branch/ref**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/tree/{0})', inputs.mimir_prometheus_branch) }}
             - **Previous commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.old_hash) }}
             - **New commit**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/commit/{0})', steps.get-commit-info.outputs.new_hash) }}
-            - **Changes**: ${{ format('[`{0}...{1}`](https://github.com/grafana/mimir-prometheus/compare/{0}...{1})', steps.get-commit-info.outputs.previous_hash, steps.get-commit-info.outputs.new_hash) }}
+            - **Changes**: ${{ format('[`{0}...{1}`](https://github.com/grafana/mimir-prometheus/compare/{0}...{1})', steps.get-commit-info.outputs.old_hash, steps.get-commit-info.outputs.new_hash) }}
           commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}`
           branch: bot/${{ inputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
           base: ${{ inputs.mimir_branch }}
