@@ -70,6 +70,9 @@ type PreallocWriteRequest struct {
 	// RW2SymbolOffset is an optimization used for RW2-adjacent applications where typical symbol refs are shifted by an offset.
 	// This allows certain symbols to be reserved without being present in the symbols list.
 	RW2SymbolOffset uint32
+	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
+	// These symbols are never sent in the request to begin with.
+	RW2CommonSymbols []string
 }
 
 // Unmarshal implements proto.Message.
@@ -80,6 +83,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
+	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
