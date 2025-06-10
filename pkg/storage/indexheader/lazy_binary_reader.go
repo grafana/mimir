@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -135,35 +136,19 @@ func NewLazyBinaryReader(
 	lazyLoadingGate gate.Gate,
 ) (*LazyBinaryReader, error) {
 	indexHeaderPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-
-	// If the index-header doesn't exist we should download it.
-	if _, err := os.Stat(indexHeaderPath); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, errors.Wrap(err, "read index header")
-		}
-
-		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderPath)
-
-		start := time.Now()
-		if err := WriteBinary(ctx, bkt, id, indexHeaderPath); err != nil {
-			return nil, errors.Wrap(err, "write index header")
-		}
-
-		level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
-	}
-
 	sparseHeaderPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
 
-	if _, err := os.Stat(sparseHeaderPath); err != nil {
-		bucketSparseHeaderBytes, err := tryDownloadSparseHeader(ctx, logger, bkt, id)
-		if err == nil {
-			err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
-			if err != nil {
-				level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
-			}
-		} else {
-			level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
-		}
+	g := errgroup.Group{}
+	g.Go(func() error {
+		return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+	})
+
+	g.Go(func() error {
+		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	reader := &LazyBinaryReader{
@@ -184,6 +169,44 @@ func NewLazyBinaryReader(
 
 	go reader.controlLoop()
 	return reader, nil
+}
+
+func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, sparseHeaderPath string) {
+	_, err := os.Stat(sparseHeaderPath)
+	if err == nil {
+		// The header is already on disk
+		return
+	}
+	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
+	if err != nil {
+		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; will reconstruct when the block is queried", "err", err)
+		return
+	}
+	err = atomicfs.CreateFile(sparseHeaderPath, bytes.NewReader(bucketSparseHeaderBytes))
+	if err != nil {
+		level.Info(logger).Log("msg", "could not store sparse index-header on disk; will reconstruct when the block is queried", "err", err)
+	}
+}
+
+func ensureIndexHeaderOnDisk(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID, indexHeaderPath string) error {
+	// If the index-header doesn't exist we should download it.
+	_, err := os.Stat(indexHeaderPath)
+	if err == nil {
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return errors.Wrap(err, "read index header")
+	}
+
+	level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderPath)
+
+	start := time.Now()
+	if err := WriteBinary(ctx, bkt, id, indexHeaderPath); err != nil {
+		return errors.Wrap(err, "write index header")
+	}
+
+	level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderPath, "elapsed", time.Since(start))
+	return nil
 }
 
 // Close implements Reader.
