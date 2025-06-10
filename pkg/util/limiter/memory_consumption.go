@@ -58,9 +58,9 @@ const (
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
-	SeriesMetadataLabels
+	Labels
 
-	memoryConsumptionSourceCount = SeriesMetadataLabels + 1
+	memoryConsumptionSourceCount = Labels + 1
 )
 
 const (
@@ -101,7 +101,7 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.instantQuerySeries"
 	case TopKBottomKRangeQuerySeriesSlices:
 		return "[]topkbottom.rangeQuerySeries"
-	case SeriesMetadataLabels:
+	case Labels:
 		return "labels.Labels"
 	default:
 		return unknownMemorySource
@@ -192,7 +192,7 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbs labels.Labels) error {
 	for _, lb := range lbs {
 		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
-		if err := l.IncreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, SeriesMetadataLabels); err != nil {
+		if err := l.IncreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, Labels); err != nil {
 			return err
 		}
 	}
@@ -202,6 +202,6 @@ func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbs labels
 func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbs labels.Labels) {
 	for _, lb := range lbs {
 		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
-		l.DecreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, SeriesMetadataLabels)
+		l.DecreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, Labels)
 	}
 }
