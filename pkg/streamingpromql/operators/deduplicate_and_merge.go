@@ -100,7 +100,7 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	}
 
 	for _, group := range outputGroups {
-		outputMetadata, err = types.SeriesMetadataSlice(outputMetadata).AppendToOther(d.MemoryConsumptionTracker, innerMetadata[group[0]])
+		outputMetadata, err = types.SeriesMetadataSlice(outputMetadata).Append(d.MemoryConsumptionTracker, innerMetadata[group[0]])
 		if err != nil {
 			return nil, nil, err
 		}
