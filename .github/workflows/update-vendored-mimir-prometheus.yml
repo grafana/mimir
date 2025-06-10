@@ -114,7 +114,7 @@ jobs:
           body: |
             ## Update mimir-prometheus dependency
 
-            *This PR was automatically created by the [update-mimir-prometheus workflow](https://github.com/grafana/mimir/blob/main/.github/workflows/update-mimir-prometheus.yml)*
+            *This PR was automatically created by the [update-vendored-mimir-prometheus.yml](https://github.com/grafana/mimir/blob/main/.github/workflows/update-vendored-mimir-prometheus.yml) workflow.*
 
             ### Details:
             - **Source branch/ref**: ${{ format('[`{0}`](https://github.com/grafana/mimir-prometheus/tree/{0})', inputs.mimir_prometheus_branch) }}
