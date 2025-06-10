@@ -281,8 +281,8 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 				limits.CardinalityAnalysisEnabled = true
 			}
 			teamBLimites := validation.Limits{
-				CardinalityAnalysisEnabled:   true,
-				CardinalityAPIMaxSeriesLimit: 100,
+				CardinalityAnalysisEnabled:    true,
+				CardinalityAnalysisMaxResults: 100,
 			}
 			teamALimits := validation.NewMockTenantLimits(
 				map[string]*validation.Limits{
@@ -1052,7 +1052,7 @@ func BenchmarkActiveNativeHistogramMetricsHandler_ServeHTTP(b *testing.B) {
 
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
 func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
-	limits := validation.Limits{CardinalityAnalysisEnabled: true, CardinalityAPIMaxSeriesLimit: 500}
+	limits := validation.Limits{CardinalityAnalysisEnabled: true, CardinalityAnalysisMaxResults: 500}
 	overrides := validation.NewOverrides(limits, nil)
 
 	handler := cardinalityHandler(distributor, overrides)

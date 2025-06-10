@@ -203,7 +203,7 @@ type Limits struct {
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
-	CardinalityAPIMaxSeriesLimit                  int  `yaml:"cardinality_api_max_series_limit" json:"cardinality_api_max_series_limit"`
+	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
 	// Cost attribution and limit.
@@ -353,7 +353,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
-	f.IntVar(&l.CardinalityAPIMaxSeriesLimit, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
+	f.IntVar(&l.CardinalityAnalysisMaxResults, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
 
 	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
@@ -1305,7 +1305,7 @@ func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 // CardinalityAPIMaxSeriesLimit returns the maximum number of series that
 // can be requested in a single cardinality API request.
 func (o *Overrides) CardinalityAPIMaxSeriesLimit(userID string) int {
-	return o.getOverridesForUser(userID).CardinalityAPIMaxSeriesLimit
+	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
