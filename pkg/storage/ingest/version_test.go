@@ -15,7 +15,7 @@ import (
 
 func TestV2SymbolsCompat(t *testing.T) {
 	t.Run("v2 symbols cannot be larger than v2 offset", func(t *testing.T) {
-		require.GreaterOrEqual(t, len(V2CommonSymbols), V2RecordSymbolOffset)
+		require.LessOrEqual(t, len(V2CommonSymbols), V2RecordSymbolOffset)
 	})
 }
 
