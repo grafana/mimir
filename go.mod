@@ -72,7 +72,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.0
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250501145537-53ceaec28820
+	github.com/prometheus/otlptranslator v0.0.0-20250527173959-2573485683d5
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79
@@ -326,7 +326,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250519034039-420755dfadb2
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250602172627-3f093cd74ca2
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
