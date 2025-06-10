@@ -28,7 +28,8 @@ func TestSendWebhook(t *testing.T) {
 		got = r
 		w.WriteHeader(http.StatusOK)
 	}))
-	s := alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()))
+	s, err := alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()))
+	require.NoError(t, err)
 
 	// The method should be either POST or PUT.
 	cmd := alertingReceivers.SendWebhookSettings{
@@ -102,8 +103,9 @@ func TestSendWebhook(t *testing.T) {
 	cmd = alertingReceivers.SendWebhookSettings{
 		URL: server.URL,
 	}
-	s = alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
-	err := s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd)
+	s, err = alertingHttp.NewClient(alertingHttp.WithUserAgent(version.UserAgent()), alertingHttp.WithDialer(*firewallDialer.Dialer()))
+	require.NoError(t, err)
+	err = s.SendWebhook(context.Background(), log.NewNopLogger(), &cmd)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "blocked address")
 }
