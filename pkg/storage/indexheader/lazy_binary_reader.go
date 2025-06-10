@@ -121,6 +121,8 @@ type unloadRequest struct {
 // on the local disk at dir location, this function will build it downloading required
 // sections from the full index stored in the bucket. However, this function doesn't load
 // (mmap or streaming read) the index-header; it will be loaded at first Reader function call.
+// NewLazyBinaryReader tries to download the sparse index header from the bucket and save it on disk.
+// It does not try to parse the sparse index header.
 func NewLazyBinaryReader(
 	ctx context.Context,
 	readerFactory func() (Reader, error),
