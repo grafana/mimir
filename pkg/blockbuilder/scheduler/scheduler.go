@@ -270,9 +270,9 @@ func (s *partitionState) addPendingJob(job *offsetRange) {
 	s.pendingJobs.PushBack(job)
 }
 
-// nextSpec validates and updates the last planned offset for this partition.
+// validateNextSpec validates the given spec which is about to be added to the pending job queue.
 // Returns an error if there's an unexpected gap. Returns the next last-planned offset regardless.
-func (ps *partitionState) nextSpec(spec schedulerpb.JobSpec) (int64, error) {
+func (ps *partitionState) validateNextSpec(spec schedulerpb.JobSpec) (int64, error) {
 	if ps.latestPlannedOffset != 0 && spec.StartOffset != ps.latestPlannedOffset {
 		return spec.EndOffset, fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
 			ps.latestPlannedOffset, spec.StartOffset)
@@ -339,19 +339,18 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				} else {
 					level.Warn(s.logger).Log("msg", "failed to enqueue job", "partition", partition, "job_id", jobID, "err", err)
 				}
-				// Move onto the next partition.
-				break
-			}
+			} else {
+				// It was added.
+				planned, err := ps.validateNextSpec(spec)
+				if err != nil {
+					level.Warn(s.logger).Log("msg", "job continuity validation failed",
+						"partition", partition, "job_id", jobID, "err", err)
+					s.metrics.jobContinuityViolations.Inc()
+				}
 
-			nextOffset, err := ps.nextSpec(spec)
-			if err != nil {
-				level.Warn(s.logger).Log("msg", "job continuity validation failed",
-					"partition", partition, "job_id", jobID, "err", err)
-				s.metrics.jobContinuityViolations.Inc()
+				ps.latestPlannedOffset = planned
+				ps.pendingJobs.Remove(e)
 			}
-
-			ps.latestPlannedOffset = nextOffset
-			ps.pendingJobs.Remove(e)
 		}
 	}
 
@@ -904,7 +903,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 				continue
 			}
 
-			nextOffset, err := ps.nextSpec(obs.spec)
+			nextOffset, err := ps.validateNextSpec(obs.spec)
 			if err != nil {
 				// Found a gap, can't continue the contiguous range
 				contiguous = false
