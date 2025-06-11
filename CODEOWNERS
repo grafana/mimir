@@ -34,4 +34,4 @@ go.sum @stevesg @grafana/mimir-maintainers
 /vendor/github.com/grafana/alerting @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
 
 # Operations - allow mimir-github-bot to approve automated PRs
-/operations/helm/ @mimir-github-bot @grafana/mimir-maintainers
+/operations/helm/ @mimir-github-bot[bot] @grafana/mimir-maintainers
