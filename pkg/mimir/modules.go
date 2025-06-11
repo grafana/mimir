@@ -880,7 +880,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
-	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
+	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
+	fallbackInjector := streamingpromqlcompat.EngineFallbackInjector{}
+	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
