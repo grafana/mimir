@@ -511,6 +511,11 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var consumeOffset int64
 
+			// Where to resume planning? In order, we prefer:
+			// 1. The latest planned offset (if we have one)
+			// 2. The committed offset (if we have one)
+			// 3. The larger of the start offset and fallback offset.
+
 			if ps, ok := s.partState[partition]; ok {
 				consumeOffset = ps.latestPlannedOffset
 			} else if committedOff, ok := committed.Lookup(t, partition); ok {
