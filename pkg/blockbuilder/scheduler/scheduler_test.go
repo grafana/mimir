@@ -240,6 +240,13 @@ func TestObservations(t *testing.T) {
 				Partition: 5,
 				At:        12000,
 			},
+			// no 6
+			// no 7
+			8: kadm.Offset{
+				Topic:     "ingest",
+				Partition: 8,
+				At:        1000,
+			},
 		},
 	}
 
@@ -312,21 +319,31 @@ func TestObservations(t *testing.T) {
 	// Partition 7 has an in-progress job, but wasn't among the offsets we learned from Kafka.
 	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, time.Unix(1500, 0), 92874, 93874, nil)
 
-	rnd := rand.New(rand.NewSource(64_000))
+	// Partition 8 has a number of reports and has a hole that should should not be passed.
+	mkJob(complete, "w0", 8, "ingest/8/1000", 53, time.Unix(1000, 0), 1000, 1100, nil)
+	mkJob(complete, "w1", 8, "ingest/8/1100", 54, time.Unix(1100, 0), 1100, 1200, nil)
+	mkJob(complete, "w2", 8, "ingest/8/1200", 55, time.Unix(1200, 0), 1200, 1300, nil)
+	// this one is absent mkJob(complete, "w3", 8, "ingest/8/1300", 56, time.Unix(1300, 0), 1300, 1400, nil)
+	mkJob(complete, "w4", 8, "ingest/8/1400", 57, time.Unix(1400, 0), 1400, 1500, nil)
+	mkJob(complete, "w5", 8, "ingest/8/1500", 58, time.Unix(1500, 0), 1500, 1600, nil)
+	mkJob(complete, "w6", 8, "ingest/8/1600", 59, time.Unix(1600, 0), 1600, 1700, nil)
 
 	sendUpdates := func() {
-		for range 3 {
-			// Simulate the arbitrary order of client updates.
-			rnd.Shuffle(len(clientData), func(i, j int) { clientData[i], clientData[j] = clientData[j], clientData[i] })
-			for _, c := range clientData {
-				t.Log("sending update", c.key, c.workerID)
-				err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
-				if errors.Is(c.expectErr, maybeBadEpoch) {
-					require.True(t, errors.Is(err, errBadEpoch) || err == nil, "job %V: expected either bad epoch or no error, got %v", c.key, err)
-				} else {
-					require.NoError(t, err)
+		// Send all updates multiple times in random order.
+		for i := range 10 {
+			rnd := rand.New(rand.NewSource(int64(i)))
+			t.Run(fmt.Sprintf("send_updates_seed_%d", i), func(t *testing.T) {
+				rnd.Shuffle(len(clientData), func(i, j int) { clientData[i], clientData[j] = clientData[j], clientData[i] })
+				for _, c := range clientData {
+					t.Log("sending update", c.key, c.workerID)
+					err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
+					if errors.Is(c.expectErr, maybeBadEpoch) {
+						require.True(t, errors.Is(err, errBadEpoch) || err == nil, "job %V: expected either bad epoch or no error, got %v", c.key, err)
+					} else {
+						require.NoError(t, err)
+					}
 				}
-			}
+			})
 		}
 	}
 
@@ -339,12 +356,12 @@ func TestObservations(t *testing.T) {
 	requireOffset(t, sched.committed, "ingest", 4, 900, "ingest/4 should be moved forward to account for the completed jobs")
 	requireOffset(t, sched.committed, "ingest", 5, 12000, "ingest/5 has nothing new completed")
 	requireOffset(t, sched.committed, "ingest", 6, 600, "ingest/6 should have been added to the offsets")
+	requireOffset(t, sched.committed, "ingest", 8, 1300, "ingest/8 should be committed only until the gap")
 
-	require.Len(t, sched.jobs.jobs, 4, "there are 4 in-progress jobs")
-	require.Equal(t, 53, int(sched.jobs.epoch))
+	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
+	require.Equal(t, 60, int(sched.jobs.epoch))
 
-	// Now verify that the same set of updates can be sent now that we're out of observation mode.
-
+	// Verify that the same set of updates can be sent now that we're out of observation mode.
 	sendUpdates()
 }
 
@@ -355,7 +372,7 @@ func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int3
 	require.Equal(t, expected, o.At, msgAndArgs...)
 }
 
-func TestOffsetMovement(t *testing.T) {
+func TestCommitOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t)
 
 	sched.committed = kadm.Offsets{
@@ -957,4 +974,70 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
+}
+
+func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+
+	reg := sched.register.(*prometheus.Registry)
+
+	part := int32(1)
+	pt := sched.getPartitionState(part)
+	// Assume at startup we compute this job offset range:
+	pt.addPendingJob(&offsetRange{start: 10, end: 30})
+	pt.addPendingJob(&offsetRange{start: 30, end: 40})
+	pt.addPendingJob(&offsetRange{start: 40, end: 50})
+
+	assert.Equal(t, 3, pt.pendingJobs.Len())
+	assert.Equal(t, 0, sched.jobs.count())
+	assert.Equal(t, int64(0), pt.latestPlannedOffset)
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 3, sched.jobs.count())
+	assert.Equal(t, int64(50), pt.latestPlannedOffset)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+		`# HELP cortex_blockbuilder_scheduler_job_continuity_violations_total The number of times a job's start offset did not match the expected latest planned offset.
+		# TYPE cortex_blockbuilder_scheduler_job_continuity_violations_total counter
+		cortex_blockbuilder_scheduler_job_continuity_violations_total 0
+	`), "cortex_blockbuilder_scheduler_job_continuity_violations_total"))
+
+	// this one introduces a gap:
+	pt.addPendingJob(&offsetRange{start: 60, end: 70})
+
+	assert.Equal(t, 1, pt.pendingJobs.Len())
+	assert.Equal(t, 3, sched.jobs.count())
+	assert.Equal(t, int64(50), pt.latestPlannedOffset)
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
+	assert.Equal(t, int64(70), pt.latestPlannedOffset)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+		`# HELP cortex_blockbuilder_scheduler_job_continuity_violations_total The number of times a job's start offset did not match the expected latest planned offset.
+		# TYPE cortex_blockbuilder_scheduler_job_continuity_violations_total counter
+		cortex_blockbuilder_scheduler_job_continuity_violations_total 1
+	`), "cortex_blockbuilder_scheduler_job_continuity_violations_total"))
+
+	// the gap may not be the first job:
+	pt.addPendingJob(&offsetRange{start: 70, end: 80})
+	// gap
+	pt.addPendingJob(&offsetRange{start: 100, end: 110})
+	pt.addPendingJob(&offsetRange{start: 110, end: 120})
+
+	assert.Equal(t, 3, pt.pendingJobs.Len())
+	assert.Equal(t, 4, sched.jobs.count())
+	assert.Equal(t, int64(70), pt.latestPlannedOffset)
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
+	assert.Equal(t, int64(120), pt.latestPlannedOffset)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+		`# HELP cortex_blockbuilder_scheduler_job_continuity_violations_total The number of times a job's start offset did not match the expected latest planned offset.
+		# TYPE cortex_blockbuilder_scheduler_job_continuity_violations_total counter
+		cortex_blockbuilder_scheduler_job_continuity_violations_total 2
+	`), "cortex_blockbuilder_scheduler_job_continuity_violations_total"))
 }
