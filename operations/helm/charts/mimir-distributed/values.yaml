@@ -766,10 +766,6 @@ alertmanager:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
   # -- Options to configure zone-aware replication for alertmanager
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -965,10 +961,6 @@ distributor:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
 ingester:
   # -- Whether to render the manifests related to the ingester component.
   enabled: true
@@ -1116,10 +1108,6 @@ ingester:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for ingester
   # Example configuration with full geographical redundancy:
@@ -1300,10 +1288,6 @@ overrides_exporter:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 ruler:
   enabled: true
 
@@ -1430,10 +1414,6 @@ ruler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
   # -- If set to true, a dedicated query path will be deployed for the ruler and operational mode will be set to use remote evaluation. https://grafana.com/docs/mimir/latest/references/architecture/components/ruler/#remote
   # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
   remoteEvaluationDedicatedQueryPath: false
@@ -1559,10 +1539,6 @@ ruler_querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
@@ -1680,10 +1656,6 @@ ruler_query_frontend:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   # -- Allows to override the container image of the ruler-query-scheduler component.
@@ -1773,10 +1745,6 @@ ruler_query_scheduler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
 
 querier:
   # -- Whether to render the manifests related to the querier component.
@@ -1912,10 +1880,6 @@ querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
@@ -2035,10 +1999,6 @@ query_frontend:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_scheduler:
   enabled: true
 
@@ -2129,10 +2089,6 @@ query_scheduler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
 
 store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
@@ -2282,10 +2238,6 @@ store_gateway:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for store-gateway
   # Example configuration with full geographical redundancy:
@@ -2497,10 +2449,6 @@ compactor:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
 
 memcached:
   image:
@@ -3458,9 +3406,6 @@ gateway:
   env: []
   # -- Environment variables from secrets or configmaps to add to the Pods.
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Volumes to add to the Pods
   extraVolumes: []
   # -- Volume mounts to add to the Pods
@@ -4312,10 +4257,6 @@ admin_api:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Cache for admin bucket.
 # If this is disabled, in-memory cache will be set by default.
 # You can use Redis too for cache and set the configuration via structuredConfig.
@@ -4486,9 +4427,6 @@ graphite:
 
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4569,9 +4507,6 @@ graphite:
     terminationGracePeriodSeconds: 180
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4808,10 +4743,6 @@ federation_frontend:
   podDisruptionBudget:
     maxUnavailable: 1
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Settings for the smoke-test job. This is meant to run as a Helm test hook
 # (`helm test RELEASE`) after installing the chart. It quickly verifies
 # that writing and reading metrics works. Currently not supported for
@@ -4892,9 +4823,6 @@ continuous_test:
   extraArgs: {}
   # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Extra volumes for the continuous test container
   extraVolumes: []
   # -- Extra volume mounts for the continuous test container
