@@ -37,14 +37,14 @@ if [[ -z "$TOTAL" ]]; then
 fi
 
 # List all tests.
-ALL_TESTS=$(go list "${MIMIR_DIR}/..." | sort)
+ALL_TESTS=$(go test "${MIMIR_DIR}/..." -list 'Test.*' | grep '^Test' | sort)
 
 # Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
+GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX' | tr '\n' '|')
 
 echo "This group will run the following tests:"
 echo "$GROUP_TESTS"
 echo ""
 
 # shellcheck disable=SC2086 # we *want* word splitting of GROUP_TESTS.
-exec go test -tags=netgo,stringlabels -timeout 30m -race -count 1 ${GROUP_TESTS}
+exec go test -tags=netgo,stringlabels -timeout 30m -race -count 1 -run ${GROUP_TESTS} ./...
