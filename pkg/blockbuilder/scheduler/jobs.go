@@ -5,6 +5,7 @@ package scheduler
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -172,7 +173,7 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 		return errJobNotFound
 	}
 	if j.assignee != workerID {
-		return errJobNotAssigned
+		return fmt.Errorf("job not assigned to given worker but instead %s: %w", j.assignee, errJobNotAssigned)
 	}
 	if j.key.epoch != key.epoch {
 		return errBadEpoch
