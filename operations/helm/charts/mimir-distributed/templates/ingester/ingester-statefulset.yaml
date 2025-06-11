@@ -186,9 +186,9 @@ spec:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.ingester.env }}
+          {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
+          {{- if or .Values.global.extraEnv .Values.ingester.env $cpu_request }}
           env:
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
             {{- if $cpu_request }}
               {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
             {{/* copy logic from operations/mimir/ingester.libsonnet */}}
