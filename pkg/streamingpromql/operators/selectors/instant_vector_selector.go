@@ -186,8 +186,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	return data, nil
 }
 
-func (m *InstantVectorSelector) Prepare(_ context.Context, params *types.PrepareParams) error {
-	m.Stats = params.QueryStats
+func (v *InstantVectorSelector) Prepare(_ context.Context, params *types.PrepareParams) error {
+	v.Stats = params.QueryStats
 	return nil
 }
 
