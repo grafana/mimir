@@ -105,43 +105,6 @@ jobs:
       - name: Check Generated OTLP Code
         run: make BUILD_IN_CONTAINER=false check-generated-otlp-code
 
-  doc-validator:
-    runs-on: ubuntu-latest
-    container:
-      image: grafana/doc-validator:v5.2.0
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Run Git Config
-        run: git config --global --add safe.directory '*'
-      - name: Run doc-validator tool (mimir)
-        run: >
-          doc-validator
-          '--skip-checks=^canonical-does-not-match-pretty-URL|image.+$'
-          docs/sources/mimir
-          /docs/mimir/latest
-          | reviewdog
-          -f=rdjsonl
-          --fail-on-error
-          --filter-mode=nofilter
-          --name=doc-validator
-          --reporter=github-pr-review
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-      - name: Run doc-validator tool (helm-charts)
-        run: >
-          doc-validator
-          docs/sources/helm-charts
-          /docs/helm-charts/mimir-distributed/latest
-          | reviewdog
-          -f=rdjsonl
-          --fail-on-error
-          --filter-mode=nofilter
-          --name=doc-validator
-          --reporter=github-pr-review
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-
   lint-jsonnet:
     runs-on: ubuntu-latest
     needs:
