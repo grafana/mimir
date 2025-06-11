@@ -271,17 +271,15 @@ func (s *partitionState) addPendingJob(job *offsetRange) {
 	s.pendingJobs.PushBack(job)
 }
 
-// updatePlannedOffset validates and updates the last planned offset for this partition.
-// Returns an error if there's an unexpected gap.
-func (ps *partitionState) updatePlannedOffset(spec schedulerpb.JobSpec) error {
+// nextSpec validates and updates the last planned offset for this partition.
+// Returns an error if there's an unexpected gap. Returns the next last-planned offset regardless.
+func (ps *partitionState) nextSpec(spec schedulerpb.JobSpec) (int64, error) {
 	if ps.latestPlannedOffset != 0 && spec.StartOffset != ps.latestPlannedOffset {
-		ps.metrics.jobContinuityViolations.Inc()
-		return fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
+		return spec.EndOffset, fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
 			ps.latestPlannedOffset, spec.StartOffset)
 	}
 
-	ps.latestPlannedOffset = spec.EndOffset
-	return nil
+	return spec.EndOffset, nil
 }
 
 // enqueuePendingJobsWorker is a worker method that enqueues pending jobs at a regular interval.
@@ -336,14 +334,6 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				EndOffset:   or.end,
 			}
 
-			if err := ps.updatePlannedOffset(spec); err != nil {
-				level.Error(s.logger).Log("msg", "job continuity validation failed",
-					"partition", partition, "job_id", jobID, "err", err)
-				// Skip this job and continue with the next one
-				ps.pendingJobs.Remove(e)
-				continue
-			}
-
 			if err := s.jobs.add(jobID, spec); err != nil {
 				if errors.Is(err, errJobCreationDisallowed) || errors.Is(err, errJobAlreadyExists) {
 					// We've hit the limit for this partition.
@@ -353,7 +343,15 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				// Move onto the next partition.
 				break
 			}
-			// Otherwise, it was successful.
+
+			nextOffset, err := ps.nextSpec(spec)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "job continuity validation failed",
+					"partition", partition, "job_id", jobID, "err", err)
+				s.metrics.jobContinuityViolations.Inc()
+			}
+
+			ps.latestPlannedOffset = nextOffset
 			ps.pendingJobs.Remove(e)
 		}
 	}
@@ -857,6 +855,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		partitionObservations[rj.spec.Partition] = append(partitionObservations[rj.spec.Partition], rj)
 	}
 
+	maxEpoch := int64(0)
+
 	for partition, observations := range partitionObservations {
 		ps := s.getPartitionState(partition)
 
@@ -868,6 +868,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 
 		// Initialize latest planned offset to the known committed offset.
 		ps.latestPlannedOffset = committedOffset
+		contiguous := true
 
 		if len(observations) == 0 {
 			// No observations, keep latest planned offset at committed offset
@@ -879,12 +880,35 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			return observations[i].spec.StartOffset < observations[j].spec.StartOffset
 		})
 
-		// Find the highest continuous coverage by processing jobs in order.
+		// Find the highest contiguous coverage by processing jobs in order.
 		// Stop importing jobs if we find a gap.
 		for _, obs := range observations {
-			if err := ps.updatePlannedOffset(obs.spec); err != nil {
-				// Found a gap, can't continue the continuous range
-				break
+			maxEpoch = max(maxEpoch, obs.key.epoch)
+
+			if !contiguous {
+				// We found a gap earlier. Skip and warn.
+				level.Warn(s.logger).Log("msg", "startup: skipping job import due to offset gap",
+					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
+					"start_offset", obs.spec.StartOffset, "end_offset", obs.spec.EndOffset)
+				continue
+			}
+
+			if obs.spec.EndOffset <= ps.latestPlannedOffset {
+				// This job is wholly before the latest planned offset. Skip.
+				level.Warn(s.logger).Log("msg", "startup: skipping job before commit",
+					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
+					"start_offset", obs.spec.StartOffset, "end_offset", obs.spec.EndOffset)
+				continue
+			}
+
+			nextOffset, err := ps.nextSpec(obs.spec)
+			if err != nil {
+				// Found a gap, can't continue the contiguous range
+				contiguous = false
+				level.Warn(s.logger).Log("msg", "startup: detected offset gap",
+					"partition", partition, "job_id", obs.key.id, "start_offset", obs.spec.StartOffset,
+					"end_offset", obs.spec.EndOffset, "latest_planned_offset", ps.latestPlannedOffset)
+				continue
 			}
 
 			if obs.complete {
@@ -893,11 +917,16 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			} else {
 				// An in-progress job that's part of our continuous coverage.
 				if err := s.jobs.importJob(obs.key, obs.workerID, obs.spec); err != nil {
-					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", obs.key.id, "epoch", obs.key.epoch, "worker", obs.workerID, "err", err)
+					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", obs.key.id,
+						"epoch", obs.key.epoch, "worker", obs.workerID, "err", err)
 				}
 			}
+
+			ps.latestPlannedOffset = nextOffset
 		}
 	}
+
+	s.jobs.epoch = max(s.jobs.epoch, maxEpoch+1)
 }
 
 type obsMap map[string]*observation
