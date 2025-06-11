@@ -1638,121 +1638,99 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 
 	for _, tc := range []struct {
 		name                 string
-		engineType           string
+		skipMQE              bool
 		engineDownstreamOpts []engineOpt
 		engineShardingOpts   []engineOpt
-		expError             error
+		expError             *apierror.APIError
 		queryable            storage.Queryable
 	}{
-		// Prometheus engine tests.
-
 		{
 			name:                 "downstream - timeout",
-			engineType:           querier.PrometheusEngine,
 			engineDownstreamOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
 			expError:             apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
 			queryable:            queryableSlow,
 		},
 		{
 			name:                 "downstream - sample limit",
-			engineType:           querier.PrometheusEngine,
+			skipMQE:              true, // MQE doesn't have a sample limit
 			engineDownstreamOpts: []engineOpt{withMaxSamples(1)},
 			expError:             apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:               "sharding - timeout",
-			engineType:         querier.PrometheusEngine,
 			engineShardingOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
 			expError:           apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
 			queryable:          queryableSlow,
 		},
 		{
-			name:       "downstream - storage internal error",
-			engineType: querier.PrometheusEngine,
-			queryable:  queryableInternalErr,
-			expError:   apierror.New(apierror.TypeInternal, "some internal error"),
+			name:      "downstream - storage internal error",
+			queryable: queryableInternalErr,
+			expError:  apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
-			name:       "downstream - storage prometheus execution error",
-			engineType: querier.PrometheusEngine,
-			queryable:  queryablePrometheusExecErr,
-			expError:   apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
-		},
-
-		// MQE equivalents when applicable. For example, MQE doesn't have a sample limit
-		// and returns different error messages for timeouts when executing a query.
-
-		{
-			name:                 "downstream - timeout",
-			engineType:           querier.MimirEngine,
-			engineDownstreamOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
-			expError:             apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
-			queryable:            queryableSlow,
-		},
-		{
-			name:               "sharding - timeout",
-			engineType:         querier.MimirEngine,
-			engineShardingOpts: []engineOpt{withTimeout(50 * time.Millisecond)},
-			expError:           apierror.New(apierror.TypeTimeout, "context deadline exceeded"),
-			queryable:          queryableSlow,
-		},
-		{
-			name:       "downstream - storage internal error",
-			engineType: querier.MimirEngine,
-			queryable:  queryableInternalErr,
-			expError:   apierror.New(apierror.TypeInternal, "some internal error"),
-		},
-		{
-			name:       "downstream - storage prometheus execution error",
-			engineType: querier.MimirEngine,
-			queryable:  queryablePrometheusExecErr,
-			expError:   apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
+			name:      "downstream - storage prometheus execution error",
+			queryable: queryablePrometheusExecErr,
+			expError:  apierror.Newf(apierror.TypeExec, "expanding series: %s", querier.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour)),
 		},
 	} {
-		t.Run(fmt.Sprintf("%s engine=%s", tc.name, tc.engineType), func(t *testing.T) {
-			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
-				start:     util.TimeToMillis(start),
-				end:       util.TimeToMillis(end),
-				step:      step.Milliseconds(),
-				queryExpr: parseQuery(t, "sum(bar1)"),
+		t.Run(tc.name, func(t *testing.T) {
+			for _, engineType := range []string{querier.PrometheusEngine, querier.MimirEngine} {
+				t.Run(fmt.Sprintf("engine=%s", engineType), func(t *testing.T) {
+					if tc.skipMQE && engineType == querier.MimirEngine {
+						t.Skip(tc.name, " is not relevant for the Mimir Query Engine")
+					}
+
+					req := &PrometheusRangeQueryRequest{
+						path:      "/query_range",
+						start:     util.TimeToMillis(start),
+						end:       util.TimeToMillis(end),
+						step:      step.Milliseconds(),
+						queryExpr: parseQuery(t, "sum(bar1)"),
+					}
+
+					_, engineSharding := newEngineForTesting(t, engineType, tc.engineShardingOpts...)
+					_, engineDownstream := newEngineForTesting(t, engineType, tc.engineDownstreamOpts...)
+
+					shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engineSharding, mockLimits{totalShards: 3}, 0, nil)
+
+					if tc.queryable == nil {
+						tc.queryable = queryable
+					}
+
+					downstream := &downstreamHandler{
+						engine:    engineDownstream,
+						queryable: tc.queryable,
+					}
+
+					// Run the query with sharding middleware wrapping the downstream one.
+					// We expect to get the downstream error.
+					_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+					if tc.expError == nil {
+						require.NoError(t, err)
+					} else {
+						require.Error(t, err)
+
+						// Convert the actual error to an APIError so that we can compare the error type.
+						var apiErr *apierror.APIError
+						require.ErrorAs(t, err, &apiErr)
+						require.Equal(t, tc.expError.Type, apiErr.Type)
+
+						expResp, ok := apierror.HTTPResponseFromError(tc.expError)
+						require.True(t, ok, "expected error should be an api error")
+
+						gotResp, ok := apierror.HTTPResponseFromError(err)
+						require.True(t, ok, "got error should be an api error")
+
+						// The Prometheus engine and MQE use different error messages in some cases. We don't
+						// want to code the test to the exact error message being used at some particular time
+						// so we only compare the HTTP status codes generated.
+						assert.Equal(t, expResp.GetCode(), gotResp.GetCode())
+					}
+
+				})
 			}
-
-			_, engineSharding := newEngineForTesting(t, tc.engineType, tc.engineShardingOpts...)
-			_, engineDownstream := newEngineForTesting(t, tc.engineType, tc.engineDownstreamOpts...)
-
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engineSharding, mockLimits{totalShards: 3}, 0, nil)
-
-			if tc.queryable == nil {
-				tc.queryable = queryable
-			}
-
-			downstream := &downstreamHandler{
-				engine:    engineDownstream,
-				queryable: tc.queryable,
-			}
-
-			// Run the query with sharding middleware wrapping the downstream one.
-			// We expect to get the downstream error.
-			_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-			if tc.expError == nil {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-
-				// We don't really care about the specific error returned,
-				// all we care is that they produce the same http response.
-				expResp, ok := apierror.HTTPResponseFromError(tc.expError)
-				require.True(t, ok, "expected error should be an api error")
-
-				gotResp, ok := apierror.HTTPResponseFromError(err)
-				require.True(t, ok, "got error should be an api error")
-
-				assert.Equal(t, expResp.GetCode(), gotResp.GetCode())
-				assert.JSONEq(t, string(expResp.GetBody()), string(gotResp.GetBody()))
-			}
-
 		})
+
 	}
 }
 
