@@ -125,9 +125,9 @@ func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string
 	}
 }
 
-func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
-	for idx := range p.Timeseries {
-		p.Timeseries[idx].clearUnmarshalData()
+func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range m.Timeseries {
+		m.Timeseries[idx].clearUnmarshalData()
 	}
 }
 
@@ -783,7 +783,7 @@ func copyHistogram(src Histogram) Histogram {
 
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
-func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
+func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
 	var timeseriesCount, metadataCount int
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
@@ -798,17 +798,17 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
-			metadata = append(metadata, p.Metadata[i-initialMetadataIndex])
+			metadata = append(metadata, m.Metadata[i-initialMetadataIndex])
 		} else {
-			timeseries = append(timeseries, p.Timeseries[i])
+			timeseries = append(timeseries, m.Timeseries[i])
 		}
 	}
 
 	return &WriteRequest{
 		Timeseries:          timeseries,
 		Metadata:            metadata,
-		Source:              p.Source,
-		SkipLabelValidation: p.SkipLabelValidation,
+		Source:              m.Source,
+		SkipLabelValidation: m.SkipLabelValidation,
 	}
 }
 

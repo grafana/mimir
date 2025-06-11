@@ -21,6 +21,7 @@ linters:
     - loggercheck
     - misspell
     - revive
+    - staticcheck
   settings:
     # path to a file containing a list of functions to exclude from checking
     # see https://github.com/kisielk/errcheck#excluding-functions for details
@@ -70,6 +71,9 @@ linters:
       rules:
         - name: redefines-builtin-id
           disabled: true
+    staticcheck:
+      checks:
+        - ST1016
   exclusions:
     presets:
       - comments

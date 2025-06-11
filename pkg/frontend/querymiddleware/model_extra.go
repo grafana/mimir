@@ -752,7 +752,7 @@ func (m *PrometheusLabelsResponse) Close() {
 	// Nothing to do
 }
 
-func (resp *PrometheusLabelsResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+func (m *PrometheusLabelsResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
 	return nil, false
 }
 
@@ -785,7 +785,7 @@ func (m *PrometheusSeriesResponse) Close() {
 	// Nothing to do
 }
 
-func (resp *PrometheusSeriesResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
+func (m *PrometheusSeriesResponse) GetPrometheusResponse() (*PrometheusResponse, bool) {
 	return nil, false
 }
 
