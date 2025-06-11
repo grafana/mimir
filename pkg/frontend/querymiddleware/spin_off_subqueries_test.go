@@ -266,6 +266,8 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				downstream := &downstreamHandler{engine: eng, queryable: queryable}
 				req := &PrometheusInstantQueryRequest{
