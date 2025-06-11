@@ -292,7 +292,7 @@ std.manifestYamlDoc({
 
   minio:: {
     minio: {
-      image: 'minio/minio',
+      image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
       command: ['server', '--console-address', ':9001', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
