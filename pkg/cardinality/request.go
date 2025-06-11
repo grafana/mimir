@@ -72,16 +72,21 @@ func DecodeLabelNamesRequest(r *http.Request, userID string, overrides *validati
 		return nil, err
 	}
 
-	return DecodeLabelNamesRequestFromValuesWithUser(r.Form, userID, overrides)
+	requestLimit := 0
+	if overrides != nil {
+		requestLimit = overrides.CardinalityAPIMaxSeriesLimit(userID)
+	}
+
+	return DecodeLabelNamesRequestFromValuesWithUser(r.Form, userID, requestLimit)
 }
 
 // DecodeLabelNamesRequestFromValues is like DecodeLabelNamesRequest but takes url.Values in input.
 func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, error) {
-	return DecodeLabelNamesRequestFromValuesWithUser(values, "", nil)
+	return DecodeLabelNamesRequestFromValuesWithUser(values, "", 0)
 }
 
 // DecodeLabelNamesRequestFromValuesWithUser is like DecodeLabelNamesRequestFromValues but also accepts the userID and overrides.
-func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, userID string, overrides *validation.Overrides) (*LabelNamesRequest, error) {
+func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, userID string, requestLimit int) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
 		err    error
@@ -92,7 +97,7 @@ func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, userID string,
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values, userID, overrides)
+	parsed.Limit, err = extractLimit(values, requestLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -151,17 +156,21 @@ func DecodeLabelValuesRequest(r *http.Request, userID string, overrides *validat
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
+	requestLimit := 0
+	if overrides != nil {
+		requestLimit = overrides.CardinalityAPIMaxSeriesLimit(userID)
+	}
 
-	return DecodeLabelValuesRequestFromValuesWithUser(r.Form, userID, overrides)
+	return DecodeLabelValuesRequestFromValuesWithUser(r.Form, requestLimit)
 }
 
 // DecodeLabelValuesRequestFromValues is like DecodeLabelValuesRequest but takes url.Values in input.
 func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest, error) {
-	return DecodeLabelValuesRequestFromValuesWithUser(values, "", nil)
+	return DecodeLabelValuesRequestFromValuesWithUser(values, 0)
 }
 
 // DecodeLabelValuesRequestFromValuesWithUser is like DecodeLabelValuesRequestFromValues but also accepts the userID and overrides.
-func DecodeLabelValuesRequestFromValuesWithUser(values url.Values, userID string, overrides *validation.Overrides) (*LabelValuesRequest, error) {
+func DecodeLabelValuesRequestFromValuesWithUser(values url.Values, requestLimit int) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}
 		err    error
@@ -177,7 +186,7 @@ func DecodeLabelValuesRequestFromValuesWithUser(values url.Values, userID string
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(values, userID, overrides)
+	parsed.Limit, err = extractLimit(values, requestLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +237,7 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 }
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
-func extractLimit(values url.Values, userID string, overrides *validation.Overrides) (limit int, err error) {
+func extractLimit(values url.Values, requestLimit int) (limit int, err error) {
 	limitParams := values["limit"]
 	if len(limitParams) == 0 {
 		return defaultLimit, nil
@@ -246,8 +255,8 @@ func extractLimit(values url.Values, userID string, overrides *validation.Overri
 
 	// Use the tenant-specific limit from Overrides if available
 	maxLimitForTenant := maxLimit
-	if overrides != nil {
-		maxLimitForTenant = overrides.CardinalityAPIMaxSeriesLimit(userID)
+	if requestLimit != 0 {
+		maxLimitForTenant = requestLimit
 	}
 
 	if limit > maxLimitForTenant {
