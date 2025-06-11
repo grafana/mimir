@@ -216,7 +216,6 @@ type partitionState struct {
 	latestPlannedOffset int64
 
 	pendingJobs *list.List
-	metrics     *schedulerMetrics
 }
 
 const (
@@ -406,7 +405,6 @@ func (s *BlockBuilderScheduler) getPartitionState(partition int32) *partitionSta
 
 	ps := &partitionState{
 		pendingJobs: list.New(),
-		metrics:     &s.metrics,
 	}
 	s.partState[partition] = ps
 	return ps
