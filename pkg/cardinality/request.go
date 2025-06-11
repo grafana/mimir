@@ -77,16 +77,16 @@ func DecodeLabelNamesRequest(r *http.Request, userID string, overrides *validati
 		requestLimit = overrides.CardinalityAPIMaxSeriesLimit(userID)
 	}
 
-	return DecodeLabelNamesRequestFromValuesWithUser(r.Form, userID, requestLimit)
+	return DecodeLabelNamesRequestFromValuesWithUser(r.Form, requestLimit)
 }
 
 // DecodeLabelNamesRequestFromValues is like DecodeLabelNamesRequest but takes url.Values in input.
 func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, error) {
-	return DecodeLabelNamesRequestFromValuesWithUser(values, "", 0)
+	return DecodeLabelNamesRequestFromValuesWithUser(values, 0)
 }
 
 // DecodeLabelNamesRequestFromValuesWithUser is like DecodeLabelNamesRequestFromValues but also accepts the userID and overrides.
-func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, userID string, requestLimit int) (*LabelNamesRequest, error) {
+func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, requestLimit int) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
 		err    error
