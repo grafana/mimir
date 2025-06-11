@@ -83,7 +83,7 @@ func NewMimirConverter() *MimirConverter {
 	}
 }
 
-func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
+func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
 	m := otlptranslator.Metric{
 		Name: metric.Name(),
 		Unit: metric.Unit(),
@@ -162,7 +162,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					continue
 				}
 
-				promName := namer.Build(translatorMetricFromOtelMetric(metric))
+				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
 				c.metadata = append(c.metadata, mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
