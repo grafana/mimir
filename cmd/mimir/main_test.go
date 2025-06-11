@@ -88,13 +88,13 @@ func TestFlagParsing(t *testing.T) {
 
 		"user visible module listing": {
 			arguments:      []string{"-modules"},
-			stdoutMessage:  "ingester *\n",
+			stdoutMessage:  "ingester (in: all, write)\n",
 			stderrExcluded: "ingester\n",
 		},
 
 		"user visible module listing flag take precedence over target flag": {
 			arguments:      []string{"-modules", "-target=blah"},
-			stdoutMessage:  "ingester *\n",
+			stdoutMessage:  "ingester (in: all, write)\n",
 			stderrExcluded: "ingester\n",
 		},
 
@@ -414,7 +414,7 @@ func TestWithGoogleCloudServiceAccountEnvVariable(t *testing.T) {
 		gcs:
 		  service_account: >-
 		    ${COMMON_STORAGE_GCS_SERVICE_ACCOUNT}
-	
+
 	blocks_storage:
 	  storage_prefix: monitoringmetricsv1blocks
 	  tsdb:
@@ -439,7 +439,7 @@ func TestWithGoogleCloudServiceAccountEnvVariable(t *testing.T) {
 		gcs:
 		  service_account: >-
 		    {	  "type": "service_account",	  "project_id": "my-project",	  "private_key_id": "1234abc",	  "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",	  "client_email": "test@my-project.iam.gserviceaccount.com",	  "client_id": "5678",	  "auth_uri": "https://accounts.google.com/o/oauth2/auth",	  "token_uri": "https://oauth2.googleapis.com/token",	  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",	  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40my-project.iam.gserviceaccount.com"	}
-	
+
 	blocks_storage:
 	  storage_prefix: monitoringmetricsv1blocks
 	  tsdb:
