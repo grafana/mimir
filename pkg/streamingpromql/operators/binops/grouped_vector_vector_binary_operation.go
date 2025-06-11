@@ -683,6 +683,7 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 
 	if matchGroup.oneSideCount == 0 {
 		types.IntSlicePool.Put(matchGroup.presence, g.MemoryConsumptionTracker)
+		matchGroup.presence = nil
 	}
 
 	return nil
