@@ -186,8 +186,7 @@ spec:
             {{- toYaml .Values.ingester.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
-          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ingester }}
-          {{- if or .Values.global.extraEnv .Values.ingester.env $jaeger_queue_size }}
+          {{- if or .Values.global.extraEnv .Values.ingester.env }}
           env:
             {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
             {{- if $cpu_request }}
@@ -201,10 +200,6 @@ spec:
             {{- end }}
             {{- with .Values.ingester.env }}
               {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- if $jaeger_queue_size }}
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.ingester.extraEnvFrom }}
