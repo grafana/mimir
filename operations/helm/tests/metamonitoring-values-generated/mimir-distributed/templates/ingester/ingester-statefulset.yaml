@@ -121,3 +121,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"

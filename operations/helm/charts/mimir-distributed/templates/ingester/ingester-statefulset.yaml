@@ -190,8 +190,8 @@ spec:
           {{- if or .Values.global.extraEnv .Values.ingester.env $cpu_request }}
           env:
             {{- if $cpu_request }}
+              {{- /* copy logic from operations/mimir/ingester.libsonnet */}}
               {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
-            {{/* copy logic from operations/mimir/ingester.libsonnet */}}
             - name: "GOMAXPROCS"
               value: {{ addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString | toYaml }}
             {{- end }}

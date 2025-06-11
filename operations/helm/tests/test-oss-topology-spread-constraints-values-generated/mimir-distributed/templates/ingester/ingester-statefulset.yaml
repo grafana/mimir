@@ -149,6 +149,9 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -300,6 +303,9 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -451,3 +457,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          env:
+            - name: "GOMAXPROCS"
+              value: "4"
