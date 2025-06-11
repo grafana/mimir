@@ -202,7 +202,6 @@ std.manifestYamlDoc({
     JAEGER_SAMPLER_TYPE: 'const',
     JAEGER_SAMPLER_PARAM: 1,
     JAEGER_TAGS: 'app=%s' % appName,
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
   },
 
   local formatEnv(env) = [
