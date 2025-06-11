@@ -35,6 +35,7 @@ const (
 	envJaegerAgentPort                 = "JAEGER_AGENT_PORT"
 	envJaegerSamplerType               = "JAEGER_SAMPLER_TYPE"
 	envJaegerSamplingEndpoint          = "JAEGER_SAMPLING_ENDPOINT"
+	envJaegerReporterMaxQueueSize      = "JAEGER_REPORTER_MAX_QUEUE_SIZE"
 	envJaegerDefaultSamplingServerPort = 5778
 	envJaegerDefaultUDPSpanServerHost  = "localhost"
 	envJaegerDefaultUDPSpanServerPort  = "6831"
@@ -118,14 +119,15 @@ func parseJaegerTags(sTags string) ([]attribute.KeyValue, error) {
 }
 
 type otelJaegerConfig struct {
-	agentHost         string
-	jaegerEndpoint    string
-	agentPort         string
-	samplerType       string
-	samplingServerURL string
-	samplerParam      float64
-	jaegerTags        []attribute.KeyValue
-	agentHostPort     string
+	agentHost            string
+	jaegerEndpoint       string
+	agentPort            string
+	samplerType          string
+	samplingServerURL    string
+	samplerParam         float64
+	jaegerTags           []attribute.KeyValue
+	agentHostPort        string
+	reporterMaxQueueSize int
 }
 
 // parseOTelJaegerConfig facilitates initialization that is compatible with Jaeger's InitGlobalTracer method.
@@ -193,6 +195,15 @@ func parseOTelJaegerConfig() (otelJaegerConfig, error) {
 	if err != nil {
 		return cfg, errors.Wrapf(err, "could not parse %s", envJaegerTags)
 	}
+
+	// Parse reporter max queue size
+	if e := os.Getenv(envJaegerReporterMaxQueueSize); e != "" {
+		if value, err := strconv.Atoi(e); err == nil {
+			cfg.reporterMaxQueueSize = value
+		} else {
+			return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerReporterMaxQueueSize, e)
+		}
+	}
 	return cfg, nil
 }
 
@@ -247,8 +258,13 @@ func (cfg otelJaegerConfig) initJaegerTracerProvider(serviceName string, logger 
 		return nil, err
 	}
 
+	var batcherOptions []tracesdk.BatchSpanProcessorOption
+	if cfg.reporterMaxQueueSize > 0 {
+		batcherOptions = append(batcherOptions, tracesdk.WithMaxQueueSize(cfg.reporterMaxQueueSize))
+	}
+
 	tracerProviderOptions := []tracesdk.TracerProviderOption{
-		tracesdk.WithBatcher(exp),
+		tracesdk.WithBatcher(exp, batcherOptions...),
 		tracesdk.WithResource(res),
 		tracesdk.WithSampler(sampler),
 	}

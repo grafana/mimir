@@ -39,8 +39,8 @@ To configure Grafana Mimir with OpenTelemetry format tracing, set any of the fol
 
 OpenTelemetry configuration follows the standard documentation from [OpenTelemetry SDK Configuration](https://opentelemetry.io/docs/languages/sdk-configuration/general/).
 
-- `OTEL_EXPORTER_OTLP_ENDPOINT`: The OTLP endpoint URL. For example, `http://tempo:4318/v1/traces`.
-- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`: The OTLP traces-specific endpoint URL. This value overrides the previous variable.
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: The OTLP endpoint URL. For example, `http://otlp-endpoint:4318`.
+- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`: The OTLP traces-specific endpoint URL. This value overrides the previous variable. For example, `http://tempo:4318/v1/traces`.
 - `OTEL_TRACES_EXPORTER`: The traces exporter to use. Default: `otlp`.
 - `OTEL_TRACES_SAMPLER`: The sampling strategy to use.
 

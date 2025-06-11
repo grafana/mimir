@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -2406,6 +2407,180 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 	}
 }
 
+func TestApplyRuleGroupLimits(t *testing.T) {
+	tcs := []struct {
+		name     string
+		configs  map[string]rulespb.RuleGroupList
+		limits   RulesLimits
+		expected map[string]rulespb.RuleGroupList
+	}{
+		{
+			name:     "returns nil for nil rule groups",
+			configs:  nil,
+			limits:   validation.MockDefaultOverrides(),
+			expected: nil,
+		},
+		{
+			name:     "returns empty for empty rule groups",
+			configs:  map[string]rulespb.RuleGroupList{},
+			limits:   validation.MockDefaultOverrides(),
+			expected: map[string]rulespb.RuleGroupList{},
+		},
+		{
+			name: "returns group list for tenant with empty group list",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {},
+			},
+			limits: validation.MockDefaultOverrides(),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {},
+			},
+		},
+		{
+			name: "no adjustments if the limit is 0 for one tenant",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 10*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = 0
+				tenantLimits["user2"] = validation.MockDefaultLimits()
+				tenantLimits["user2"].RulerMinRuleEvaluationInterval = model.Duration(20 * time.Second)
+				tenantLimits["user3"] = validation.MockDefaultLimits()
+				tenantLimits["user3"].RulerMinRuleEvaluationInterval = model.Duration(40 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 10*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "no adjustments to rules over the min limit for a tenant",
+			configs: map[string]rulespb.RuleGroupList{
+				"user2": {
+					createRuleGroupWithInterval("group1", "user2", 30*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = 0
+				tenantLimits["user2"] = validation.MockDefaultLimits()
+				tenantLimits["user2"].RulerMinRuleEvaluationInterval = model.Duration(20 * time.Second)
+				tenantLimits["user3"] = validation.MockDefaultLimits()
+				tenantLimits["user3"].RulerMinRuleEvaluationInterval = model.Duration(40 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user2": {
+					createRuleGroupWithInterval("group1", "user2", 30*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "rules under a tenant limit are adjusted up",
+			configs: map[string]rulespb.RuleGroupList{
+				"user3": {
+					createRuleGroupWithInterval("group1", "user3", 30*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = 0
+				tenantLimits["user2"] = validation.MockDefaultLimits()
+				tenantLimits["user2"].RulerMinRuleEvaluationInterval = model.Duration(20 * time.Second)
+				tenantLimits["user3"] = validation.MockDefaultLimits()
+				tenantLimits["user3"].RulerMinRuleEvaluationInterval = model.Duration(40 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user3": {
+					createRuleGroupWithInterval("group1", "user3", 40*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "different tenants with different limits are applied simultaneously",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 5*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+				"user2": {
+					createRuleGroupWithInterval("group1", "user2", 5*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+				"user3": {
+					createRuleGroupWithInterval("group1", "user3", 5*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = 0
+				tenantLimits["user2"] = validation.MockDefaultLimits()
+				tenantLimits["user2"].RulerMinRuleEvaluationInterval = model.Duration(20 * time.Second)
+				tenantLimits["user3"] = validation.MockDefaultLimits()
+				tenantLimits["user3"].RulerMinRuleEvaluationInterval = model.Duration(40 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 5*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+				"user2": {
+					createRuleGroupWithInterval("group1", "user2", 20*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+				"user3": {
+					createRuleGroupWithInterval("group1", "user3", 40*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "zero interval is unchanged",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 0, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = model.Duration(30 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 0, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+		{
+			name: "zero interval when limit is higher than default is adjusted to the limit",
+			configs: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 0, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user1"] = validation.MockDefaultLimits()
+				tenantLimits["user1"].RulerMinRuleEvaluationInterval = model.Duration(90 * time.Second)
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user1": {
+					createRuleGroupWithInterval("group1", "user1", 90*time.Second, createAlertingRule("record:1", "1"), createRecordingRule("alert2", "2")),
+				},
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := log.NewNopLogger()
+			rulerCfg := Config{
+				EvaluationInterval: time.Minute,
+			}
+
+			actual := applyRuleGroupLimits(tc.configs, tc.limits, rulerCfg, logger)
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 func BenchmarkFilterRuleGroupsByEnabled(b *testing.B) {
 	const (
 		numTenants                    = 1000
@@ -2516,6 +2691,12 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 		QueryOffset:                   1 * time.Minute,
 		AlignEvaluationTimeOnInterval: true,
 	}
+}
+
+func createRuleGroupWithInterval(name, user string, interval time.Duration, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
+	rg := createRuleGroup(name, user, rules...)
+	rg.Interval = interval
+	return rg
 }
 
 func TestConfig_Validate(t *testing.T) {

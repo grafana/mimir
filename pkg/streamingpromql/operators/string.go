@@ -36,7 +36,7 @@ func (s *StringLiteral) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *StringLiteral) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (s *StringLiteral) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil
 }

@@ -202,7 +202,6 @@ std.manifestYamlDoc({
     JAEGER_SAMPLER_TYPE: 'const',
     JAEGER_SAMPLER_PARAM: 1,
     JAEGER_TAGS: 'app=%s' % appName,
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
   },
 
   local formatEnv(env) = [
@@ -293,7 +292,7 @@ std.manifestYamlDoc({
 
   minio:: {
     minio: {
-      image: 'minio/minio',
+      image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
       command: ['server', '--console-address', ':9001', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
