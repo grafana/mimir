@@ -530,7 +530,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 
 		expectedOutputSeries []labels.Labels
 	}{
-		"multiple series from 'one' side match to a single 'many' series": {
+		"multiple series from 'many' side match to a single 'one' series": {
 			leftSeries: []labels.Labels{
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
 				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
@@ -544,7 +544,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
 			},
 		},
-		"multiple series from 'many' side match to a single 'one' series": {
+		"multiple series from 'one' side match to a single 'many' series": {
 			leftSeries: []labels.Labels{
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
 			},
