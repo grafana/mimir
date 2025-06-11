@@ -40,11 +40,18 @@ fi
 ALL_TESTS=$(go test "${MIMIR_DIR}/..." -list 'Test.*' | grep '^Test' | sort)
 
 # Filter tests by the requested group.
-GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX' | tr '\n' '|')
+GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
 
 echo "This group will run the following tests:"
 echo "$GROUP_TESTS"
 echo ""
 
+# Build the regex used to run this group's tests.
+REGEX="^("
+for TEST in $GROUP_TESTS; do
+  REGEX="${REGEX}|${TEST}"
+done
+REGEX="${REGEX})$"
+
 # shellcheck disable=SC2086 # we *want* word splitting of GROUP_TESTS.
-exec go test -tags=netgo,stringlabels -timeout 30m -race -count 1 -run ${GROUP_TESTS} ./...
+exec go test -tags=netgo,stringlabels -timeout 30m -race -count 1 -run ${REGEX} ./...
