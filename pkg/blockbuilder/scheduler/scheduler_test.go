@@ -1042,12 +1042,12 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 
 			// Simulate observations (completed jobs)
 			for _, obs := range tc.observations {
-				sched.updateJob(obs.key, "worker1", obs.complete, schedulerpb.JobSpec{
+				require.NoError(t, sched.updateJob(obs.key, "worker1", obs.complete, schedulerpb.JobSpec{
 					Topic:       "ingest",
 					Partition:   part,
 					StartOffset: obs.start,
 					EndOffset:   obs.end,
-				})
+				}))
 			}
 
 			sched.completeObservationMode(context.Background())
