@@ -61,6 +61,8 @@ type Config struct {
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
+
+	ParquetEnabled bool `yaml:"parquet_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers the Config flags.
@@ -70,6 +72,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
+
+	f.BoolVar(&cfg.ParquetEnabled, "store-gateway.parquet-enabled", false, "Whether to query Parquet files for block instead of the native Prometheus TSDB files.")
 }
 
 // Validate the Config.

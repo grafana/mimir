@@ -12779,6 +12779,17 @@
           "fieldFlag": "store-gateway.disabled-tenants",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "parquet_enabled",
+          "required": false,
+          "desc": "Whether to query Parquet files for block instead of the native Prometheus TSDB files.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "store-gateway.parquet-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
