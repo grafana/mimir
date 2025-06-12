@@ -171,11 +171,11 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.key.epoch != key.epoch {
-		return errBadEpoch
-	}
 	if j.assignee != workerID {
 		return errJobNotAssigned
+	}
+	if j.key.epoch != key.epoch {
+		return errBadEpoch
 	}
 
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
@@ -201,11 +201,11 @@ func (s *jobQueue[T]) completeJob(key jobKey, workerID string) error {
 	if !ok {
 		return errJobNotFound
 	}
-	if j.key.epoch != key.epoch {
-		return errBadEpoch
-	}
 	if j.assignee != workerID {
 		return errJobNotAssigned
+	}
+	if j.key.epoch != key.epoch {
+		return errBadEpoch
 	}
 
 	delete(s.jobs, key.id)

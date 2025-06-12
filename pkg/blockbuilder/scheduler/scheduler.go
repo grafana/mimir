@@ -331,7 +331,6 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				StartOffset: or.start,
 				EndOffset:   or.end,
 			}
-
 			if err := s.jobs.add(jobID, spec); err != nil {
 				if errors.Is(err, errJobCreationDisallowed) || errors.Is(err, errJobAlreadyExists) {
 					// We've hit the limit for this partition.
@@ -511,15 +510,9 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 
 			var consumeOffset int64
 
-			// Where to resume planning? In order, we prefer:
-			// 1. The latest planned offset (if we have one)
-			// 2. The committed offset (if we have one)
-			// 3. The larger of the start offset and fallback offset.
-
-			if ps, ok := s.partState[partition]; ok {
-				consumeOffset = ps.latestPlannedOffset
-			} else if committedOff, ok := committed.Lookup(t, partition); ok {
+			if committedOff, ok := committed.Lookup(t, partition); ok {
 				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
+
 				consumeOffset = committedOff.At
 			} else {
 				// Nothing committed for this partition. Rewind to fallback offset instead.
