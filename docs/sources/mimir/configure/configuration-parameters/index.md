@@ -5400,6 +5400,11 @@ dynamic_replication:
 # ignored instead.
 # CLI flag: -store-gateway.disabled-tenants
 [disabled_tenants: <string> | default = ""]
+
+# (experimental) Whether to query Parquet files for block instead of the native
+# Prometheus TSDB files.
+# CLI flag: -store-gateway.parquet-enabled
+[parquet_enabled: <boolean> | default = false]
 ```
 
 ### memcached
