@@ -2521,7 +2521,7 @@ func TestComputeConfig(t *testing.T) {
 
 	reg3 := prometheus.NewPedanticRegistry()
 	cfg3 := mockAlertmanagerConfig(t)
-	cfg3.StrictInitialization = true
+	cfg3.StrictInitializationEnabled = true
 	amWithStrictInit := setupSingleMultitenantAlertmanager(t, cfg3, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg3)
 
 	testTenant := "test-tenant"
