@@ -63,6 +63,7 @@
 * [ENHANCEMENT] Query-frontend: add optional reason to blocked_queries config. #11407 #11434
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [ENHANCEMENT] Ruler: Add new per-tenant limit on minimum rule evaluation interval. #11665
+* [ENHANCEMENT] store-gateway: download sparse headers on startup when lazy loading is enabled. #11686
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
