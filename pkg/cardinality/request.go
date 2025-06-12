@@ -70,16 +70,16 @@ func DecodeLabelNamesRequest(r *http.Request, tenantMaxLimit int) (*LabelNamesRe
 		return nil, err
 	}
 
-	return DecodeLabelNamesRequestFromValuesWithUser(r.Form, tenantMaxLimit)
+	return DecodeLabelNamesRequestFromValuesWithTenantMaxLimit(r.Form, tenantMaxLimit)
 }
 
 // DecodeLabelNamesRequestFromValues is like DecodeLabelNamesRequest but takes url.Values in input.
 func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, error) {
-	return DecodeLabelNamesRequestFromValuesWithUser(values, 0)
+	return DecodeLabelNamesRequestFromValuesWithTenantMaxLimit(values, 0)
 }
 
-// DecodeLabelNamesRequestFromValuesWithUser is like DecodeLabelNamesRequestFromValues but also accepts the userID and overrides.
-func DecodeLabelNamesRequestFromValuesWithUser(values url.Values, tenantMaxLimit int) (*LabelNamesRequest, error) {
+// DecodeLabelNamesRequestFromValuesWithTenantMaxLimit is like DecodeLabelNamesRequestFromValues but also accepts the userID and overrides.
+func DecodeLabelNamesRequestFromValuesWithTenantMaxLimit(values url.Values, tenantMaxLimit int) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
 		err    error
@@ -150,16 +150,16 @@ func DecodeLabelValuesRequest(r *http.Request, tenantMaxLimit int) (*LabelValues
 		return nil, err
 	}
 
-	return DecodeLabelValuesRequestFromValuesWithUser(r.Form, tenantMaxLimit)
+	return DecodeLabelValuesRequestFromValuesWithTenantMaxLimit(r.Form, tenantMaxLimit)
 }
 
 // DecodeLabelValuesRequestFromValues is like DecodeLabelValuesRequest but takes url.Values in input.
 func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest, error) {
-	return DecodeLabelValuesRequestFromValuesWithUser(values, 0)
+	return DecodeLabelValuesRequestFromValuesWithTenantMaxLimit(values, 0)
 }
 
-// DecodeLabelValuesRequestFromValuesWithUser is like DecodeLabelValuesRequestFromValues but also accepts the userID and overrides.
-func DecodeLabelValuesRequestFromValuesWithUser(values url.Values, tenantMaxLimit int) (*LabelValuesRequest, error) {
+// DecodeLabelValuesRequestFromValuesWithTenantMaxLimit is like DecodeLabelValuesRequestFromValues but also accepts the userID and overrides.
+func DecodeLabelValuesRequestFromValuesWithTenantMaxLimit(values url.Values, tenantMaxLimit int) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}
 		err    error
