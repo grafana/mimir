@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
-	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -32,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -86,7 +86,6 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	if err := cfg.Compression.Validate(); err != nil {
 		return errors.Wrap(err, "query-frontend results cache")
 	}
-
 	return nil
 }
 
@@ -474,18 +473,24 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, samplesProcessed uint64) (Extent, error) {
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, perStepStats []stats.StepStat) (Extent, error) {
 	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
+
+	extentPerStepStats := make([]StepStat, len(perStepStats))
+	for i, stat := range perStepStats {
+		extentPerStepStats[i] = StepStat(stat)
+	}
+
 	return Extent{
 		Start:                   req.GetStart(),
 		End:                     req.GetEnd(),
 		Response:                marshalled,
 		TraceId:                 otelTraceID(ctx),
 		QueryTimestampMs:        queryTime.UnixMilli(),
-		SamplesProcessedPerStep: approximateSamplesProcessedPerStep(req.GetStart(), req.GetEnd(), req.GetStep(), samplesProcessed),
+		SamplesProcessedPerStep: extentPerStepStats,
 	}, nil
 }
 
@@ -577,7 +582,9 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
-			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime)
+			// Use maxCacheTime-1 as the end boundary to avoid double-counting the sample at maxCacheTime.
+			// The stats at maxCacheTime timestamp will be included in the request for maxCacheInterval range.
+			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime-1)
 			extents[i].SamplesProcessedPerStep = perStepStats
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
@@ -684,24 +691,6 @@ func cacheHashKey(key string) string {
 
 	// Hex because memcache keys must be non-whitespace non-control ASCII
 	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-// approximateSamplesProcessedPerStep approximates the samples processed per step from the total samples processed.
-// We had to use approximation, because MQE doesn't support per step stats yet.
-func approximateSamplesProcessedPerStep(start int64, end int64, step int64, samplesProcessed uint64) []StepStat {
-	numSteps := (end-start)/step + 1
-	// approxPerStep is not float because:
-	// 1. Real per step stats always have integer values. Having int in approximation will simplify migration to per step stats from engine
-	// 2. approxPerStep is rounded with math.Ceil, because in most of the real-life scenarios, samplesProcessed / numSteps is > 1.
-	approxPerStep := int64(math.Ceil(float64(samplesProcessed) / float64(numSteps)))
-	perStepStats := make([]StepStat, 0, numSteps)
-	for i := int64(0); i < numSteps; i++ {
-		perStepStats = append(perStepStats, StepStat{
-			Timestamp: start + i*step,
-			Value:     approxPerStep,
-		})
-	}
-	return perStepStats
 }
 
 // extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.

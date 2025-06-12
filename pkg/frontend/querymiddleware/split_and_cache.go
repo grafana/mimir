@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -92,11 +93,12 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled   bool
-	cache          cache.Cache
-	splitter       CacheKeyGenerator
-	extractor      Extractor
-	shouldCacheReq shouldCacheFn
+	cacheEnabled               bool
+	cache                      cache.Cache
+	splitter                   CacheKeyGenerator
+	extractor                  Extractor
+	shouldCacheReq             shouldCacheFn
+	cacheQueryableSamplesStats bool
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -106,6 +108,7 @@ type splitAndCacheMiddleware struct {
 func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
+	cacheQueryableSamplesStats bool,
 	splitInterval time.Duration,
 	limits Limits,
 	merger Merger,
@@ -119,19 +122,20 @@ func newSplitAndCacheMiddleware(
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:   splitEnabled,
-			cacheEnabled:   cacheEnabled,
-			next:           next,
-			limits:         limits,
-			merger:         merger,
-			splitInterval:  splitInterval,
-			metrics:        metrics,
-			cache:          cache,
-			splitter:       splitter,
-			extractor:      extractor,
-			shouldCacheReq: shouldCacheReq,
-			logger:         logger,
-			currentTime:    time.Now,
+			splitEnabled:               splitEnabled,
+			cacheEnabled:               cacheEnabled,
+			cacheQueryableSamplesStats: cacheQueryableSamplesStats,
+			next:                       next,
+			limits:                     limits,
+			merger:                     merger,
+			splitInterval:              splitInterval,
+			metrics:                    metrics,
+			cache:                      cache,
+			splitter:                   splitter,
+			extractor:                  extractor,
+			shouldCacheReq:             shouldCacheReq,
+			logger:                     logger,
+			currentTime:                time.Now,
 		}
 	})
 }
@@ -143,17 +147,25 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
+	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
+	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
+	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
+	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
+
+	if s.cacheQueryableSamplesStats && isCacheEnabled {
+		// Make queier to track PerStepStats
+		req, err = req.WithStats("all")
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Split the input requests by the configured interval (eg. day).
 	// Returns the input request if splitting is disabled.
 	splitReqs, err := s.splitRequestByInterval(req)
 	if err != nil {
 		return nil, err
 	}
-
-	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
-	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
-	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
-	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
 	// Lookup the results cache.
 	if isCacheEnabled {
@@ -260,7 +272,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Skip caching if the request is not cachable.
-			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+				fmt.Println("Request non cachable", "reason", reason)
 				continue
 			}
 
@@ -271,10 +284,11 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
 				downstreamStats := splitReq.downstreamStatistics[downstreamIdx]
 				if !isResponseCachable(downstreamRes) {
+					fmt.Println("Response not cachable")
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessed())
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessedPerStep())
 				if err != nil {
 					return nil, err
 				}

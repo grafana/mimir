@@ -38,6 +38,9 @@ std.manifestYamlDoc({
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
+
+    // If true, enable per-step stats
+    enable_cached_samples_stats: true,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
