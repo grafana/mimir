@@ -288,3 +288,4 @@ The following features or configuration parameters are currently deprecated and 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - Support for Redis-based caching
+- The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
