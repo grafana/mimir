@@ -10,24 +10,15 @@ import (
 )
 
 type blockBuilderMetrics struct {
-	consumeCycleDuration     prometheus.Histogram
 	consumeJobDuration       *prometheus.HistogramVec
 	processPartitionDuration *prometheus.HistogramVec
 	fetchErrors              *prometheus.CounterVec
-	consumerLagRecords       *prometheus.GaugeVec
 	blockCounts              *prometheus.CounterVec
 	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 	var m blockBuilderMetrics
-
-	m.consumeCycleDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name: "cortex_blockbuilder_consume_cycle_duration_seconds",
-		Help: "Time spent consuming a full cycle.",
-
-		NativeHistogramBucketFactor: 1.1,
-	})
 
 	m.consumeJobDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name: "cortex_blockbuilder_consume_job_duration_seconds",
@@ -37,19 +28,15 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 	}, []string{"success"})
 
 	m.processPartitionDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:                        "cortex_blockbuilder_process_partition_duration_seconds",
-		Help:                        "Time spent processing one partition.",
+		Name: "cortex_blockbuilder_process_partition_duration_seconds",
+		Help: "Time spent processing one partition.",
+
 		NativeHistogramBucketFactor: 1.1,
 	}, []string{"partition"})
 
 	m.fetchErrors = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_fetch_errors_total",
 		Help: "Total number of errors while fetching by the consumer.",
-	}, []string{"partition"})
-
-	m.consumerLagRecords = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "cortex_blockbuilder_consumer_lag_records",
-		Help: "The per-topic-partition number of records, instance needs to work through each cycle.",
 	}, []string{"partition"})
 
 	// block_time can be "next", "current" or "previous".

@@ -15,6 +15,9 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/oauth2"
+
+	commoncfg "github.com/prometheus/common/config"
 
 	"github.com/grafana/alerting/receivers"
 )
@@ -22,18 +25,21 @@ import (
 var ErrInvalidMethod = errors.New("webhook only supports HTTP methods PUT or POST")
 
 type clientConfiguration struct {
-	userAgent string
-	dialer    net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
+	userAgent        string
+	dialer           net.Dialer // We use Dialer here instead of DialContext as our mqtt client doesn't support DialContext.
+	customDialer     bool
+	httpClientConfig HTTPClientConfig
 }
 
 // defaultDialTimeout is the default timeout for the dialer, 30 seconds to match http.DefaultTransport.
 const defaultDialTimeout = 30 * time.Second
 
 type Client struct {
-	cfg clientConfiguration
+	cfg               clientConfiguration
+	oauth2TokenSource oauth2.TokenSource
 }
 
-func NewClient(opts ...ClientOption) *Client {
+func NewClient(opts ...ClientOption) (*Client, error) {
 	cfg := clientConfiguration{
 		userAgent: "Grafana",
 		dialer:    net.Dialer{},
@@ -47,9 +53,25 @@ func NewClient(opts ...ClientOption) *Client {
 		// Mostly defensive to ensure that timeout semantics don't change when given a custom dialer without a timeout.
 		cfg.dialer.Timeout = defaultDialTimeout
 	}
-	return &Client{
+
+	client := &Client{
 		cfg: cfg,
 	}
+
+	if cfg.httpClientConfig.OAuth2 != nil {
+		if err := ValidateOAuth2Config(cfg.httpClientConfig.OAuth2); err != nil {
+			return nil, fmt.Errorf("invalid OAuth2 configuration: %w", err)
+		}
+		// If the user has provided an OAuth2 config, we need to prepare the OAuth2 token source. This needs to
+		// be stored outside of the request so that the token expiration/re-use will work as expected.
+		tokenSource, err := NewOAuth2TokenSource(cfg)
+		if err != nil {
+			return nil, err
+		}
+		client.oauth2TokenSource = tokenSource
+	}
+
+	return client, nil
 }
 
 type ClientOption func(*clientConfiguration)
@@ -63,7 +85,34 @@ func WithUserAgent(userAgent string) ClientOption {
 func WithDialer(dialer net.Dialer) ClientOption {
 	return func(c *clientConfiguration) {
 		c.dialer = dialer
+		c.customDialer = true
 	}
+}
+
+func WithHTTPClientConfig(config *HTTPClientConfig) ClientOption {
+	return func(c *clientConfiguration) {
+		if config != nil {
+			c.httpClientConfig = *config
+		}
+	}
+}
+
+func ToHTTPClientOption(option ...ClientOption) []commoncfg.HTTPClientOption {
+	cfg := clientConfiguration{}
+	for _, opt := range option {
+		if opt == nil {
+			continue
+		}
+		opt(&cfg)
+	}
+	result := make([]commoncfg.HTTPClientOption, 0, len(option))
+	if cfg.userAgent != "" {
+		result = append(result, commoncfg.WithUserAgent(cfg.userAgent))
+	}
+	if cfg.customDialer {
+		result = append(result, commoncfg.WithDialContextFunc(cfg.dialer.DialContext))
+	}
+	return result
 }
 
 func (ns *Client) SendWebhook(ctx context.Context, l log.Logger, webhook *receivers.SendWebhookSettings) error {
@@ -117,6 +166,11 @@ func (ns *Client) SendWebhook(ctx context.Context, l log.Logger, webhook *receiv
 			level.Error(l).Log("msg", "Failed to add HMAC roundtripper to client", "err", err)
 			return err
 		}
+	}
+
+	if ns.oauth2TokenSource != nil {
+		level.Debug(l).Log("msg", "Adding OAuth2 roundtripper to client")
+		client.Transport = NewOAuth2RoundTripper(ns.oauth2TokenSource, client.Transport)
 	}
 
 	resp, err := client.Do(request)

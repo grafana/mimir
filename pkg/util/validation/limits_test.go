@@ -1130,6 +1130,60 @@ user1:
 	}
 }
 
+func TestRulerMinRuleEvaluationIntervalPerTenantOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML                         string
+		overrides                         string
+		expectedMinRuleEvaluationInterval time.Duration
+	}{
+		"no user specific minimum": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 15s
+`,
+			expectedMinRuleEvaluationInterval: 15 * time.Second,
+		},
+		"default limit if user not specified": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 5s
+`,
+			overrides: `
+randomuser:
+  ruler_min_rule_evaluation_interval: 5m
+`,
+			expectedMinRuleEvaluationInterval: 5 * time.Second,
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 5s
+`,
+			overrides: `
+user1:
+  ruler_min_rule_evaluation_interval: 10m
+`,
+			expectedMinRuleEvaluationInterval: 10 * time.Minute,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(LimitsYAML, tl)
+
+			require.Equal(t, tt.expectedMinRuleEvaluationInterval, ov.RulerMinRuleEvaluationInterval("user1"))
+		})
+	}
+}
+
 func TestRulerAlertmanagerClientConfig(t *testing.T) {
 	tc := map[string]struct {
 		baseYAML       string

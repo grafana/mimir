@@ -25,7 +25,7 @@ func TestDropSeriesName(t *testing.T) {
 		{Labels: labels.FromStrings("label2", "value2")},
 	}
 
-	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, limiter.NewMemoryConsumptionTracker(0, nil))
+	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, limiter.NewMemoryConsumptionTracker(0, nil, ""))
 	require.NoError(t, err)
 	require.Equal(t, expected, modifiedMetadata)
 }
@@ -33,7 +33,7 @@ func TestDropSeriesName(t *testing.T) {
 func TestFloatTransformationFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := floatTransformationFunc(transform)
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -45,7 +45,8 @@ func TestFloatTransformationFunc(t *testing.T) {
 		},
 	}
 	// Increase the memory tracker for 2 FPoints, and 1 HPoint
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2+types.HPointSize*1))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2, limiter.FPointSlices))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*1, limiter.HPointSlices))
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -66,7 +67,7 @@ func TestFloatTransformationFunc(t *testing.T) {
 func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 	transform := func(f float64) float64 { return f * 2 }
 	transformFunc := FloatTransformationDropHistogramsFunc(transform)
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
 
 	seriesData := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -78,7 +79,8 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 		},
 	}
 	// Increase the memory tracker for 2 FPoints, and 1 HPoint
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2+types.HPointSize*1))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2, limiter.FPointSlices))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*1, limiter.HPointSlices))
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{

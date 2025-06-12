@@ -214,6 +214,16 @@
         },
         {
           "kind": "field",
+          "name": "grpc_collect_max_streams_by_conn",
+          "required": false,
+          "desc": "If true, the max streams by connection gauge will be collected.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "server.grpc-collect-max-streams-by-conn",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "proxy_protocol_enabled",
           "required": false,
           "desc": "Enables PROXY protocol.",
@@ -703,6 +713,26 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.log-request-headers-exclude-list",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_headers",
+          "required": false,
+          "desc": "Optionally add request headers to tracing spans.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.trace-request-headers",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_exclude_headers_list",
+          "required": false,
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.trace-request-headers-exclude-list",
           "fieldType": "string"
         },
         {
@@ -5330,6 +5360,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_min_rule_evaluation_interval",
+          "required": false,
+          "desc": "Minimum allowable evaluation interval for rule groups.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.min-rule-evaluation-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",
@@ -7044,7 +7085,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -9249,7 +9290,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -9812,7 +9853,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -10399,7 +10440,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -15721,7 +15762,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"

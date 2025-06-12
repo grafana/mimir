@@ -26,6 +26,9 @@ type DuplicationBuffer struct {
 
 	nextSeriesIndex []int // One entry per consumer.
 	buffer          *SeriesDataRingBuffer
+
+	// multiple DuplicationConsumers will call DuplicationBuffer.Prepare(), so this ensures idempotency.
+	prepared bool
 }
 
 func NewDuplicationBuffer(inner types.InstantVectorOperator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *DuplicationBuffer {
@@ -172,6 +175,17 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 	b.nextSeriesIndex[consumerIndex] = -1
 }
 
+func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if b.prepared {
+		return nil
+	}
+	if err := b.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	b.prepared = true
+	return nil
+}
+
 func (b *DuplicationBuffer) close() {
 	types.SeriesMetadataSlicePool.Put(b.seriesMetadata, b.MemoryConsumptionTracker)
 	b.seriesMetadata = nil
@@ -203,6 +217,10 @@ func (d *DuplicationConsumer) NextSeries(ctx context.Context) (types.InstantVect
 
 func (d *DuplicationConsumer) ExpressionPosition() posrange.PositionRange {
 	return d.Buffer.Inner.ExpressionPosition()
+}
+
+func (d *DuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return d.Buffer.Prepare(ctx, params)
 }
 
 func (d *DuplicationConsumer) Close() {

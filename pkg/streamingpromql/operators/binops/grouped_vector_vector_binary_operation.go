@@ -683,6 +683,7 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 
 	if matchGroup.oneSideCount == 0 {
 		types.IntSlicePool.Put(matchGroup.presence, g.MemoryConsumptionTracker)
+		matchGroup.presence = nil
 	}
 
 	return nil
@@ -753,6 +754,14 @@ func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {
 
 func (g *GroupedVectorVectorBinaryOperation) ExpressionPosition() posrange.PositionRange {
 	return g.expressionPosition
+}
+
+func (g *GroupedVectorVectorBinaryOperation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := g.Left.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return g.Right.Prepare(ctx, params)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Close() {

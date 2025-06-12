@@ -58,7 +58,7 @@ type richMeta struct {
 	SplitID     *uint32 `json:"splitId,omitempty"`
 }
 
-func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
+func (g *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	tenantID := vars["tenant"]
 	if tenantID == "" {
@@ -82,7 +82,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	metasMap, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(req.Context(), s.stores.bucket, tenantID, showDeleted, time.Time{})
+	metasMap, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(req.Context(), g.stores.bucket, tenantID, showDeleted, time.Time{})
 	if err != nil {
 		util.WriteTextResponse(w, fmt.Sprintf("Failed to read block metadata: %s", err))
 		return

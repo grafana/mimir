@@ -55,8 +55,6 @@
   local name = 'ingester',
 
   ingester_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
-
     local requests = $.util.parseCPU($.ingester_container.resources.requests.cpu),
     local requestsWithHeadroom = std.ceil(
       // double the requests, but with headroom of at least 3 and at most 6 CPU

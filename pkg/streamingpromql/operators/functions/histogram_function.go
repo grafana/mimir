@@ -79,6 +79,7 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) []promql.Buckets {
 		return make([]promql.Buckets, 0, size)
 	}),
+	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Buckets{})),
 	true,
 	mangleBuckets,
@@ -98,6 +99,7 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) []promql.Bucket {
 		return make([]promql.Bucket, 0, size)
 	}),
+	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Bucket{})),
 	true,
 	nil,
@@ -177,9 +179,6 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 	h.innerSeriesMetricNames.CaptureMetricNames(innerSeries)
 	groups := map[string]groupWithLabels{}
 	h.seriesGroupPairs = make([]seriesGroupPair, len(innerSeries))
-	if err != nil {
-		return nil, err
-	}
 	b := make([]byte, 0, 1024)
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
@@ -451,6 +450,14 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
 }
 
+func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := h.f.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return h.inner.Prepare(ctx, params)
+}
+
 func (h *HistogramFunction) Close() {
 	h.inner.Close()
 	h.f.Close()
@@ -482,6 +489,7 @@ type histogramFunction interface {
 	LoadArguments(ctx context.Context) error
 	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
 	ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64
+	Prepare(ctx context.Context, params *types.PrepareParams) error
 	Close()
 }
 
@@ -533,6 +541,10 @@ func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, h *hist
 	return promql.HistogramQuantile(ph, h)
 }
 
+func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return q.phArg.Prepare(ctx, params)
+}
+
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
 
@@ -564,7 +576,7 @@ func (f *histogramFraction) LoadArguments(ctx context.Context) error {
 	return nil
 }
 
-func (f *histogramFraction) ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64 {
+func (f *histogramFraction) ComputeClassicHistogramResult(pointIndex int, _ int, buckets promql.Buckets) float64 {
 	lower := f.lowerValues.Samples[pointIndex].F
 	upper := f.upperValues.Samples[pointIndex].F
 
@@ -576,6 +588,14 @@ func (f *histogramFraction) ComputeNativeHistogramResult(pointIndex int, h *hist
 	upper := f.upperValues.Samples[pointIndex].F
 
 	return promql.HistogramFraction(lower, upper, h)
+}
+
+func (f *histogramFraction) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := f.lowerArg.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+	return f.upperArg.Prepare(ctx, params)
 }
 
 func (f *histogramFraction) Close() {

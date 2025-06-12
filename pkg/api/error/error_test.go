@@ -3,12 +3,15 @@
 package error
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/grafana/regexp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,4 +59,42 @@ func extractPrometheusStrings(t *testing.T, constantType string) []string {
 	require.NotEmpty(t, strings)
 
 	return strings
+}
+
+func TestIsRetryableAPIError(t *testing.T) {
+	retryable := []error{
+		New(TypeInternal, string(TypeInternal)),
+		context.Canceled,
+		context.DeadlineExceeded,
+		errors.New("something bad"),
+	}
+
+	nonRetryable := []error{
+		New(TypeNone, "none"),
+		New(TypeNotFound, string(TypeNotFound)),
+		New(TypeTimeout, string(TypeTimeout)),
+		New(TypeTooManyRequests, string(TypeTooManyRequests)),
+		New(TypeNotAcceptable, string(TypeNotAcceptable)),
+		New(TypeUnavailable, string(TypeUnavailable)),
+		New(TypeCanceled, string(TypeCanceled)),
+		New(TypeExec, string(TypeExec)),
+		New(TypeBadData, string(TypeBadData)),
+		New(TypeTooLargeEntry, string(TypeTooLargeEntry)),
+	}
+
+	t.Run("retryable", func(t *testing.T) {
+		for _, err := range retryable {
+			t.Run(err.Error(), func(t *testing.T) {
+				assert.True(t, IsRetryableAPIError(err))
+			})
+		}
+	})
+
+	t.Run("non-retryable", func(t *testing.T) {
+		for _, err := range nonRetryable {
+			t.Run(err.Error(), func(t *testing.T) {
+				assert.False(t, IsRetryableAPIError(err))
+			})
+		}
+	})
 }

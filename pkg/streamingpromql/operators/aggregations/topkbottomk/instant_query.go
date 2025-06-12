@@ -286,6 +286,13 @@ func (t *InstantQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
+func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if err := t.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return t.Param.Prepare(ctx, params)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
@@ -310,6 +317,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []instantQuerySeries {
 		return make([]instantQuerySeries, 0, size)
 	}),
+	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
 	nil,
