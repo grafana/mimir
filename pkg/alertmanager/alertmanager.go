@@ -156,9 +156,7 @@ type Alertmanager struct {
 	rateLimitedNotifications *prometheus.CounterVec
 }
 
-var (
-	webReload = make(chan chan error)
-)
+var webReload = make(chan chan error)
 
 func init() {
 	go func() {
@@ -178,10 +176,8 @@ type State interface {
 	WaitReady(context.Context) error
 }
 
-var (
-	// Returned when a user is not known to all replicas.
-	errAllReplicasUserNotFound = errors.New("all replicas returned user not found")
-)
+// Returned when a user is not known to all replicas.
+var errAllReplicasUserNotFound = errors.New("all replicas returned user not found")
 
 // Replicator is used to exchange state with peers via the ring when sharding is enabled.
 type Replicator interface {
@@ -645,6 +641,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 			if cached == nil {
 				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
 				if err != nil {
+					level.Warn(am.logger).Log("msg", "alertingTemplates.NewFactory", "error", err)
 					return nil, err
 				}
 				cached = alertingTemplates.NewCachedFactory(factory)
@@ -743,8 +740,10 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		opts...,
 	)
 	if err != nil {
+		level.Warn(logger).Log("msg", "failed to build integrations", "error", err)
 		return nil, err
 	}
+	level.Warn(logger).Log("msg", "buildGrafanaReceiverIntegrations2", "integrations", integrations)
 	return integrations, nil
 }
 
@@ -821,7 +820,7 @@ func md5HashAsMetricValue(data []byte) float64 {
 	sum := md5.Sum(data) //nolint:gosec
 	// We only want 48 bits as a float64 only has a 53 bit mantissa.
 	smallSum := sum[0:6]
-	var bytes = make([]byte, 8)
+	bytes := make([]byte, 8)
 	copy(bytes, smallSum)
 	return float64(binary.LittleEndian.Uint64(bytes))
 }
