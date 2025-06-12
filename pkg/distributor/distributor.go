@@ -1214,7 +1214,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
-		var dedupedPerMetric map[string]int
+		var dedupedPerUnsafeMetricName map[string]int
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1251,20 +1251,20 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
 			if dedupedSamplesAndHistograms > 0 {
-				if dedupedPerMetric == nil {
-					dedupedPerMetric = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
+				if dedupedPerUnsafeMetricName == nil {
+					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
 				}
 				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 				if err != nil {
 					name = "unnamed"
 				}
-				increment := len(dedupedPerMetric) < maxMetricsWithDeduplicatedSamplesToTrace
+				increment := len(dedupedPerUnsafeMetricName) < maxMetricsWithDeduplicatedSamplesToTrace
 				if !increment {
 					// If at max capacity, only touch pre-existing entries.
-					_, increment = dedupedPerMetric[name]
+					_, increment = dedupedPerUnsafeMetricName[name]
 				}
 				if increment {
-					dedupedPerMetric[name] += dedupedSamplesAndHistograms
+					dedupedPerUnsafeMetricName[name] += dedupedSamplesAndHistograms
 				}
 			}
 
@@ -1272,15 +1272,17 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedExemplars += len(ts.Exemplars)
 		}
 
-		if len(dedupedPerMetric) > 0 {
+		if len(dedupedPerUnsafeMetricName) > 0 {
 			// Emit tracing span events for metrics with deduped samples.
 			sp := trace.SpanFromContext(ctx)
-			for m, c := range dedupedPerMetric {
+			for unsafeMetricName, deduped := range dedupedPerUnsafeMetricName {
 				sp.AddEvent(
 					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
 					trace.WithAttributes(
-						attribute.String("metric", m),
-						attribute.Int("count", c),
+						// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
+						// clone it for safe retention.
+						attribute.String("metric", strings.Clone(unsafeMetricName)),
+						attribute.Int("count", deduped),
 					),
 				)
 			}
