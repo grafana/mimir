@@ -976,16 +976,14 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
 }
 
-func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupGapDetection(t *testing.T) {
+func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupGapDetection_NoObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
+	reg := sched.register.(*prometheus.Registry)
 	sched.cfg.MaxJobsPerPartition = 0
 
 	part := int32(1)
 	sched.advanceCommittedOffset("ingest", part, 5000)
-
 	sched.completeObservationMode(context.Background())
-
-	reg := sched.register.(*prometheus.Registry)
 
 	pt := sched.getPartitionState(part)
 	// Assume at startup we compute this job offset range, which is later than the committed offset.
@@ -1044,30 +1042,127 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
 	assert.Equal(t, int64(70), pt.latestPlannedOffset)
+}
 
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
-		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
-		cortex_blockbuilder_scheduler_gaps_detected 1
-	`), "cortex_blockbuilder_scheduler_gaps_detected"))
+func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_TableDriven(t *testing.T) {
+	type observation struct {
+		key        jobKey
+		start, end int64
+		complete   bool
+	}
 
-	// the gap may not be the first job:
-	pt.addPendingJob(&offsetRange{start: 70, end: 80})
-	// gap
-	pt.addPendingJob(&offsetRange{start: 100, end: 110})
-	pt.addPendingJob(&offsetRange{start: 110, end: 120})
+	type pendingJob struct {
+		start, end int64
+	}
 
-	assert.Equal(t, 3, pt.pendingJobs.Len())
-	assert.Equal(t, 4, sched.jobs.count())
-	assert.Equal(t, int64(70), pt.latestPlannedOffset)
-	sched.enqueuePendingJobs()
-	assert.Equal(t, 0, pt.pendingJobs.Len())
-	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(120), pt.latestPlannedOffset)
+	testCases := []struct {
+		name         string
+		committed    int64
+		observations []observation
+		pendingJobs  []pendingJob
+		expectedGaps int64
+	}{
+		{
+			name:         "no gap, no job",
+			committed:    10,
+			observations: nil,
+			pendingJobs:  nil,
+			expectedGaps: 0,
+		},
+		{
+			name:         "no gap, single job",
+			committed:    10,
+			observations: nil,
+			pendingJobs:  []pendingJob{{start: 10, end: 20}},
+			expectedGaps: 0,
+		},
+		{
+			name:         "gap between jobs",
+			committed:    10,
+			observations: nil,
+			pendingJobs:  []pendingJob{{start: 10, end: 20}, {start: 30, end: 40}},
+			expectedGaps: 1,
+		},
+		{
+			name:         "no gap, contiguous jobs",
+			committed:    10,
+			observations: nil,
+			pendingJobs:  []pendingJob{{start: 10, end: 20}, {start: 20, end: 30}},
+			expectedGaps: 0,
+		},
+		{
+			name:         "gap after observation",
+			committed:    0,
+			observations: []observation{{key: jobKey{id: "job1", epoch: 5}, start: 0, end: 10, complete: true}},
+			pendingJobs:  []pendingJob{{start: 20, end: 30}},
+			expectedGaps: 1,
+		},
+		{
+			name:         "no gap after observation",
+			committed:    0,
+			observations: []observation{{key: jobKey{id: "job1", epoch: 5}, start: 0, end: 10, complete: true}},
+			pendingJobs:  []pendingJob{{start: 10, end: 20}},
+			expectedGaps: 0,
+		},
+		{
+			name:      "resume at hole in observations",
+			committed: 0,
+			observations: []observation{
+				{key: jobKey{id: "job1", epoch: 5}, start: 0, end: 10, complete: true},
+				{key: jobKey{id: "job3", epoch: 7}, start: 20, end: 30, complete: true},
+			},
+			pendingJobs:  []pendingJob{{start: 10, end: 20}},
+			expectedGaps: 0,
+		},
+		{
+			name:      "resume after hole in observations",
+			committed: 0,
+			observations: []observation{
+				{key: jobKey{id: "job1", epoch: 5}, start: 0, end: 10, complete: true},
+				{key: jobKey{id: "job3", epoch: 7}, start: 20, end: 30, complete: true},
+			},
+			pendingJobs:  []pendingJob{{start: 30, end: 40}},
+			expectedGaps: 1,
+		},
+		{
+			name:      "resume after in-progress observation",
+			committed: 0,
+			observations: []observation{
+				{key: jobKey{id: "job1", epoch: 5}, start: 0, end: 10, complete: false},
+			},
+			pendingJobs:  []pendingJob{{start: 10, end: 20}},
+			expectedGaps: 0,
+		},
+	}
 
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
-		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
-		cortex_blockbuilder_scheduler_gaps_detected 2
-	`), "cortex_blockbuilder_scheduler_gaps_detected"))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sched, _ := mustScheduler(t)
+			sched.cfg.MaxJobsPerPartition = 0 // no limit on the number of jobs
+
+			part := int32(1)
+			sched.advanceCommittedOffset("ingest", part, tc.committed)
+			pt := sched.getPartitionState(part)
+
+			// Simulate observations (completed jobs)
+			for _, obs := range tc.observations {
+				sched.updateJob(obs.key, "worker1", obs.complete, schedulerpb.JobSpec{
+					Topic:       "ingest",
+					Partition:   part,
+					StartOffset: obs.start,
+					EndOffset:   obs.end,
+				})
+			}
+
+			sched.completeObservationMode(context.Background())
+
+			// Add pending jobs
+			for _, pj := range tc.pendingJobs {
+				pt.addPendingJob(&offsetRange{start: pj.start, end: pj.end})
+			}
+
+			sched.enqueuePendingJobs()
+			require.Equal(t, tc.expectedGaps, int64(promtest.ToFloat64(sched.metrics.gapsDetected)))
+		})
+	}
 }
