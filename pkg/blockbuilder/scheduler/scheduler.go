@@ -280,7 +280,7 @@ func (ps *partitionState) addPendingJob(job *offsetRange) {
 // Returns an error if there's an unexpected gap. Returns the next last-planned offset regardless.
 func (ps *partitionState) validateNextSpec(spec schedulerpb.JobSpec) (int64, error) {
 	if ps.latestPlannedOffset != 0 && spec.StartOffset != ps.latestPlannedOffset {
-		return spec.EndOffset, fmt.Errorf("job continuity violation: expected startOffset %d but got %d",
+		return spec.EndOffset, fmt.Errorf("job gap detected: expected startOffset %d but got %d",
 			ps.latestPlannedOffset, spec.StartOffset)
 	}
 
@@ -352,7 +352,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			// It was added. Check for gaps. Even if there's a gap we process the job.
 			planned, err := ps.validateNextSpec(spec)
 			if err != nil {
-				level.Warn(s.logger).Log("msg", "job continuity validation failed",
+				level.Warn(s.logger).Log("msg", "job gap detected",
 					"partition", partition, "job_id", jobID, "err", err)
 				s.metrics.gapsDetected.Inc()
 			}
