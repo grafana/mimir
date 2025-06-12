@@ -47,6 +47,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -139,6 +142,8 @@ func TestDistributor_Push(t *testing.T) {
 		expectedMetrics       string
 		timeOut               bool
 		configure             func(*Config)
+		customRequest         *mimirpb.WriteRequest
+		expectTraceEvents     bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -235,8 +240,41 @@ func TestDistributor_Push(t *testing.T) {
 				cfg.ReusableIngesterPushWorkers = 2
 			},
 		},
+		"A push with duplicate timestamps should deduplicate and emit trace events": {
+			numIngesters:      3,
+			happyIngesters:    3,
+			metricNames:       []string{"cortex_discarded_samples_total", lastSeenTimestamp},
+			expectTraceEvents: true,
+			// Custom request with two different samples with same timestamp.
+			customRequest: makeWriteRequestWith(
+				makeTimeseries([]string{labels.MetricName, "test_metric", "job", "test"},
+					append(makeSamples(10000, 1.0), append(makeSamples(20000, 1.0), makeSamples(20000, 2.0)...)...), nil, nil),
+			),
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample_duplicate_timestamp",user="user"} 1
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 20
+			`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			spanRecorder := tracetest.NewSpanRecorder()
+			origTracerProvider := otel.GetTracerProvider()
+			t.Cleanup(func() {
+				otel.SetTracerProvider(origTracerProvider)
+			})
+			otel.SetTracerProvider(trace.NewTracerProvider(trace.WithSpanProcessor(spanRecorder)))
+
+			tracer := otel.Tracer("test")
+			const spanName = "test_push_operation"
+			ctx, span := tracer.Start(ctx, spanName)
+			t.Cleanup(func() {
+				span.End()
+			})
+
 			limits := prepareDefaultLimits()
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
@@ -250,7 +288,12 @@ func TestDistributor_Push(t *testing.T) {
 				configure:       tc.configure,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
+			var request *mimirpb.WriteRequest
+			if tc.customRequest != nil {
+				request = tc.customRequest
+			} else {
+				request = makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
+			}
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedErrorContains == nil && tc.expectedGRPCError == nil {
@@ -276,6 +319,45 @@ func TestDistributor_Push(t *testing.T) {
 				test.Poll(t, time.Second, nil, func() interface{} {
 					return testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), tc.metricNames...)
 				})
+			}
+
+			// Check tracing.
+			span.End()
+			const eventName = "Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]"
+			var event trace.Event
+			for _, sp := range spanRecorder.Ended() {
+				if sp.Name() != spanName {
+					continue
+				}
+
+				for _, ev := range sp.Events() {
+					if ev.Name != eventName {
+						continue
+					}
+					require.Emptyf(t, event.Name, "Expected only one event with name %q", eventName)
+
+					event = ev
+				}
+			}
+			if tc.expectTraceEvents {
+				require.NotEmptyf(t, event.Name, "Expected a sample deduplication trace event with name %q", eventName)
+
+				var metric string
+				var count int64
+				for _, attr := range event.Attributes {
+					switch attr.Key {
+					case "metric":
+						metric = attr.Value.AsString()
+					case "count":
+						count = attr.Value.AsInt64()
+					default:
+						require.Failf(t, "Unrecognized event attribute %q", string(attr.Key))
+					}
+				}
+				assert.Equal(t, "test_metric", metric)
+				assert.Equal(t, int64(1), count)
+			} else {
+				require.Emptyf(t, event.Name, "Expected no sample deduplication trace events")
 			}
 		})
 	}
