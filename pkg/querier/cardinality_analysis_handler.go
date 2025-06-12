@@ -36,7 +36,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			return
 		}
 
-		tenantMaxLimit := limits.CardinalityAPIMaxSeriesLimit(tenantID)
+		tenantMaxLimit := limits.CardinalityAnalysisMaxResults(tenantID)
 		cardinalityRequest, err := cardinality.DecodeLabelNamesRequest(r, tenantMaxLimit)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -66,7 +66,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
-		tenantMaxLimit := limits.CardinalityAPIMaxSeriesLimit(tenantID)
+		tenantMaxLimit := limits.CardinalityAnalysisMaxResults(tenantID)
 		cardinalityRequest, err := cardinality.DecodeLabelValuesRequest(r, tenantMaxLimit)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

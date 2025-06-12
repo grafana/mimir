@@ -1309,9 +1309,9 @@ func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
 }
 
-// CardinalityAPIMaxSeriesLimit returns the maximum number of series that
-// can be requested in a single cardinality API request.
-func (o *Overrides) CardinalityAPIMaxSeriesLimit(userID string) int {
+// CardinalityAnalysisMaxResults returns the maximum number of results that
+// can be returned in a single cardinality API request.
+func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
 	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
