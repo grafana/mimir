@@ -1606,7 +1606,7 @@ func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 	}
 }
 
-func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
+func TestDistributor_ValidateSeries(t *testing.T) {
 	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
 
 	testCases := map[string]struct {
