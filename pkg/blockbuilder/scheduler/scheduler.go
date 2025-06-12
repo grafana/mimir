@@ -163,6 +163,12 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 	}
 
 	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
+
+	s.committed.Each(func(o kadm.Offset) {
+		ps := s.getPartitionState(o.Partition)
+		ps.latestPlannedOffset = o.At
+	})
+
 	s.finalizeObservations()
 	s.populateInitialJobs(ctx)
 	s.observations = nil
@@ -863,15 +869,6 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 
 	for partition, observations := range partitionObservations {
 		ps := s.getPartitionState(partition)
-
-		// Get the committed offset for this partition
-		var committedOffset int64
-		if committed, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok {
-			committedOffset = committed.At
-		}
-
-		// Initialize latest planned offset to the known committed offset.
-		ps.latestPlannedOffset = committedOffset
 		contiguous := true
 
 		if len(observations) == 0 {

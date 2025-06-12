@@ -981,15 +981,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupGapDetection(t *testing
 	sched.cfg.MaxJobsPerPartition = 0
 
 	part := int32(1)
-	sched.committed = kadm.Offsets{
-		"ingest": {
-			1: kadm.Offset{
-				Topic:     "ingest",
-				Partition: part,
-				At:        5000,
-			},
-		},
-	}
+	sched.advanceCommittedOffset("ingest", part, 5000)
 
 	sched.completeObservationMode(context.Background())
 
