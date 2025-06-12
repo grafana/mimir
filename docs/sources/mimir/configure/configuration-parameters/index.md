@@ -2419,9 +2419,9 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
-# (experimental) Duration to wait before shutting down an idle Alertmanager for
-# a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix
-# and is using an unpromoted or default configuration.
+# (experimental) Duration to wait before shutting down an idle Alertmanager
+# using an unpromoted or default configuration when strict initialization is
+# enabled.
 # CLI flag: -alertmanager.grafana-alertmanager-grace-period
 [grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
 
