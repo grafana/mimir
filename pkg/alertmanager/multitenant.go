@@ -84,7 +84,6 @@ type MultitenantAlertmanagerConfig struct {
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
 	GrafanaAlertmanagerCompatibilityEnabled bool          `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
-	GrafanaAlertmanagerTenantSuffix         string        `yaml:"grafana_alertmanager_conditionally_skip_tenant_suffix" category:"experimental"`
 	GrafanaAlertmanagerIdleGracePeriod      time.Duration `yaml:"grafana_alertmanager_idle_grace_period" category:"experimental"`
 
 	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
@@ -138,7 +137,6 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
 	f.BoolVar(&cfg.GrafanaAlertmanagerCompatibilityEnabled, "alertmanager.grafana-alertmanager-compatibility-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
-	f.StringVar(&cfg.GrafanaAlertmanagerTenantSuffix, "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix", "", "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration or they are receiving requests.")
 	f.DurationVar(&cfg.GrafanaAlertmanagerIdleGracePeriod, "alertmanager.grafana-alertmanager-grace-period", defaultGrafanaAlertmanagerGracePeriod, "Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
@@ -821,8 +819,7 @@ func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
 // canSkipTenant returns true if the tenant can be skipped, either because strict initialization is enabled,
 // or because the tenant ID matches the provided Grafana tenant suffix.
 func (am *MultitenantAlertmanager) canSkipTenant(userID string) bool {
-	return am.cfg.StrictInitialization ||
-		am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(userID, am.cfg.GrafanaAlertmanagerTenantSuffix)
+	return am.cfg.StrictInitialization
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
@@ -1013,7 +1010,6 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Limits:                            am.limits,
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
-		GrafanaAlertmanagerTenantSuffix:   am.cfg.GrafanaAlertmanagerTenantSuffix,
 		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
 	}, reg)
 	if err != nil {

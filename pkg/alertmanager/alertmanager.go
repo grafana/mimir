@@ -108,7 +108,6 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 
 	GrafanaAlertmanagerCompatibility bool
-	GrafanaAlertmanagerTenantSuffix  string
 	EnableNotifyHooks                bool
 }
 
@@ -689,12 +688,6 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	}
 
 	return integrationsMap, nil
-}
-
-// isGrafanaTenant returns true if the Alertmanager is a Grafana tenant.
-// DEPRECATED: this should be cleaned up soon. It was added to be used as a feature toggle for strict initialization but is no longer needed.
-func (am *Alertmanager) isGrafanaTenant() bool {
-	return am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(am.cfg.UserID, am.cfg.GrafanaAlertmanagerTenantSuffix)
 }
 
 func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl alertingNotify.TemplatesProvider) ([]*nfstatus.Integration, error) {

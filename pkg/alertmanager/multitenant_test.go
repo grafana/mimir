@@ -2517,7 +2517,6 @@ func TestComputeConfig(t *testing.T) {
 
 	reg2 := prometheus.NewPedanticRegistry()
 	cfg2 := mockAlertmanagerConfig(t)
-	cfg2.GrafanaAlertmanagerTenantSuffix = "-grafana"
 	amWithSuffix := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
 
 	reg3 := prometheus.NewPedanticRegistry()
@@ -3443,7 +3442,7 @@ func TestComputeConfig(t *testing.T) {
 		})
 
 		t.Run(fmt.Sprintf("%s with Grafana tenant suffix", test.name), func(t *testing.T) {
-			userWithPrefix := fmt.Sprintf("%s%s", test.cfg.Mimir.User, cfg2.GrafanaAlertmanagerTenantSuffix)
+			userWithPrefix := fmt.Sprintf("%s-grafana", test.cfg.Mimir.User)
 
 			test.cfg.Grafana.User = userWithPrefix
 			test.cfg.Mimir.User = userWithPrefix
