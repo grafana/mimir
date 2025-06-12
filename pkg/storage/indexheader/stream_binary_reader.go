@@ -190,7 +190,7 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	}
 
 	// 2. Fall back to the bucket
-	bucketSparseHeaderBytes, err := tryDownloadSparseHeader(ctx, logger, bkt, id)
+	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
 	if err == nil {
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
@@ -213,9 +213,9 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	return nil
 }
 
-// tryDownloadSparseHeader attempts to download the sparse header from the object store.
+// tryReadBucketSparseHeader attempts to download the sparse header from the object store.
 // It returns the sparse header data if successful, nil + error otherwise.
-func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID) ([]byte, error) {
+func tryReadBucketSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID) ([]byte, error) {
 	if bkt == nil {
 		return nil, fmt.Errorf("bucket is nil")
 	}

@@ -2203,7 +2203,8 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, "Ingester.QueryStream")
+	ctx := stream.Context()
+	spanlog := spanlogger.FromContext(ctx, i.logger)
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)

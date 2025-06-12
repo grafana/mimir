@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1212,6 +1213,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
+		const maxMetricsWithDeduplicatedSamplesToTrace = 10
+		var dedupedPerUnsafeMetricName map[string]int
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1227,6 +1230,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
+			rawSamples := len(ts.Samples)
+			rawHistograms := len(ts.Histograms)
 			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
@@ -1244,8 +1249,43 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				continue
 			}
 
+			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			if dedupedSamplesAndHistograms > 0 {
+				if dedupedPerUnsafeMetricName == nil {
+					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
+				}
+				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+				if err != nil {
+					name = "unnamed"
+				}
+				increment := len(dedupedPerUnsafeMetricName) < maxMetricsWithDeduplicatedSamplesToTrace
+				if !increment {
+					// If at max capacity, only touch pre-existing entries.
+					_, increment = dedupedPerUnsafeMetricName[name]
+				}
+				if increment {
+					dedupedPerUnsafeMetricName[name] += dedupedSamplesAndHistograms
+				}
+			}
+
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+		}
+
+		if len(dedupedPerUnsafeMetricName) > 0 {
+			// Emit tracing span events for metrics with deduped samples.
+			sp := trace.SpanFromContext(ctx)
+			for unsafeMetricName, deduped := range dedupedPerUnsafeMetricName {
+				sp.AddEvent(
+					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
+					trace.WithAttributes(
+						// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
+						// clone it for safe retention.
+						attribute.String("metric", strings.Clone(unsafeMetricName)),
+						attribute.Int("count", deduped),
+					),
+				)
+			}
 		}
 
 		if droppedNativeHistograms > 0 {

@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,10 +39,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
 var (
@@ -4054,4 +4057,127 @@ func TestQueryClose(t *testing.T) {
 	// Close the query a second time, to ensure that closing the query again does not cause any issues.
 	q.Close()
 	require.Equal(t, uint64(0), mqeQuery.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestEagerLoadSelectors(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x5
+			some_other_metric 0+2x5
+	`)
+
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	limitsProvider := NewStaticQueryLimitsProvider(0)
+	metrics := stats.NewQueryMetrics(nil)
+	logger := log.NewNopLogger()
+	optsWithoutEagerLoading := NewTestEngineOpts()
+	engineWithoutEagerLoading, err := NewEngine(optsWithoutEagerLoading, limitsProvider, metrics, nil, logger)
+	require.NoError(t, err)
+
+	optsWithEagerLoading := NewTestEngineOpts()
+	optsWithEagerLoading.EagerLoadSelectors = true
+	engineWithEagerLoading, err := NewEngine(optsWithEagerLoading, limitsProvider, metrics, nil, logger)
+	require.NoError(t, err)
+
+	testCases := []string{
+		`sum(some_metric) + sum(some_other_metric)`,
+		`sum(rate(some_metric[5m])) + sum(rate(some_other_metric[5m]))`,
+	}
+
+	ctx := context.Background()
+	ts := timestamp.Time(0).Add(5 * time.Minute)
+
+	for _, expr := range testCases {
+		t.Run(expr, func(t *testing.T) {
+			// First, run without eager loading to get expected result
+			q, err := engineWithoutEagerLoading.NewInstantQuery(ctx, storage, nil, expr, ts)
+			require.NoError(t, err)
+			baselineResult := q.Exec(ctx)
+			require.NoError(t, baselineResult.Err)
+			defer q.Close()
+
+			// Run with eager loading (as it would in query-frontends) and queryable that will return an error if both Select calls aren't run in parallel.
+			synchronisingStorage := newSynchronisingQueryable(storage, 2)
+			lazyStorage := lazyquery.NewLazyQueryable(synchronisingStorage)
+			q, err = engineWithEagerLoading.NewInstantQuery(ctx, lazyStorage, nil, expr, ts)
+			require.NoError(t, err)
+			eagerLoadingResult := q.Exec(ctx)
+			require.NoError(t, eagerLoadingResult.Err)
+			defer q.Close()
+
+			testutils.RequireEqualResults(t, expr, baselineResult, eagerLoadingResult, false)
+			require.True(t, synchronisingStorage.sawExpectedSelectCalls)
+		})
+	}
+}
+
+type synchronisingQueryable struct {
+	inner                  storage.Queryable
+	startGroup             *sync.WaitGroup // Incremented when each Select call is made
+	releaseSelectCalls     <-chan struct{} // Closed once all expected Select calls have been made, to release Select calls
+	sawExpectedSelectCalls bool
+}
+
+func newSynchronisingQueryable(inner storage.Queryable, expectedSelectCalls int) *synchronisingQueryable {
+	startGroup := &sync.WaitGroup{}
+	startGroup.Add(expectedSelectCalls)
+	releaseSelectCalls := make(chan struct{})
+
+	q := &synchronisingQueryable{
+		inner:              inner,
+		startGroup:         startGroup,
+		releaseSelectCalls: releaseSelectCalls,
+	}
+
+	go func() {
+		defer close(releaseSelectCalls) // Always close the channel, to ensure the test doesn't deadlock.
+
+		err := syncutil.WaitWithTimeout(startGroup, 2*time.Second)
+		if err == nil {
+			q.sawExpectedSelectCalls = true
+		}
+	}()
+
+	return q
+}
+
+func (s *synchronisingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := s.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &synchronisingQuerier{q, s.startGroup, s.releaseSelectCalls}, nil
+}
+
+type synchronisingQuerier struct {
+	inner              storage.Querier
+	startGroup         *sync.WaitGroup
+	releaseSelectCalls <-chan struct{}
+}
+
+func (s *synchronisingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (s *synchronisingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	panic("not supported")
+}
+
+func (s *synchronisingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	s.startGroup.Done()
+
+	select {
+	case <-s.releaseSelectCalls:
+		return s.inner.Select(ctx, sortSeries, hints, matchers...)
+	case <-ctx.Done():
+		return storage.ErrSeriesSet(context.Cause(ctx))
+	case <-time.After(time.Second):
+		return storage.ErrSeriesSet(errors.New("gave up waiting for all Select calls to be running in parallel"))
+	}
+}
+
+func (s *synchronisingQuerier) Close() error {
+	return s.inner.Close()
 }
