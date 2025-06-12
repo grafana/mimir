@@ -176,7 +176,7 @@
     // Common configuration parameters
     commonConfig:: if !$._config.trace_request_headers then {} else {
       'server.trace-request-headers': true,
-      [if std.length($._config.trace_request_exclude_headers_list) > 0 then 'server.trace-request-headers-exclude-list']: std.join(',', $._config.trace_request_exclude_headers_list),
+      [if std.length($._config.trace_request_exclude_headers_list) > 0 then 'server.trace-request-headers-exclude-list']: std.join(',', std.sort($._config.trace_request_exclude_headers_list)),
     },
 
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
