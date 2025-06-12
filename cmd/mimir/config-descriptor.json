@@ -5001,6 +5001,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_analysis_max_results",
+          "required": false,
+          "desc": "Maximum number of series that can be requested in a single cardinality API request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 500,
+          "fieldFlag": "querier.cardinality-api-max-series-limit",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_results_max_size_bytes",
           "required": false,
           "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",

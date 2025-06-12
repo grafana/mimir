@@ -2117,6 +2117,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable. (default 419430400)
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
+  -querier.cardinality-api-max-series-limit int
+    	[experimental] Maximum number of series that can be requested in a single cardinality API request. (default 500)
   -querier.default-evaluation-interval duration
     	The default evaluation interval or step size for subqueries. This config option should be set on query-frontend too when query sharding is enabled. (default 1m0s)
   -querier.dns-lookup-period duration
