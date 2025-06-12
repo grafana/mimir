@@ -237,20 +237,20 @@ type offsetRange struct {
 // updateEndOffset processes an end offset and returns a consumption job spec if
 // one is ready. This is expected to be called with monotonically increasing
 // end offsets, and called frequently, even in the absence of new data.
-func (ps *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*offsetRange, error) {
+func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*offsetRange, error) {
 	newJobBucket := ts.Truncate(jobSize)
 
-	if ps.jobBucket.IsZero() {
-		ps.offset = end
-		ps.jobBucket = newJobBucket
+	if s.jobBucket.IsZero() {
+		s.offset = end
+		s.jobBucket = newJobBucket
 		return nil, nil
 	}
 
-	switch newJobBucket.Compare(ps.jobBucket) {
+	switch newJobBucket.Compare(s.jobBucket) {
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", ps.jobBucket, newJobBucket, ps.offset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -258,30 +258,30 @@ func (ps *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.
 		// bucket if it has data and start a new one.
 
 		var job *offsetRange
-		if ps.offset < end {
+		if s.offset < end {
 			job = &offsetRange{
-				start: ps.offset,
+				start: s.offset,
 				end:   end,
 			}
 		}
-		ps.offset = end
-		ps.jobBucket = newJobBucket
+		s.offset = end
+		s.jobBucket = newJobBucket
 		return job, nil
 	}
 
 	return nil, nil
 }
 
-func (ps *partitionState) addPendingJob(job *offsetRange) {
-	ps.pendingJobs.PushBack(job)
+func (s *partitionState) addPendingJob(job *offsetRange) {
+	s.pendingJobs.PushBack(job)
 }
 
 // validateNextSpec validates the given spec which is about to be added to the pending job queue.
 // Returns an error if there's an unexpected gap. Returns the next last-planned offset regardless.
-func (ps *partitionState) validateNextSpec(spec schedulerpb.JobSpec) (int64, error) {
-	if ps.latestPlannedOffset != 0 && spec.StartOffset != ps.latestPlannedOffset {
+func (s *partitionState) validateNextSpec(spec schedulerpb.JobSpec) (int64, error) {
+	if s.latestPlannedOffset != 0 && spec.StartOffset != s.latestPlannedOffset {
 		return spec.EndOffset, fmt.Errorf("job gap detected: expected startOffset %d but got %d",
-			ps.latestPlannedOffset, spec.StartOffset)
+			s.latestPlannedOffset, spec.StartOffset)
 	}
 
 	return spec.EndOffset, nil
@@ -882,7 +882,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		})
 
 		// Find the highest contiguous coverage by processing jobs in order.
-		// Stop importing jobs if we find a gap.
+		// Stop importing jobs if we find a gap. The last continuous job defines
+		// our latest planned offset which will be where we resume job planning.
 		for _, obs := range observations {
 			maxEpoch = max(maxEpoch, obs.key.epoch)
 
