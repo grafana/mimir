@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -47,11 +48,11 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
 }
 
-func (cfg *CombinedFrontendConfig) Validate() error {
+func (cfg *CombinedFrontendConfig) Validate(qCfg querier.Config) error {
 	if err := cfg.FrontendV2.Validate(); err != nil {
 		return err
 	}
-	if err := cfg.QueryMiddleware.Validate(); err != nil {
+	if err := cfg.QueryMiddleware.Validate(qCfg); err != nil {
 		return err
 	}
 	return nil
