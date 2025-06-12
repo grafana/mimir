@@ -976,6 +976,44 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
 }
 
+func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupGapDetection(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+
+	part := int32(1)
+	sched.committed = kadm.Offsets{
+		"ingest": {
+			1: kadm.Offset{
+				Topic:     "ingest",
+				Partition: part,
+				At:        5000,
+			},
+		},
+	}
+
+	sched.completeObservationMode(context.Background())
+
+	reg := sched.register.(*prometheus.Registry)
+
+	pt := sched.getPartitionState(part)
+	// Assume at startup we compute this job offset range, which is later than the committed offset.
+	pt.addPendingJob(&offsetRange{start: 5500, end: 6000})
+
+	assert.Equal(t, 1, pt.pendingJobs.Len())
+	assert.Equal(t, 0, sched.jobs.count())
+	assert.Equal(t, int64(5000), pt.latestPlannedOffset)
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 1, sched.jobs.count())
+	assert.Equal(t, int64(6000), pt.latestPlannedOffset)
+
+	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
+		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
+		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
+		cortex_blockbuilder_scheduler_gaps_detected 1
+	`), "cortex_blockbuilder_scheduler_gaps_detected"))
+}
+
 func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	sched.cfg.MaxJobsPerPartition = 0
