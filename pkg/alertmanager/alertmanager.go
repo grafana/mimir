@@ -730,7 +730,7 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		return nil, err
 	}
 
-	integrations := alertingNotify.BuildReceiverIntegrations(
+	integrations, err := alertingNotify.BuildGrafanaReceiverIntegrations(
 		rCfg,
 		tmpl,
 		&images.URLProvider{},
@@ -741,6 +741,9 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		version.Version,
 		opts...,
 	)
+	if err != nil {
+		return nil, err
+	}
 	return integrations, nil
 }
 

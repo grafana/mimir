@@ -135,7 +135,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "short"
                      },
                      "overrides": [ ]
                   },
@@ -176,7 +176,7 @@
                   "type": "timeseries",
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "ms",
                         "label": null,
                         "logBase": 1,
                         "max": null,

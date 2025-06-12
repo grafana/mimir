@@ -7,7 +7,7 @@ services:
       - 8510:8500
 
   minio:
-    image: minio/minio
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
     command: [ "server", "--console-address", ":9101", "/data" ]
     environment:
       - MINIO_ROOT_USER=mimir
@@ -92,7 +92,6 @@ services:
       - JAEGER_TAGS=app=mimir-1
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
-      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8101:8001
     volumes:
@@ -114,7 +113,6 @@ services:
       - JAEGER_TAGS=app=mimir-2
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
-      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8102:8002
     volumes:

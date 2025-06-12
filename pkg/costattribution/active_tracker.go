@@ -287,8 +287,8 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 	}
 }
 
-func (st *ActiveSeriesTracker) cardinality() (cardinality int, overflown bool) {
-	st.observedMtx.RLock()
-	defer st.observedMtx.RUnlock()
-	return len(st.observed), !st.overflowSince.IsZero()
+func (at *ActiveSeriesTracker) cardinality() (cardinality int, overflown bool) {
+	at.observedMtx.RLock()
+	defer at.observedMtx.RUnlock()
+	return len(at.observed), !at.overflowSince.IsZero()
 }

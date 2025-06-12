@@ -46,7 +46,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Retries') +
         $.latencyPanel('cortex_query_frontend_retries', '{$read_path_matcher}', multiplier=1) +
-        { yaxes: $.yaxes('short') },
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +

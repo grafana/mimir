@@ -83,11 +83,11 @@ func TestSendUpdates(t *testing.T) {
 }
 
 // a mutator for tests.
-func (c *schedulerClient) completeJobWithForgetTime(k JobKey, forgetTime time.Time) error {
-	if err := c.CompleteJob(k); err != nil {
+func (s *schedulerClient) completeJobWithForgetTime(k JobKey, forgetTime time.Time) error {
+	if err := s.CompleteJob(k); err != nil {
 		return err
 	}
-	c.jobs[k].forgetTime = forgetTime
+	s.jobs[k].forgetTime = forgetTime
 	return nil
 }
 
