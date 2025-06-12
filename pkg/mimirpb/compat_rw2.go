@@ -32,9 +32,10 @@ const rw2SymbolPageSize = 16
 // mechanism, we would have to allocate a large amount of memory
 // or do reallocation. This is a compromise between the two.
 type rw2PagedSymbols struct {
-	count  uint32
-	pages  []*[]string
-	offset uint32
+	count         uint32
+	pages         []*[]string
+	offset        uint32
+	commonSymbols []string
 }
 
 func (ps *rw2PagedSymbols) append(symbol string) {
@@ -56,12 +57,21 @@ func (ps *rw2PagedSymbols) releasePages() {
 }
 
 func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
+	if ref < ps.offset {
+		if len(ps.commonSymbols) == 0 {
+			return "", fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
+		}
+		if ref >= uint32(len(ps.commonSymbols)) {
+			return "", fmt.Errorf("common symbol reference %d is out of bounds", ref)
+		}
+		return ps.commonSymbols[ref], nil
+	}
 	ref = ref - ps.offset
 	if ref < ps.count {
 		page := ps.pages[ref>>rw2SymbolPageSize]
 		return (*page)[ref&((1<<rw2SymbolPageSize)-1)], nil
 	}
-	return "", fmt.Errorf("symbol reference %d is out of bounds", ref)
+	return "", fmt.Errorf("symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
 }
 
 var (

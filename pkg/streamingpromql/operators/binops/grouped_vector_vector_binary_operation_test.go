@@ -525,12 +525,14 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 
 func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
 	testCases := map[string]struct {
-		leftSeries  []labels.Labels
-		rightSeries []labels.Labels
+		leftSeries       []labels.Labels
+		rightSeries      []labels.Labels
+		seriesToRead     int
+		emptyInputSeries bool
 
 		expectedOutputSeries []labels.Labels
 	}{
-		"multiple series from 'one' side match to a single 'many' series": {
+		"closed after reading no series: multiple series from 'many' side match to a single 'one' series": {
 			leftSeries: []labels.Labels{
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
 				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
@@ -538,13 +540,14 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			rightSeries: []labels.Labels{
 				labels.FromStrings("group", "1", "env", "prod"),
 			},
+			seriesToRead: 0,
 
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
 				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
 			},
 		},
-		"multiple series from 'many' side match to a single 'one' series": {
+		"closed after reading no series: multiple series from 'one' side match to a single 'many' series": {
 			leftSeries: []labels.Labels{
 				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
 			},
@@ -552,10 +555,60 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 				labels.FromStrings("group", "1", "env", "prod"),
 				labels.FromStrings("group", "1", "env", "test"),
 			},
+			seriesToRead: 0,
 
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
 				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+			},
+		},
+		"closed after reading first series: multiple series from 'many' side match to a single 'one' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+			},
+			seriesToRead: 1,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+			},
+		},
+		"closed after reading first series: multiple series from 'one' side match to a single 'many' series": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+			seriesToRead: 1,
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+			},
+		},
+		"closed after reading all 'one' side input series in a match group, but not all output series for that match group": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "env", "prod"),
+				labels.FromStrings("group", "1", "env", "test"),
+			},
+			seriesToRead:     2,
+			emptyInputSeries: true, // Don't bother populating the input series with data: we run this test as an instant query, so if both 'one' side series have samples, they conflict with each other.
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "test"),
 			},
 		},
 	}
@@ -567,6 +620,10 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(ts))
 
 			createTestData := func(val float64) types.InstantVectorSeriesData {
+				if testCase.emptyInputSeries {
+					return types.InstantVectorSeriesData{}
+				}
+
 				floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
 				require.NoError(t, err)
 				floats = append(floats, promql.FPoint{T: ts, F: val})
@@ -595,10 +652,11 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
-			// Read the first series.
-			d, err := o.NextSeries(ctx)
-			require.NoError(t, err)
-			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			for range testCase.seriesToRead {
+				d, err := o.NextSeries(ctx)
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			}
 
 			// Return any unread data to the pool and update the current memory consumption estimate to match.
 			left.ReleaseUnreadData(memoryConsumptionTracker)

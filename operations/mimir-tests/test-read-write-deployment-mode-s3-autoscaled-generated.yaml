@@ -562,9 +562,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=read
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
+        env: []
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
@@ -1003,9 +1001,6 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
@@ -1197,9 +1192,6 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
@@ -1391,9 +1383,6 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
@@ -1529,9 +1518,6 @@ spec:
         - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
@@ -1667,9 +1653,6 @@ spec:
         - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
@@ -1805,9 +1788,6 @@ spec:
         - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: mimir-write

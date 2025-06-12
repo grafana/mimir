@@ -62,7 +62,7 @@ func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.Memor
 	t.Data = nil
 }
 
-func (t *TestOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	// Nothing to do.
 	return nil
 }
