@@ -143,7 +143,8 @@ func TestDistributor_Push(t *testing.T) {
 		timeOut               bool
 		configure             func(*Config)
 		customRequest         *mimirpb.WriteRequest
-		expectTraceEvents     bool
+		// Expect trace events from sample deduplication due to conflicting timestamps?
+		expectDedupTraceEvents bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -241,10 +242,10 @@ func TestDistributor_Push(t *testing.T) {
 			},
 		},
 		"A push with duplicate timestamps should deduplicate and emit trace events": {
-			numIngesters:      3,
-			happyIngesters:    3,
-			metricNames:       []string{"cortex_discarded_samples_total", lastSeenTimestamp},
-			expectTraceEvents: true,
+			numIngesters:           3,
+			happyIngesters:         3,
+			metricNames:            []string{"cortex_discarded_samples_total", lastSeenTimestamp},
+			expectDedupTraceEvents: true,
 			// Custom request with two different samples with same timestamp.
 			customRequest: makeWriteRequestWith(
 				makeTimeseries([]string{labels.MetricName, "test_metric", "job", "test"},
@@ -339,7 +340,7 @@ func TestDistributor_Push(t *testing.T) {
 					event = ev
 				}
 			}
-			if tc.expectTraceEvents {
+			if tc.expectDedupTraceEvents {
 				require.NotEmptyf(t, event.Name, "Expected a sample deduplication trace event with name %q", eventName)
 
 				var metric string
