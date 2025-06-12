@@ -47,8 +47,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -142,8 +144,8 @@ func TestDistributor_Push(t *testing.T) {
 		timeOut               bool
 		configure             func(*Config)
 		customRequest         *mimirpb.WriteRequest
-		// Expect trace events from sample deduplication due to conflicting timestamps?
-		expectDedupTraceEvents bool
+		// Expect trace event from sample deduplication due to conflicting timestamps?
+		expectDedupTraceEvent bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -241,10 +243,10 @@ func TestDistributor_Push(t *testing.T) {
 			},
 		},
 		"A push with duplicate timestamps should deduplicate and emit trace events": {
-			numIngesters:           3,
-			happyIngesters:         3,
-			metricNames:            []string{"cortex_discarded_samples_total", lastSeenTimestamp},
-			expectDedupTraceEvents: true,
+			numIngesters:          3,
+			happyIngesters:        3,
+			metricNames:           []string{"cortex_discarded_samples_total", lastSeenTimestamp},
+			expectDedupTraceEvent: true,
 			// Custom request with two different samples with same timestamp.
 			customRequest: makeWriteRequestWith(
 				makeTimeseries([]string{labels.MetricName, "test_metric", "job", "test"},
@@ -315,46 +317,47 @@ func TestDistributor_Push(t *testing.T) {
 				})
 			}
 
-			// Check tracing.
-			span.End()
 			const eventName = "Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]"
-			var event trace.Event
-			for _, sp := range spanRecorder.Ended() {
-				if sp.Name() != spanName {
-					continue
-				}
-
-				for _, ev := range sp.Events() {
-					if ev.Name != eventName {
-						continue
-					}
-					require.Emptyf(t, event.Name, "Expected only one event with name %q", eventName)
-
-					event = ev
-				}
-			}
-			if tc.expectDedupTraceEvents {
-				require.NotEmptyf(t, event.Name, "Expected a sample deduplication trace event with name %q", eventName)
-
-				var metric string
-				var count int64
-				for _, attr := range event.Attributes {
-					switch attr.Key {
-					case "metric":
-						metric = attr.Value.AsString()
-					case "count":
-						count = attr.Value.AsInt64()
-					default:
-						require.Failf(t, "Unrecognized event attribute %q", string(attr.Key))
-					}
-				}
-				assert.Equal(t, "test_metric", metric)
-				assert.Equal(t, int64(1), count)
-			} else {
+			event := findSpanEvent(t, spanRecorder, span, spanName, eventName)
+			if !tc.expectDedupTraceEvent {
 				require.Emptyf(t, event.Name, "Expected no sample deduplication trace events")
+			} else {
+				verifySpanEvent(t, event, eventName, []attribute.KeyValue{
+					attribute.String("metric", "test_metric"),
+					attribute.Int64("count", 1),
+				})
 			}
 		})
 	}
+}
+
+func verifySpanEvent(t *testing.T, event trace.Event, name string, attributes []attribute.KeyValue) {
+	t.Helper()
+
+	assert.Equal(t, name, event.Name)
+	assert.Equal(t, attributes, event.Attributes)
+}
+
+func findSpanEvent(t *testing.T, spanRecorder *tracetest.SpanRecorder, span oteltrace.Span, spanName, eventName string) trace.Event {
+	t.Helper()
+
+	span.End()
+	var event trace.Event
+	for _, sp := range spanRecorder.Ended() {
+		if sp.Name() != spanName {
+			continue
+		}
+
+		for _, ev := range sp.Events() {
+			if ev.Name != eventName {
+				continue
+			}
+			require.Emptyf(t, event.Name, "Expected only one event with name %q", eventName)
+
+			event = ev
+		}
+	}
+	return event
 }
 
 func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
