@@ -47,7 +47,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
@@ -263,13 +262,7 @@ func TestDistributor_Push(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			spanRecorder := tracetest.NewSpanRecorder()
-			origTracerProvider := otel.GetTracerProvider()
-			t.Cleanup(func() {
-				otel.SetTracerProvider(origTracerProvider)
-			})
-			otel.SetTracerProvider(trace.NewTracerProvider(trace.WithSpanProcessor(spanRecorder)))
-
-			tracer := otel.Tracer("test")
+			tracer := trace.NewTracerProvider(trace.WithSpanProcessor(spanRecorder)).Tracer("test")
 			const spanName = "test_push_operation"
 			ctx, span := tracer.Start(ctx, spanName)
 			t.Cleanup(func() {
