@@ -341,12 +341,12 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				break
 			}
 
-			// Otherwise, it was added.
+			// Otherwise, it was added. Check for gaps. Even if there's a gap we process the job.
 			planned, err := ps.validateNextSpec(spec)
 			if err != nil {
 				level.Warn(s.logger).Log("msg", "job continuity validation failed",
 					"partition", partition, "job_id", jobID, "err", err)
-				s.metrics.jobContinuityViolations.Inc()
+				s.metrics.gapsDetected.Inc()
 			}
 
 			ps.latestPlannedOffset = planned
