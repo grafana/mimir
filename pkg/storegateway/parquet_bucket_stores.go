@@ -3,7 +3,9 @@ package storegateway
 import (
 	"context"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -11,6 +13,24 @@ import (
 
 type ParquetBucketStores struct {
 	services.Service
+
+	logger log.Logger
+	reg    prometheus.Registerer
+}
+
+// NewParquetBucketStores initializes a Parquet implementation of the Stores interface.
+func NewParquetBucketStores(
+	logger log.Logger,
+	reg prometheus.Registerer,
+) (*ParquetBucketStores, error) {
+
+	stores := &ParquetBucketStores{
+		logger: logger,
+		reg:    reg,
+	}
+	stores.Service = services.NewIdleService(nil, nil)
+
+	return stores, nil
 }
 
 func (ss ParquetBucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
