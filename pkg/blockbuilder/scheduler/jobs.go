@@ -290,6 +290,12 @@ func (s *jobQueue[T]) assigned() int {
 	return count
 }
 
+func (s *jobQueue[T]) setEpoch(epoch int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.epoch = epoch
+}
+
 type job[T any] struct {
 	key jobKey
 

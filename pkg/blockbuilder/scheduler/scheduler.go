@@ -928,7 +928,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 		}
 	}
 
-	s.jobs.epoch = max(s.jobs.epoch, maxEpoch+1)
+	s.jobs.setEpoch(maxEpoch + 1)
 }
 
 type obsMap map[string]*observation
