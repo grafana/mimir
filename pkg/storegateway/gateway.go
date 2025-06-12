@@ -98,7 +98,7 @@ type StoreGateway struct {
 	gatewayCfg Config
 	storageCfg mimir_tsdb.BlocksStorageConfig
 	logger     log.Logger
-	stores     *BucketStores
+	stores     Stores
 	tracker    *activitytracker.ActivityTracker
 
 	// Ring used for sharding blocks.
