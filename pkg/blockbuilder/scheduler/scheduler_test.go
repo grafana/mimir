@@ -940,75 +940,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
 }
 
-func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupGapDetection_NoObservations(t *testing.T) {
-	sched, _ := mustScheduler(t)
-	reg := sched.register.(*prometheus.Registry)
-	sched.cfg.MaxJobsPerPartition = 0
-
-	part := int32(1)
-	sched.advanceCommittedOffset("ingest", part, 5000)
-	sched.completeObservationMode(context.Background())
-
-	pt := sched.getPartitionState(part)
-	// Assume at startup we compute this job offset range, which is later than the committed offset.
-	pt.addPendingJob(&offsetRange{start: 5500, end: 6000})
-
-	assert.Equal(t, 1, pt.pendingJobs.Len())
-	assert.Equal(t, 0, sched.jobs.count())
-	assert.Equal(t, int64(5000), pt.latestPlannedOffset)
-	sched.enqueuePendingJobs()
-	assert.Equal(t, 0, pt.pendingJobs.Len())
-	assert.Equal(t, 1, sched.jobs.count())
-	assert.Equal(t, int64(6000), pt.latestPlannedOffset)
-
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
-		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
-		cortex_blockbuilder_scheduler_gaps_detected 1
-	`), "cortex_blockbuilder_scheduler_gaps_detected"))
-}
-
 func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
-	sched, _ := mustScheduler(t)
-	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
-
-	reg := sched.register.(*prometheus.Registry)
-
-	part := int32(1)
-	pt := sched.getPartitionState(part)
-	// Assume at startup we compute this job offset range:
-	pt.addPendingJob(&offsetRange{start: 10, end: 30})
-	pt.addPendingJob(&offsetRange{start: 30, end: 40})
-	pt.addPendingJob(&offsetRange{start: 40, end: 50})
-
-	assert.Equal(t, 3, pt.pendingJobs.Len())
-	assert.Equal(t, 0, sched.jobs.count())
-	assert.Equal(t, int64(0), pt.latestPlannedOffset)
-	sched.enqueuePendingJobs()
-	assert.Equal(t, 0, pt.pendingJobs.Len())
-	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.latestPlannedOffset)
-
-	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
-		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
-		cortex_blockbuilder_scheduler_gaps_detected 0
-	`), "cortex_blockbuilder_scheduler_gaps_detected"))
-
-	// this one introduces a gap:
-	pt.addPendingJob(&offsetRange{start: 60, end: 70})
-
-	assert.Equal(t, 1, pt.pendingJobs.Len())
-	assert.Equal(t, 3, sched.jobs.count())
-	assert.Equal(t, int64(50), pt.latestPlannedOffset)
-	sched.enqueuePendingJobs()
-	assert.Equal(t, 0, pt.pendingJobs.Len())
-	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
-	assert.Equal(t, int64(70), pt.latestPlannedOffset)
-}
-
-func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection_TableDriven(t *testing.T) {
 	type observation struct {
 		key        jobKey
 		start, end int64
