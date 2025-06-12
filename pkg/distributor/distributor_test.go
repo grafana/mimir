@@ -8809,3 +8809,119 @@ func (m *MockTimeSource) Sleep(d time.Duration) {
 func (m *MockTimeSource) Add(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)
 }
+
+func TestCountNativeHistogramBuckets(t *testing.T) {
+	tests := []struct {
+		name      string
+		histogram *mimirpb.Histogram
+		expected  int
+	}{
+		{
+			name: "histogram with positive and negative buckets",
+			histogram: &mimirpb.Histogram{
+				PositiveSpans: []mimirpb.BucketSpan{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 2},
+				},
+				NegativeSpans: []mimirpb.BucketSpan{
+					{Offset: 0, Length: 4},
+				},
+			},
+			expected: 9, // 3 + 2 + 4 = 9
+		},
+		{
+			name: "histogram with only positive buckets",
+			histogram: &mimirpb.Histogram{
+				PositiveSpans: []mimirpb.BucketSpan{
+					{Offset: 0, Length: 5},
+				},
+				NegativeSpans: []mimirpb.BucketSpan{},
+			},
+			expected: 5,
+		},
+		{
+			name: "histogram with only negative buckets",
+			histogram: &mimirpb.Histogram{
+				PositiveSpans: []mimirpb.BucketSpan{},
+				NegativeSpans: []mimirpb.BucketSpan{
+					{Offset: 0, Length: 3},
+				},
+			},
+			expected: 3,
+		},
+		{
+			name: "histogram with no buckets",
+			histogram: &mimirpb.Histogram{
+				PositiveSpans: []mimirpb.BucketSpan{},
+				NegativeSpans: []mimirpb.BucketSpan{},
+			},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := countNativeHistogramBuckets(tt.histogram)
+			assert.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
+func TestDistributor_NativeHistogramMetrics(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	limits := prepareDefaultLimits()
+	limits.NativeHistogramsIngestionEnabled = true
+
+	ds, _, regs, _ := prepare(t, prepConfig{
+		numIngesters:    2,
+		happyIngesters:  2,
+		numDistributors: 1,
+		limits:          limits,
+	})
+
+	require.Len(t, ds, 1)
+	require.Len(t, regs, 1)
+
+	// Create a request with native histograms that have known bucket counts
+	histogram1 := generateTestHistogram(1) // This generates a histogram with a specific structure
+	histogram2 := generateTestHistogram(2) // Another histogram with different bucket structure
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeHistogramTimeseries([]string{model.MetricNameLabel, "test_metric_1"}, 1000, histogram1),
+			makeHistogramTimeseries([]string{model.MetricNameLabel, "test_metric_2"}, 1000, histogram2),
+		},
+	}
+
+	// Count expected buckets
+	expectedNHSamples := 2 // 2 histograms
+	expectedNHBuckets := 0
+	for _, ts := range req.Timeseries {
+		for _, h := range ts.Histograms {
+			expectedNHBuckets += countNativeHistogramBuckets(&h)
+		}
+	}
+
+	// Push the request
+	resp, err := ds[0].Push(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, emptyResponse, resp)
+
+	// Check that the new metrics are correctly exported
+	expectedMetrics := fmt.Sprintf(`
+		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+		# TYPE cortex_distributor_received_samples_total counter
+		cortex_distributor_received_samples_total{user="user"} 0
+		# HELP cortex_distributor_received_native_histogram_samples_total The total number of received native histogram samples, excluding rejected and deduped samples.
+		# TYPE cortex_distributor_received_native_histogram_samples_total counter
+		cortex_distributor_received_native_histogram_samples_total{user="user"} %d
+		# HELP cortex_distributor_received_native_histogram_buckets_total The total number of received native histogram buckets, excluding rejected and deduped samples.
+		# TYPE cortex_distributor_received_native_histogram_buckets_total counter
+		cortex_distributor_received_native_histogram_buckets_total{user="user"} %d
+	`, expectedNHSamples, expectedNHBuckets)
+
+	assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(expectedMetrics),
+		"cortex_distributor_received_samples_total",
+		"cortex_distributor_received_native_histogram_samples_total",
+		"cortex_distributor_received_native_histogram_buckets_total"))
+}

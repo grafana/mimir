@@ -142,6 +142,8 @@ type Distributor struct {
 	queryDuration                    *instrument.HistogramCollector
 	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
+	receivedNativeHistogramSamples   *prometheus.CounterVec
+	receivedNativeHistogramBuckets   *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
@@ -413,6 +415,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
 			Help: "The total number of received samples, excluding rejected and deduped samples.",
+		}, []string{"user"}),
+		receivedNativeHistogramSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_samples_total",
+			Help: "The total number of received native histogram samples, excluding rejected and deduped samples.",
+		}, []string{"user"}),
+		receivedNativeHistogramBuckets: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_buckets_total",
+			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
@@ -724,6 +734,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.receivedRequests.DeleteLabelValues(userID)
 	d.receivedSamples.DeleteLabelValues(userID)
+	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
+	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
@@ -1947,17 +1959,41 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
+// countNativeHistogramBuckets counts the total number of buckets in a native histogram.
+// This includes buckets from both positive and negative spans.
+func countNativeHistogramBuckets(h *mimirpb.Histogram) int {
+	var buckets int
+
+	// Count positive buckets
+	for _, span := range h.PositiveSpans {
+		buckets += int(span.Length)
+	}
+
+	// Count negative buckets
+	for _, span := range h.NegativeSpans {
+		buckets += int(span.Length)
+	}
+
+	return buckets
+}
+
 func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedHistograms, receivedExemplars, receivedMetadata int
+	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
 		receivedHistograms += len(ts.Histograms)
 		receivedExemplars += len(ts.Exemplars)
+		for _, h := range ts.Histograms {
+			receivedHistogramBuckets += countNativeHistogramBuckets(&h)
+		}
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
-	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
+	// Export separate metrics for total samples, NH samples, and NH buckets as requested in the issue
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedNativeHistogramSamples.WithLabelValues(userID).Add(float64(receivedHistograms))
+	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 
