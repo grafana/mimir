@@ -50,7 +50,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -318,10 +317,12 @@ func TestDistributor_Push(t *testing.T) {
 			}
 
 			const eventName = "Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]"
-			event := findSpanEvent(t, spanRecorder, span, spanName, eventName)
+			span.End()
+			event, found := findSpanEvent(t, spanRecorder, spanName, eventName)
 			if !tc.expectDedupTraceEvent {
-				require.Emptyf(t, event.Name, "Expected no sample deduplication trace events")
+				require.False(t, found, "Expected no sample deduplication trace events")
 			} else {
+				require.True(t, found, "Expected a sample deduplication trace event")
 				verifySpanEvent(t, event, eventName, []attribute.KeyValue{
 					attribute.String("metric", "test_metric"),
 					attribute.Int64("count", 1),
@@ -338,10 +339,9 @@ func verifySpanEvent(t *testing.T, event trace.Event, name string, attributes []
 	assert.Equal(t, attributes, event.Attributes)
 }
 
-func findSpanEvent(t *testing.T, spanRecorder *tracetest.SpanRecorder, span oteltrace.Span, spanName, eventName string) trace.Event {
+func findSpanEvent(t *testing.T, spanRecorder *tracetest.SpanRecorder, spanName, eventName string) (trace.Event, bool) {
 	t.Helper()
 
-	span.End()
 	var event trace.Event
 	for _, sp := range spanRecorder.Ended() {
 		if sp.Name() != spanName {
@@ -357,7 +357,7 @@ func findSpanEvent(t *testing.T, spanRecorder *tracetest.SpanRecorder, span otel
 			event = ev
 		}
 	}
-	return event
+	return event, event.Name != ""
 }
 
 func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
