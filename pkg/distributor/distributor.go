@@ -1275,13 +1275,14 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if len(dedupedPerMetric) > 0 {
 			// Emit tracing span events for metrics with deduped samples.
 			sp := trace.SpanFromContext(ctx)
-			for m, c := range dedupedPerMetric {
+			for unsafeMetricName, deduped := range dedupedPerMetric {
 				sp.AddEvent(
 					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
 					trace.WithAttributes(
-						// Note that m is an unsafe reference to a gRPC unmarshalling buffer.
-						attribute.String("metric", strings.Clone(m)),
-						attribute.Int("count", c),
+						// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
+						// clone it for safe retention.
+						attribute.String("metric", strings.Clone(unsafeMetricName)),
+						attribute.Int("count", deduped),
 					),
 				)
 			}
