@@ -37,16 +37,17 @@ import (
 )
 
 var DefaultConvertOpts = convertOpts{
-	name:              "block",
-	rowGroupSize:      1e6,
-	colDuration:       time.Hour * 8,
-	numRowGroups:      math.MaxInt32,
-	sortedLabels:      []string{labels.MetricName},
-	bloomfilterLabels: []string{labels.MetricName},
-	pageBufferSize:    parquet.DefaultPageBufferSize,
-	writeBufferSize:   parquet.DefaultWriteBufferSize,
-	columnPageBuffers: parquet.DefaultWriterConfig().ColumnPageBuffers,
-	concurrency:       runtime.GOMAXPROCS(0),
+	name:               "block",
+	rowGroupSize:       1e6,
+	colDuration:        time.Hour * 8,
+	numRowGroups:       math.MaxInt32,
+	sortedLabels:       []string{labels.MetricName},
+	bloomfilterLabels:  []string{labels.MetricName},
+	pageBufferSize:     parquet.DefaultPageBufferSize,
+	writeBufferSize:    parquet.DefaultWriteBufferSize,
+	columnPageBuffers:  parquet.DefaultWriterConfig().ColumnPageBuffers,
+	concurrency:        runtime.GOMAXPROCS(0),
+	maxSamplesPerChunk: tsdb.DefaultSamplesPerChunk,
 }
 
 type Convertible interface {
@@ -57,16 +58,17 @@ type Convertible interface {
 }
 
 type convertOpts struct {
-	numRowGroups      int
-	rowGroupSize      int
-	colDuration       time.Duration
-	name              string
-	sortedLabels      []string
-	bloomfilterLabels []string
-	pageBufferSize    int
-	writeBufferSize   int
-	columnPageBuffers parquet.BufferPool
-	concurrency       int
+	numRowGroups       int
+	rowGroupSize       int
+	colDuration        time.Duration
+	name               string
+	sortedLabels       []string
+	bloomfilterLabels  []string
+	pageBufferSize     int
+	writeBufferSize    int
+	columnPageBuffers  parquet.BufferPool
+	concurrency        int
+	maxSamplesPerChunk int
 }
 
 func (cfg convertOpts) buildBloomfilterColumns() []parquet.BloomFilterColumn {
@@ -138,6 +140,12 @@ func WithConcurrency(concurrency int) ConvertOption {
 	}
 }
 
+func WithMaxSamplesPerChunk(samplesPerChunk int) ConvertOption {
+	return func(opts *convertOpts) {
+		opts.maxSamplesPerChunk = samplesPerChunk
+	}
+}
+
 func WithColumnPageBuffers(buffers parquet.BufferPool) ConvertOption {
 	return func(opts *convertOpts) {
 		opts.columnPageBuffers = buffers
@@ -161,9 +169,22 @@ func ConvertTSDBBlock(
 	if err != nil {
 		return 0, err
 	}
-
 	defer func() { _ = rr.Close() }()
-	w := NewShardedWrite(rr, rr.Schema(), bkt, &cfg)
+
+	labelsProjection, err := rr.Schema().LabelsProjection()
+	if err != nil {
+		return 0, errors.Wrap(err, "error getting labels projection from tsdb schema")
+	}
+	chunksProjection, err := rr.Schema().ChunksProjection()
+	if err != nil {
+		return 0, errors.Wrap(err, "error getting chunks projection from tsdb schema")
+	}
+	outSchemaProjections := []*schema.TSDBProjection{
+		labelsProjection, chunksProjection,
+	}
+
+	pipeReaderWriter := NewPipeReaderBucketWriter(bkt)
+	w := NewShardedWrite(rr, rr.Schema(), outSchemaProjections, pipeReaderWriter, &cfg)
 	return w.currentShard, errors.Wrap(w.Write(ctx), "error writing block")
 }
 
@@ -248,7 +269,7 @@ func NewTsdbRowReader(ctx context.Context, mint, maxt, colDuration int64, blks [
 		concurrency: ops.concurrency,
 
 		rowBuilder: parquet.NewRowBuilder(s.Schema),
-		encoder:    schema.NewPrometheusParquetChunksEncoder(s),
+		encoder:    schema.NewPrometheusParquetChunksEncoder(s, ops.maxSamplesPerChunk),
 	}, nil
 }
 
