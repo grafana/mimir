@@ -1279,7 +1279,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				sp.AddEvent(
 					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
 					trace.WithAttributes(
-						attribute.String("metric", m),
+						// Note that m is an unsafe reference to a gRPC unmarshalling buffer.
+						attribute.String("metric", strings.Clone(m)),
 						attribute.Int("count", c),
 					),
 				)
