@@ -100,6 +100,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					parseQuery(t, `sum(metric{app="test",namespace=~"short"})`),
 					Options{},
 					nil,
+					"",
 				)},
 			},
 			expectedMetrics: `

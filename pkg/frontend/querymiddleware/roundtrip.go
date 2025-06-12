@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.opentelemetry.io/otel"
 
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -85,6 +86,8 @@ type Config struct {
 	ExtraPropagateHeaders []string `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
+
+	CacheQueryableSamplesStats bool `yaml:"cache_queryable_samples_stats"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -100,11 +103,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.BoolVar(&cfg.CacheQueryableSamplesStats, "query-frontend.cache-queryable-samples-stats", false, "Cache Statistics queryable samples on results cache.")
 	cfg.ResultsCache.RegisterFlags(f)
 }
 
 // Validate validates the config.
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(qCfg querier.Config) error {
 	if cfg.CacheResults {
 		if cfg.SplitQueriesByInterval <= 0 {
 			return errors.New("-query-frontend.cache-results may only be enabled in conjunction with -query-frontend.split-queries-by-interval. Please set the latter")
@@ -121,6 +125,9 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
 	}
 
+	if cfg.CacheQueryableSamplesStats && !qCfg.EngineConfig.EnablePerStepStats {
+		return errors.New("query-frontend.cache-queryable-samples-stats may only be enabled in conjunction with querier.per-step-stats-enabled. Please set the latter")
+	}
 	return nil
 }
 
@@ -449,6 +456,7 @@ func newQueryMiddlewares(
 		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
+			cfg.CacheQueryableSamplesStats,
 			cfg.SplitQueriesByInterval,
 			limits,
 			codec,

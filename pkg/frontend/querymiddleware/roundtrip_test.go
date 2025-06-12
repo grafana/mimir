@@ -692,7 +692,7 @@ func TestConfig_Validate(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := test.config.Validate()
+			err := test.config.Validate(querier.Config{})
 			require.Equal(t, test.expectedError, err)
 		})
 	}

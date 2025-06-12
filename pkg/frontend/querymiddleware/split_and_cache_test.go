@@ -170,6 +170,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	splitCacheMiddleware := newSplitAndCacheMiddleware(
 		true,
 		false, // Cache disabled.
+		false,
 		24*time.Hour,
 		mockLimits{},
 		codec,
@@ -241,6 +242,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
@@ -382,6 +384,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
@@ -513,6 +516,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		newTestPrometheusCodec(),
@@ -631,6 +635,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		limits,
 		newTestPrometheusCodec(),
@@ -799,6 +804,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			mw := newSplitAndCacheMiddleware(
 				false, // No interval splitting.
 				true,
+				false,
 				24*time.Hour,
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
@@ -1008,6 +1014,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 				mw := newSplitAndCacheMiddleware(
 					testData.splitEnabled,
 					testData.cacheEnabled,
+					false,
 					24*time.Hour,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
@@ -1313,6 +1320,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			mw := newSplitAndCacheMiddleware(
 				false, // No splitting.
 				true,
+				false,
 				24*time.Hour,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
@@ -1358,6 +1366,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	mw := newSplitAndCacheMiddleware(
 		false,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{
 			resultsCacheTTL:                 1 * time.Hour,
@@ -1443,6 +1452,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 	m := newSplitAndCacheMiddleware(
 		false,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{},
 		newTestPrometheusCodec(),
@@ -2171,6 +2181,7 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 	mw := newSplitAndCacheMiddleware(
 		true, // Split enabled
 		true, // Cache enabled
+		false,
 		24*time.Hour,
 		mockLimits{},
 		newTestPrometheusCodec(),
@@ -2209,4 +2220,68 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 	assert.Equal(t, expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache,
 		"SamplesProcessedFromCache not correctly accumulated: expected %d, got %d",
 		expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache)
+}
+
+func TestSplitAndCacheMiddleware_CacheQueryableSamplesStats(t *testing.T) {
+	tests := map[string]struct {
+		cacheQueryableSamplesStats bool
+		expectedStatsParam         string
+	}{
+		"should set stats=all when cacheQueryableSamplesStats is true": {
+			cacheQueryableSamplesStats: true,
+			expectedStatsParam:         "all",
+		},
+		"should not set stats when cacheQueryableSamplesStats is false": {
+			cacheQueryableSamplesStats: false,
+			expectedStatsParam:         "",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var capturedRequest MetricsQueryRequest
+
+			// Create a handler that captures the request
+			handler := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				capturedRequest = req
+				return &PrometheusResponse{
+					Status: "success",
+					Data: &PrometheusData{
+						ResultType: "matrix",
+						Result:     []SampleStream{},
+					},
+				}, nil
+			})
+
+			mw := newSplitAndCacheMiddleware(
+				false,
+				true, // Enable cache
+				testData.cacheQueryableSamplesStats,
+				24*time.Hour,
+				mockLimits{},
+				newTestPrometheusCodec(),
+				cache.NewMockCache(),
+				DefaultCacheKeyGenerator{interval: day},
+				PrometheusResponseExtractor{},
+				resultsCacheAlwaysEnabled,
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			wrappedHandler := mw.Wrap(handler)
+
+			req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+				path:      "/api/v1/query_range",
+				start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+				end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+				step:      60 * 1000,
+				queryExpr: parseQuery(t, `up`),
+			})
+
+			ctx := user.InjectOrgID(context.Background(), "1")
+			_, err := wrappedHandler.Do(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedStatsParam, capturedRequest.GetStats())
+		})
+	}
 }
