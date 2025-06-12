@@ -455,9 +455,7 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	if l := limits.AlertmanagerMaxTemplatesCount(user); l > 0 && len(grafanaConfig.Templates) > l {
-		// Permissive limit to first verify impact on existing users.
-		// TODO: Make this strict.
-		level.Warn(logger).Log("msg", "too many templates in configuration", "user", user, "templates", len(grafanaConfig.Templates), "limit", l)
+		return fmt.Errorf(errTooManyTemplates, len(grafanaConfig.Templates), l)
 	}
 
 	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
