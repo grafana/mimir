@@ -94,7 +94,7 @@ type StoreGateway struct {
 	gatewayCfg Config
 	storageCfg mimir_tsdb.BlocksStorageConfig
 	logger     log.Logger
-	stores     *BucketStores
+	stores     Stores
 	tracker    *activitytracker.ActivityTracker
 
 	// Ring used for sharding blocks.
@@ -202,9 +202,17 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		level.Info(logger).Log("msg", "store-gateway using disabled users", "disabled", gatewayCfg.DisabledTenants)
 	}
 
-	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
-	if err != nil {
-		return nil, errors.Wrap(err, "create bucket stores")
+	if gatewayCfg.ParquetEnabled {
+		level.Info(logger).Log("msg", "store-gateway using parquet block format")
+		g.stores, err = NewParquetBucketStores(logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "create parquet bucket stores")
+		}
+	} else {
+		g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, allowedTenants, limits, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+		if err != nil {
+			return nil, errors.Wrap(err, "create bucket stores")
+		}
 	}
 
 	g.Service = services.NewBasicService(g.starting, g.running, g.stopping)
