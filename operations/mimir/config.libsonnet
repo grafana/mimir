@@ -544,11 +544,6 @@
     //    will discover the query-schedulers via ring.
     query_scheduler_service_discovery_ring_read_path_enabled: true,
 
-    // Enables streaming of chunks from ingesters using blocks.
-    // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.
-    // Default value is true, left here for backwards compatibility until the flag is removed completely.
-    ingester_stream_chunks_when_using_blocks: true,
-
     // Ingester limits are put directly into runtime config, if not null. Available limits:
     //    ingester_instance_limits: {
     //      max_inflight_push_requests: 0,  // Max inflight push requests per ingester. 0 = no limit.
@@ -602,7 +597,6 @@
           overrides: $.util.removeNulls($._config.overrides),
         }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
-        + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
         + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
