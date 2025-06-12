@@ -339,18 +339,20 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				} else {
 					level.Warn(s.logger).Log("msg", "failed to enqueue job", "partition", partition, "job_id", jobID, "err", err)
 				}
-			} else {
-				// It was added.
-				planned, err := ps.validateNextSpec(spec)
-				if err != nil {
-					level.Warn(s.logger).Log("msg", "job continuity validation failed",
-						"partition", partition, "job_id", jobID, "err", err)
-					s.metrics.jobContinuityViolations.Inc()
-				}
-
-				ps.latestPlannedOffset = planned
-				ps.pendingJobs.Remove(e)
+				// Move onto the next partition.
+				break
 			}
+
+			// It was added. Check for gaps. Even if there's a gap we process the job.
+			planned, err := ps.validateNextSpec(spec)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "job continuity validation failed",
+					"partition", partition, "job_id", jobID, "err", err)
+				s.metrics.gapsDetected.Inc()
+			}
+
+			ps.latestPlannedOffset = planned
+			ps.pendingJobs.Remove(e)
 		}
 	}
 

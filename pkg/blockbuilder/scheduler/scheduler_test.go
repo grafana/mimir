@@ -999,10 +999,10 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, int64(50), pt.latestPlannedOffset)
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_job_continuity_violations_total The number of times a job's start offset did not match the expected latest planned offset.
-		# TYPE cortex_blockbuilder_scheduler_job_continuity_violations_total counter
-		cortex_blockbuilder_scheduler_job_continuity_violations_total 0
-	`), "cortex_blockbuilder_scheduler_job_continuity_violations_total"))
+		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
+		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
+		cortex_blockbuilder_scheduler_gaps_detected 0
+	`), "cortex_blockbuilder_scheduler_gaps_detected"))
 
 	// this one introduces a gap:
 	pt.addPendingJob(&offsetRange{start: 60, end: 70})
@@ -1016,10 +1016,10 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, int64(70), pt.latestPlannedOffset)
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_job_continuity_violations_total The number of times a job's start offset did not match the expected latest planned offset.
-		# TYPE cortex_blockbuilder_scheduler_job_continuity_violations_total counter
-		cortex_blockbuilder_scheduler_job_continuity_violations_total 1
-	`), "cortex_blockbuilder_scheduler_job_continuity_violations_total"))
+		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
+		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
+		cortex_blockbuilder_scheduler_gaps_detected 1
+	`), "cortex_blockbuilder_scheduler_gaps_detected"))
 
 	// the gap may not be the first job:
 	pt.addPendingJob(&offsetRange{start: 70, end: 80})
@@ -1036,8 +1036,8 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, int64(120), pt.latestPlannedOffset)
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(
-		`# HELP cortex_blockbuilder_scheduler_job_continuity_violations_total The number of times a job's start offset did not match the expected latest planned offset.
-		# TYPE cortex_blockbuilder_scheduler_job_continuity_violations_total counter
-		cortex_blockbuilder_scheduler_job_continuity_violations_total 2
-	`), "cortex_blockbuilder_scheduler_job_continuity_violations_total"))
+		`# HELP cortex_blockbuilder_scheduler_gaps_detected The number of times a gap was detected in job scheduling.
+		# TYPE cortex_blockbuilder_scheduler_gaps_detected counter
+		cortex_blockbuilder_scheduler_gaps_detected 2
+	`), "cortex_blockbuilder_scheduler_gaps_detected"))
 }
