@@ -89,6 +89,7 @@ type OperatorParameters struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	LookbackDelta            time.Duration
+	EagerLoadSelectors       bool
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
