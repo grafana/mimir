@@ -7,6 +7,7 @@ package stats
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -160,6 +161,10 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddSplitQueries(10)
 		stats1.AddQueueTime(5 * time.Second)
 		stats1.AddSamplesProcessed(10)
+		stats1.AddSamplesProcessedPerStep([]StepStat{
+			{Timestamp: 1, Value: 10},
+			{Timestamp: 2, Value: 20},
+		})
 
 		stats2 := &Stats{}
 		stats2.AddWallTime(time.Second)
@@ -170,6 +175,10 @@ func TestStats_Merge(t *testing.T) {
 		stats2.AddSplitQueries(11)
 		stats2.AddQueueTime(10 * time.Second)
 		stats2.AddSamplesProcessed(20)
+		stats2.AddSamplesProcessedPerStep([]StepStat{
+			{Timestamp: 1, Value: 10},
+			{Timestamp: 2, Value: 20},
+		})
 
 		stats1.Merge(stats2)
 
@@ -181,6 +190,10 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint32(21), stats1.LoadSplitQueries())
 		assert.Equal(t, 15*time.Second, stats1.LoadQueueTime())
 		assert.Equal(t, uint64(30), stats1.LoadSamplesProcessed())
+		assert.Equal(t, []StepStat{
+			{Timestamp: 1, Value: 20},
+			{Timestamp: 2, Value: 40},
+		}, stats1.LoadSamplesProcessedPerStep())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -202,20 +215,126 @@ func TestStats_Merge(t *testing.T) {
 
 func TestStats_Copy(t *testing.T) {
 	s1 := &Stats{
-		WallTime:             1,
-		FetchedSeriesCount:   2,
-		FetchedChunkBytes:    3,
-		FetchedChunksCount:   4,
-		ShardedQueries:       5,
-		SplitQueries:         6,
-		FetchedIndexBytes:    7,
-		EstimatedSeriesCount: 8,
-		QueueTime:            9,
-		SamplesProcessed:     10,
+		StatsData: StatsData{
+			WallTime:             1,
+			FetchedSeriesCount:   2,
+			FetchedChunkBytes:    3,
+			FetchedChunksCount:   4,
+			ShardedQueries:       5,
+			SplitQueries:         6,
+			FetchedIndexBytes:    7,
+			EstimatedSeriesCount: 8,
+			QueueTime:            9,
+			SamplesProcessed:     10,
+			SamplesProcessedPerStep: []StepStat{
+				{Timestamp: 1, Value: 5},
+				{Timestamp: 2, Value: 5},
+			},
+		},
 	}
 	s2 := s1.Copy()
 	assert.NotSame(t, s1, s2)
 	assert.EqualValues(t, s1, s2)
 
 	assert.Nil(t, (*Stats)(nil).Copy())
+}
+
+func TestStats_ConcurrentMerge(t *testing.T) {
+	// Create parent stats object (initially empty)
+	parentStats := &Stats{}
+
+	// Verify parent is initially empty
+	assert.Equal(t, time.Duration(0), parentStats.LoadWallTime())
+	assert.Equal(t, uint64(0), parentStats.LoadFetchedSeries())
+	assert.Equal(t, uint64(0), parentStats.LoadFetchedChunkBytes())
+
+	// Create 10 child stats objects with known values
+	const numChildren = 10
+	childStats := make([]*Stats, numChildren)
+
+	for i := 0; i < numChildren; i++ {
+		child := &Stats{}
+
+		child.AddWallTime(100 * time.Millisecond)
+		child.AddFetchedSeries(uint64(50))
+		child.AddFetchedChunkBytes(uint64(1000))
+		child.AddFetchedChunks(uint64(25))
+		child.AddShardedQueries(uint32(5))
+		child.AddSplitQueries(uint32(10))
+		child.AddQueueTime(200 * time.Millisecond)
+		child.AddSamplesProcessed(uint64(100))
+		child.AddSamplesProcessedPerStep([]StepStat{
+			{Timestamp: 1, Value: 1},
+			{Timestamp: 2, Value: 2},
+			{Timestamp: 3, Value: 3},
+			{Timestamp: 4, Value: 4},
+			{Timestamp: 5, Value: 5},
+			{Timestamp: 6, Value: 6},
+			{Timestamp: 7, Value: 7},
+			{Timestamp: 8, Value: 8},
+			{Timestamp: 9, Value: 9},
+			{Timestamp: 10, Value: 10},
+		})
+
+		childStats[i] = child
+	}
+
+	// Channel to coordinate goroutine start
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Launch goroutines to concurrently merge each child with parent
+	for i := 0; i < numChildren; i++ {
+		wg.Add(1)
+		go func(childIndex int) {
+			defer wg.Done()
+
+			// Wait for all goroutines to be ready
+			<-start
+
+			// Merge this child's stats with parent
+			parentStats.Merge(childStats[childIndex])
+		}(i)
+	}
+
+	// Start all goroutines simultaneously
+	close(start)
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// Calculate expected totals (same stats * numChildren)
+	expectedWallTime := time.Duration(numChildren) * 100 * time.Millisecond
+	expectedSeries := uint64(numChildren * 50)
+	expectedChunkBytes := uint64(numChildren * 1000)
+	expectedChunks := uint64(numChildren * 25)
+	expectedShardedQueries := uint32(numChildren * 5)
+	expectedSplitQueries := uint32(numChildren * 10)
+	expectedQueueTime := time.Duration(numChildren) * 200 * time.Millisecond
+	expectedSamplesProcessed := uint64(numChildren * 100)
+
+	// Verify all values match expected totals
+	assert.Equal(t, expectedWallTime, parentStats.LoadWallTime(), "WallTime should be sum of all children")
+	assert.Equal(t, expectedSeries, parentStats.LoadFetchedSeries(), "FetchedSeries should be sum of all children")
+	assert.Equal(t, expectedChunkBytes, parentStats.LoadFetchedChunkBytes(), "FetchedChunkBytes should be sum of all children")
+	assert.Equal(t, expectedChunks, parentStats.LoadFetchedChunks(), "FetchedChunks should be sum of all children")
+	assert.Equal(t, expectedShardedQueries, parentStats.LoadShardedQueries(), "ShardedQueries should be sum of all children")
+	assert.Equal(t, expectedSplitQueries, parentStats.LoadSplitQueries(), "SplitQueries should be sum of all children")
+	assert.Equal(t, expectedQueueTime, parentStats.LoadQueueTime(), "QueueTime should be sum of all children")
+	assert.Equal(t, expectedSamplesProcessed, parentStats.LoadSamplesProcessed(), "SamplesProcessed should be sum of all children")
+
+	// Verify that SamplesProcessedPerStep was merged correctly
+	expectedPerStepStats := []StepStat{
+		{Timestamp: 1, Value: int64(numChildren * 1)},
+		{Timestamp: 2, Value: int64(numChildren * 2)},
+		{Timestamp: 3, Value: int64(numChildren * 3)},
+		{Timestamp: 4, Value: int64(numChildren * 4)},
+		{Timestamp: 5, Value: int64(numChildren * 5)},
+		{Timestamp: 6, Value: int64(numChildren * 6)},
+		{Timestamp: 7, Value: int64(numChildren * 7)},
+		{Timestamp: 8, Value: int64(numChildren * 8)},
+		{Timestamp: 9, Value: int64(numChildren * 9)},
+		{Timestamp: 10, Value: int64(numChildren * 10)},
+	}
+	assert.Equal(t, expectedPerStepStats, parentStats.LoadSamplesProcessedPerStep(), "SamplesProcessedPerStep should be sum of all children")
 }

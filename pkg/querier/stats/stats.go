@@ -7,6 +7,7 @@ package stats
 
 import (
 	"context"
+	"sync"
 	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
 	"time"
 
@@ -40,6 +41,11 @@ func IsEnabled(ctx context.Context) bool {
 	// When query statistics are enabled, the stats object is already initialised
 	// within the context, so we can just check it.
 	return FromContext(ctx) != nil
+}
+
+type Stats struct {
+	StatsData
+	perStepStatsMx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
@@ -234,12 +240,31 @@ func (s *Stats) LoadSpunOffSubqueries() uint32 {
 	return atomic.LoadUint32(&s.SpunOffSubqueries)
 }
 
+func (s *Stats) AddSamplesProcessedPerStep(points []StepStat) {
+	s.perStepStatsMx.Lock()
+	defer s.perStepStatsMx.Unlock()
+
+	if s == nil {
+		return
+	}
+
+	s.SamplesProcessedPerStep = points
+}
+
+func (s *Stats) LoadSamplesProcessedPerStep() []StepStat {
+	s.perStepStatsMx.Lock()
+	defer s.perStepStatsMx.Unlock()
+	if s == nil {
+		return nil
+	}
+	return s.SamplesProcessedPerStep
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
 		return
 	}
-
 	s.AddWallTime(other.LoadWallTime())
 	s.AddFetchedSeries(other.LoadFetchedSeries())
 	s.AddFetchedChunkBytes(other.LoadFetchedChunkBytes())
@@ -252,6 +277,61 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddEncodeTime(other.LoadEncodeTime())
 	s.AddSamplesProcessed(other.LoadSamplesProcessed())
 	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
+	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
+}
+
+func (s *Stats) mergeSamplesProcessedPerStep(other []StepStat) {
+	if s == nil {
+		return
+	}
+	// Hold the lock for the entire merge operation to make it atomic
+	s.perStepStatsMx.Lock()
+	defer s.perStepStatsMx.Unlock()
+
+	this := s.SamplesProcessedPerStep // Access directly since we hold the lock
+
+	if len(other) == 0 {
+		// Nothing to merge
+		return
+	}
+
+	merged := make([]StepStat, 0, len(this)+len(other))
+	i, j := 0, 0
+	confilctsNum := 0
+	var sum int64
+
+	for i < len(this) && j < len(other) {
+		if this[i].Timestamp < other[j].Timestamp {
+			merged = append(merged, this[i])
+			sum += this[i].Value
+			i++
+		} else if other[j].Timestamp < this[i].Timestamp {
+			merged = append(merged, other[j])
+			sum += other[j].Value
+			j++
+		} else {
+			confilctsNum++
+			summed := StepStat{
+				Timestamp: this[i].Timestamp,
+				Value:     this[i].Value + other[j].Value,
+			}
+			merged = append(merged, summed)
+			sum += summed.Value
+			i++
+			j++
+		}
+	}
+
+	// Append any remaining elements
+	for ; i < len(this); i++ {
+		merged = append(merged, this[i])
+		sum += this[i].Value
+	}
+	for ; j < len(other); j++ {
+		merged = append(merged, other[j])
+		sum += other[j].Value
+	}
+	s.SamplesProcessedPerStep = merged // Set directly since we hold the lock
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment
