@@ -231,12 +231,12 @@ type offsetRange struct {
 // updateEndOffset processes an end offset and returns a consumption job spec if
 // one is ready. This is expected to be called with monotonically increasing
 // end offsets, and called frequently, even in the absence of new data.
-func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*offsetRange, error) {
+func (ps *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.Duration) (*offsetRange, error) {
 	newJobBucket := ts.Truncate(jobSize)
 
-	if s.jobBucket.IsZero() {
-		s.offset = end
-		s.jobBucket = newJobBucket
+	if ps.jobBucket.IsZero() {
+		ps.offset = end
+		ps.jobBucket = newJobBucket
 		return nil, nil
 	}
 
@@ -244,7 +244,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", s.jobBucket, newJobBucket, s.offset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", ps.jobBucket, newJobBucket, ps.offset, end)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -252,22 +252,22 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 		// bucket if it has data and start a new one.
 
 		var job *offsetRange
-		if s.offset < end {
+		if ps.offset < end {
 			job = &offsetRange{
-				start: s.offset,
+				start: ps.offset,
 				end:   end,
 			}
 		}
-		s.offset = end
-		s.jobBucket = newJobBucket
+		ps.offset = end
+		ps.jobBucket = newJobBucket
 		return job, nil
 	}
 
 	return nil, nil
 }
 
-func (s *partitionState) addPendingJob(job *offsetRange) {
-	s.pendingJobs.PushBack(job)
+func (ps *partitionState) addPendingJob(job *offsetRange) {
+	ps.pendingJobs.PushBack(job)
 }
 
 // validateNextSpec validates the given spec which is about to be added to the pending job queue.
