@@ -211,9 +211,11 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiter.MemoryConsum
 }
 
 // Put returns a slice of E to the pool and updates the current memory consumption.
-func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumptionTracker) {
+// It always returns a nil slice as a reminder to replace any references to s to
+// ensure they are not reused or returned a second time.
+func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumptionTracker) S {
 	if s == nil {
-		return
+		return nil
 	}
 
 	if EnableManglingReturnedSlices && p.mangle != nil {
@@ -224,6 +226,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumption
 
 	tracker.DecreaseMemoryConsumption(uint64(cap(s))*p.elementSize, p.source)
 	p.inner.Put(s)
+	return nil
 }
 
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
