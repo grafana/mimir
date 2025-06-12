@@ -16644,7 +16644,7 @@
           "kind": "field",
           "name": "grafana_alertmanager_idle_grace_period",
           "required": false,
-          "desc": "Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
           "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",

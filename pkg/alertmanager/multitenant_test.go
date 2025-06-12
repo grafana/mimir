@@ -3440,31 +3440,6 @@ func TestComputeConfig(t *testing.T) {
 				require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
 			}
 		})
-
-		t.Run(fmt.Sprintf("%s with Grafana tenant suffix", test.name), func(t *testing.T) {
-			userWithPrefix := fmt.Sprintf("%s-grafana", test.cfg.Mimir.User)
-
-			test.cfg.Grafana.User = userWithPrefix
-			test.cfg.Mimir.User = userWithPrefix
-			test.expCfg.User = userWithPrefix
-
-			cfg, startAM, err := amWithSuffix.computeConfig(test.cfg)
-			if test.expErr != "" {
-				require.EqualError(t, err, test.expErr)
-				return
-			}
-			require.NoError(t, err)
-
-			require.Equal(t, test.expStartAM, startAM)
-			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.staticHeaders)
-			if test.expURL == "" {
-				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
-			} else {
-				require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
-			}
-		})
-
 	}
 }
 

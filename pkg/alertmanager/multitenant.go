@@ -764,8 +764,8 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
-	// Check if this tenant can be skipped (Grafana suffix matching).
-	skippable := am.canSkipTenant(userID)
+	// Check if tenants can be skipped (strict initialization enabled).
+	skippable := am.cfg.StrictInitialization
 
 	// Check if the mimir config is non-empty and non-default.
 	isMimirConfigCustom := cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != ""
@@ -814,12 +814,6 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 // isGrafanaConfigUsable returns true if the Grafana configuration is promoted, non-default, and not empty.
 func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
 	return cfg.Promoted && !cfg.Default && cfg.RawConfig != ""
-}
-
-// canSkipTenant returns true if the tenant can be skipped, either because strict initialization is enabled,
-// or because the tenant ID matches the provided Grafana tenant suffix.
-func (am *MultitenantAlertmanager) canSkipTenant(userID string) bool {
-	return am.cfg.StrictInitialization
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
