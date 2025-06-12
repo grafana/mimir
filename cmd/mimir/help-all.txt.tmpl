@@ -3445,6 +3445,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2 (default 2)
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
+  -store-gateway.parquet-enabled
+    	[experimental] Whether to query Parquet files for block instead of the native Prometheus TSDB files.
   -store-gateway.sharding-ring.auto-forget-enabled
     	[deprecated] When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget. (default true)
   -store-gateway.sharding-ring.auto-forget-unhealthy-periods int
