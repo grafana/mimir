@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [TEST] Just testing CI check. #11717
+
 ### Grafana Mimir
 
 * [CHANGE] Query-frontend: Ensure that cache keys generated from cardinality estimate middleware are less than 250 bytes in length by hashing the tenant IDs that are included in them. This change invalidates all cardinality estimates in the cache. #11568
