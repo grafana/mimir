@@ -21,7 +21,7 @@ import (
 )
 
 func TestSeriesList_BasicListOperations(t *testing.T) {
-	list := newSeriesList(limiter.NewMemoryConsumptionTracker(0, nil, ""))
+	list := newSeriesList(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	require.Equal(t, 0, list.Len())
 
 	series1 := mockSeries{labels.FromStrings("series", "1")}
@@ -55,9 +55,11 @@ func TestSeriesList_OperationsNearBatchBoundaries(t *testing.T) {
 		(seriesBatchSize * 2) + 1,
 	}
 
+	ctx := context.Background()
+
 	for _, seriesCount := range cases {
 		t.Run(fmt.Sprintf("N=%v", seriesCount), func(t *testing.T) {
-			list := newSeriesList(limiter.NewMemoryConsumptionTracker(0, nil, ""))
+			list := newSeriesList(limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""))
 
 			seriesAdded := make([]storage.Series, 0, seriesCount)
 
@@ -110,6 +112,7 @@ func TestSelector_QueryRanges(t *testing.T) {
 	start := time.Date(2024, 12, 11, 3, 12, 45, 0, time.UTC)
 	end := start.Add(time.Hour)
 	timeRange := types.NewRangeQueryTimeRange(start, end, time.Minute)
+	ctx := context.Background()
 
 	t.Run("instant vector selector", func(t *testing.T) {
 		queryable := &mockQueryable{}
@@ -118,10 +121,10 @@ func TestSelector_QueryRanges(t *testing.T) {
 			Queryable:                queryable,
 			TimeRange:                timeRange,
 			LookbackDelta:            lookbackDelta,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
+			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
 		}
 
-		_, err := s.SeriesMetadata(context.Background())
+		_, err := s.SeriesMetadata(ctx)
 		require.NoError(t, err)
 
 		expectedMinT := timestamp.FromTime(start.Add(-lookbackDelta).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
@@ -139,10 +142,10 @@ func TestSelector_QueryRanges(t *testing.T) {
 			Queryable:                queryable,
 			TimeRange:                timeRange,
 			Range:                    selectorRange,
-			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
+			MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
 		}
 
-		_, err := s.SeriesMetadata(context.Background())
+		_, err := s.SeriesMetadata(ctx)
 		require.NoError(t, err)
 
 		expectedMinT := timestamp.FromTime(start.Add(-selectorRange).Add(time.Millisecond)) // Add a millisecond to exclude the beginning of the range.
