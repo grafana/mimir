@@ -213,42 +213,14 @@ func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	// Initially we're in observation mode. We have Kafka's start offsets, but no client jobs.
 
-	sched.committed = kadm.Offsets{
-		"ingest": {
-			1: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 1,
-				At:        5000,
-			},
-			2: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 2,
-				At:        800,
-			},
-			3: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 3,
-				At:        974,
-			},
-			4: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 4,
-				At:        500,
-			},
-			5: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 5,
-				At:        12000,
-			},
-			// no 6
-			// no 7
-			8: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 8,
-				At:        1000,
-			},
-		},
-	}
+	sched.advanceCommittedOffset("ingest", 1, 5000)
+	sched.advanceCommittedOffset("ingest", 2, 800)
+	sched.advanceCommittedOffset("ingest", 3, 974)
+	sched.advanceCommittedOffset("ingest", 4, 500)
+	sched.advanceCommittedOffset("ingest", 5, 12000)
+	// no 6
+	// no 7
+	sched.advanceCommittedOffset("ingest", 8, 1000)
 
 	{
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
@@ -375,15 +347,7 @@ func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int3
 func TestCommitOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t)
 
-	sched.committed = kadm.Offsets{
-		"ingest": {
-			1: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 1,
-				At:        5000,
-			},
-		},
-	}
+	sched.advanceCommittedOffset("ingest", 1, 5000)
 	sched.completeObservationMode(context.Background())
 
 	spec := schedulerpb.JobSpec{
