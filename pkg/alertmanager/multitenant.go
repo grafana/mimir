@@ -157,7 +157,6 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 
 	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
-
 }
 
 // Validate config and returns error on failure
@@ -968,7 +967,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	// If no Alertmanager instance exists for this user yet, start one.
 	if !hasExisting {
 		level.Debug(am.logger).Log("msg", "initializing new per-tenant alertmanager", "user", cfg.User)
-		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.staticHeaders)
+		newAM, err := am.newAlertmanager(cfg.User, userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.staticHeaders, cfg.usingGrafanaConfig)
 		if err != nil {
 			return err
 		}
@@ -976,7 +975,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
 	} else if configChanged(am.cfgs[cfg.User], cfg.AlertConfigDesc) {
 		level.Info(am.logger).Log("msg", "updating new per-tenant alertmanager", "user", cfg.User)
 		// If the config changed, apply the new one.
-		err := existing.ApplyConfig(userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.staticHeaders)
+		err := existing.ApplyConfig(userAmConfig, templates, rawCfg, cfg.tmplExternalURL, cfg.staticHeaders, cfg.usingGrafanaConfig)
 		if err != nil {
 			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
 		}
@@ -990,7 +989,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string, usingGrafanaConfig bool) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
@@ -1021,7 +1020,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
-	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, staticHeaders); err != nil {
+	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, staticHeaders, usingGrafanaConfig); err != nil {
 		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
