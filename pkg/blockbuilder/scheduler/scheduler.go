@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -339,18 +338,20 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 				} else {
 					level.Warn(s.logger).Log("msg", "failed to enqueue job", "partition", partition, "job_id", jobID, "err", err)
 				}
-			} else {
-				// It was added.
-				planned, err := ps.validateNextSpec(spec)
-				if err != nil {
-					level.Warn(s.logger).Log("msg", "job continuity validation failed",
-						"partition", partition, "job_id", jobID, "err", err)
-					s.metrics.jobContinuityViolations.Inc()
-				}
-
-				ps.latestPlannedOffset = planned
-				ps.pendingJobs.Remove(e)
+				// Move onto the next partition.
+				break
 			}
+
+			// Otherwise, it was added.
+			planned, err := ps.validateNextSpec(spec)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "job continuity validation failed",
+					"partition", partition, "job_id", jobID, "err", err)
+				s.metrics.jobContinuityViolations.Inc()
+			}
+
+			ps.latestPlannedOffset = planned
+			ps.pendingJobs.Remove(e)
 		}
 	}
 
@@ -850,85 +851,18 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 // finalizeObservations considers the observations and offsets from Kafka, rectifying them into
 // the starting state of the scheduler's normal operation.
 func (s *BlockBuilderScheduler) finalizeObservations() {
-	// Group observations by partition for gap analysis
-	partitionObservations := make(map[int32][]*observation)
-
 	for _, rj := range s.observations {
-		partitionObservations[rj.spec.Partition] = append(partitionObservations[rj.spec.Partition], rj)
-	}
-
-	maxEpoch := int64(0)
-
-	for partition, observations := range partitionObservations {
-		ps := s.getPartitionState(partition)
-
-		// Get the committed offset for this partition
-		var committedOffset int64
-		if committed, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok {
-			committedOffset = committed.At
-		}
-
-		// Initialize latest planned offset to the known committed offset.
-		ps.latestPlannedOffset = committedOffset
-		contiguous := true
-
-		if len(observations) == 0 {
-			// No observations, keep latest planned offset at committed offset
-			continue
-		}
-
-		// Sort observations by start offset
-		sort.Slice(observations, func(i, j int) bool {
-			return observations[i].spec.StartOffset < observations[j].spec.StartOffset
-		})
-
-		// Find the highest contiguous coverage by processing jobs in order.
-		// Stop importing jobs if we find a gap.
-		for _, obs := range observations {
-			maxEpoch = max(maxEpoch, obs.key.epoch)
-
-			if !contiguous {
-				// We found a gap earlier. Skip and warn.
-				level.Warn(s.logger).Log("msg", "startup: skipping job import due to offset gap",
-					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
-					"start_offset", obs.spec.StartOffset, "end_offset", obs.spec.EndOffset)
-				continue
+		if rj.complete {
+			// Completed.
+			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset)
+		} else {
+			// An in-progress job.
+			// These don't affect offsets, they just get added to the job queue.
+			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
+				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
 			}
-
-			if obs.spec.EndOffset <= ps.latestPlannedOffset {
-				// This job is wholly before the latest planned offset. Skip.
-				level.Warn(s.logger).Log("msg", "startup: skipping job before commit",
-					"partition", partition, "job_id", obs.key.id, "epoch", obs.key.epoch,
-					"start_offset", obs.spec.StartOffset, "end_offset", obs.spec.EndOffset)
-				continue
-			}
-
-			nextOffset, err := ps.validateNextSpec(obs.spec)
-			if err != nil {
-				// Found a gap, can't continue the contiguous range
-				contiguous = false
-				level.Warn(s.logger).Log("msg", "startup: detected offset gap",
-					"partition", partition, "job_id", obs.key.id, "start_offset", obs.spec.StartOffset,
-					"end_offset", obs.spec.EndOffset, "latest_planned_offset", ps.latestPlannedOffset)
-				continue
-			}
-
-			if obs.complete {
-				// Completed.
-				s.advanceCommittedOffset(obs.spec.Topic, obs.spec.Partition, obs.spec.EndOffset)
-			} else {
-				// An in-progress job that's part of our continuous coverage.
-				if err := s.jobs.importJob(obs.key, obs.workerID, obs.spec); err != nil {
-					level.Warn(s.logger).Log("msg", "failed to import job", "job_id", obs.key.id,
-						"epoch", obs.key.epoch, "worker", obs.workerID, "err", err)
-				}
-			}
-
-			ps.latestPlannedOffset = nextOffset
 		}
 	}
-
-	s.jobs.epoch = max(s.jobs.epoch, maxEpoch+1)
 }
 
 type obsMap map[string]*observation

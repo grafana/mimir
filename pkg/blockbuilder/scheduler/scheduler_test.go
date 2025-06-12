@@ -240,13 +240,6 @@ func TestObservations(t *testing.T) {
 				Partition: 5,
 				At:        12000,
 			},
-			// no 6
-			// no 7
-			8: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 8,
-				At:        1000,
-			},
 		},
 	}
 
@@ -270,14 +263,13 @@ func TestObservations(t *testing.T) {
 		inProgress = false
 	)
 	maybeBadEpoch := errors.New("maybe bad epoch")
-	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, commitRecTs time.Time, startOffset, endOffset int64, expectErr error) {
+	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, commitRecTs time.Time, endOffset int64, expectErr error) {
 		clientData = append(clientData, observation{
 			key: jobKey{id: id, epoch: epoch},
 			spec: schedulerpb.JobSpec{
-				Topic:       "ingest",
-				Partition:   partition,
-				StartOffset: startOffset,
-				EndOffset:   endOffset,
+				Topic:     "ingest",
+				Partition: partition,
+				EndOffset: endOffset,
 			},
 			workerID:  worker,
 			complete:  isComplete,
@@ -288,62 +280,52 @@ func TestObservations(t *testing.T) {
 	// Rig up a bunch of data that clients are collectively sending.
 
 	// Partition 1: one job in progress.
-	mkJob(inProgress, "w0", 1, "ingest/1/5000", 10, time.Unix(200, 0), 5000, 6000, nil)
+	mkJob(inProgress, "w0", 1, "ingest/1/5524", 10, time.Unix(200, 0), 6000, nil)
 
 	// Partition 2: Many complete jobs, followed by an in-progress job.
-	mkJob(complete, "w0", 2, "ingest/2/400", 3, time.Unix(1, 0), 400, 800, nil)
-	mkJob(complete, "w0", 2, "ingest/2/800", 4, time.Unix(2, 0), 800, 1000, nil)
-	mkJob(complete, "w0", 2, "ingest/2/1000", 4, time.Unix(3, 0), 1000, 1200, nil)
-	mkJob(complete, "w0", 2, "ingest/2/1200", 11, time.Unix(500, 0), 1200, 1400, nil)
-	mkJob(inProgress, "w0", 2, "ingest/2/1400", 12, time.Unix(600, 0), 1400, 1600, nil)
+	mkJob(complete, "w0", 2, "ingest/2/1", 3, time.Unix(1, 0), 15, nil)
+	mkJob(complete, "w0", 2, "ingest/2/16", 4, time.Unix(2, 0), 31, nil)
+	mkJob(complete, "w0", 2, "ingest/2/32", 4, time.Unix(3, 0), 45, nil)
+	mkJob(complete, "w0", 2, "ingest/2/1000", 11, time.Unix(500, 0), 2000, nil)
+	mkJob(inProgress, "w0", 2, "ingest/2/2001", 12, time.Unix(600, 0), 2199, nil)
 
 	// (Partition 3 has no updates.)
 
 	// Partition 4 has a series of completed jobs that are entirely after what was found in Kafka.
-	mkJob(complete, "w0", 4, "ingest/4/500", 15, time.Unix(500, 0), 500, 600, nil)
-	mkJob(complete, "w1", 4, "ingest/4/600", 16, time.Unix(600, 0), 600, 700, nil)
-	mkJob(complete, "w2", 4, "ingest/4/700", 17, time.Unix(700, 0), 700, 800, nil)
-	mkJob(complete, "w3", 4, "ingest/4/800", 18, time.Unix(800, 0), 800, 900, nil)
+	mkJob(complete, "w0", 4, "ingest/4/500", 15, time.Unix(500, 0), 599, nil)
+	mkJob(complete, "w1", 4, "ingest/4/600", 16, time.Unix(600, 0), 699, nil)
+	mkJob(complete, "w2", 4, "ingest/4/700", 17, time.Unix(700, 0), 799, nil)
+	mkJob(complete, "w3", 4, "ingest/4/800", 18, time.Unix(800, 0), 899, nil)
 	// Here's a conflicting completion report from a worker whose lease was revoked at one point. It should be effectively dropped.
-	mkJob(complete, "w99", 4, "ingest/4/600", 6, time.Unix(600, 0), 600, 700, maybeBadEpoch)
+	mkJob(complete, "w99", 4, "ingest/4/600", 6, time.Unix(600, 0), 699, maybeBadEpoch)
 
 	// Partition 5 has a number of conflicting in-progress reports.
-	mkJob(inProgress, "w100", 5, "ingest/5/12000", 30, time.Unix(200, 0), 12000, 13000, maybeBadEpoch)
-	mkJob(inProgress, "w101", 5, "ingest/5/12000", 31, time.Unix(200, 0), 12000, 13000, maybeBadEpoch)
-	mkJob(inProgress, "w102", 5, "ingest/5/12000", 32, time.Unix(200, 0), 12000, 13000, maybeBadEpoch)
-	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, time.Unix(200, 0), 12000, 13000, maybeBadEpoch)
-	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, time.Unix(200, 0), 12000, 13000, nil)
+	mkJob(inProgress, "w100", 5, "ingest/5/12000", 30, time.Unix(200, 0), 6000, maybeBadEpoch)
+	mkJob(inProgress, "w101", 5, "ingest/5/12000", 31, time.Unix(200, 0), 6000, maybeBadEpoch)
+	mkJob(inProgress, "w102", 5, "ingest/5/12000", 32, time.Unix(200, 0), 6000, maybeBadEpoch)
+	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, time.Unix(200, 0), 6000, maybeBadEpoch)
+	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, time.Unix(200, 0), 6000, nil)
 
 	// Partition 6 has a complete job, but wasn't among the offsets we learned from Kafka.
-	mkJob(complete, "w0", 6, "ingest/6/500", 48, time.Unix(500, 0), 500, 600, nil)
+	mkJob(complete, "w0", 6, "ingest/6/500", 48, time.Unix(500, 0), 599, nil)
 	// Partition 7 has an in-progress job, but wasn't among the offsets we learned from Kafka.
-	mkJob(inProgress, "w1", 7, "ingest/7/92874", 52, time.Unix(1500, 0), 92874, 93874, nil)
+	mkJob(complete, "w1", 7, "ingest/7/92874", 52, time.Unix(1500, 0), 93874, nil)
 
-	// Partition 8 has a number of reports and has a hole that should should not be passed.
-	mkJob(complete, "w0", 8, "ingest/8/1000", 53, time.Unix(1000, 0), 1000, 1100, nil)
-	mkJob(complete, "w1", 8, "ingest/8/1100", 54, time.Unix(1100, 0), 1100, 1200, nil)
-	mkJob(complete, "w2", 8, "ingest/8/1200", 55, time.Unix(1200, 0), 1200, 1300, nil)
-	// this one is absent mkJob(complete, "w3", 8, "ingest/8/1300", 56, time.Unix(1300, 0), 1300, 1400, nil)
-	mkJob(complete, "w4", 8, "ingest/8/1400", 57, time.Unix(1400, 0), 1400, 1500, nil)
-	mkJob(complete, "w5", 8, "ingest/8/1500", 58, time.Unix(1500, 0), 1500, 1600, nil)
-	mkJob(complete, "w6", 8, "ingest/8/1600", 59, time.Unix(1600, 0), 1600, 1700, nil)
+	rnd := rand.New(rand.NewSource(64_000))
 
 	sendUpdates := func() {
-		// Send all updates multiple times in random order.
-		for i := range 10 {
-			rnd := rand.New(rand.NewSource(int64(i)))
-			t.Run(fmt.Sprintf("send_updates_seed_%d", i), func(t *testing.T) {
-				rnd.Shuffle(len(clientData), func(i, j int) { clientData[i], clientData[j] = clientData[j], clientData[i] })
-				for _, c := range clientData {
-					t.Log("sending update", c.key, c.workerID)
-					err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
-					if errors.Is(c.expectErr, maybeBadEpoch) {
-						require.True(t, errors.Is(err, errBadEpoch) || err == nil, "job %V: expected either bad epoch or no error, got %v", c.key, err)
-					} else {
-						require.NoError(t, err)
-					}
+		for range 3 {
+			// Simulate the arbitrary order of client updates.
+			rnd.Shuffle(len(clientData), func(i, j int) { clientData[i], clientData[j] = clientData[j], clientData[i] })
+			for _, c := range clientData {
+				t.Log("sending update", c.key, c.workerID)
+				err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
+				if errors.Is(c.expectErr, maybeBadEpoch) {
+					require.True(t, errors.Is(err, errBadEpoch) || err == nil, "expected either bad epoch or no error, got %v", err)
+				} else {
+					require.NoError(t, err)
 				}
-			})
+			}
 		}
 	}
 
@@ -351,17 +333,17 @@ func TestObservations(t *testing.T) {
 
 	sched.completeObservationMode(context.Background())
 	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
-	requireOffset(t, sched.committed, "ingest", 2, 1400, "ingest/2 job was complete up to 1400, so it should move the offset forward")
+	requireOffset(t, sched.committed, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
 	requireOffset(t, sched.committed, "ingest", 3, 974, "ingest/3 should be unchanged - no updates")
-	requireOffset(t, sched.committed, "ingest", 4, 900, "ingest/4 should be moved forward to account for the completed jobs")
+	requireOffset(t, sched.committed, "ingest", 4, 899, "ingest/4 should be moved forward to account for the completed jobs")
 	requireOffset(t, sched.committed, "ingest", 5, 12000, "ingest/5 has nothing new completed")
-	requireOffset(t, sched.committed, "ingest", 6, 600, "ingest/6 should have been added to the offsets")
-	requireOffset(t, sched.committed, "ingest", 8, 1300, "ingest/8 should be committed only until the gap")
+	requireOffset(t, sched.committed, "ingest", 6, 599, "ingest/6 should have been added to the offsets")
 
-	require.Len(t, sched.jobs.jobs, 4, "should be 4 in-progress jobs")
-	require.Equal(t, 60, int(sched.jobs.epoch))
+	require.Len(t, sched.jobs.jobs, 3)
+	require.Equal(t, 35, int(sched.jobs.epoch))
 
-	// Verify that the same set of updates can be sent now that we're out of observation mode.
+	// Now verify that the same set of updates can be sent now that we're out of observation mode.
+
 	sendUpdates()
 }
 
