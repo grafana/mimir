@@ -48,7 +48,7 @@
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_total` metric. #11110
 * [ENHANCEMENT] Query-frontend: Add `cortex_query_samples_processed_cache_adjusted_total` metric. #11164
 * [ENHANCEMENT] Ingester/Distributor: Add `cortex_cost_attribution_*` metrics to observe the state of the cost-attribution trackers. #11112
-* [ENHANCEMENT] Distributor: Add separate metrics for native histogram samples and buckets. The `cortex_distributor_received_samples_total` metric now excludes native histograms, and two new metrics `cortex_distributor_received_native_histogram_samples_total` and `cortex_distributor_received_native_histogram_buckets_total` track native histogram samples and their bucket counts separately for improved billing accuracy.
+* [ENHANCEMENT] Distributor: Add separate metrics for native histogram samples and buckets. The `cortex_distributor_received_samples_total` metric now excludes native histograms, and two new metrics `cortex_distributor_received_native_histogram_samples_total` and `cortex_distributor_received_native_histogram_buckets_total` track native histogram samples and their bucket counts separately for improved billing accuracy. #11718
 * [ENHANCEMENT] gRPC/HTTP servers: Add `cortex_server_invalid_cluster_validation_label_requests_total` metric, that is increased for every request with an invalid cluster validation label. #11241 #11277
 * [ENHANCEMENT] OTLP: Add support for converting OTel explicit bucket histograms to Prometheus native histograms with custom buckets using the `distributor.otel-convert-histograms-to-nhcb` flag. #11077
 * [ENHANCEMENT] Add configurable per-tenant `limited_queries`, which you can only run at or less than an allowed frequency. #11097
