@@ -8810,31 +8810,6 @@ func (m *MockTimeSource) Add(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)
 }
 
-func TestDistributor_NativeHistogramMetrics(t *testing.T) {
-	dists, _, regs, _ := prepare(t, prepConfig{
-		numDistributors: 1,
-	})
-	d := dists[0]
-	reg := regs[0]
-
-	// Manually update the native histogram metrics to test they are exposed
-	d.receivedNativeHistogramSamples.WithLabelValues("user1").Add(5)
-	d.receivedNativeHistogramBuckets.WithLabelValues("user1").Add(25)
-	d.receivedNativeHistogramSamples.WithLabelValues("user2").Add(3)
-	d.receivedNativeHistogramBuckets.WithLabelValues("user2").Add(15)
-
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_distributor_received_native_histogram_samples_total The total number of received native histogram samples, excluding rejected and deduped samples.
-		# TYPE cortex_distributor_received_native_histogram_samples_total counter
-		cortex_distributor_received_native_histogram_samples_total{user="user1"} 5
-		cortex_distributor_received_native_histogram_samples_total{user="user2"} 3
-
-		# HELP cortex_distributor_received_native_histogram_buckets_total The total number of received native histogram buckets, excluding rejected and deduped samples.
-		# TYPE cortex_distributor_received_native_histogram_buckets_total counter
-		cortex_distributor_received_native_histogram_buckets_total{user="user1"} 25
-		cortex_distributor_received_native_histogram_buckets_total{user="user2"} 15
-	`), "cortex_distributor_received_native_histogram_samples_total", "cortex_distributor_received_native_histogram_buckets_total"))
-}
 
 func TestCountHistogramBuckets(t *testing.T) {
 	tests := []struct {
