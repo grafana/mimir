@@ -341,7 +341,6 @@ func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) (MetricsQueryRequ
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithTotalQueriesHint not implemented")
 }
 
-// TODO: ikonstantinov - Do we need to implement this?
 func (r *remoteReadQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithStats not implemented")
 }
