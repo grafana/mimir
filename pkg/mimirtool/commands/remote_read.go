@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"math"
@@ -62,6 +63,7 @@ type RemoteReadCommand struct {
 	to            string
 	readSizeLimit uint64
 	useChunks     bool
+	chunkDigest   bool
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -112,6 +114,10 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
 		Default("").
 		StringVar(&c.tsdbPath)
+
+	dumpCmd.Flag("chunk-digest", "Print chunk digest information (min time, max time, checksum) instead of decoding samples.").
+		Default("false").
+		BoolVar(&c.chunkDigest)
 }
 
 type setTenantIDTransport struct {
@@ -259,6 +265,10 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 
 	if len(c.selectors) == 0 {
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
+	}
+
+	if c.chunkDigest && !c.useChunks {
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("-chunks-digest only works with -use-chunks")
 	}
 
 	// Parse all selectors
@@ -618,6 +628,14 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 		return err
 	}
 
+	if c.chunkDigest {
+		return c.dumpChunkDigest(timeseries)
+	}
+
+	return c.dumpSamples(timeseries)
+}
+
+func (c *RemoteReadCommand) dumpSamples(timeseries storage.SeriesSet) error {
 	var it chunkenc.Iterator
 	for timeseries.Next() {
 		s := timeseries.At()
@@ -650,6 +668,37 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 			default:
 				panic("unreachable")
 			}
+		}
+	}
+
+	if err := timeseries.Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *RemoteReadCommand) dumpChunkDigest(timeseries storage.SeriesSet) error {
+	for timeseries.Next() {
+		s := timeseries.At()
+		labels := s.Labels()
+
+		// Check if this is a chunked series (from streaming response)
+		chunkedSeries, ok := s.(*multiQueryChunkedSeries)
+		if !ok {
+			return fmt.Errorf("unexpected series type %T; expected *multiQueryChunkedSeries", s)
+		}
+		// Process chunks directly
+		for i, chunk := range chunkedSeries.chunks {
+			minTime := chunk.MinTimeMs
+			maxTime := chunk.MaxTimeMs
+
+			// Compute MD5 checksum of chunk data
+			hash := md5.Sum(chunk.Data)
+			checksum := fmt.Sprintf("%x", hash)
+
+			fmt.Printf("%s chunk_%d min_time=%d max_time=%d checksum=%s\n",
+				labels.String(), i, minTime, maxTime, checksum)
 		}
 	}
 

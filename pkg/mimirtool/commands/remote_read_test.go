@@ -17,6 +17,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -493,4 +494,150 @@ func createMockXORChunk(t *testing.T, timestamps []int64, values []float64) []by
 	}
 
 	return chunk.Bytes()
+}
+
+func TestRemoteReadCommand_dumpChunkDigest(t *testing.T) {
+	tests := []struct {
+		name         string
+		createSeries func() storage.SeriesSet
+		expectError  bool
+		errorMsg     string
+	}{
+		{
+			name: "successful chunk digest with multiQueryChunkedSeries",
+			createSeries: func() storage.SeriesSet {
+				// Create mock chunks
+				chunks := []prompb.Chunk{
+					{
+						Type:      prompb.Chunk_XOR,
+						MinTimeMs: 1000,
+						MaxTimeMs: 2000,
+						Data:      createMockXORChunk(t, []int64{1000, 1500, 2000}, []float64{1.0, 1.5, 2.0}),
+					},
+					{
+						Type:      prompb.Chunk_XOR,
+						MinTimeMs: 3000,
+						MaxTimeMs: 4000,
+						Data:      createMockXORChunk(t, []int64{3000, 3500, 4000}, []float64{3.0, 3.5, 4.0}),
+					},
+				}
+
+				// Create multiQueryChunkedSeries
+				series := &multiQueryChunkedSeries{
+					labels: labels.FromStrings("__name__", "test_metric"),
+					chunks: chunks,
+					mint:   1000,
+					maxt:   4000,
+				}
+
+				return &concatenatedSeriesSet{
+					series: []storage.Series{series},
+					index:  -1,
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "type assertion error with wrong series type",
+			createSeries: func() storage.SeriesSet {
+				// Create a regular mock series (not multiQueryChunkedSeries)
+				series := storage.MockSeries([]int64{1000, 2000}, []float64{1.0, 2.0}, []string{"__name__", "test_metric"})
+
+				return &concatenatedSeriesSet{
+					series: []storage.Series{series},
+					index:  -1,
+				}
+			},
+			expectError: true,
+			errorMsg:    "unexpected series type",
+		},
+		{
+			name: "empty series set",
+			createSeries: func() storage.SeriesSet {
+				return &concatenatedSeriesSet{
+					series: []storage.Series{},
+					index:  -1,
+				}
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &RemoteReadCommand{}
+			seriesSet := tt.createSeries()
+
+			err := cmd.dumpChunkDigest(seriesSet)
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestRemoteReadCommand_prepare_chunkDigestValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		chunkDigest bool
+		useChunks   bool
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "chunk digest with use chunks enabled",
+			chunkDigest: true,
+			useChunks:   true,
+			expectError: false,
+		},
+		{
+			name:        "chunk digest with use chunks disabled",
+			chunkDigest: true,
+			useChunks:   false,
+			expectError: true,
+			errorMsg:    "-chunks-digest only works with -use-chunks",
+		},
+		{
+			name:        "chunk digest disabled",
+			chunkDigest: false,
+			useChunks:   false,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a mock server
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/x-protobuf")
+				resp := &prompb.ReadResponse{}
+				data, _ := proto.Marshal(resp)
+				compressed := snappy.Encode(nil, data)
+				w.Write(compressed)
+			}))
+			defer server.Close()
+
+			cmd := &RemoteReadCommand{
+				address:        server.URL,
+				remoteReadPath: "/api/v1/read",
+				selectors:      []string{"up"},
+				from:           "2023-01-01T00:00:00Z",
+				to:             "2023-01-01T01:00:00Z",
+				readTimeout:    30 * time.Second,
+				chunkDigest:    tt.chunkDigest,
+				useChunks:      tt.useChunks,
+			}
+
+			_, _, _, err := cmd.prepare()
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
