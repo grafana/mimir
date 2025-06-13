@@ -381,30 +381,30 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 	}
 }
 
-// combinedSeriesSet implements storage.SeriesSet for multiple series
-type combinedSeriesSet struct {
+// concatenatedSeriesSet implements storage.SeriesSet for multiple series
+type concatenatedSeriesSet struct {
 	series []storage.Series
 	index  int
 	err    error
 }
 
-func (c *combinedSeriesSet) Next() bool {
+func (c *concatenatedSeriesSet) Next() bool {
 	c.index++
 	return c.index < len(c.series)
 }
 
-func (c *combinedSeriesSet) At() storage.Series {
+func (c *concatenatedSeriesSet) At() storage.Series {
 	if c.index < 0 || c.index >= len(c.series) {
 		return nil
 	}
 	return c.series[c.index]
 }
 
-func (c *combinedSeriesSet) Err() error {
+func (c *concatenatedSeriesSet) Err() error {
 	return c.err
 }
 
-func (c *combinedSeriesSet) Warnings() annotations.Annotations {
+func (c *concatenatedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -446,7 +446,7 @@ func (c *RemoteReadCommand) handleSampledResponse(httpResp *http.Response, queri
 	}
 
 	log.Infof("Combined %d series from %d queries", len(allSeries), len(queries))
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+	return &concatenatedSeriesSet{series: allSeries, index: -1}, nil
 }
 
 // handleChunkedResponse handles the streamed chunked response format
@@ -495,7 +495,7 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 	}
 
 	log.Infof("Combined %d series from %d queries using chunked streaming (%d bytes)", len(allSeries), len(queries), totalBytes)
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+	return &concatenatedSeriesSet{series: allSeries, index: -1}, nil
 }
 
 // multiQueryChunkedSeries implements storage.Series for chunked data from multiple queries

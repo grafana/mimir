@@ -444,7 +444,7 @@ func TestCombinedSeriesSet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			seriesSet := &combinedSeriesSet{
+			seriesSet := &concatenatedSeriesSet{
 				series: tt.series,
 				index:  -1,
 			}
