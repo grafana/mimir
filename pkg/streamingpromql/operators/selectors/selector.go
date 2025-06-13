@@ -221,7 +221,7 @@ func (l *seriesList) ToSeriesMetadata() ([]types.SeriesMetadata, error) {
 
 	for batch != nil {
 		for _, s := range batch.series {
-			metadata, err = types.SeriesMetadataSlice(metadata).Append(l.memoryConsumptionTracker, types.SeriesMetadata{Labels: s.Labels()})
+			metadata, err = types.AppendSeriesMetadata(l.memoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: s.Labels()})
 			if err != nil {
 				return nil, err
 			}
