@@ -340,7 +340,7 @@ func (f *Handler) reportQueryStats(
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
 	numIndexBytes := stats.LoadFetchedIndexBytes()
-	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
+	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
 	samplesProcessedCacheAdjusted := samplesProcessed + samplesProcessedFromCache
 	if stats != nil {
@@ -374,7 +374,7 @@ func (f *Handler) reportQueryStats(
 		shardedQueries, stats.LoadShardedQueries(),
 		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		estimatedSeriesCount, stats.GetEstimatedSeriesCount(),
+		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		"samples_processed", samplesProcessed,

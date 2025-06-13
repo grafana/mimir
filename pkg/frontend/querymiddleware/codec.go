@@ -704,8 +704,8 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 			"step":  []string{encodeDurationMs(r.GetStep())},
 			"query": []string{r.GetQuery()},
 		}
-		if stats := r.GetStats(); stats != "" {
-			values["stats"] = []string{stats}
+		if s := r.GetStats(); s != "" {
+			values["stats"] = []string{s}
 		}
 		u = &url.URL{
 			Path:     r.GetPath(),
@@ -716,8 +716,8 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 			"time":  []string{encodeTime(r.GetTime())},
 			"query": []string{r.GetQuery()},
 		}
-		if stats := r.GetStats(); stats != "" {
-			values["stats"] = []string{stats}
+		if s := r.GetStats(); s != "" {
+			values["stats"] = []string{s}
 		}
 		u = &url.URL{
 			Path:     r.GetPath(),

@@ -96,7 +96,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 		},
 		// Same as above, but with stats=all.
 		{
-			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120&",
+			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
 			expected: NewPrometheusRangeQueryRequest(
 				"/api/v1/query_range",
 				nil,
