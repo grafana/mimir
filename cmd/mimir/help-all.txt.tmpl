@@ -241,10 +241,8 @@ Usage of ./cmd/mimir/mimir:
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
   -alertmanager.grafana-alertmanager-compatibility-enabled
     	[experimental] Enable routes to support the migration and operation of the Grafana Alertmanager.
-  -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix string
-    	[experimental] Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration or they are receiving requests.
   -alertmanager.grafana-alertmanager-grace-period duration
-    	[experimental] Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration. (default 5m0s)
+    	[experimental] Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled. (default 5m0s)
   -alertmanager.log-parsing-label-matchers
     	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int

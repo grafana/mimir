@@ -108,7 +108,6 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 
 	GrafanaAlertmanagerCompatibility bool
-	GrafanaAlertmanagerTenantSuffix  string
 	EnableNotifyHooks                bool
 }
 
@@ -444,7 +443,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string, usingGrafanaConfig bool) error {
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 
 	emailCfg := alertingReceivers.EmailSenderConfig{
@@ -463,7 +462,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 
-	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL)
+	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
 	if err != nil {
 		return err
 	}
@@ -621,7 +620,7 @@ func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Not
 }
 
 // buildIntegrationsMap builds a map of name to the list of integration notifiers off of a list of receiver config.
-func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL) (map[string][]*nfstatus.Integration, error) {
+func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSenderConfig, nc []*definition.PostableApiReceiver, tmpls []alertingTemplates.TemplateDefinition, tmplExternalURL *url.URL, usingGrafanaConfig bool) (map[string][]*nfstatus.Integration, error) {
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
@@ -675,7 +674,7 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	// This might appear different from the above dynamic approach that depends on receiver types, and it is, but
 	// currently AMs should not have mixed receiver types. So, this is a safe (and necessary) workaround.
 	var err error
-	if am.isGrafanaTenant() {
+	if usingGrafanaConfig {
 		var f *alertingTemplates.Factory
 		f, err = alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
 		if err == nil {
@@ -689,11 +688,6 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	}
 
 	return integrationsMap, nil
-}
-
-// isGrafanaTenant returns true if the Alertmanager is a Grafana tenant.
-func (am *Alertmanager) isGrafanaTenant() bool {
-	return am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(am.cfg.UserID, am.cfg.GrafanaAlertmanagerTenantSuffix)
 }
 
 func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.APIReceiver, tmpl alertingNotify.TemplatesProvider) ([]*nfstatus.Integration, error) {
