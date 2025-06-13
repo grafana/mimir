@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
 load 6m
   series{label="a", idx="1"} 2 _
   series{label="a", idx="2"} _ 4
@@ -5,3 +7,30 @@ load 6m
 # Currently prometheus does not merge series: https://github.com/prometheus/prometheus/issues/15114
 eval range from 0 to 6m step 6m label_replace(series, "idx", "replaced", "idx", ".*")
   series{label="a", idx="replaced"} 2 4
+
+clear
+
+# label_join() tests
+load 5m
+  series{label="a", opt="1", this="that"} 1.1  5.0
+
+# Prometheus uses UTF-8 validation as of v0.62.0.
+# Mimir only supports classic/legacy (source) label names.
+eval instant at 0m label_join(series, "export", ",", "(opt)", "this")
+  expect fail msg: invalid source label name in label_join(): (opt)
+
+# Prometheus uses UTF-8 validation as of v0.62.0.
+# Mimir only supports classic/legacy (destination) label names.
+eval instant at 0m label_join(series, "(export)", "-", "label", "opt")
+  expect fail msg: invalid destination label name in label_join(): (export)
+
+clear
+
+# label_replace() tests
+load 5m
+  series{label="a"} 1.1
+
+# Prometheus uses UTF-8 validation as of v0.62.0.
+# Mimir only supports classic/legacy (source) label names.
+eval instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
+  expect fail msg: invalid destination label name in label_replace(): (export)
