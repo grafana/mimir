@@ -87,7 +87,7 @@ type Config struct {
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 
-	CacheQueryableSamplesStats bool `yaml:"cache_queryable_samples_stats"`
+	CacheSamplesProcessedStats bool `yaml:"cache_samples_processed_stats"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -103,7 +103,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	f.BoolVar(&cfg.CacheQueryableSamplesStats, "query-frontend.cache-queryable-samples-stats", false, "Cache Statistics queryable samples on results cache.")
+	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache Statistics of processed samples on results cache.")
 	cfg.ResultsCache.RegisterFlags(f)
 }
 
@@ -125,8 +125,8 @@ func (cfg *Config) Validate(qCfg querier.Config) error {
 		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
 	}
 
-	if cfg.CacheQueryableSamplesStats && !qCfg.EngineConfig.EnablePerStepStats {
-		return errors.New("query-frontend.cache-queryable-samples-stats may only be enabled in conjunction with querier.per-step-stats-enabled. Please set the latter")
+	if cfg.CacheSamplesProcessedStats && !qCfg.EngineConfig.EnablePerStepStats {
+		return errors.New("query-frontend.cache-samples-processed-stats may only be enabled in conjunction with querier.per-step-stats-enabled. Please set the latter")
 	}
 	return nil
 }
@@ -456,7 +456,7 @@ func newQueryMiddlewares(
 		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
-			cfg.CacheQueryableSamplesStats,
+			cfg.CacheSamplesProcessedStats,
 			cfg.SplitQueriesByInterval,
 			limits,
 			codec,

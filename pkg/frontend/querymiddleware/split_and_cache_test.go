@@ -2236,17 +2236,17 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 		expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache)
 }
 
-func TestSplitAndCacheMiddleware_CacheQueryableSamplesStats(t *testing.T) {
+func TestSplitAndCacheMiddleware_CacheSamplesProcessedStats(t *testing.T) {
 	tests := map[string]struct {
-		cacheQueryableSamplesStats bool
+		cacheSamplesProcessedStats bool
 		expectedStatsParam         string
 	}{
-		"should set stats=all when cacheQueryableSamplesStats is true": {
-			cacheQueryableSamplesStats: true,
+		"should set stats=all when cacheSamplesProcessedStats is true": {
+			cacheSamplesProcessedStats: true,
 			expectedStatsParam:         "all",
 		},
-		"should not set stats when cacheQueryableSamplesStats is false": {
-			cacheQueryableSamplesStats: false,
+		"should not set stats when cacheSamplesProcessedStats is false": {
+			cacheSamplesProcessedStats: false,
 			expectedStatsParam:         "",
 		},
 	}
@@ -2270,7 +2270,7 @@ func TestSplitAndCacheMiddleware_CacheQueryableSamplesStats(t *testing.T) {
 			mw := newSplitAndCacheMiddleware(
 				false,
 				true, // Enable cache
-				testData.cacheQueryableSamplesStats,
+				testData.cacheSamplesProcessedStats,
 				24*time.Hour,
 				mockLimits{},
 				newTestPrometheusCodec(),

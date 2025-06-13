@@ -98,7 +98,7 @@ type splitAndCacheMiddleware struct {
 	splitter                   CacheKeyGenerator
 	extractor                  Extractor
 	shouldCacheReq             shouldCacheFn
-	cacheQueryableSamplesStats bool
+	cacheSamplesProcessedStats bool
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -108,7 +108,7 @@ type splitAndCacheMiddleware struct {
 func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
-	cacheQueryableSamplesStats bool,
+	cacheSamplesProcessedStats bool,
 	splitInterval time.Duration,
 	limits Limits,
 	merger Merger,
@@ -124,7 +124,7 @@ func newSplitAndCacheMiddleware(
 		return &splitAndCacheMiddleware{
 			splitEnabled:               splitEnabled,
 			cacheEnabled:               cacheEnabled,
-			cacheQueryableSamplesStats: cacheQueryableSamplesStats,
+			cacheSamplesProcessedStats: cacheSamplesProcessedStats,
 			next:                       next,
 			limits:                     limits,
 			merger:                     merger,
@@ -152,8 +152,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
-	if s.cacheQueryableSamplesStats && isCacheEnabled {
-		// Force queier to track PerStepStats, so they could be cached.
+	if s.cacheSamplesProcessedStats && isCacheEnabled {
+		// Force queier to track PerStepStats, so they could be cached and SamplesProcessedStats in cache could be counted correctly when re-sizing extents.
 		req, err = req.WithStats("all")
 		if err != nil {
 			return nil, err
