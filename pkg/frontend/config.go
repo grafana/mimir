@@ -7,6 +7,7 @@ package frontend
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 
 	"github.com/go-kit/log"
@@ -20,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -35,6 +37,9 @@ type CombinedFrontendConfig struct {
 	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
 
 	ClusterValidationConfig clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+
+	QueryEngine               string `yaml:"query_engine" category:"experimental"`
+	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -42,9 +47,11 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.FrontendV1.RegisterFlags(f)
 	cfg.FrontendV2.RegisterFlags(f, logger)
 	cfg.QueryMiddleware.RegisterFlags(f)
+	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
 
 	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
-	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
+	f.StringVar(&cfg.QueryEngine, "query-frontend.query-engine", querier.PrometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", querier.PrometheusEngine, querier.MimirEngine))
+	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {

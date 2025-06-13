@@ -220,6 +220,7 @@ The following features are currently experimental:
     Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
+  - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

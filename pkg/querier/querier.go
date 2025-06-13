@@ -72,8 +72,9 @@ type Config struct {
 
 const (
 	queryStoreAfterFlag = "querier.query-store-after"
-	prometheusEngine    = "prometheus"
-	mimirEngine         = "mimir"
+
+	PrometheusEngine = "prometheus"
+	MimirEngine      = "mimir"
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -93,7 +94,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
 
-	f.StringVar(&cfg.QueryEngine, "querier.query-engine", mimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
+	f.StringVar(&cfg.QueryEngine, "querier.query-engine", MimirEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", PrometheusEngine, MimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 
 	f.BoolVar(&cfg.FilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.")
@@ -102,7 +103,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) Validate() error {
-	if cfg.QueryEngine != prometheusEngine && cfg.QueryEngine != mimirEngine {
+	if cfg.QueryEngine != PrometheusEngine && cfg.QueryEngine != MimirEngine {
 		return fmt.Errorf("unknown PromQL engine '%s'", cfg.QueryEngine)
 	}
 
@@ -177,10 +178,10 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	var eng promql.QueryEngine
 
 	switch cfg.QueryEngine {
-	case prometheusEngine:
+	case PrometheusEngine:
 		eng = promql.NewEngine(opts)
-	case mimirEngine:
-		limitsProvider := &tenantQueryLimitsProvider{limits: limits}
+	case MimirEngine:
+		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner, logger)
 		if err != nil {
 			return nil, nil, nil, err
@@ -753,11 +754,17 @@ func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, mi
 	)
 }
 
-type tenantQueryLimitsProvider struct {
+type TenantQueryLimitsProvider struct {
 	limits *validation.Overrides
 }
 
-func (p *tenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
+func NewTenantQueryLimitsProvider(limits *validation.Overrides) *TenantQueryLimitsProvider {
+	return &TenantQueryLimitsProvider{
+		limits: limits,
+	}
+}
+
+func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return 0, err
