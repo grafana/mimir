@@ -118,13 +118,11 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 		panic(err)
 	}
 	return Extent{
-		Start:            start,
-		End:              end,
-		Response:         marshalled,
-		QueryTimestampMs: queryTime,
-		// mkExtentWithStepAndQueryTime used in tests which don't care about samples processed per step.
-		// If it's important, use mkExtentWithEvenPerStepSamplesProcessed instead.
-		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 0),
+		Start:                   start,
+		End:                     end,
+		Response:                marshalled,
+		QueryTimestampMs:        queryTime,
+		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 1),
 	}
 }
 
@@ -872,7 +870,8 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			shouldTruncate: []bool{true},
 			// 1 hour with 1000ms step is a 3601 data points. 10 samples per step, so 36010 samples.
 			// Truncation keeps half the range - 1801 datapoints, 10 samples per step, so 18010 samples.
-			expectedSamples: []uint64{18010},
+			// Last timestamp stats is truncated from stats in filterRecentCacheExtent: 18010 - 10 = 18000
+			expectedSamples: []uint64{18000},
 		},
 		{
 			name: "Extent doesn't overlap with max freshness period - unchanged",
@@ -891,8 +890,9 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			},
 			shouldTruncate: []bool{false, true},
 			// First extent - 1 hour with 1000ms step is a 3601 data points - 36010 samples - not truncated
-			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples - truncated to 54010 samples
-			expectedSamples: []uint64{36010, 54010},
+			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples.
+			// Truncated to 54010 samples and  data point is truncated from stats in filterRecentCacheExtent - 54000
+			expectedSamples: []uint64{36010, 54000},
 		},
 	}
 

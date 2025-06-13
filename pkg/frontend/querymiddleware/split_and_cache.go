@@ -153,7 +153,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
 	if s.cacheQueryableSamplesStats && isCacheEnabled {
-		// Make queier to track PerStepStats
+		// Force queier to track PerStepStats, so they could be cached.
 		req, err = req.WithStats("all")
 		if err != nil {
 			return nil, err

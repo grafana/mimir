@@ -1318,7 +1318,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			mw := newSplitAndCacheMiddleware(
 				false, // No splitting.
 				true,
-				false,
+				true,
 				24*time.Hour,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
@@ -1328,7 +1328,21 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				resultsCacheAlwaysEnabled,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
-			).Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+			).Wrap(HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				// Generate PerStepStats to test cached samples processed in the Extents.
+				s := stats.FromContext(ctx)
+				start := req.GetStart()
+				end := req.GetEnd()
+				step := req.GetStep()
+				stepStats := make([]stats.StepStat, 0, (end-start)/step+1)
+				for t := start; t <= end; t += step {
+					stepStats = append(stepStats, stats.StepStat{
+						Timestamp: t,
+						Value:     1,
+					})
+				}
+				s.AddSamplesProcessedPerStep(stepStats)
+
 				return mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep()), nil
 			})).(*splitAndCacheMiddleware)
 			mw.currentTime = func() time.Time { return time.UnixMilli(now) }
