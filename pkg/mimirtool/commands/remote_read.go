@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -460,7 +461,7 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 	for {
 		var chunkedResp prompb.ChunkedReadResponse
 		err := reader.NextProto(&chunkedResp)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		totalBytes += chunkedResp.Size()
