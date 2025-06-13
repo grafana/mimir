@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] KEDA Autoscaling: Resolved an issue where the authModes field was missing from the ScaledObject definition for the querier when authentication was enabled. #11709
 * [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231
