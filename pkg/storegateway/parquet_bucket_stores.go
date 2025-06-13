@@ -207,7 +207,7 @@ func (ss ParquetBucketStores) scanUsers(ctx context.Context) ([]string, error) {
 }
 
 type parquetShardWithMetadata struct {
-	storage.ParquetShard
+	storage.ParquetShardOpener
 	BlockID ulid.ULID
 	queried bool
 }
@@ -228,13 +228,22 @@ func (ss *ParquetBucketStores) openParquetShardsForReading(ctx context.Context, 
 }
 
 func (ss *ParquetBucketStores) closeParquetShards(shards []*parquetShardWithMetadata) {
+	for _, shard := range shards {
+		if shard == nil {
+			continue
+		}
+		if err := shard.Close(); err != nil {
+			ss.logger.Log("msg", "failed to close parquet shard", "block_id", shard.BlockID, "err", err)
+		}
+	}
 	// TODO: Implement parquet shard cleanup
 	// Close any open parquet file handles and release resources
 	panic("TODO: implement closeParquetShards")
 }
 
 func (ss *ParquetBucketStores) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (func(), error) {
-	// TODO: Implement query gate limiting for parquet stores
+	// TODO: Can potentially reuse BucketStore.limitConcurrentQueries
+	// or implement parquet-specific version if needed
 	panic("TODO: implement limitConcurrentQueries")
 }
 
