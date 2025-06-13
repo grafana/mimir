@@ -8,7 +8,6 @@ package querymiddleware
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -272,8 +271,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			}
 
 			// Skip caching if the request is not cachable.
-			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
-				fmt.Println("Request non cachable", "reason", reason)
+			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
 				continue
 			}
 
@@ -284,7 +282,6 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
 				downstreamStats := splitReq.downstreamStatistics[downstreamIdx]
 				if !isResponseCachable(downstreamRes) {
-					fmt.Println("Response not cachable")
 					continue
 				}
 
