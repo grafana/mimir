@@ -446,14 +446,12 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 
 		// Each ChunkedSeries contains chunks for a single series
 		for _, chunkSeries := range chunkedResp.ChunkedSeries {
-			// Create a series that can iterate over the chunks
-			// Convert protobuf labels to labels.Labels
-			lbs := make(labels.Labels, len(chunkSeries.Labels))
-			for i, l := range chunkSeries.Labels {
-				lbs[i] = labels.Label{Name: l.Name, Value: l.Value}
+			builder := labels.NewScratchBuilder(len(chunkSeries.Labels))
+			for _, l := range chunkSeries.Labels {
+				builder.Add(l.Name, l.Value)
 			}
 			series := &multiQueryChunkedSeries{
-				labels: lbs,
+				labels: builder.Labels(),
 				chunks: chunkSeries.Chunks,
 			}
 			allSeries = append(allSeries, series)
