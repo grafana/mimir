@@ -455,8 +455,6 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 			series := &multiQueryChunkedSeries{
 				labels: lbs,
 				chunks: chunkSeries.Chunks,
-				mint:   queries[queryIndex].StartTimestampMs,
-				maxt:   queries[queryIndex].EndTimestampMs,
 			}
 			allSeries = append(allSeries, series)
 		}
@@ -468,9 +466,8 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 
 // multiQueryChunkedSeries implements storage.Series for chunked data from multiple queries
 type multiQueryChunkedSeries struct {
-	labels     labels.Labels
-	chunks     []prompb.Chunk
-	mint, maxt int64
+	labels labels.Labels
+	chunks []prompb.Chunk
 }
 
 func (s *multiQueryChunkedSeries) Labels() labels.Labels {
@@ -479,27 +476,23 @@ func (s *multiQueryChunkedSeries) Labels() labels.Labels {
 
 func (s *multiQueryChunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	// Create a new chunked series iterator
-	return newMultiQueryChunkedIterator(s.chunks, s.mint, s.maxt)
+	return newMultiQueryChunkedIterator(s.chunks)
 }
 
 // newMultiQueryChunkedIterator creates an iterator for chunked series data
-func newMultiQueryChunkedIterator(chunks []prompb.Chunk, mint, maxt int64) chunkenc.Iterator {
+func newMultiQueryChunkedIterator(chunks []prompb.Chunk) chunkenc.Iterator {
 	return &multiQueryChunkedIterator{
 		chunks:   chunks,
-		mint:     mint,
-		maxt:     maxt,
 		chunkIdx: 0,
 	}
 }
 
 // multiQueryChunkedIterator implements an iterator for chunked data
 type multiQueryChunkedIterator struct {
-	chunks     []prompb.Chunk
-	mint, maxt int64
-	chunkIdx   int
-	cur        chunkenc.Iterator
-	s          storage.Series
-	err        error
+	chunks   []prompb.Chunk
+	chunkIdx int
+	cur      chunkenc.Iterator
+	err      error
 }
 
 func (it *multiQueryChunkedIterator) Next() chunkenc.ValueType {
