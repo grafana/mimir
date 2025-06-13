@@ -13,10 +13,11 @@ import (
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
-	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t *testing.T) {
@@ -315,7 +316,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomInQueryRange(t *t
 	})
 
 	// Setup series for this test case.
-	// It's end is not withing maxCacheFreshness to simplify test logic.
+	// It's end is not within maxCacheFreshness interval to simplify test logic.
 	pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-20*time.Minute), "test_series")
 
 	query := "test_series{}"
