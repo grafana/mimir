@@ -7549,14 +7549,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return ds[0], regs[0]
 	}
 	type expectedMetricsCfg struct {
-		requestsIn        int
-		samplesIn         int
-		exemplarsIn       int
-		metadataIn        int
-		receivedRequests  int
-		receivedSamples   int
-		receivedExemplars int
-		receivedMetadata  int
+		requestsIn                      int
+		samplesIn                       int
+		exemplarsIn                     int
+		metadataIn                      int
+		receivedRequests                int
+		receivedSamples                 int
+		receivedExemplars               int
+		receivedMetadata                int
+		receivedNativeHistogramSamples  int
+		receivedNativeHistogramBuckets  int
 	}
 	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		return fmt.Sprintf(`
@@ -7584,7 +7586,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 				# TYPE cortex_distributor_received_metadata_total counter
 				cortex_distributor_received_metadata_total{user="%s"} %d
-	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
+				# HELP cortex_distributor_received_native_histogram_samples_total The total number of received native histogram samples, excluding rejected and deduped samples.
+				# TYPE cortex_distributor_received_native_histogram_samples_total counter
+				cortex_distributor_received_native_histogram_samples_total{user="%s"} %d
+				# HELP cortex_distributor_received_native_histogram_buckets_total The total number of received native histogram buckets, excluding rejected and deduped samples.
+				# TYPE cortex_distributor_received_native_histogram_buckets_total counter
+				cortex_distributor_received_native_histogram_buckets_total{user="%s"} %d
+	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata, tenant, cfg.receivedNativeHistogramSamples, tenant, cfg.receivedNativeHistogramBuckets), []string{
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
@@ -7593,6 +7601,8 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				"cortex_distributor_received_samples_total",
 				"cortex_distributor_received_exemplars_total",
 				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_received_native_histogram_samples_total",
+				"cortex_distributor_received_native_histogram_buckets_total",
 			}
 	}
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
@@ -7618,14 +7628,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   20,
-			receivedExemplars: 10,
-			receivedMetadata:  10})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                20,
+			receivedExemplars:              10,
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 80})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7655,7 +7667,9 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  1,
 			receivedSamples:   10,
 			receivedExemplars: 5,
-			receivedMetadata:  10})
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 5,
+			receivedNativeHistogramBuckets: 40})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7680,7 +7694,9 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  1,
 			receivedSamples:   0,
 			receivedExemplars: 0,
-			receivedMetadata:  10})
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 0,
+			receivedNativeHistogramBuckets: 0})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7723,7 +7739,9 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  2,
 			receivedSamples:   40,
 			receivedExemplars: 20,
-			receivedMetadata:  20})
+			receivedMetadata:               20,
+			receivedNativeHistogramSamples: 20,
+			receivedNativeHistogramBuckets: 160})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7749,7 +7767,9 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  1,
 			receivedSamples:   20,
 			receivedExemplars: 0,
-			receivedMetadata:  10})
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 80})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7786,7 +7806,9 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  1,
 			receivedSamples:   10,
 			receivedExemplars: 5,
-			receivedMetadata:  10})
+			receivedMetadata:               10,
+			receivedNativeHistogramSamples: 5,
+			receivedNativeHistogramBuckets: 40})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7838,14 +7860,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       0,
-			metadataIn:        0,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 0,
-			receivedMetadata:  0})
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    0,
+			metadataIn:                     0,
+			receivedRequests:               1,
+			receivedSamples:                10,
+			receivedExemplars:              0,
+			receivedMetadata:               0,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 20})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -7897,7 +7921,9 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  1,
 			receivedSamples:   20,
 			receivedExemplars: 10,
-			receivedMetadata:  4})
+			receivedMetadata:               4,
+			receivedNativeHistogramSamples: 10,
+			receivedNativeHistogramBuckets: 80})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
