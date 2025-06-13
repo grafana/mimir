@@ -59,6 +59,7 @@
 * [ENHANCEMENT] Distributor: Trace when deduplicating a metric's samples or histograms. #11159 #11715
 * [ENHANCEMENT] Store-gateway: Retry querying blocks from store-gateways with dynamic replication until trying all possible store-gateways. #11354 #11398
 * [ENHANCEMENT] Mimirtool: Support multiple `--selector` flags in remote read commands to send multiple queries in a single protobuf request, leveraging the remote read protocol's native batching capabilities. Added `--use-chunks` flag to control response type preference (chunked streaming vs sampled). #11733
+* [ENHANCEMENT] Mimirtool: Add `--chunk-digest` flag to `remote-read dump` command to print chunk metadata (min time, max time, checksum) instead of decoding samples. Useful for inspecting chunk-level information and data integrity verification. #11734
 * [ENHANCEMENT] Query-frontend: Add optional reason to blocked_queries config. #11407 #11434
 * [ENHANCEMENT] Distributor: Gracefully handle type assertion of WatchPrefix in HA Tracker to continue checking for updates. #11411 #11461
 * [ENHANCEMENT] Querier: Include chunks streamed from store-gateway in Mimir Query Engine memory estimate of query memory usage. #11453 #11465
