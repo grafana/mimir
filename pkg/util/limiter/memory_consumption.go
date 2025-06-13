@@ -6,14 +6,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"unsafe"
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 )
-
-var StringSize = uint64(unsafe.Sizeof(""))
 
 type contextKey int
 
@@ -204,20 +201,16 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 }
 
 // IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
-func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbs labels.Labels) error {
-	for _, lb := range lbs {
-		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
-		if err := l.IncreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, Labels); err != nil {
-			return err
-		}
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(_ labels.Labels) error {
+	// TODO: Use lb.ByteSize() from https://github.com/prometheus/prometheus/pull/16717
+	if err := l.IncreaseMemoryConsumption(0, Labels); err != nil {
+		return err
 	}
 	return nil
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
-func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbs labels.Labels) {
-	for _, lb := range lbs {
-		// TODO: Update labels.Labels to get size of bytes directly instead of calculating it here.
-		l.DecreaseMemoryConsumption(uint64(len(lb.Name)+len(lb.Value))*StringSize, Labels)
-	}
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(_ labels.Labels) {
+	// TODO: Use lb.ByteSize() from https://github.com/prometheus/prometheus/pull/16717
+	l.DecreaseMemoryConsumption(0, Labels)
 }
