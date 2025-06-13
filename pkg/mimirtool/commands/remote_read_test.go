@@ -526,8 +526,6 @@ func TestRemoteReadCommand_dumpChunkDigest(t *testing.T) {
 				series := &multiQueryChunkedSeries{
 					labels: labels.FromStrings("__name__", "test_metric"),
 					chunks: chunks,
-					mint:   1000,
-					maxt:   4000,
 				}
 
 				return &concatenatedSeriesSet{
