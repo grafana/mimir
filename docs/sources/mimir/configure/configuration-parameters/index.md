@@ -1636,6 +1636,10 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
+# (advanced) Enable returning samples stats per steps in query stats.
+# CLI flag: -querier.per-step-stats-enabled
+[per_step_stats_enabled: <boolean> | default = false]
+
 mimir_query_engine:
   # (experimental) Use query planner when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.use-query-planning
@@ -1807,6 +1811,11 @@ results_cache:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
+
+# Cache Statistics of processed samples on results cache. Should be enabled in
+# conjunction with querier.per-step-stats-enabled.
+# CLI flag: -query-frontend.cache-samples-processed-stats
+[cache_samples_processed_stats: <boolean> | default = false]
 
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
