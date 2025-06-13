@@ -2517,12 +2517,11 @@ func TestComputeConfig(t *testing.T) {
 
 	reg2 := prometheus.NewPedanticRegistry()
 	cfg2 := mockAlertmanagerConfig(t)
-	cfg2.GrafanaAlertmanagerTenantSuffix = "-grafana"
 	amWithSuffix := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
 
 	reg3 := prometheus.NewPedanticRegistry()
 	cfg3 := mockAlertmanagerConfig(t)
-	cfg3.StrictInitialization = true
+	cfg3.StrictInitializationEnabled = true
 	amWithStrictInit := setupSingleMultitenantAlertmanager(t, cfg3, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg3)
 
 	testTenant := "test-tenant"
@@ -3441,31 +3440,6 @@ func TestComputeConfig(t *testing.T) {
 				require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
 			}
 		})
-
-		t.Run(fmt.Sprintf("%s with Grafana tenant suffix", test.name), func(t *testing.T) {
-			userWithPrefix := fmt.Sprintf("%s%s", test.cfg.Mimir.User, cfg2.GrafanaAlertmanagerTenantSuffix)
-
-			test.cfg.Grafana.User = userWithPrefix
-			test.cfg.Mimir.User = userWithPrefix
-			test.expCfg.User = userWithPrefix
-
-			cfg, startAM, err := amWithSuffix.computeConfig(test.cfg)
-			if test.expErr != "" {
-				require.EqualError(t, err, test.expErr)
-				return
-			}
-			require.NoError(t, err)
-
-			require.Equal(t, test.expStartAM, startAM)
-			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.staticHeaders)
-			if test.expURL == "" {
-				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
-			} else {
-				require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
-			}
-		})
-
 	}
 }
 
