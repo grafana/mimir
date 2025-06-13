@@ -115,7 +115,7 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		Default("").
 		StringVar(&c.tsdbPath)
 
-	dumpCmd.Flag("chunk-digest", "Print chunk digest information (min time, max time, checksum) instead of decoding samples.").
+	dumpCmd.Flag("chunk-digest", "Print chunk metadata (min time, max time, checksum) instead of decoding samples when using chunked responses. Can only be combined with --use-chunks").
 		Default("false").
 		BoolVar(&c.chunkDigest)
 }
