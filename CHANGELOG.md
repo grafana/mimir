@@ -20,6 +20,7 @@
 * [FEATURE] Query-frontend: Allow use of Mimir Query Engine (MQE) via the experimental CLI flags `-query-frontend.query-engine` or `-query-frontend.enable-query-engine-fallback` or corresponding YAML. #11417
 * [FEATURE] Querier, query-frontend, ruler: Enable experimental support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification. #11344
 * [FEATURE] You can configure Mimir to export traces in OTLP exposition format through the standard `OTEL_` environment variables. #11618
+* [ENHANCEMENT] Dashboards: Add "Influx write requests" row to Writes Dashboard. #11731
 * [ENHANCEMENT] Querier: Make the maximum series limit for cardinality API requests configurable on a per-tenant basis with the `cardinality_analysis_max_results` option. #11456
 * [ENHANCEMENT] Dashboards: Add "Queries / sec by read path" to Queries Dashboard. #11640
 * [ENHANCEMENT] Dashboards: Add "Added Latency" row to Writes Dashboard. #11579
