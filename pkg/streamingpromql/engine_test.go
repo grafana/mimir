@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
 )
 
@@ -1402,12 +1401,12 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool,
 			// and we have five series and each of the series has SeriesMetadata.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
@@ -1415,13 +1414,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
-			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1439,11 +1438,11 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_metric)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
-			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 
-			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1454,13 +1453,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
 			// - and the next series with SeriesMetadata from the selector.
 			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
-			rangeQueryLimit:        8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			rangeQueryLimit:        8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 
 			// At peak we'll hold in memory 9 SeriesMetadata.
 			// To make the memory limit fail, we set limit at 8 SeriesMetadata, hence no any small allocation is possible.
-			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
-			instantQueryLimit:        8*types.SeriesMetadataSize + 5*uint64(limiter.StringSize)*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
+			instantQueryLimit:        8*types.SeriesMetadataSize + 5*uint64(nameLength+len("some_metric")+len("idx")+len("1")),
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
