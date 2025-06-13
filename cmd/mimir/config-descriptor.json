@@ -2272,6 +2272,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "per_step_stats_enabled",
+          "required": false,
+          "desc": "Enable returning samples stats per steps in query stats.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.per-step-stats-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -7509,6 +7520,16 @@
           "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "cache_samples_processed_stats",
+          "required": false,
+          "desc": "Cache Statistics of processed samples on results cache. Should be enabled in conjunction with querier.per-step-stats-enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-samples-processed-stats",
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
