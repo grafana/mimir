@@ -2205,8 +2205,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	ctx := stream.Context()
 	spanlog := spanlogger.FromContext(ctx, i.logger)
-	defer spanlog.Finish()
-
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
