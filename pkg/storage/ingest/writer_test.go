@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -1118,6 +1119,48 @@ func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 	}
 
 	return count, nil
+}
+
+func getProduceRequestHighestTimestamp(req *kmsg.ProduceRequest) (time.Time, error) {
+	var highestTimestamp time.Time
+
+	for _, topic := range req.Topics {
+		for _, partition := range topic.Partitions {
+			batch := kmsg.RecordBatch{}
+			if err := batch.ReadFrom(partition.Records); err != nil {
+				return time.Time{}, err
+			}
+
+			// Decompress the batch of records.
+			records, err := kgo.DefaultDecompressor().Decompress(
+				batch.Records,
+				kgo.CompressionCodecType(batch.Attributes&0x0007),
+			)
+			if err != nil {
+				return time.Time{}, err
+			}
+
+			for range batch.NumRecords {
+				// Parse the record.
+				rec := kmsg.NewRecord()
+				err := rec.ReadFrom(records)
+				if err != nil {
+					return time.Time{}, err
+				}
+
+				recordTimestamp := time.UnixMilli(batch.FirstTimestamp + rec.TimestampDelta64)
+				if highestTimestamp.IsZero() || recordTimestamp.After(highestTimestamp) {
+					highestTimestamp = recordTimestamp
+				}
+
+				// Next record.
+				length, amt := binary.Varint(records)
+				records = records[length+int64(amt):]
+			}
+		}
+	}
+
+	return highestTimestamp, nil
 }
 
 func runAsync(wg *sync.WaitGroup, fn func()) {
