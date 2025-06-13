@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -221,7 +222,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 	for queryType, queryData := range queries {
 		t.Run(queryType, func(t *testing.T) {
 			var actualQueriedStart, actualQueriedEnd int64
-			callCount := 0
+			callCount := atomic.NewInt64(0)
 
 			q := &mockSampleAndChunkQueryable{
 				queryableFn: func(_, _ int64) (storage.Querier, error) {
@@ -230,10 +231,9 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 							require.NotNil(t, hints, "select hints must be set")
 
 							// Track the first query's time range
-							if callCount == 0 {
+							if callCount.Inc() == 1 {
 								actualQueriedStart, actualQueriedEnd = hints.Start, hints.End
 							}
-							callCount++
 
 							// Return different data based on matchers
 							var metricName string
@@ -311,7 +311,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			require.Equal(t, expected, response)
 
 			// Verify the number of queries executed
-			require.Equal(t, len(queryData.query), callCount)
+			require.Equal(t, len(queryData.query), callCount.Load())
 
 			// Ensure the time range passed down to the queryable is the expected one (skip for concurrent queries)
 			if queryData.expectedQueriedStart != -1 {
