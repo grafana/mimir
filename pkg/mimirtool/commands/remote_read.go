@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -62,6 +63,7 @@ type RemoteReadCommand struct {
 	to            string
 	readSizeLimit uint64
 	useChunks     bool
+	chunkDigest   bool
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -112,6 +114,10 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
 		Default("").
 		StringVar(&c.tsdbPath)
+
+	dumpCmd.Flag("chunk-digest", "Print chunk metadata (min time, max time, SHA256 checksum) instead of decoding samples when using chunked responses. Can only be combined with --use-chunks").
+		Default("false").
+		BoolVar(&c.chunkDigest)
 }
 
 type setTenantIDTransport struct {
@@ -261,6 +267,10 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("at least one selector must be specified")
 	}
 
+	if c.chunkDigest && !c.useChunks {
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("-chunk-digest only works with -use-chunks")
+	}
+
 	// Parse all selectors
 	var pbQueries []*prompb.Query
 	for _, selector := range c.selectors {
@@ -366,6 +376,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 
 	contentType := httpResp.Header.Get("Content-Type")
 	log.Debugf("Response content type: %s", contentType)
+	log.Debugf("Response headers %v", httpResp.Header)
 
 	// Handle different response types
 	switch {
@@ -380,30 +391,30 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 	}
 }
 
-// combinedSeriesSet implements storage.SeriesSet for multiple series
-type combinedSeriesSet struct {
+// concatenatedSeriesSet implements storage.SeriesSet for multiple series
+type concatenatedSeriesSet struct {
 	series []storage.Series
 	index  int
 	err    error
 }
 
-func (c *combinedSeriesSet) Next() bool {
+func (c *concatenatedSeriesSet) Next() bool {
 	c.index++
 	return c.index < len(c.series)
 }
 
-func (c *combinedSeriesSet) At() storage.Series {
+func (c *concatenatedSeriesSet) At() storage.Series {
 	if c.index < 0 || c.index >= len(c.series) {
 		return nil
 	}
 	return c.series[c.index]
 }
 
-func (c *combinedSeriesSet) Err() error {
+func (c *concatenatedSeriesSet) Err() error {
 	return c.err
 }
 
-func (c *combinedSeriesSet) Warnings() annotations.Annotations {
+func (c *concatenatedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -445,7 +456,7 @@ func (c *RemoteReadCommand) handleSampledResponse(httpResp *http.Response, queri
 	}
 
 	log.Infof("Combined %d series from %d queries", len(allSeries), len(queries))
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+	return &concatenatedSeriesSet{series: allSeries, index: -1}, nil
 }
 
 // handleChunkedResponse handles the streamed chunked response format
@@ -494,7 +505,7 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 	}
 
 	log.Infof("Combined %d series from %d queries using chunked streaming (%d bytes)", len(allSeries), len(queries), totalBytes)
-	return &combinedSeriesSet{series: allSeries, index: -1}, nil
+	return &concatenatedSeriesSet{series: allSeries, index: -1}, nil
 }
 
 // multiQueryChunkedSeries implements storage.Series for chunked data from multiple queries
@@ -617,6 +628,14 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 		return err
 	}
 
+	if c.chunkDigest {
+		return c.dumpChunkDigest(timeseries)
+	}
+
+	return c.dumpSamples(timeseries)
+}
+
+func (c *RemoteReadCommand) dumpSamples(timeseries storage.SeriesSet) error {
 	var it chunkenc.Iterator
 	for timeseries.Next() {
 		s := timeseries.At()
@@ -649,6 +668,36 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 			default:
 				panic("unreachable")
 			}
+		}
+	}
+
+	if err := timeseries.Err(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *RemoteReadCommand) dumpChunkDigest(timeseries storage.SeriesSet) error {
+	for timeseries.Next() {
+		s := timeseries.At()
+		labels := s.Labels()
+
+		// Check if this is a chunked series (from streaming response)
+		chunkedSeries, ok := s.(*multiQueryChunkedSeries)
+		if !ok {
+			return fmt.Errorf("unexpected series type %T; expected *multiQueryChunkedSeries", s)
+		}
+		// Process chunks directly
+		for i, chunk := range chunkedSeries.chunks {
+			minTime := chunk.MinTimeMs
+			maxTime := chunk.MaxTimeMs
+
+			hash := sha256.Sum256(chunk.Data)
+			checksum := fmt.Sprintf("%x", hash)
+
+			fmt.Printf("%s chunk_%d min_time=%d max_time=%d checksum=%s\n",
+				labels.String(), i, minTime, maxTime, checksum)
 		}
 	}
 
