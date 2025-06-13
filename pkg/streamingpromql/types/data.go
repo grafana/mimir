@@ -22,15 +22,15 @@ type SeriesMetadata struct {
 
 type SeriesMetadataSlice []SeriesMetadata
 
-// Append appends this SeriesMetadataSlice with the provided otherSeriesMetadata.
-func (s SeriesMetadataSlice) Append(tracker *limiter.MemoryConsumptionTracker, otherSeriesMetadata ...SeriesMetadata) (SeriesMetadataSlice, error) {
+// AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.
+func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) (SeriesMetadataSlice, error) {
 	for _, metadata := range otherSeriesMetadata {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return append(s, otherSeriesMetadata...), nil
+	return append(base, otherSeriesMetadata...), nil
 }
 
 type InstantVectorSeriesData struct {
