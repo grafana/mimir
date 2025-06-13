@@ -118,13 +118,11 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 		panic(err)
 	}
 	return Extent{
-		Start:            start,
-		End:              end,
-		Response:         marshalled,
-		QueryTimestampMs: queryTime,
-		// mkExtentWithStepAndQueryTime used in tests which don't care about samples processed per step.
-		// If it's important, use mkExtentWithEvenPerStepSamplesProcessed instead.
-		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 0),
+		Start:                   start,
+		End:                     end,
+		Response:                marshalled,
+		QueryTimestampMs:        queryTime,
+		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 1),
 	}
 }
 
@@ -871,8 +869,9 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 1000, 10)},
 			shouldTruncate: []bool{true},
 			// 1 hour with 1000ms step is a 3601 data points. 10 samples per step, so 36010 samples.
-			// Truncation keeps half the range - 18001 datapoints, 10 samples per step, so 18010 samples.
-			expectedSamples: []uint64{18010},
+			// Truncation keeps half the range - 1801 datapoints, 10 samples per step, so 18010 samples.
+			// Last timestamp stats is truncated from stats in filterRecentCacheExtent: 18010 - 10 = 18000
+			expectedSamples: []uint64{18000},
 		},
 		{
 			name: "Extent doesn't overlap with max freshness period - unchanged",
@@ -891,8 +890,9 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			},
 			shouldTruncate: []bool{false, true},
 			// First extent - 1 hour with 1000ms step is a 3601 data points - 36010 samples - not truncated
-			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples - truncated to 54010 samples
-			expectedSamples: []uint64{36010, 54010},
+			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples.
+			// Truncated to 54010 samples and  data point is truncated from stats in filterRecentCacheExtent - 54000
+			expectedSamples: []uint64{36010, 54000},
 		},
 	}
 
@@ -928,78 +928,6 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				assert.Equal(t, tc.expectedSamples[i], totalSamples,
 					"Expected %d samples processed but got %d",
 					tc.expectedSamples[i], totalSamples)
-			}
-		})
-	}
-}
-
-func TestApproximateSamplesProcessedPerStep(t *testing.T) {
-	testCases := []struct {
-		name             string
-		start            int64
-		end              int64
-		step             int64
-		samplesProcessed uint64
-		expectedSteps    int
-		expectedPerStep  int64
-	}{
-		{
-			name:             "Simple even distribution",
-			start:            100,
-			end:              200,
-			step:             10,
-			samplesProcessed: 110,
-			expectedSteps:    11,
-			expectedPerStep:  10,
-		},
-		{
-			name:             "Single step",
-			start:            100,
-			end:              100,
-			step:             10,
-			samplesProcessed: 50,
-			expectedSteps:    1,
-			expectedPerStep:  50,
-		},
-		{
-			name:             "Zero samples processed",
-			start:            100,
-			end:              150,
-			step:             10,
-			samplesProcessed: 0,
-			expectedSteps:    6,
-			expectedPerStep:  0,
-		},
-		{
-			name:             "Uneven division of samples",
-			start:            100,
-			end:              200,
-			step:             10,
-			samplesProcessed: 103,
-			expectedSteps:    11,
-			expectedPerStep:  10, // Ceiling of 103/11 = 9.36... → 10
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := approximateSamplesProcessedPerStep(tc.start, tc.end, tc.step, tc.samplesProcessed)
-
-			// Check number of steps
-			assert.Equal(t, tc.expectedSteps, len(result),
-				"Expected %d steps but got %d", tc.expectedSteps, len(result))
-
-			// Check per-step value
-			for i, step := range result {
-				assert.Equal(t, tc.expectedPerStep, step.Value,
-					"Step %d has incorrect value: expected %d but got %d",
-					i, tc.expectedPerStep, step.Value)
-
-				// Check timestamp calculation
-				expectedTimestamp := tc.start + int64(i)*tc.step
-				assert.Equal(t, expectedTimestamp, step.Timestamp,
-					"Step %d has incorrect timestamp: expected %d but got %d",
-					i, expectedTimestamp, step.Timestamp)
 			}
 		})
 	}

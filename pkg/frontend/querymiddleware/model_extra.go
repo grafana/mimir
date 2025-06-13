@@ -64,6 +64,8 @@ type PrometheusRangeQueryRequest struct {
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
+	// stats controls query engine stats collection for the request.
+	stats string
 }
 
 func NewPrometheusRangeQueryRequest(
@@ -74,6 +76,7 @@ func NewPrometheusRangeQueryRequest(
 	queryExpr parser.Expr,
 	options Options,
 	hints *Hints,
+	stats string,
 ) *PrometheusRangeQueryRequest {
 	r := &PrometheusRangeQueryRequest{
 		path:          urlPath,
@@ -87,6 +90,7 @@ func NewPrometheusRangeQueryRequest(
 		maxT:          end,
 		options:       options,
 		hints:         hints,
+		stats:         stats,
 	}
 	return r.updateMinMaxT()
 }
@@ -156,6 +160,10 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 
 func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
 	return r.lookbackDelta
+}
+
+func (r *PrometheusRangeQueryRequest) GetStats() string {
+	return r.stats
 }
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
@@ -233,6 +241,13 @@ func (r *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 	return &newRequest, nil
 }
 
+func (r *PrometheusRangeQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
+	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
+	newRequest.stats = stats
+	return &newRequest, nil
+}
+
 // AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
 func (r *PrometheusRangeQueryRequest) AddSpanTags(sp trace.Span) {
@@ -260,6 +275,8 @@ type PrometheusInstantQueryRequest struct {
 	// hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	hints *Hints
+	// stats controls stats collection for the request.
+	stats string
 }
 
 func NewPrometheusInstantQueryRequest(
@@ -270,6 +287,7 @@ func NewPrometheusInstantQueryRequest(
 	queryExpr parser.Expr,
 	options Options,
 	hints *Hints,
+	stats string,
 ) *PrometheusInstantQueryRequest {
 	r := &PrometheusInstantQueryRequest{
 		path:          urlPath,
@@ -281,6 +299,7 @@ func NewPrometheusInstantQueryRequest(
 		maxT:          time,
 		options:       options,
 		hints:         hints,
+		stats:         stats,
 	}
 	return r.updateMinMaxT()
 }
@@ -356,6 +375,10 @@ func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
 	return r.lookbackDelta
 }
 
+func (r *PrometheusInstantQueryRequest) GetStats() string {
+	return r.stats
+}
+
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
 	newRequest.headers = cloneHeaders(r.headers)
@@ -422,6 +445,13 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 		*newRequest.hints = *(r.hints)
 		newRequest.hints.CardinalityEstimate = &EstimatedSeriesCount{count}
 	}
+	return &newRequest, nil
+}
+
+func (r *PrometheusInstantQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
+	newRequest := *r
+	newRequest.headers = cloneHeaders(r.headers)
+	newRequest.stats = stats
 	return &newRequest, nil
 }
 

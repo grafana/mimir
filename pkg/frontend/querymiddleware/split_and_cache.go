@@ -92,11 +92,12 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled   bool
-	cache          cache.Cache
-	splitter       CacheKeyGenerator
-	extractor      Extractor
-	shouldCacheReq shouldCacheFn
+	cacheEnabled               bool
+	cache                      cache.Cache
+	splitter                   CacheKeyGenerator
+	extractor                  Extractor
+	shouldCacheReq             shouldCacheFn
+	cacheSamplesProcessedStats bool
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -106,6 +107,7 @@ type splitAndCacheMiddleware struct {
 func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
+	cacheSamplesProcessedStats bool,
 	splitInterval time.Duration,
 	limits Limits,
 	merger Merger,
@@ -119,19 +121,20 @@ func newSplitAndCacheMiddleware(
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:   splitEnabled,
-			cacheEnabled:   cacheEnabled,
-			next:           next,
-			limits:         limits,
-			merger:         merger,
-			splitInterval:  splitInterval,
-			metrics:        metrics,
-			cache:          cache,
-			splitter:       splitter,
-			extractor:      extractor,
-			shouldCacheReq: shouldCacheReq,
-			logger:         logger,
-			currentTime:    time.Now,
+			splitEnabled:               splitEnabled,
+			cacheEnabled:               cacheEnabled,
+			cacheSamplesProcessedStats: cacheSamplesProcessedStats,
+			next:                       next,
+			limits:                     limits,
+			merger:                     merger,
+			splitInterval:              splitInterval,
+			metrics:                    metrics,
+			cache:                      cache,
+			splitter:                   splitter,
+			extractor:                  extractor,
+			shouldCacheReq:             shouldCacheReq,
+			logger:                     logger,
+			currentTime:                time.Now,
 		}
 	})
 }
@@ -143,17 +146,25 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
+	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
+	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
+	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
+	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
+
+	if s.cacheSamplesProcessedStats && isCacheEnabled {
+		// Force queier to track PerStepStats, so they could be cached and SamplesProcessedStats in cache could be counted correctly when re-sizing extents.
+		req, err = req.WithStats("all")
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Split the input requests by the configured interval (eg. day).
 	// Returns the input request if splitting is disabled.
 	splitReqs, err := s.splitRequestByInterval(req)
 	if err != nil {
 		return nil, err
 	}
-
-	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
-	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
-	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
-	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
 	// Lookup the results cache.
 	if isCacheEnabled {
@@ -274,7 +285,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessed())
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessedPerStep())
 				if err != nil {
 					return nil, err
 				}

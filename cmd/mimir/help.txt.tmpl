@@ -581,6 +581,8 @@ Usage of ./cmd/mimir/mimir:
     	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
+  -query-frontend.cache-samples-processed-stats
+    	Cache Statistics of processed samples on results cache. Should be enabled in conjunction with querier.per-step-stats-enabled.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.max-queriers-per-tenant int

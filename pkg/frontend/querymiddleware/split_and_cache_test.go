@@ -169,6 +169,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	splitCacheMiddleware := newSplitAndCacheMiddleware(
 		true,
 		false, // Cache disabled.
+		false,
 		24*time.Hour,
 		mockLimits{},
 		codec,
@@ -240,6 +241,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
@@ -381,6 +383,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
@@ -512,6 +515,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		newTestPrometheusCodec(),
@@ -630,6 +634,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
+		false,
 		24*time.Hour,
 		limits,
 		newTestPrometheusCodec(),
@@ -798,6 +803,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			mw := newSplitAndCacheMiddleware(
 				false, // No interval splitting.
 				true,
+				false,
 				24*time.Hour,
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
@@ -1006,6 +1012,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 				mw := newSplitAndCacheMiddleware(
 					testData.splitEnabled,
 					testData.cacheEnabled,
+					false,
 					24*time.Hour,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
@@ -1311,6 +1318,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			mw := newSplitAndCacheMiddleware(
 				false, // No splitting.
 				true,
+				true,
 				24*time.Hour,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
@@ -1320,7 +1328,21 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				resultsCacheAlwaysEnabled,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
-			).Wrap(HandlerFunc(func(_ context.Context, req MetricsQueryRequest) (Response, error) {
+			).Wrap(HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				// Generate PerStepStats to test cached samples processed in the Extents.
+				s := stats.FromContext(ctx)
+				start := req.GetStart()
+				end := req.GetEnd()
+				step := req.GetStep()
+				stepStats := make([]stats.StepStat, 0, (end-start)/step+1)
+				for t := start; t <= end; t += step {
+					stepStats = append(stepStats, stats.StepStat{
+						Timestamp: t,
+						Value:     1,
+					})
+				}
+				s.AddSamplesProcessedPerStep(stepStats)
+
 				return mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep()), nil
 			})).(*splitAndCacheMiddleware)
 			mw.currentTime = func() time.Time { return time.UnixMilli(now) }
@@ -1356,6 +1378,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	mw := newSplitAndCacheMiddleware(
 		false,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{
 			resultsCacheTTL:                 1 * time.Hour,
@@ -1441,6 +1464,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 	m := newSplitAndCacheMiddleware(
 		false,
 		true,
+		false,
 		24*time.Hour,
 		mockLimits{},
 		newTestPrometheusCodec(),
@@ -2169,6 +2193,7 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 	mw := newSplitAndCacheMiddleware(
 		true, // Split enabled
 		true, // Cache enabled
+		false,
 		24*time.Hour,
 		mockLimits{},
 		newTestPrometheusCodec(),
@@ -2207,4 +2232,68 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 	assert.Equal(t, expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache,
 		"SamplesProcessedFromCache not correctly accumulated: expected %d, got %d",
 		expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache)
+}
+
+func TestSplitAndCacheMiddleware_CacheSamplesProcessedStats(t *testing.T) {
+	tests := map[string]struct {
+		cacheSamplesProcessedStats bool
+		expectedStatsParam         string
+	}{
+		"should set stats=all when cacheSamplesProcessedStats is true": {
+			cacheSamplesProcessedStats: true,
+			expectedStatsParam:         "all",
+		},
+		"should not set stats when cacheSamplesProcessedStats is false": {
+			cacheSamplesProcessedStats: false,
+			expectedStatsParam:         "",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var capturedRequest MetricsQueryRequest
+
+			// Create a handler that captures the request
+			handler := HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+				capturedRequest = req
+				return &PrometheusResponse{
+					Status: "success",
+					Data: &PrometheusData{
+						ResultType: "matrix",
+						Result:     []SampleStream{},
+					},
+				}, nil
+			})
+
+			mw := newSplitAndCacheMiddleware(
+				false,
+				true, // Enable cache
+				testData.cacheSamplesProcessedStats,
+				24*time.Hour,
+				mockLimits{},
+				newTestPrometheusCodec(),
+				cache.NewMockCache(),
+				DefaultCacheKeyGenerator{interval: day},
+				PrometheusResponseExtractor{},
+				resultsCacheAlwaysEnabled,
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			wrappedHandler := mw.Wrap(handler)
+
+			req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
+				path:      "/api/v1/query_range",
+				start:     parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+				end:       parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+				step:      60 * 1000,
+				queryExpr: parseQuery(t, `up`),
+			})
+
+			ctx := user.InjectOrgID(context.Background(), "1")
+			_, err := wrappedHandler.Do(ctx, req)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedStatsParam, capturedRequest.GetStats())
+		})
+	}
 }

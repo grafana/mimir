@@ -39,6 +39,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -708,7 +709,7 @@ func TestConfig_Validate(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := test.config.Validate()
+			err := test.config.Validate(querier.Config{})
 			require.Equal(t, test.expectedError, err)
 		})
 	}
