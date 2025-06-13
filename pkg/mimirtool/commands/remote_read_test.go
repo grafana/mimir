@@ -583,13 +583,13 @@ func TestRemoteReadCommand_prepare(t *testing.T) {
 
 func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 	tests := []struct {
-		name             string
-		responseType     string
-		responseBody     func() []byte
-		queriesCount     int
-		expectedSeries   int
-		expectError      bool
-		errorMsg        string
+		name           string
+		responseType   string
+		responseBody   func() []byte
+		queriesCount   int
+		expectedSeries int
+		expectError    bool
+		errorMsg       string
 	}{
 		{
 			name:         "sampled response single query",
@@ -626,7 +626,7 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 						{
 							Timeseries: []*prompb.TimeSeries{
 								{
-									Labels: []prompb.Label{{Name: "__name__", Value: "up"}},
+									Labels:  []prompb.Label{{Name: "__name__", Value: "up"}},
 									Samples: []prompb.Sample{{Timestamp: 1000, Value: 1.0}},
 								},
 							},
@@ -634,7 +634,7 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 						{
 							Timeseries: []*prompb.TimeSeries{
 								{
-									Labels: []prompb.Label{{Name: "__name__", Value: "go_memstats_alloc_bytes"}},
+									Labels:  []prompb.Label{{Name: "__name__", Value: "go_memstats_alloc_bytes"}},
 									Samples: []prompb.Sample{{Timestamp: 1000, Value: 12345.0}},
 								},
 							},
@@ -725,9 +725,9 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 
 func TestCombinedSeriesSet(t *testing.T) {
 	tests := []struct {
-		name           string
-		series         []storage.Series
-		expectedCount  int
+		name          string
+		series        []storage.Series
+		expectedCount int
 	}{
 		{
 			name:          "empty series",
@@ -780,7 +780,7 @@ func TestMultiQueryChunkedIterator(t *testing.T) {
 		},
 	}
 
-	iter := newMultiQueryChunkedIterator(chunks, 1000, 2000)
+	iter := newMultiQueryChunkedIterator(chunks)
 
 	// Test iteration
 	vt := iter.Next()
@@ -793,14 +793,14 @@ func TestMultiQueryChunkedIterator(t *testing.T) {
 // createMockXORChunk creates a simple XOR encoded chunk for testing
 func createMockXORChunk(t *testing.T, timestamps []int64, values []float64) []byte {
 	require.Equal(t, len(timestamps), len(values))
-	
+
 	chunk := chunkenc.NewXORChunk()
 	appender, err := chunk.Appender()
 	require.NoError(t, err)
-	
+
 	for i := range timestamps {
 		appender.Append(timestamps[i], values[i])
 	}
-	
+
 	return chunk.Bytes()
 }
