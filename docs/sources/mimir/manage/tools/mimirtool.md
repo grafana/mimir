@@ -574,6 +574,7 @@ The `remote-read` subcommand `mimirtool` enables you to interact with its API, a
 The remote-read commands support multiple `--selector` flags to query multiple series selectors in a single request, leveraging the remote read protocol's native batching capabilities for improved performance.
 
 Additionally, you can control the response format using the `--use-chunks` flag:
+
 - `--use-chunks=true` (default): Requests chunked streaming response for better performance with large datasets
 - `--use-chunks=false`: Requests traditional sampled response format
 
