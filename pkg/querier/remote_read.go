@@ -147,14 +147,72 @@ func remoteReadStreamedXORChunks(
 	}
 	w.Header().Set("Content-Type", api.ContentTypeRemoteReadStreamedChunks)
 
+	// Process all queries concurrently and collect their ChunkSeriesSet results
+	type queryResult struct {
+		idx    int
+		series storage.ChunkSeriesSet
+		err    error
+	}
+
+	resultCh := make(chan queryResult, len(req.Queries))
+
+	// Launch goroutines to process each query concurrently
 	for i, qr := range req.Queries {
-		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
+		go func(i int, qr *prompb.Query) {
+			start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
+			if err != nil {
+				resultCh <- queryResult{idx: i, err: err}
+				return
+			}
+
+			querier, err := q.ChunkQuerier(int64(start), int64(end))
+			if err != nil {
+				resultCh <- queryResult{idx: i, err: err}
+				return
+			}
+
+			// The streaming API has to provide the series sorted.
+			seriesSet := querier.Select(ctx, true, hints, matchers...)
+			resultCh <- queryResult{idx: i, series: seriesSet, err: nil}
+		}(i, qr)
+	}
+
+	// Collect results and maintain order
+	results := make([]queryResult, len(req.Queries))
+	var lastErr error
+
+	for range req.Queries {
+		result := <-resultCh
+		results[result.idx] = result
+		if result.err != nil {
+			lastErr = result.err
+		}
+	}
+
+	// If any query failed, return the error
+	if lastErr != nil {
+		code := remoteReadErrorStatusCode(lastErr)
+		if code/100 != 4 {
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", lastErr)
+		}
+		http.Error(w, lastErr.Error(), code)
+		return
+	}
+
+	// Stream the results in order
+	for i, result := range results {
+		if err := streamChunkedReadResponses(
+			prom_remote.NewChunkedWriter(w, f),
+			result.series,
+			i,
+			maxBytesInFrame,
+		); err != nil {
 			code := remoteReadErrorStatusCode(err)
 			if code/100 != 4 {
-				level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
+				level.Error(logger).Log("msg", "error while streaming remote read response", "err", err)
 			}
 			http.Error(w, err.Error(), code)
-			return
+			break
 		}
 	}
 	w.WriteHeader(http.StatusOK)
@@ -173,34 +231,6 @@ func remoteReadErrorStatusCode(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
-}
-
-func processReadStreamedQueryRequest(
-	ctx context.Context,
-	idx int,
-	queryReq *prompb.Query,
-	q storage.ChunkQueryable,
-	w http.ResponseWriter,
-	f http.Flusher,
-	maxBytesInFrame int,
-) error {
-	start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(queryReq)
-	if err != nil {
-		return err
-	}
-
-	querier, err := q.ChunkQuerier(int64(start), int64(end))
-	if err != nil {
-		return err
-	}
-
-	return streamChunkedReadResponses(
-		prom_remote.NewChunkedWriter(w, f),
-		// The streaming API has to provide the series sorted.
-		querier.Select(ctx, true, hints, matchers...),
-		idx,
-		maxBytesInFrame,
-	)
 }
 
 func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int64) (*prompb.QueryResult, error) {
