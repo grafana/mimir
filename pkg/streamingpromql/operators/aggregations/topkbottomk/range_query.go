@@ -498,6 +498,7 @@ var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	uint64(unsafe.Sizeof(rangeQuerySeries{})),
 	true,
 	nil,
+	nil,
 )
 
 var intSliceSlicePool = types.NewLimitingBucketedPool(
@@ -507,6 +508,7 @@ var intSliceSlicePool = types.NewLimitingBucketedPool(
 	limiter.IntSliceSlice,
 	uint64(unsafe.Sizeof([][]int{})),
 	true,
+	nil,
 	nil,
 )
 
