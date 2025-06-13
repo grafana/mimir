@@ -577,7 +577,7 @@ Additionally, you can control the response format using the `--use-chunks` flag:
 
 - `--use-chunks=true` (default): Requests chunked streaming response for better performance with large datasets
 - `--use-chunks=false`: Requests traditional sampled response format
-- `--chunk-digest`: Print chunk metadata (min time, max time, checksum) instead of decoding samples when using chunked responses. Can only be combined with `--use-chunks`
+- `--chunk-digest`: Print chunk metadata (min time, max time, SHA256 checksum) instead of decoding samples when using chunked responses. Can only be combined with `--use-chunks`
 
 [remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 

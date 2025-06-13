@@ -9,7 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -115,7 +115,7 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		Default("").
 		StringVar(&c.tsdbPath)
 
-	dumpCmd.Flag("chunk-digest", "Print chunk metadata (min time, max time, checksum) instead of decoding samples when using chunked responses. Can only be combined with --use-chunks").
+	dumpCmd.Flag("chunk-digest", "Print chunk metadata (min time, max time, SHA256 checksum) instead of decoding samples when using chunked responses. Can only be combined with --use-chunks").
 		Default("false").
 		BoolVar(&c.chunkDigest)
 }
@@ -268,7 +268,7 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 	}
 
 	if c.chunkDigest && !c.useChunks {
-		return nil, time.Time{}, time.Time{}, fmt.Errorf("-chunks-digest only works with -use-chunks")
+		return nil, time.Time{}, time.Time{}, fmt.Errorf("-chunk-digest only works with -use-chunks")
 	}
 
 	// Parse all selectors
@@ -693,8 +693,7 @@ func (c *RemoteReadCommand) dumpChunkDigest(timeseries storage.SeriesSet) error 
 			minTime := chunk.MinTimeMs
 			maxTime := chunk.MaxTimeMs
 
-			// Compute MD5 checksum of chunk data
-			hash := md5.Sum(chunk.Data)
+			hash := sha256.Sum256(chunk.Data)
 			checksum := fmt.Sprintf("%x", hash)
 
 			fmt.Printf("%s chunk_%d min_time=%d max_time=%d checksum=%s\n",

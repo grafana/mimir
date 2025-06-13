@@ -596,7 +596,7 @@ func TestRemoteReadCommand_prepare_chunkDigestValidation(t *testing.T) {
 			chunkDigest: true,
 			useChunks:   false,
 			expectError: true,
-			errorMsg:    "-chunks-digest only works with -use-chunks",
+			errorMsg:    "-chunk-digest only works with -use-chunks",
 		},
 		{
 			name:        "chunk digest disabled",
@@ -614,7 +614,8 @@ func TestRemoteReadCommand_prepare_chunkDigestValidation(t *testing.T) {
 				resp := &prompb.ReadResponse{}
 				data, _ := proto.Marshal(resp)
 				compressed := snappy.Encode(nil, data)
-				w.Write(compressed)
+				_, err := w.Write(compressed)
+				require.NoError(t, err)
 			}))
 			defer server.Close()
 
