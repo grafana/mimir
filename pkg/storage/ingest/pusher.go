@@ -62,7 +62,11 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
 func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnErr error) {
 	defer func(processingStart time.Time) {
-		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+		status := "success"
+		if returnErr != nil {
+			status = "failure"
+		}
+		c.metrics.processingTimeSeconds.WithLabelValues(status).Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
 
 	type parsedRecord struct {

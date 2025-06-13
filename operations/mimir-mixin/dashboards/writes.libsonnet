@@ -432,6 +432,29 @@ local filename = 'mimir-writes.json';
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,
+      $.row('')
+      .addPanel(
+        $.timeseriesPanel('Process batch attempts / sec (before retries)') +
+        $.panelDescription(
+          'Process batch attempts (before retries)',
+          |||
+            Shows the rate at which batches of records are processed from Kafka, before any retries.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'histogram_count(sum(rate(cortex_ingest_storage_reader_records_processing_time_seconds{status="success",%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_count(sum(rate(cortex_ingest_storage_reader_records_processing_time_seconds{status="failure",%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
       $.row('Ingester – end-to-end latency (ingest storage)')
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),

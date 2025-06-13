@@ -68,6 +68,7 @@
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [ENHANCEMENT] Ruler: Add new per-tenant limit on minimum rule evaluation interval. #11665
 * [ENHANCEMENT] store-gateway: download sparse headers on startup when lazy loading is enabled. #11686
+* [ENHANCEMENT] Ingester: Split `cortex_ingest_storage_reader_records_processing_time_seconds` metric by success and failure. #11730
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
@@ -100,6 +101,7 @@
 * [ENHANCEMENT] Alerts: Add alerts for invalid cluster validation labels. #11255 #11282 #11413
 * [ENHANCEMENT] Dashboards: Improve "Kafka 100th percentile end-to-end latency when ingesters are running (outliers)" panel, computing the baseline latency on `max(10, 10%)` of ingesters instead of a fixed 10 replicas. #11581
 * [ENHANCEMENT] Dashboards: Add "per-query memory consumption" and "fallback to Prometheus' query engine" panels to the Queries dashboard. #11626
+* [ENHANCEMENT] Dashboards: Add "Process batch attempts / sec (before retries)" panel to the Writes dashboard. #11730
 * [CHANGE] Alerts: Update query for `MimirBucketIndexNotUpdated`. Use `max_over_time` to prevent alert firing when pods rotate. #11311, #11426
 * [CHANGE] Alerts: Make alerting threshold for `DistributorGcUsesTooMuchCpu` configurable. #11508.
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
