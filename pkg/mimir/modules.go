@@ -802,6 +802,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 	// Disable concurrency limits for sharded queries spawned by the query-frontend.
 	promOpts.ActiveQueryTracker = nil
+	// Always eagerly load selectors so that they are loaded in parallel in the background.
+	mqeOpts.EagerLoadSelectors = true
 
 	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
 	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
