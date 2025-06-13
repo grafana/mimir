@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -311,7 +312,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			require.Equal(t, expected, response)
 
 			// Verify the number of queries executed
-			require.Equal(t, len(queryData.query), callCount.Load())
+			require.EqualValues(t, len(queryData.query), callCount.Load())
 
 			// Ensure the time range passed down to the queryable is the expected one (skip for concurrent queries)
 			if queryData.expectedQueriedStart != -1 {
@@ -683,7 +684,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 
 			var actualQueryTimeRanges []queryStartEnd
-			callCount := 0
+			actualQueryTImeRangesMtx := sync.Mutex{}
 
 			q := &mockSampleAndChunkQueryable{
 				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
@@ -692,11 +693,12 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 							require.NotNil(t, hints, "select hints must be set")
 
 							// Track all query time ranges
+							actualQueryTImeRangesMtx.Lock()
 							actualQueryTimeRanges = append(actualQueryTimeRanges, queryStartEnd{
 								start: hints.Start,
 								end:   hints.End,
 							})
-							callCount++
+							actualQueryTImeRangesMtx.Unlock()
 
 							// Return different data based on matchers for multiple queries
 							var metricName string
@@ -795,9 +797,6 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 				require.Equal(t, expectedResponses, actualResponsesByQuery[queryID])
 			}
 
-			// Verify the number of queries executed
-			require.Equal(t, len(testData.query), callCount)
-
 			// Use elements matching to verify the expected time ranges
 			var expectedTimeRanges []queryStartEnd
 			for _, expected := range testData.expectedResults {
@@ -893,6 +892,19 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		),
 	})
 
+	someMoreSeries := series.NewConcreteSeriesSetFromSortedSeries([]storage.Series{
+		series.NewConcreteSeries(
+			labels.FromStrings("foo", "qux"),
+			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+		),
+		series.NewConcreteSeries(
+			labels.FromStrings("foo", "quux"),
+			[]model.SamplePair{{Timestamp: 0, Value: 0}, {Timestamp: 1, Value: 1}, {Timestamp: 2, Value: 2}, {Timestamp: 3, Value: 3}},
+			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(4, test.GenerateTestHistogram(4))},
+		),
+	})
+
 	testCases := map[string]struct {
 		getQuerierErr []error             // Changed to slice to support multiple queries
 		seriesSet     []storage.SeriesSet // Changed to slice to support multiple queries
@@ -956,7 +968,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 		},
 		"multiple queries - both succeed": {
 			getQuerierErr: []error{nil, nil},
-			seriesSet:     []storage.SeriesSet{someSeries, someSeries},
+			seriesSet:     []storage.SeriesSet{someSeries, someMoreSeries},
 
 			expectedStatusCode: 200,
 		},
@@ -965,16 +977,16 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 	t.Run("samples", func(t *testing.T) {
 		for tn, tc := range testCases {
 			t.Run(tn, func(t *testing.T) {
-				callCount := 0
+				callCount := atomic.NewInt64(0)
 				q := &mockSampleAndChunkQueryable{
 					queryableFn: func(int64, int64) (storage.Querier, error) {
-						if callCount >= len(tc.getQuerierErr) {
+						currentCall := callCount.Inc() - 1
+						if currentCall >= int64(len(tc.getQuerierErr)) {
 							return nil, errors.New("unexpected extra query call")
 						}
 
-						err := tc.getQuerierErr[callCount]
-						seriesSet := tc.seriesSet[callCount]
-						callCount++
+						err := tc.getQuerierErr[currentCall]
+						seriesSet := tc.seriesSet[currentCall]
 
 						return mockQuerier{
 							selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
@@ -1020,16 +1032,16 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 	t.Run("streaming_chunks", func(t *testing.T) {
 		for tn, tc := range testCases {
 			t.Run(tn, func(t *testing.T) {
-				callCount := 0
+				callCount := atomic.NewInt64(0)
 				q := &mockSampleAndChunkQueryable{
 					chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
-						if callCount >= len(tc.getQuerierErr) {
+						currentCall := callCount.Inc() - 1
+						if currentCall >= int64(len(tc.getQuerierErr)) {
 							return nil, errors.New("unexpected extra query call")
 						}
 
-						err := tc.getQuerierErr[callCount]
-						seriesSet := tc.seriesSet[callCount]
-						callCount++
+						err := tc.getQuerierErr[currentCall]
+						seriesSet := tc.seriesSet[currentCall]
 
 						return mockChunkQuerier{
 							selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
