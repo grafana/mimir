@@ -20,10 +20,8 @@ type SeriesMetadata struct {
 	Labels labels.Labels
 }
 
-type SeriesMetadataSlice []SeriesMetadata
-
 // AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.
-func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) (SeriesMetadataSlice, error) {
+func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
 	for _, metadata := range otherSeriesMetadata {
 		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
 		if err != nil {
