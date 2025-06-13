@@ -556,7 +556,8 @@ func TestRemoteReadCommand_prepare(t *testing.T) {
 				resp := &prompb.ReadResponse{}
 				data, _ := proto.Marshal(resp)
 				compressed := snappy.Encode(nil, data)
-				w.Write(compressed)
+				_, err := w.Write(compressed)
+				require.NoError(t, err)
 			}))
 			defer server.Close()
 
@@ -681,7 +682,8 @@ func TestRemoteReadCommand_executeMultipleQueries(t *testing.T) {
 					w.WriteHeader(http.StatusInternalServerError)
 				}
 				w.Header().Set("Content-Type", tt.responseType)
-				w.Write(tt.responseBody())
+				_, err := w.Write(tt.responseBody())
+				require.NoError(t, err)
 			}))
 			defer server.Close()
 
