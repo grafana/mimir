@@ -322,6 +322,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
 	nil,
+	nil,
 )
 
 type instantQueryHeap struct {
