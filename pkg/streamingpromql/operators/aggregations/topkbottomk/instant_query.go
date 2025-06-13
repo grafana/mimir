@@ -142,7 +142,10 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
 			// TODO: check again this
-			t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			if err != nil {
+				return nil, err
+			}
 
 			if math.IsNaN(next.value) {
 				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
