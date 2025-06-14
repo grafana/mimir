@@ -300,7 +300,8 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 			o := New(
 				&operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
@@ -314,7 +315,7 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 				posrange.PositionRange{Start: 0, End: 10},
 			)
 
-			outputSeries, err := o.SeriesMetadata(context.Background())
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})

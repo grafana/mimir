@@ -21,13 +21,13 @@ import (
 )
 
 func TestOperator_Buffering(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner, expectedData := createTestOperator(t, 6, memoryConsumptionTracker)
 
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
-	ctx := context.Background()
 
 	// Both consumers should get the same series metadata.
 	metadata1, err := consumer1.SeriesMetadata(ctx)
@@ -113,13 +113,13 @@ func TestOperator_Buffering(t *testing.T) {
 }
 
 func TestOperator_ClosedWithBufferedData(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner, expectedData := createTestOperator(t, 3, memoryConsumptionTracker)
 
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
-	ctx := context.Background()
 
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
@@ -183,7 +183,8 @@ func TestOperator_Cloning(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner := &operators.TestOperator{
 		Series:                   []labels.Labels{labels.FromStrings(labels.MetricName, "test_series")},
 		Data:                     []types.InstantVectorSeriesData{series},
@@ -193,7 +194,6 @@ func TestOperator_Cloning(t *testing.T) {
 	buffer := NewDuplicationBuffer(inner, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
-	ctx := context.Background()
 
 	// Both consumers should get the same series metadata, but not the same slice.
 	metadata1, err := consumer1.SeriesMetadata(ctx)
@@ -255,7 +255,8 @@ func createTestOperator(t *testing.T, seriesCount int, memoryConsumptionTracker 
 }
 
 func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
@@ -264,7 +265,6 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	buffer := NewDuplicationBuffer(&failingOperator{series: series}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
-	ctx := context.Background()
 
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
@@ -281,7 +281,8 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 }
 
 func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
@@ -291,7 +292,6 @@ func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	buffer := NewDuplicationBuffer(&failingOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
 	consumer2 := buffer.AddConsumer()
-	ctx := context.Background()
 
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)

@@ -113,7 +113,8 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			hOp := &HistogramFunction{
 				f: &histogramQuantile{
 					phArg: &testScalarOperator{},
@@ -123,7 +124,7 @@ func TestHistogramFunction_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 				memoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
-			outputSeries, err := hOp.SeriesMetadata(context.Background())
+			outputSeries, err := hOp.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)

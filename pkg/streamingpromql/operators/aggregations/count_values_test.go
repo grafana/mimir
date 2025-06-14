@@ -208,7 +208,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
 			require.NoError(t, err)
 			floats = append(floats, promql.FPoint{T: 0, F: 123})

@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 )
 
@@ -28,7 +29,7 @@ func TestFromContextWithFallback(t *testing.T) {
 
 	t.Run("exists", func(t *testing.T) {
 		ctx := context.Background()
-		existing := NewMemoryConsumptionTracker(0, nil, "")
+		existing := NewMemoryConsumptionTracker(ctx, 0, nil, "")
 		require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 		ctx = context.WithValue(ctx, memoryConsumptionTracker, existing)
@@ -40,7 +41,7 @@ func TestFromContextWithFallback(t *testing.T) {
 
 func TestAddToContext(t *testing.T) {
 	ctx := context.Background()
-	existing := NewMemoryConsumptionTracker(0, nil, "")
+	existing := NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	require.NoError(t, existing.IncreaseMemoryConsumption(uint64(512), IngesterChunks))
 
 	ctx = AddMemoryTrackerToContext(ctx, existing)
@@ -51,7 +52,7 @@ func TestAddToContext(t *testing.T) {
 
 func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 	reg, metric := createRejectedMetric()
-	tracker := NewMemoryConsumptionTracker(0, metric, "foo + bar")
+	tracker := NewMemoryConsumptionTracker(context.Background(), 0, metric, "foo + bar")
 
 	require.NoError(t, tracker.IncreaseMemoryConsumption(128, IngesterChunks))
 	require.Equal(t, uint64(128), tracker.CurrentEstimatedMemoryConsumptionBytes())
@@ -86,7 +87,7 @@ func TestMemoryConsumptionTracker_Unlimited(t *testing.T) {
 
 func TestMemoryConsumptionTracker_Limited(t *testing.T) {
 	reg, metric := createRejectedMetric()
-	tracker := NewMemoryConsumptionTracker(11, metric, "foo + bar")
+	tracker := NewMemoryConsumptionTracker(context.Background(), 11, metric, "foo + bar")
 
 	// Add some memory consumption beneath the limit.
 	require.NoError(t, tracker.IncreaseMemoryConsumption(8, IngesterChunks))
@@ -162,7 +163,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	const source = IngesterChunks
 
 	b.Run("no limits single threaded", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(0, nil, "")
+		l := NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_ = l.IncreaseMemoryConsumption(uint64(b.N), source)
@@ -177,7 +178,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 			Name: "cortex_test_rejections_total",
 		})
 
-		l := NewMemoryConsumptionTracker(memoryLimit, counter, "")
+		l := NewMemoryConsumptionTracker(context.Background(), memoryLimit, counter, "")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if err := l.IncreaseMemoryConsumption(uint64(b.N), source); err == nil {
@@ -189,7 +190,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 	})
 
 	b.Run("no limits multiple threads", func(b *testing.B) {
-		l := NewMemoryConsumptionTracker(0, nil, "")
+		l := NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 		wg := sync.WaitGroup{}
 		run := atomic.NewBool(true)
 
@@ -220,7 +221,7 @@ func BenchmarkMemoryConsumptionTracker(b *testing.B) {
 			Name: "cortex_test_rejections_total",
 		})
 
-		l := NewMemoryConsumptionTracker(memoryLimit, counter, "")
+		l := NewMemoryConsumptionTracker(context.Background(), memoryLimit, counter, "")
 		wg := sync.WaitGroup{}
 		run := atomic.NewBool(true)
 
@@ -253,4 +254,25 @@ func TestMemoryConsumptionSourceNames(t *testing.T) {
 	for i := range memoryConsumptionSourceCount {
 		require.NotEqual(t, unknownMemorySource, i.String(), "source %d should have a String() representation", i)
 	}
+}
+
+func TestMemoryConsumptionTracker_NegativeMemoryConsumptionPanicWithTracing(t *testing.T) {
+	traceID, err := trace.TraceIDFromHex("00000000000000010000000000000002")
+	require.NoError(t, err)
+	spanID, err := trace.SpanIDFromHex("0000000000000003")
+	require.NoError(t, err)
+
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+	})
+
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+
+	tracker := NewMemoryConsumptionTracker(ctx, 0, nil, "foo + bar")
+
+	require.PanicsWithValue(t, `Estimated memory consumption of all instances of ingester chunks in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: foo + bar (trace ID: 00000000000000010000000000000002)`, func() {
+		tracker.DecreaseMemoryConsumption(10, IngesterChunks)
+	})
 }

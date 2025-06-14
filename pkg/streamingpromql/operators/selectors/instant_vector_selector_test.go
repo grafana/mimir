@@ -186,7 +186,8 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			startTime := time.Unix(0, 0)
 			endTime := startTime.Add(time.Duration(testCase.stepCount-1) * time.Minute)
 
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -201,7 +202,6 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 				Stats:                    &types.QueryStats{},
 			}
 
-			ctx := context.Background()
 			_, err := selector.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
@@ -232,7 +232,8 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			startTime := timeZero.Add(time.Duration(startT) * time.Minute)
 			endTime := timeZero.Add(7 * time.Minute)
 
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -247,7 +248,6 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 				Stats:                    &types.QueryStats{},
 			}
 
-			ctx := context.Background()
 			series, err := selector.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
