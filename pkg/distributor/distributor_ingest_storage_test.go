@@ -207,7 +207,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# TYPE cortex_distributor_samples_in_total counter
 					cortex_distributor_samples_in_total{user="user"} 5
 
-					# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+					# HELP cortex_distributor_received_samples_total The total number of received samples, including native histogram samples, excluding rejected and deduped samples.
 					# TYPE cortex_distributor_received_samples_total counter
 					cortex_distributor_received_samples_total{user="user"} 5
 
