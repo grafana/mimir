@@ -187,7 +187,12 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			seriesCount := rightGroup.lastLeftSeriesIndex - nextLeftSeriesToRead + 1
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
-			series = append(series, leftMetadata[nextLeftSeriesToRead:rightGroup.lastLeftSeriesIndex+1]...)
+			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
+			series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, seriesToAppend...)
+			if err != nil {
+				return nil, err
+			}
+
 			nextLeftSeriesToRead += seriesCount
 
 			if nextRightSeriesToRead == 0 {

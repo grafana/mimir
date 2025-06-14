@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type contextKey int
@@ -54,8 +55,9 @@ const (
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
+	Labels
 
-	memoryConsumptionSourceCount = TopKBottomKRangeQuerySeriesSlices + 1
+	memoryConsumptionSourceCount = Labels + 1
 )
 
 const (
@@ -96,6 +98,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.instantQuerySeries"
 	case TopKBottomKRangeQuerySeriesSlices:
 		return "[]topkbottom.rangeQuerySeries"
+	case Labels:
+		return "labels.Labels"
 	default:
 		return unknownMemorySource
 	}
@@ -180,4 +184,19 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	defer l.mtx.Unlock()
 
 	return l.currentEstimatedMemoryConsumptionBytes
+}
+
+// IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(_ labels.Labels) error {
+	// TODO: Use lb.ByteSize() from https://github.com/prometheus/prometheus/pull/16717
+	if err := l.IncreaseMemoryConsumption(0, Labels); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(_ labels.Labels) {
+	// TODO: Use lb.ByteSize() from https://github.com/prometheus/prometheus/pull/16717
+	l.DecreaseMemoryConsumption(0, Labels)
 }

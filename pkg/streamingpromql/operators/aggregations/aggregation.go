@@ -168,7 +168,10 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	a.remainingGroups = make([]*group, 0, len(groups))
 
 	for _, g := range groups {
-		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels})
+		seriesMetadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels})
+		if err != nil {
+			return nil, err
+		}
 		a.remainingGroups = append(a.remainingGroups, g.group)
 	}
 
