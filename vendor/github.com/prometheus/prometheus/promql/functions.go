@@ -1012,8 +1012,8 @@ func funcTsOfFirstOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, e
 }
 
 // === ts_of_last_over_time(Matrix parser.ValueTypeMatrix) (Vector, Notes)  ===
-func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	el := matrixVal[0]
+func funcTsOfLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	el := vals[0].(Matrix)[0]
 
 	var tf int64
 	if len(el.Floats) > 0 {
@@ -1022,7 +1022,7 @@ func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, en
 
 	var th int64
 	if len(el.Histograms) > 0 {
-		th = el.Histograms[len(el.Histograms)-1].T
+		th = el.Floats[len(el.Floats)-1].T
 	}
 
 	return append(enh.Out, Sample{
@@ -1032,22 +1032,22 @@ func funcTsOfLastOverTime(_ []Vector, matrixVal Matrix, _ parser.Expressions, en
 }
 
 // === ts_of_max_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcTsOfMaxOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return compareOverTime(matrixVal, args, enh, func(cur, maxVal float64) bool {
+func funcTsOfMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
 		return (cur >= maxVal) || math.IsNaN(maxVal)
 	}, true)
 }
 
 // === ts_of_min_over_time(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
-func funcTsOfMinOverTime(_ []Vector, matrixVals Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return compareOverTime(matrixVals, args, enh, func(cur, maxVal float64) bool {
+func funcTsOfMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	return compareOverTime(vals, args, enh, func(cur, maxVal float64) bool {
 		return (cur <= maxVal) || math.IsNaN(maxVal)
 	}, true)
 }
 
 // compareOverTime is a helper used by funcMaxOverTime and funcMinOverTime.
-func compareOverTime(matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
-	samples := matrixVal[0]
+func compareOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, compareFn func(float64, float64) bool, returnTimestamp bool) (Vector, annotations.Annotations) {
+	samples := vals[0].(Matrix)[0]
 	var annos annotations.Annotations
 	if len(samples.Floats) == 0 {
 		return enh.Out, nil
@@ -1514,7 +1514,7 @@ func simpleHistogramFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(h *his
 	for _, el := range vectorVals[0] {
 		if el.H != nil { // Process only histogram samples.
 			if !enh.enableDelayedNameRemoval {
-				el.Metric = el.Metric.DropReserved(func(n string) bool { return n == labels.MetricName })
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:   el.Metric,
