@@ -11,25 +11,25 @@ import (
 	"strings"
 
 	"github.com/grafana/regexp"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
 		srcLabels := make([]string, len(srcLabelOps))
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
-			if !model.LabelName(src).IsValid() {
-				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
+			if !validation.IsValidLabelName(src) {
+				return nil, fmt.Errorf("invalid source label name in label_join(): %s", src)
 			}
 			srcLabels[i] = src
 		}
@@ -66,7 +66,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !validation.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()
