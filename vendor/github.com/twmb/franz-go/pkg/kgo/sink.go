@@ -127,7 +127,7 @@ func (s *sink) createReq(id int64, epoch int16) (*produceRequest, *kmsg.AddParti
 
 		if s.cl.cfg.disableIdempotency {
 			if cctx := batch.records[0].cancelingCtx(); cctx != nil && req.firstCancelingCtx == nil {
-				req.firstCancelingCtx = cctx
+				req.firstCancelingCtx = cctx //nolint:fatcontext // we are only here if firstCancelingCtx is currently nil
 			}
 		}
 
@@ -339,7 +339,9 @@ func (s *sink) produce(sem <-chan struct{}) bool {
 	ctxFn := func() context.Context {
 		holCtxMu.Lock()
 		defer holCtxMu.Unlock()
-		holCtx = s.anyCtx()
+		if holCtx == nil {
+			holCtx = s.anyCtx() //nolint:fatcontext // not sure why this is flagged
+		}
 		return holCtx
 	}
 	isHolCtxDone := func() bool {

@@ -2451,7 +2451,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				} else if issue.any {
 					brokerAnys = append(brokerAnys, "any")
 				} else {
-					brokerAnys = append(brokerAnys, fmt.Sprintf("%d", issue.broker))
+					brokerAnys = append(brokerAnys, strconv.Itoa(int(issue.broker)))
 				}
 			}
 			l.Log(LogLevelDebug, "sharded request", "req", kmsg.Key(key).Name(), "destinations", brokerAnys)
@@ -2460,6 +2460,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 		for i := range issues {
 			myIssue := issues[i]
 			var isPinned bool
+			ctx := ctx // loop local context, in case we override by pinning
 			if isPinned = myIssue.pin != nil; isPinned {
 				ctx = context.WithValue(ctx, ctxPinReq, myIssue.pin)
 			}
@@ -3226,7 +3227,7 @@ func (*findCoordinatorSharder) shard(_ context.Context, kreq kmsg.Request, lastE
 		sreq.CoordinatorType = req.CoordinatorType
 		sreq.CoordinatorKey = key
 		issues = append(issues, issueShard{
-			req: req,
+			req: sreq,
 			pin: &pinReq{pinMax: true, max: 3},
 			any: true,
 		})
