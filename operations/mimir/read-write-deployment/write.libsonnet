@@ -54,7 +54,7 @@
     $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('mimir-write-data', '/data'),
     ]) +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   local mimir_write_data_pvc =
     pvc.new() +

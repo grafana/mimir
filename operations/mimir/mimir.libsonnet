@@ -1,7 +1,7 @@
 (import 'ksonnet-util/kausal.libsonnet') +
-(import 'jaeger-agent-mixin/jaeger.libsonnet') +
 (import 'images.libsonnet') +
 (import 'common.libsonnet') +
+(import 'tracing.libsonnet') +
 (import 'config.libsonnet') +
 (import 'consul.libsonnet') +
 
