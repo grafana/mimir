@@ -112,11 +112,14 @@ func (p *partiallyFailingSeriesSet) Warnings() annotations.Annotations {
 }
 
 func TestRemoteReadHandler_Samples(t *testing.T) {
+	type expectedResult struct {
+		queryStartEnd
+		timeseries []*prompb.TimeSeries
+	}
+
 	queries := map[string]struct {
-		query                []*prompb.Query
-		expectedQueriedStart int64
-		expectedQueriedEnd   int64
-		expectedTimeseries   [][]*prompb.TimeSeries
+		query           []*prompb.Query
+		expectedResults []expectedResult
 	}{
 		"query without hints": {
 			query: []*prompb.Query{
@@ -125,21 +128,25 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					EndTimestampMs:   10,
 				},
 			},
-			expectedQueriedStart: 1,
-			expectedQueriedEnd:   10,
-			expectedTimeseries: [][]*prompb.TimeSeries{
+			expectedResults: []expectedResult{
 				{
-					{
-						Labels: []prompb.Label{
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: []prompb.Sample{
-							{Value: 1, Timestamp: 1},
-							{Value: 2, Timestamp: 2},
-							{Value: 3, Timestamp: 3},
-						},
-						Histograms: []prompb.Histogram{
-							prompb.FromIntHistogram(4, test.GenerateTestHistogram(4)),
+					queryStartEnd: queryStartEnd{
+						start: 1,
+						end:   10,
+					},
+					timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{
+								{Value: 1, Timestamp: 1},
+								{Value: 2, Timestamp: 2},
+								{Value: 3, Timestamp: 3},
+							},
+							Histograms: []prompb.Histogram{
+								prompb.FromIntHistogram(4, test.GenerateTestHistogram(4)),
+							},
 						},
 					},
 				},
@@ -156,17 +163,21 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					},
 				},
 			},
-			expectedQueriedStart: 2,
-			expectedQueriedEnd:   3,
-			expectedTimeseries: [][]*prompb.TimeSeries{
+			expectedResults: []expectedResult{
 				{
-					{
-						Labels: []prompb.Label{
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: []prompb.Sample{
-							{Value: 2, Timestamp: 2},
-							{Value: 3, Timestamp: 3},
+					queryStartEnd: queryStartEnd{
+						start: 2,
+						end:   3,
+					},
+					timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{
+								{Value: 2, Timestamp: 2},
+								{Value: 3, Timestamp: 3},
+							},
 						},
 					},
 				},
@@ -189,30 +200,40 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					},
 				},
 			},
-			expectedQueriedStart: -1, // Skip time range verification for concurrent queries
-			expectedQueriedEnd:   -1,
-			expectedTimeseries: [][]*prompb.TimeSeries{
+			expectedResults: []expectedResult{
 				{
-					{
-						Labels: []prompb.Label{
-							{Name: labels.MetricName, Value: "metric1"},
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: []prompb.Sample{
-							{Value: 1, Timestamp: 1},
-							{Value: 2, Timestamp: 2},
+					queryStartEnd: queryStartEnd{
+						start: 1,
+						end:   5,
+					},
+					timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: labels.MetricName, Value: "metric1"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{
+								{Value: 1, Timestamp: 1},
+								{Value: 2, Timestamp: 2},
+							},
 						},
 					},
 				},
 				{
-					{
-						Labels: []prompb.Label{
-							{Name: labels.MetricName, Value: "metric2"},
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: []prompb.Sample{
-							{Value: 6, Timestamp: 6},
-							{Value: 7, Timestamp: 7},
+					queryStartEnd: queryStartEnd{
+						start: 6,
+						end:   10,
+					},
+					timeseries: []*prompb.TimeSeries{
+						{
+							Labels: []prompb.Label{
+								{Name: labels.MetricName, Value: "metric2"},
+								{Name: "foo", Value: "bar"},
+							},
+							Samples: []prompb.Sample{
+								{Value: 6, Timestamp: 6},
+								{Value: 7, Timestamp: 7},
+							},
 						},
 					},
 				},
@@ -222,7 +243,8 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 
 	for queryType, queryData := range queries {
 		t.Run(queryType, func(t *testing.T) {
-			var actualQueriedStart, actualQueriedEnd int64
+			var actualQueryTimeRanges []queryStartEnd
+			actualQueryTimeRangesMtx := sync.Mutex{}
 			callCount := atomic.NewInt64(0)
 
 			q := &mockSampleAndChunkQueryable{
@@ -231,10 +253,14 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 							require.NotNil(t, hints, "select hints must be set")
 
-							// Track the first query's time range
-							if callCount.Inc() == 1 {
-								actualQueriedStart, actualQueriedEnd = hints.Start, hints.End
-							}
+							// Track all query time ranges
+							actualQueryTimeRangesMtx.Lock()
+							actualQueryTimeRanges = append(actualQueryTimeRanges, queryStartEnd{
+								start: hints.Start,
+								end:   hints.End,
+							})
+							actualQueryTimeRangesMtx.Unlock()
+							callCount.Inc()
 
 							// Return different data based on matchers
 							var metricName string
@@ -300,9 +326,9 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 
 			// Build expected response
 			var expectedResults []*prompb.QueryResult
-			for _, queryTimeseries := range queryData.expectedTimeseries {
+			for _, expectedResult := range queryData.expectedResults {
 				expectedResults = append(expectedResults, &prompb.QueryResult{
-					Timeseries: queryTimeseries,
+					Timeseries: expectedResult.timeseries,
 				})
 			}
 
@@ -314,20 +340,25 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			// Verify the number of queries executed
 			require.EqualValues(t, len(queryData.query), callCount.Load())
 
-			// Ensure the time range passed down to the queryable is the expected one (skip for concurrent queries)
-			if queryData.expectedQueriedStart != -1 {
-				require.Equal(t, queryData.expectedQueriedStart, actualQueriedStart)
-				require.Equal(t, queryData.expectedQueriedEnd, actualQueriedEnd)
+			// Use elements matching to verify the expected time ranges
+			var expectedTimeRanges []queryStartEnd
+			for _, expected := range queryData.expectedResults {
+				expectedTimeRanges = append(expectedTimeRanges, queryStartEnd{
+					start: expected.start,
+					end:   expected.end,
+				})
 			}
+			require.ElementsMatch(t, expectedTimeRanges, actualQueryTimeRanges)
 		})
 	}
 }
 
+type queryStartEnd struct {
+	start int64
+	end   int64
+}
+
 func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
-	type queryStartEnd struct {
-		start int64
-		end   int64
-	}
 	type expectedResult struct {
 		queryStartEnd
 		responses []*prompb.ChunkedReadResponse
