@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
@@ -44,7 +43,7 @@ func main() {
 	level.Warn(util_log.Logger).Log("msg", "The mimir-continuous-test binary you are using is deprecated. Please use the Mimir binary module `mimir -target=continuous-test`.")
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-	if trace, err := tracing.NewFromEnv("mimir-continuous-test", jaegercfg.MaxTagValueLength(16e3)); err != nil {
+	if trace, err := tracing.NewOTelOrJaegerFromEnv("mimir-continuous-test", util_log.Logger); err != nil {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 	} else {
 		defer trace.Close()
@@ -65,7 +64,7 @@ func main() {
 	}
 
 	// Init the client used to write/read to/from Mimir.
-	client, err := continuoustest.NewClient(cfg.Client, logger)
+	client, err := continuoustest.NewClient(cfg.Client, logger, registry)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to initialize client", "err", err.Error())
 		util_log.Flush()

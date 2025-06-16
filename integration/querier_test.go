@@ -333,7 +333,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, blocksBucketName)
+			minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 			memcached := e2ecache.NewMemcached()
 			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
@@ -342,9 +342,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// blocks is stable and easy to assert on.
 			const seriesReplicationFactor = 2
 
-			// Configure the blocks storage to frequently compact TSDB head
-			// and ship blocks to the storage.
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+			// Configure the blocks storage to frequently compact TSDB head and ship blocks to the storage.
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), RulerStorageS3Flags(), map[string]string{
 				"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
 				"-blocks-storage.tsdb.ship-interval":                           "1s",
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
@@ -368,6 +367,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.ring.store":                           "consul",
 				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
+				// Ruler.
+				"-ruler.ring.store":           "consul",
+				"-ruler.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -384,6 +386,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				numTokensPerInstance++          // Distributors ring
 				numTokensPerInstance += 512     // Compactor ring.
 				numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
+				numTokensPerInstance += 128     // Ruler ring.
 
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
@@ -974,7 +977,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	)
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(minio, consul))

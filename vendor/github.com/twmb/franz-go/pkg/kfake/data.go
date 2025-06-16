@@ -2,11 +2,14 @@ package kfake
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"sort"
 	"strconv"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
@@ -362,4 +365,30 @@ func numberConfig(min int, hasMin bool, max int, hasMax bool) func(*string) bool
 		}
 		return true
 	}
+}
+
+func forEachBatchRecord(batch kmsg.RecordBatch, cb func(kmsg.Record) error) error {
+	records, err := kgo.DefaultDecompressor().Decompress(
+		batch.Records,
+		kgo.CompressionCodecType(batch.Attributes&0x0007),
+	)
+	if err != nil {
+		return err
+	}
+	for range batch.NumRecords {
+		rec := kmsg.NewRecord()
+		err := rec.ReadFrom(records)
+		if err != nil {
+			return fmt.Errorf("corrupt batch: %w", err)
+		}
+		if err := cb(rec); err != nil {
+			return err
+		}
+		length, amt := binary.Varint(records)
+		records = records[length+int64(amt):]
+	}
+	if len(records) > 0 {
+		return fmt.Errorf("corrupt batch, extra left over bytes after parsing batch: %v", len(records))
+	}
+	return nil
 }

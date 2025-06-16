@@ -30,10 +30,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
-	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -71,6 +69,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -3117,7 +3116,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -11297,8 +11296,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError("duplicate sample for timestamp 1575043969; overrides not allowed: existing 2, new value 1", model.Time(1575043969), metricLabelAdapters), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -11654,10 +11653,7 @@ type loggerWithBuffer struct {
 }
 
 func newLoggerWithCounter(t *testing.T, buf *bytes.Buffer) *loggerWithBuffer {
-	var lvl dslog.Level
-	require.NoError(t, lvl.Set("info"))
-	logger := dslog.NewGoKitWithWriter(dslog.LogfmtFormat, buf)
-	level.NewFilter(logger, lvl.Option)
+	logger := util_log.MakeLeveledLogger(buf, "info")
 	return &loggerWithBuffer{
 		logger: logger,
 		buf:    buf,

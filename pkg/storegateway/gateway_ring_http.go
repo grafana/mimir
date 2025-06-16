@@ -34,13 +34,13 @@ func writeMessage(w http.ResponseWriter, message string, logger log.Logger) {
 	}
 }
 
-func (c *StoreGateway) RingHandler(w http.ResponseWriter, req *http.Request) {
-	if c.State() != services.Running {
+func (g *StoreGateway) RingHandler(w http.ResponseWriter, req *http.Request) {
+	if g.State() != services.Running {
 		// we cannot read the ring before the store gateway is in Running state,
 		// because that would lead to race condition.
-		writeMessage(w, "Store gateway is not running yet.", c.logger)
+		writeMessage(w, "Store gateway is not running yet.", g.logger)
 		return
 	}
 
-	c.ring.ServeHTTP(w, req)
+	g.ring.ServeHTTP(w, req)
 }

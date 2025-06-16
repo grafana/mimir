@@ -282,10 +282,7 @@ Outer:
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
 			for len(samples) > 0 {
-				m := 5000
-				if len(samples) < m {
-					m = len(samples)
-				}
+				m := min(len(samples), 5000)
 				for i := 0; i < concurrency; i++ {
 					if shards[i] == nil {
 						shards[i] = processors[i].reuseBuf()
@@ -347,10 +344,7 @@ Outer:
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
 			for len(samples) > 0 {
-				m := 5000
-				if len(samples) < m {
-					m = len(samples)
-				}
+				m := min(len(samples), 5000)
 				for i := 0; i < concurrency; i++ {
 					if histogramShards[i] == nil {
 						histogramShards[i] = processors[i].reuseHistogramBuf()
@@ -383,10 +377,7 @@ Outer:
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
 			for len(samples) > 0 {
-				m := 5000
-				if len(samples) < m {
-					m = len(samples)
-				}
+				m := min(len(samples), 5000)
 				for i := 0; i < concurrency; i++ {
 					if histogramShards[i] == nil {
 						histogramShards[i] = processors[i].reuseHistogramBuf()
@@ -878,10 +869,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
 			for len(samples) > 0 {
-				m := 5000
-				if len(samples) < m {
-					m = len(samples)
-				}
+				m := min(len(samples), 5000)
 				for i := 0; i < concurrency; i++ {
 					if shards[i] == nil {
 						shards[i] = processors[i].reuseBuf()
@@ -934,10 +922,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
 			for len(samples) > 0 {
-				m := 5000
-				if len(samples) < m {
-					m = len(samples)
-				}
+				m := min(len(samples), 5000)
 				for i := 0; i < concurrency; i++ {
 					if histogramShards[i] == nil {
 						histogramShards[i] = processors[i].reuseHistogramBuf()
@@ -966,10 +951,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
 			for len(samples) > 0 {
-				m := 5000
-				if len(samples) < m {
-					m = len(samples)
-				}
+				m := min(len(samples), 5000)
 				for i := 0; i < concurrency; i++ {
 					if histogramShards[i] == nil {
 						histogramShards[i] = processors[i].reuseHistogramBuf()

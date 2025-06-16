@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -26,6 +27,8 @@ import (
 func init() {
 	promqlext.ExtendPromQL()
 }
+
+var tracer = otel.Tracer("pkg/streamingpromql")
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -41,10 +44,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
-	}
-
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errors.New("enabling per-step stats not supported by Mimir query engine")
 	}
 
 	if opts.CommonOpts.EnableDelayedNameRemoval {
@@ -66,6 +65,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -75,9 +75,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:         opts.Pedantic,
-		useQueryPlanning: opts.UseQueryPlanning,
-		planner:          planner,
+		pedantic:           opts.Pedantic,
+		eagerLoadSelectors: opts.EagerLoadSelectors,
+		useQueryPlanning:   opts.UseQueryPlanning,
+		planner:            planner,
 	}, nil
 }
 
@@ -86,6 +87,7 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
+	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -99,6 +101,8 @@ type Engine struct {
 	//
 	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
+
+	eagerLoadSelectors bool
 
 	useQueryPlanning bool
 	planner          *QueryPlanner

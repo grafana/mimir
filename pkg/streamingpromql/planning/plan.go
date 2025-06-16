@@ -15,8 +15,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type QueryPlan struct {
@@ -86,10 +86,10 @@ type Node interface {
 
 type OperatorParameters struct {
 	Queryable                storage.Queryable
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
-	Stats                    *types.QueryStats
 	LookbackDelta            time.Duration
+	EagerLoadSelectors       bool
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

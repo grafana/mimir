@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // TestOperator is an InstantVectorOperator used only in tests.
@@ -17,7 +17,7 @@ type TestOperator struct {
 	Series                   []labels.Labels
 	Data                     []types.InstantVectorSeriesData
 	Closed                   bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
@@ -54,12 +54,17 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 	return d, nil
 }
 
-func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) {
+func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	for _, d := range t.Data {
 		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
 	}
 
 	t.Data = nil
+}
+
+func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
 }
 
 func (t *TestOperator) Close() {

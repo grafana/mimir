@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -31,10 +30,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -958,10 +959,11 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	// Create a queryable on the fixtures.
 	queryable := storageSeriesQueryable(series)
+	_, engine := newEngineForTesting(t, querier.MimirEngine)
 
 	// Create a downstream handler serving range queries based on the provided queryable.
 	downstream := &downstreamHandler{
-		engine:    newEngine(),
+		engine:    engine,
 		queryable: queryable,
 	}
 
@@ -1744,9 +1746,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.AddSpanTags(span)
-	}
+	request.AddSpanTags(trace.SpanFromContext(r.Context()))
 
 	response, err := q.handler.Do(r.Context(), request)
 	if err != nil {

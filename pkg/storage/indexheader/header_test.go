@@ -348,7 +348,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	require.NoError(t, err)
 
 	for _, lname := range expLabelNames {
-		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname)
+		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname, nil)
 		require.NoError(t, err)
 
 		valOffsets, err := headerReader.LabelValuesOffsets(ctx, lname, "", nil)

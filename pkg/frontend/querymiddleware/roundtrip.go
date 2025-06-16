@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
@@ -51,6 +52,7 @@ const (
 )
 
 var (
+	tracer                = otel.Tracer("pkg/querymiddleware")
 	labelValuesPathSuffix = regexp.MustCompile(`\/api\/v1\/label\/([^\/]+)\/values$`)
 )
 
@@ -205,11 +207,12 @@ func NewTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
+	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -225,14 +228,11 @@ func newQueryTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
+	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	// Disable concurrency limits for sharded queries.
-	engineOpts.ActiveQueryTracker = nil
-	engine := promql.NewEngine(engineOpts)
-
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
 	parser.EnableExperimentalFunctions = true
@@ -256,6 +256,8 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
+	retryMetrics := newRetryMetrics(registerer)
+
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
 		cfg,
 		log,
@@ -265,8 +267,9 @@ func newQueryTripperware(
 		cacheKeyGenerator,
 		cacheExtractor,
 		engine,
-		engineOpts.NoStepSubqueryIntervalFn,
+		engineOpts,
 		registerer,
+		retryMetrics,
 	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
@@ -288,6 +291,13 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics := next
 		labels := next
 		series := next
+
+		if cfg.MaxRetries > 0 {
+			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
+			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
+			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+		}
 
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
@@ -361,9 +371,10 @@ func newQueryMiddlewares(
 	cacheClient cache.Cache,
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
-	engine *promql.Engine,
-	defaultStepFunc func(rangeMillis int64) int64,
+	engine promql.QueryEngine,
+	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
+	retryMetrics prometheus.Observer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
@@ -376,7 +387,6 @@ func newQueryMiddlewares(
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
-	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -456,7 +466,7 @@ func newQueryMiddlewares(
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newInstrumentMiddleware("spin_off_subqueries", metrics),
-		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
+		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn),
 	)
 
 	if cfg.ShardedQueries {
@@ -512,8 +522,9 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
+		remoteReadMiddleware = append(remoteReadMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
 	}
 
 	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental

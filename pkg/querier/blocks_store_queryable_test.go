@@ -1845,6 +1845,55 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	}
 }
 
+func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
+	const minT = int64(10)
+	const maxT = int64(20)
+
+	block := ulid.MustNew(1, nil)
+	storeSetResponses := []interface{}{
+		map[BlocksStoreClient][]ulid.ULID{
+			&storeGatewayClientMock{
+				remoteAddr: "1.1.1.1",
+				mockedSeriesResponses: generateStreamingResponses([]*storepb.SeriesResponse{
+					mockSeriesResponse(labels.FromStrings(labels.MetricName, "some_metric"), minT, 1),
+					mockHintsResponse(block),
+				}),
+			}: {block},
+		},
+	}
+
+	stores := &blocksStoreSetMock{mockedResponses: storeSetResponses}
+	finder := &blocksFinderMock{}
+	finderResult := bucketindex.Blocks{
+		{ID: block},
+	}
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(finderResult, nil)
+
+	reg := prometheus.NewPedanticRegistry()
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	querier := &blocksStoreQuerier{
+		minT:               minT,
+		maxT:               maxT,
+		finder:             finder,
+		stores:             stores,
+		dynamicReplication: newDynamicReplication(),
+		consistency:        NewBlocksConsistency(0, reg),
+		logger:             log.NewNopLogger(),
+		metrics:            newBlocksStoreQueryableMetrics(reg),
+		limits:             &blocksStoreLimitsMock{},
+	}
+
+	// For simplicity, we close the querier before issuing the Select call, but in the real world,
+	// this would likely happen while the Select call is still in progress (eg. because the query was cancelled).
+	require.NoError(t, querier.Close())
+
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: minT, End: maxT}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	require.EqualError(t, seriesSet.Err(), "querier already closed")
+
+	// We also expect that the background goroutine launched by the stream reader is either never started or stopped correctly, and this should be
+	// caught by VerifyNoLeak in TestMain().
+}
+
 func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhileRunningRequestOnStoreGateway(t *testing.T) {
 	const (
 		tenantID   = "user-1"
@@ -3052,7 +3101,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, storegateway.NewNopDynamicReplication(), finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, storegateway.NewNopDynamicReplication(3), finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck

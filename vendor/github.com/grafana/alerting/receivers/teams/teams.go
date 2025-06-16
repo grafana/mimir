@@ -8,13 +8,15 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -230,16 +232,14 @@ func (i AdaptiveCardOpenURLActionItem) MarshalJSON() ([]byte, error) {
 type Notifier struct {
 	*receivers.Base
 	tmpl     *templates.Template
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	images   images.Provider
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -248,8 +248,9 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 }
 
 func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := tn.GetLogger(ctx)
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, tn.tmpl, as, tn.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, tn.tmpl, as, l, &tmplErr)
 
 	card := NewAdaptiveCard()
 	card.AppendItem(AdaptiveCardTextBlockItem{
@@ -265,7 +266,7 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	})
 
 	var s AdaptiveCardImageSetItem
-	_ = images.WithStoredImages(ctx, tn.log, tn.images,
+	_ = images.WithStoredImages(ctx, l, tn.images,
 		func(_ int, image images.Image) error {
 			if image.URL != "" {
 				s.AppendImage(AdaptiveCardImageItem{URL: image.URL})
@@ -286,7 +287,7 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		Actions: []AdaptiveCardActionItem{
 			AdaptiveCardOpenURLActionItem{
 				Title: "View URL",
-				URL:   receivers.JoinURLPath(tn.tmpl.ExternalURL.String(), "/alerting/list", tn.log),
+				URL:   receivers.JoinURLPath(tn.tmpl.ExternalURL.String(), "/alerting/list", l),
 			},
 		},
 	})
@@ -296,13 +297,13 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 	// This check for tmplErr must happen before templating the URL
 	if tmplErr != nil {
-		tn.log.Warn("failed to template Teams message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Teams message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
 	u := tmpl(tn.settings.URL)
 	if tmplErr != nil {
-		tn.log.Warn("failed to template Teams URL", "error", tmplErr.Error(), "fallback", tn.settings.URL)
+		level.Warn(l).Log("msg", "failed to template Teams URL", "err", tmplErr.Error(), "fallback", tn.settings.URL)
 		u = tn.settings.URL
 	}
 
@@ -322,10 +323,10 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		// response can contain an error message, irrespective of status code (i.e. https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/connectors-using?tabs=cURL#rate-limiting-for-connectors)
 		cmd.Validation = validateOfficeWebhookResponse
 	} else {
-		cmd.Validation = validateResponse(tn.log)
+		cmd.Validation = validateResponse(l)
 	}
 
-	if err := tn.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := tn.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, errors.Wrap(err, "send notification to Teams")
 	}
 
@@ -342,12 +343,12 @@ func validateOfficeWebhookResponse(b []byte, statusCode int) error {
 	return nil
 }
 
-func validateResponse(l logging.Logger) func(b []byte, statusCode int) error {
+func validateResponse(l log.Logger) func(b []byte, statusCode int) error {
 	return func(b []byte, statusCode int) error {
 		if statusCode/100 == 2 {
 			return nil
 		}
-		l.Error("failed to send notification and parse response", "statusCode", statusCode, "body", string(b))
+		level.Error(l).Log("msg", "failed to send notification and parse response", "statusCode", statusCode, "body", string(b))
 		errResponse := errorResponse{}
 		err := json.Unmarshal(b, &errResponse)
 		if err != nil {

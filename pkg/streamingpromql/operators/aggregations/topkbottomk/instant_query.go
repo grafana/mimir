@@ -16,9 +16,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -29,7 +29,7 @@ type InstantQuery struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange
@@ -286,6 +286,13 @@ func (t *InstantQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
+func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if err := t.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return t.Param.Prepare(ctx, params)
+}
+
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
@@ -310,6 +317,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []instantQuerySeries {
 		return make([]instantQuerySeries, 0, size)
 	}),
+	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
 	nil,

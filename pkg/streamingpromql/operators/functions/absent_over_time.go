@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // AbsentOverTime is an operator that implements the absent_over_time() function.
@@ -21,7 +21,7 @@ type AbsentOverTime struct {
 	TimeRange                types.QueryTimeRange
 	Labels                   labels.Labels
 	Inner                    types.RangeVectorOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	presence           []bool
@@ -34,7 +34,7 @@ func NewAbsentOverTime(
 	inner types.RangeVectorOperator,
 	labels labels.Labels,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *AbsentOverTime {
 	return &AbsentOverTime{
@@ -116,6 +116,10 @@ func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSerie
 
 func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
 	return a.expressionPosition
+}
+
+func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return a.Inner.Prepare(ctx, params)
 }
 
 func (a *AbsentOverTime) Close() {

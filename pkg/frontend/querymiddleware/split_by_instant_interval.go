@@ -34,7 +34,7 @@ type splitInstantQueryByIntervalMiddleware struct {
 	limits Limits
 	logger log.Logger
 
-	engine *promql.Engine
+	engine promql.QueryEngine
 
 	metrics instantQuerySplittingMetrics
 }
@@ -85,7 +85,7 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 func newSplitInstantQueryByIntervalMiddleware(
 	limits Limits,
 	logger log.Logger,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	registerer prometheus.Registerer) MetricsQueryMiddleware {
 	metrics := newInstantQuerySplittingMetrics(registerer)
 
@@ -104,7 +104,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)

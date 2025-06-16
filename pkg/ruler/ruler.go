@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -36,8 +37,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -61,6 +64,8 @@ const (
 	RulerRingKey = "ring"
 )
 
+var tracer = otel.Tracer("pkg/ruler")
+
 type rulesSyncReason string
 
 const (
@@ -81,6 +86,7 @@ const (
 	errAlertingRulesEvaluationDisabled          = "alerting rules evaluation is disabled for user"
 	errMaxRuleGroupsPerUserLimitExceeded        = "per-user rule groups limit (limit: %d actual: %d) exceeded"
 	errMaxRulesPerRuleGroupPerUserLimitExceeded = "per-user rules per rule group limit (limit: %d actual: %d) exceeded"
+	errMinRuleEvaluationIntervalExceeded        = "per-user minimum rule evaluation interval limit (limit: %s actual: %s) exceeded"
 
 	// errors
 	errListAllUser = "unable to list the ruler users"
@@ -347,6 +353,8 @@ type Ruler struct {
 
 	allowedTenants *util.AllowList
 
+	syncBackoffConfig backoff.Config
+
 	registry prometheus.Registerer
 	logger   log.Logger
 }
@@ -369,6 +377,11 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		inboundSyncQueue:  newRulerSyncQueue(cfg.InboundSyncQueuePollInterval),
 		allowedTenants:    util.NewAllowList(cfg.EnabledTenants, cfg.DisabledTenants),
 		metrics:           newRulerMetrics(reg),
+		syncBackoffConfig: backoff.Config{
+			MinBackoff: 3 * time.Second,
+			MaxBackoff: 15 * time.Second,
+			MaxRetries: 3,
+		},
 	}
 
 	ruler.outboundSyncQueueProcessor = newRulerSyncQueueProcessor(ruler.outboundSyncQueue, ruler.notifySyncRules)
@@ -459,7 +472,9 @@ func (r *Ruler) starting(ctx context.Context) (err error) {
 	level.Info(r.logger).Log("msg", "ruler is JOINING in the ring")
 
 	// Here during joining, we can download rules from object storage and sync them to the local rule manager
-	r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+	if err := r.initialSync(ctx); err != nil {
+		return errors.Wrap(err, "unable to do initial sync")
+	}
 
 	if err = r.lifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
 		return errors.Wrapf(err, "switch instance to %s in the ring", ring.ACTIVE)
@@ -539,12 +554,13 @@ func (r *Ruler) run(ctx context.Context) error {
 	defer ringTicker.Stop()
 
 	for {
+		var syncErr error
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-periodicTicker.C:
 			// Sync rules for all users.
-			r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
+			syncErr = r.syncRules(ctx, nil, rulerSyncReasonPeriodic, true)
 		case <-ringTicker.C:
 			// We ignore the error because in case of error it will return an empty
 			// replication set which we use to compare with the previous state.
@@ -552,15 +568,39 @@ func (r *Ruler) run(ctx context.Context) error {
 
 			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
 				ringLastState = currRingState
-				r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
+				syncErr = r.syncRules(ctx, nil, rulerSyncReasonRingChange, true)
 			}
 		case userIDs := <-r.inboundSyncQueue.poll():
 			// Sync rules for users who changed their configs.
-			r.syncRules(ctx, userIDs, rulerSyncReasonAPIChange, false)
+			syncErr = r.syncRules(ctx, userIDs, rulerSyncReasonAPIChange, false)
 		case err := <-r.subservicesWatcher.Chan():
 			return errors.Wrap(err, "ruler subservice failed")
 		}
+		if syncErr != nil {
+			level.Error(r.logger).Log("msg", "unable to sync rules", "err", syncErr)
+		}
 	}
+}
+
+func (r *Ruler) initialSync(ctx context.Context) error {
+	boff := backoff.New(ctx, r.syncBackoffConfig)
+
+	var lastErr error
+	for boff.Ongoing() {
+		if lastErr != nil {
+			level.Warn(r.logger).Log("msg", "unable to do initial sync; will retry", "err", lastErr, "num_retries", boff.NumRetries())
+		}
+
+		lastErr = r.syncRules(ctx, nil, rulerSyncReasonInitial, true)
+		if lastErr == nil {
+			return nil
+		}
+		boff.Wait()
+	}
+	if lastErr == nil {
+		return fmt.Errorf("initial sync: %w", boff.Err())
+	}
+	return lastErr
 }
 
 // syncRules synchronises the rules managed by this ruler instance.
@@ -569,7 +609,7 @@ func (r *Ruler) run(ctx context.Context) error {
 //
 // It's not safe to call this function concurrently.
 // We expect this function is only called from Ruler.run().
-func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) {
+func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyncReason, cacheLookupEnabled bool) error {
 	var (
 		configs   map[string]rulespb.RuleGroupList
 		err       error
@@ -589,19 +629,19 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 		configs, err = r.listRuleGroupsToSyncForAllUsers(ctx, reason, cacheLookupEnabled)
 	}
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to list rules to sync", "err", err)
-		return
+		return fmt.Errorf("list rules to sync: %w", err)
 	}
 
 	// Load rule groups to sync.
 	configs, err = r.loadRuleGroupsToSync(ctx, configs)
 	if err != nil {
-		level.Error(r.logger).Log("msg", "unable to load rules to sync", "err", err)
-		return
+		return fmt.Errorf("load rules to sync: %w", err)
 	}
 
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
 	configs = filterRuleGroupsByEnabled(configs, r.limits, r.logger)
+	// Apply any changes required by tenant limits.
+	configs = applyRuleGroupLimits(configs, r.limits, r.cfg, r.logger)
 
 	// Sync the rule groups.
 	if len(userIDs) > 0 {
@@ -625,6 +665,7 @@ func (r *Ruler) syncRules(ctx context.Context, userIDs []string, reason rulesSyn
 		// This will also delete local group files for users that are no longer in 'configs' map.
 		r.manager.SyncFullRuleGroups(ctx, configs)
 	}
+	return nil
 }
 
 // loadRuleGroupsToSync loads the input rule group configs. This function should be used only when
@@ -649,7 +690,7 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 	return configs, nil
 }
 
-// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synched by this ruler instance.
+// listRuleGroupsToSyncForAllUsers lists all the rule groups that should be synced by this ruler instance.
 // This function should be used only when syncing the rule groups, because it expects the
 // storage view to be eventually consistent (due to optional caching).
 func (r *Ruler) listRuleGroupsToSyncForAllUsers(ctx context.Context, reason rulesSyncReason, cacheLookupEnabled bool) (result map[string]rulespb.RuleGroupList, err error) {
@@ -870,15 +911,9 @@ func filterRuleGroupByEnabled(group *rulespb.RuleGroupDesc, recordingEnabled, al
 	}
 
 	// Create a copy of the group and remove some rules.
-	filtered = &rulespb.RuleGroupDesc{
-		Name:          group.Name,
-		Namespace:     group.Namespace,
-		Interval:      group.Interval,
-		Rules:         make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules),
-		User:          group.User,
-		Options:       group.Options,
-		SourceTenants: group.SourceTenants,
-	}
+	filtered = &rulespb.RuleGroupDesc{}
+	*filtered = *group
+	filtered.Rules = make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules)
 
 	for _, rule := range group.Rules {
 		if rule.Record != "" && !recordingEnabled {
@@ -958,11 +993,60 @@ func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, miss
 	return filtered
 }
 
+func applyRuleGroupLimits(configs map[string]rulespb.RuleGroupList, limits RulesLimits, rulerCfg Config, logger log.Logger) map[string]rulespb.RuleGroupList {
+	if configs == nil {
+		return nil
+	}
+
+	adjusted := map[string]rulespb.RuleGroupList{}
+	for userID, groups := range configs {
+		adjusted[userID] = groups
+
+		tenantMinInterval := limits.RulerMinRuleEvaluationInterval(userID)
+		if tenantMinInterval <= 0 {
+			continue
+		}
+		if tenantMinInterval > rulerCfg.EvaluationInterval {
+			level.Warn(logger).Log(
+				"msg", "tenant min evaluation interval is higher than ruler default evaluation interval, this is a misconfiguration. the min evaluation interval will take precedence",
+				"user", userID,
+				"min_interval", tenantMinInterval,
+				"default_interval", rulerCfg.EvaluationInterval,
+			)
+		}
+
+		for _, group := range adjusted[userID] {
+			// 0 indicates to fall back to the default "ruler.evaluation-interval"
+			// If that's smaller than the min interval, we respect the min interval over everything and stop allowing blank intervals through.
+			if group.Interval == 0 && (tenantMinInterval <= rulerCfg.EvaluationInterval) {
+				continue
+			}
+			if group.Interval < tenantMinInterval {
+				level.Info(logger).Log(
+					"msg", "adjusting rule group interval because it's below the tenant's evaluation interval",
+					"user", userID,
+					"rule_group", group.Name,
+					"interval", group.Interval,
+					"min_interval", tenantMinInterval,
+				)
+				group.Interval = tenantMinInterval
+			}
+		}
+	}
+	return adjusted
+}
+
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
 func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) (*RulesResponse, string, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("no user id found in context")
+	}
+
+	// Return an error when rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
+	// to tell if a tenant doesn't have any rules loaded, or the tenant is limited from evaluating the rules.
+	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
+		return nil, "", errTenantRuleEvaluationDisabled
 	}
 
 	rr := ring.ReadRing(r.ring)
@@ -1057,12 +1141,6 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	// Return an error rule evaluation is completely disabled for the tenant. Otherwise, the caller has no way
-	// to tell if a tenant doesn't have any rules loaded, or the tenant is blocked from evaluating the rules.
-	if !r.limits.RulerRecordingRulesEvaluationEnabled(userID) && !r.limits.RulerAlertingRulesEvaluationEnabled(userID) {
-		return nil, errTenantRuleEvaluationDisabled
-	}
-
 	groupDescs, err := r.getLocalRules(ctx, userID, *in)
 	if err != nil {
 		return nil, err
@@ -1102,7 +1180,7 @@ func (fs StringFilterSet) IsFiltered(val string) bool {
 }
 
 func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesRequest) ([]*GroupStateDesc, error) {
-	spanLog, _ := spanlogger.NewWithLogger(ctx, r.logger, "Ruler.getLocalRules")
+	spanLog, _ := spanlogger.New(ctx, r.logger, tracer, "Ruler.getLocalRules")
 	defer spanLog.Finish()
 
 	// Get the rule groups from the manager. We track the time it takes because the manager needs to
@@ -1305,6 +1383,23 @@ func (r *Ruler) AssertMaxRulesPerRuleGroup(userID, namespace string, rules int) 
 	return fmt.Errorf(errMaxRulesPerRuleGroupPerUserLimitExceeded, limit, rules)
 }
 
+func (r *Ruler) AssertMinRuleEvaluationInterval(userID string, interval time.Duration) error {
+	limit := r.limits.RulerMinRuleEvaluationInterval(userID)
+
+	if limit <= 0 {
+		return nil
+	}
+
+	// Zero or blank interval means to fall back to "ruler.evaluation-interval" - not actually use zero. It's an allowed value.
+	if interval == 0 {
+		return nil
+	}
+	if interval >= limit {
+		return nil
+	}
+	return fmt.Errorf(errMinRuleEvaluationIntervalExceeded, model.Duration(limit).String(), model.Duration(interval).String())
+}
+
 func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Request) {
 	logger := util_log.WithContext(req.Context(), r.logger)
 
@@ -1504,9 +1599,14 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 }
 
 // forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
+// This ignores rulers in non-op states - we don't want to error if there's a ruler in other states as those shouldn't
+// be processing rules. It is _technically_ possible for rulers that seem to be in other states to actually be
+// processing rules due to the eventual consistency of the ring, so this is a "best-effort" attempt to get and iterate
+// through all the rulers.
 // The execution breaks on first error returned by f().
 func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
-	rulers, err := ring.GetReplicationSetForOperation(op)
+	// GetSubringForOperationStates filters out instances in non-op states.
+	rulers, err := ring.GetSubringForOperationStates(op).GetReplicationSetForOperation(op)
 	if err != nil {
 		return err
 	}

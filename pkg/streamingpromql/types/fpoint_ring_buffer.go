@@ -7,7 +7,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -19,14 +19,14 @@ import (
 // (see: https://github.com/grafana/mimir/pull/8508#discussion_r1654668995)
 
 type FPointRingBuffer struct {
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	points                   []promql.FPoint
 	pointsIndexMask          int // Bitmask used to calculate indices into points efficiently. Computing modulo is relatively expensive, but points is always sized as a power of two, so we can a bitmask to calculate remainders cheaply.
 	firstIndex               int // Index into 'points' of first point in this buffer.
 	size                     int // Number of points in this buffer.
 }
 
-func NewFPointRingBuffer(memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *FPointRingBuffer {
+func NewFPointRingBuffer(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *FPointRingBuffer {
 	return &FPointRingBuffer{memoryConsumptionTracker: memoryConsumptionTracker}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -19,6 +20,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/ingester/client")
 
 // StreamingSeries represents a single series used in evaluation of a query where the chunks for the series
 // are streamed from one or more ingesters.
@@ -34,6 +37,24 @@ type StreamingSeriesSource struct {
 	SeriesIndex  uint64
 }
 
+type memoryConsumptionTracker interface {
+	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
+	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
+}
+
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+	return &SeriesChunksStreamReader{
+		ctx:                 ctx,
+		client:              client,
+		expectedSeriesCount: expectedSeriesCount,
+		queryLimiter:        queryLimiter,
+		memoryTracker:       memoryTracker,
+		cleanup:             cleanup,
+		log:                 log,
+		ingesterName:        ingesterName,
+	}
+}
+
 // SeriesChunksStreamReader is responsible for managing the streaming of chunks from an ingester and buffering
 // chunks in memory until they are consumed by the PromQL engine.
 type SeriesChunksStreamReader struct {
@@ -41,6 +62,7 @@ type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
+	memoryTracker       memoryConsumptionTracker
 	cleanup             func()
 	log                 log.Logger
 
@@ -56,18 +78,6 @@ type SeriesChunksStreamReader struct {
 
 func (s *SeriesChunksStreamReader) GetName() string {
 	return s.ingesterName
-}
-
-func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
-	return &SeriesChunksStreamReader{
-		ctx:                 ctx,
-		client:              client,
-		expectedSeriesCount: expectedSeriesCount,
-		queryLimiter:        queryLimiter,
-		cleanup:             cleanup,
-		log:                 log,
-		ingesterName:        ingesterName,
-	}
 }
 
 // Close cleans up all resources associated with this SeriesChunksStreamReader, except any
@@ -87,9 +97,24 @@ func (s *SeriesChunksStreamReader) Close() {
 // It is safe to call FreeBuffer multiple times, or to alternate GetChunks and FreeBuffer calls.
 func (s *SeriesChunksStreamReader) FreeBuffer() {
 	if s.lastMessage != nil {
+		s.memoryTracker.DecreaseMemoryConsumption(uint64(s.lastMessage.Size()), limiter.IngesterChunks)
 		s.lastMessage.FreeBuffer()
 		s.lastMessage = nil
 	}
+}
+
+func (s *SeriesChunksStreamReader) setLastMessage(msg *QueryStreamResponse) error {
+	// We should only attempt to store a message if there is no previous message or, we have
+	// already cleaned up the previous message. Return an error to make it obvious that this
+	// is a bug in Mimir.
+	if s.lastMessage != nil {
+		return fmt.Errorf("must call FreeBuffer() before storing the next message - this indicates a bug")
+	}
+	if err := s.memoryTracker.IncreaseMemoryConsumption(uint64(msg.Size()), limiter.IngesterChunks); err != nil {
+		return err
+	}
+	s.lastMessage = msg
+	return nil
 }
 
 // StartBuffering begins streaming series' chunks from the ingester associated with
@@ -104,7 +129,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	s.errorChan = make(chan error, 1)
 
 	go func() {
-		log, _ := spanlogger.NewWithLogger(s.client.Context(), s.log, "SeriesChunksStreamReader.StartBuffering")
+		log, _ := spanlogger.New(s.client.Context(), s.log, tracer, "SeriesChunksStreamReader.StartBuffering")
 
 		defer func() {
 			s.Close()
@@ -273,7 +298,12 @@ func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
 		return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 	}
 
-	s.lastMessage = msg
+	// It's possible that loading this batch of chunks has put us over the memory limit
+	// for this query. Return the error in that case.
+	if err := s.setLastMessage(msg); err != nil {
+		return err
+	}
+
 	s.seriesBatch = msg.StreamingSeriesChunks
 	return nil
 }

@@ -227,7 +227,7 @@ local filename = 'mimir-slow-queries.json';
           ],
 
           local bytesFields = ['fetched_chunk_bytes', 'fetched_index_bytes', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes'],
-          local shortFields = ['estimated_series_count', 'fetched_chunks_count', 'fetched_series_count'],
+          local shortFields = ['estimated_series_count', 'fetched_chunks_count', 'fetched_series_count', 'samples_processed', 'samples_processed_cache_adjusted'],
           local secondsFields = ['Time span', 'Duration', 'Step', 'queue_time_seconds', 'query_wall_time_seconds'],
 
           // Use Grafana transformations to display fields in a table.

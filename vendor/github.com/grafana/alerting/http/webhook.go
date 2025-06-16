@@ -7,20 +7,22 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/receivers"
 )
 
 type ForkedSender struct {
-	cli receivers.WebhookSender
+	cli *Client
 }
 
-func NewForkedSender(cli receivers.WebhookSender) *ForkedSender {
+func NewForkedSender(cli *Client) *ForkedSender {
 	return &ForkedSender{cli: cli}
 }
 
-func (f ForkedSender) SendWebhook(ctx context.Context, cmd *receivers.SendWebhookSettings) error {
+func (f ForkedSender) SendWebhook(ctx context.Context, l log.Logger, cmd *receivers.SendWebhookSettings) error {
 	if cmd.HTTPMethod != "GET" {
-		return f.cli.SendWebhook(ctx, cmd)
+		return f.cli.SendWebhook(ctx, l, cmd)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, cmd.HTTPMethod, cmd.URL, nil)
@@ -43,7 +45,7 @@ func (f ForkedSender) SendWebhook(ctx context.Context, cmd *receivers.SendWebhoo
 		request.Header.Set(k, v)
 	}
 
-	resp, err := NewTLSClient(cmd.TLSConfig).Do(request)
+	resp, err := NewTLSClient(cmd.TLSConfig, f.cli.cfg.dialer.DialContext).Do(request)
 	if err != nil {
 		return redactURL(err)
 	}

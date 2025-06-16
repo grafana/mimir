@@ -455,35 +455,35 @@ func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfi
 	}
 
 	if l := limits.AlertmanagerMaxTemplatesCount(user); l > 0 && len(grafanaConfig.Templates) > l {
-		// Permissive limit to first verify impact on existing users.
-		// TODO: Make this strict.
-		level.Warn(logger).Log("msg", "too many templates in configuration", "user", user, "templates", len(grafanaConfig.Templates), "limit", l)
+		return fmt.Errorf(errTooManyTemplates, len(grafanaConfig.Templates), l)
 	}
 
 	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
-		// Permissive limit to first verify impact on existing users.
-		// TODO: Make this strict.
-		for name, tmpl := range grafanaConfig.Templates {
+		for _, tmpl := range grafanaConfig.Templates {
 			if size := len(tmpl.Body); size > maxSize {
-				level.Warn(logger).Log("msg", "template too big", "user", user, "template", name, "size", size, "limit", maxSize)
+				return fmt.Errorf(errTemplateTooBig, tmpl.GetFilename(), size, maxSize)
 			}
 		}
 	}
 
 	// Validate template files.
-	tmpls := make([]string, 0, len(grafanaConfig.Templates))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0, len(grafanaConfig.Templates))
 	for _, tmpl := range grafanaConfig.Templates {
-		tmpls = append(tmpls, tmpl.Body)
+		tmpls = append(tmpls, alertingTemplates.TemplateDefinition{
+			Name:     tmpl.Filename,
+			Template: tmpl.Body,
+			Kind:     alertingTemplates.GrafanaKind,
+		})
 	}
-
-	tmpl, err := alertingTemplates.FromContent(tmpls, WithCustomFunctions(user))
+	factory, err := alertingTemplates.NewFactory(tmpls, logger, "http://localhost", user) // use fake URL to avoid errors.
 	if err != nil {
 		return err
 	}
+	cached := alertingTemplates.NewCachedFactory(factory)
 
 	noopWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier { return notifier }
 	for _, rcv := range userAmConfig.Receivers {
-		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), tmpl, logger, noopWrapper)
+		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, noopWrapper)
 		if err != nil {
 			return err
 		}

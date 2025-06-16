@@ -47,6 +47,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -139,6 +142,9 @@ func TestDistributor_Push(t *testing.T) {
 		expectedMetrics       string
 		timeOut               bool
 		configure             func(*Config)
+		customRequest         *mimirpb.WriteRequest
+		// Expect trace event from sample deduplication due to conflicting timestamps?
+		expectDedupTraceEvent bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -235,8 +241,35 @@ func TestDistributor_Push(t *testing.T) {
 				cfg.ReusableIngesterPushWorkers = 2
 			},
 		},
+		"A push with duplicate timestamps should deduplicate and emit trace events": {
+			numIngesters:          3,
+			happyIngesters:        3,
+			metricNames:           []string{"cortex_discarded_samples_total", lastSeenTimestamp},
+			expectDedupTraceEvent: true,
+			// Custom request with two different samples with same timestamp.
+			customRequest: makeWriteRequestWith(
+				makeTimeseries([]string{labels.MetricName, "test_metric", "job", "test"},
+					append(makeSamples(10000, 1.0), append(makeSamples(20000, 1.0), makeSamples(20000, 2.0)...)...), nil, nil),
+			),
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample_duplicate_timestamp",user="user"} 1
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 20
+			`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			spanRecorder := tracetest.NewSpanRecorder()
+			tracer := trace.NewTracerProvider(trace.WithSpanProcessor(spanRecorder)).Tracer("test")
+			const spanName = "test_push_operation"
+			ctx, span := tracer.Start(ctx, spanName)
+			t.Cleanup(func() {
+				span.End()
+			})
+
 			limits := prepareDefaultLimits()
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
@@ -250,7 +283,12 @@ func TestDistributor_Push(t *testing.T) {
 				configure:       tc.configure,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
+			var request *mimirpb.WriteRequest
+			if tc.customRequest != nil {
+				request = tc.customRequest
+			} else {
+				request = makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
+			}
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedErrorContains == nil && tc.expectedGRPCError == nil {
@@ -277,8 +315,49 @@ func TestDistributor_Push(t *testing.T) {
 					return testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), tc.metricNames...)
 				})
 			}
+
+			const eventName = "Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]"
+			span.End()
+			event, found := findSpanEvent(t, spanRecorder, spanName, eventName)
+			if !tc.expectDedupTraceEvent {
+				require.False(t, found, "Expected no sample deduplication trace events")
+			} else {
+				require.True(t, found, "Expected a sample deduplication trace event")
+				verifySpanEvent(t, event, eventName, []attribute.KeyValue{
+					attribute.String("metric", "test_metric"),
+					attribute.Int64("count", 1),
+				})
+			}
 		})
 	}
+}
+
+func verifySpanEvent(t *testing.T, event trace.Event, name string, attributes []attribute.KeyValue) {
+	t.Helper()
+
+	assert.Equal(t, name, event.Name)
+	assert.Equal(t, attributes, event.Attributes)
+}
+
+func findSpanEvent(t *testing.T, spanRecorder *tracetest.SpanRecorder, spanName, eventName string) (trace.Event, bool) {
+	t.Helper()
+
+	var event trace.Event
+	for _, sp := range spanRecorder.Ended() {
+		if sp.Name() != spanName {
+			continue
+		}
+
+		for _, ev := range sp.Events() {
+			if ev.Name != eventName {
+				continue
+			}
+			require.Emptyf(t, event.Name, "Expected only one event with name %q", eventName)
+
+			event = ev
+		}
+	}
+	return event, event.Name != ""
 }
 
 func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
@@ -1524,7 +1603,7 @@ func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 	}
 }
 
-func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
+func TestDistributor_ValidateSeries(t *testing.T) {
 	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
 
 	testCases := map[string]struct {
@@ -1590,8 +1669,7 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
-				require.False(t, shouldRemove)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 				require.NoError(t, err)
 			}
 
@@ -1767,7 +1845,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					_, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -2010,9 +2088,8 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
 				assert.NoError(t, err)
-				assert.False(t, shouldRemove)
 			}
 
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -2118,13 +2195,11 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
-					require.True(t, shouldRemove)
 				} else {
 					assert.NoError(t, err)
-					assert.False(t, shouldRemove)
 				}
 			}
 			if tc.expectedError == nil {
@@ -7120,8 +7195,8 @@ func newMockIngesterPusherAdapter(ingester *mockIngester) *mockIngesterPusherAda
 	}
 }
 
-// PushToStorage implements ingest.Pusher.
-func (c *mockIngesterPusherAdapter) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
+// PushToStorageAndReleaseRequest implements ingest.Pusher.
+func (c *mockIngesterPusherAdapter) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
 	_, err := c.ingester.Push(ctx, req)
 	return err
 }

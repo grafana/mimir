@@ -49,7 +49,7 @@ type TSDBBuilder struct {
 // We use this only to identify the soft errors.
 var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
 	func() {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
-	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
+	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(string, int64, []mimirpb.LabelAdapter) {},
 	func([]mimirpb.LabelAdapter) {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
@@ -94,7 +94,7 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 	}
 
 	// TODO(codesome): see if we can skip parsing exemplars. They are not persisted in the block so we can save some parsing here.
-	err = req.Unmarshal(rec.Value)
+	err = ingest.DeserializeRecordContent(rec.Value, &req, version)
 	if err != nil {
 		return false, fmt.Errorf("unmarshal record key %s: %w", rec.Key, err)
 	}

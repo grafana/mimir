@@ -22,7 +22,6 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -30,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -411,11 +410,10 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-		accumulator.TraceId = jaegerTraceID(ctx)
+		accumulator.TraceId = otelTraceID(ctx)
 		// Calculate the samples processed per step in the subrange of the extent that is being merged with the accumulator.
 		samples := extractSamplesProcessedPerStep(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
 		accumulator.SamplesProcessedPerStep = mergeSamplesProcessedPerStep(accumulator.SamplesProcessedPerStep, samples)
-
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
@@ -485,7 +483,7 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 		Start:                   req.GetStart(),
 		End:                     req.GetEnd(),
 		Response:                marshalled,
-		TraceId:                 jaegerTraceID(ctx),
+		TraceId:                 otelTraceID(ctx),
 		QueryTimestampMs:        queryTime.UnixMilli(),
 		SamplesProcessedPerStep: approximateSamplesProcessedPerStep(req.GetStart(), req.GetEnd(), req.GetStep(), samplesProcessed),
 	}, nil
@@ -597,18 +595,12 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	return extents, nil
 }
 
-func jaegerTraceID(ctx context.Context) string {
-	span := opentracing.SpanFromContext(ctx)
-	if span == nil {
+func otelTraceID(ctx context.Context) string {
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	if !sc.IsValid() {
 		return ""
 	}
-
-	spanContext, ok := span.Context().(jaeger.SpanContext)
-	if !ok {
-		return ""
-	}
-
-	return spanContext.TraceID().String()
+	return sc.TraceID().String()
 }
 
 func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {

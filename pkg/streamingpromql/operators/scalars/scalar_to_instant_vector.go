@@ -8,14 +8,14 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // ScalarToInstantVector is an operator that implements the vector() function.
 type ScalarToInstantVector struct {
 	Scalar                   types.ScalarOperator
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 	consumed           bool
@@ -23,7 +23,7 @@ type ScalarToInstantVector struct {
 
 var _ types.InstantVectorOperator = &ScalarToInstantVector{}
 
-func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *ScalarToInstantVector {
+func NewScalarToInstantVector(scalar types.ScalarOperator, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *ScalarToInstantVector {
 	return &ScalarToInstantVector{
 		Scalar:                   scalar,
 		expressionPosition:       expressionPosition,
@@ -63,6 +63,10 @@ func (s *ScalarToInstantVector) NextSeries(ctx context.Context) (types.InstantVe
 
 func (s *ScalarToInstantVector) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *ScalarToInstantVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return s.Scalar.Prepare(ctx, params)
 }
 
 func (s *ScalarToInstantVector) Close() {

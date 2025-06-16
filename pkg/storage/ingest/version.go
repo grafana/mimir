@@ -13,7 +13,58 @@ import (
 
 const (
 	RecordVersionHeaderKey = "Version"
-	LatestRecordVersion    = 1
+	LatestRecordVersion    = 2
+	V2RecordSymbolOffset   = 64
+)
+
+var (
+	// Bake in a shared symbols table for extremely common symbols.
+	// The index corresponds to the symbol value.
+	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
+	// Note: V2 is not yet stabilized.
+	V2CommonSymbols = []string{
+		// Prometheus/Mimir symbols
+		"__name__",
+		"__aggregation__",
+		"<aggregated>",
+		"le",
+		"component",
+		"cortex_request_duration_seconds_bucket",
+		"storage_operation_duration_seconds_bucket",
+		// Grafana Labs products
+		"grafana",
+		"asserts_env",
+		"asserts_request_context",
+		"asserts_source",
+		"asserts_entity_type",
+		"asserts_request_type",
+		// General symbols
+		"name",
+		"image",
+		// Kubernetes symbols
+		"cluster",
+		"namespace",
+		"pod",
+		"job",
+		"instance",
+		"container",
+		"replicaset",
+		// Networking, HTTP
+		"interface",
+		"status_code",
+		"resource",
+		"operation",
+		"method",
+		// Common tools
+		"kube-system",
+		"kube-system/cadvisor",
+		"node-exporter",
+		"node-exporter/node-exporter",
+		"kube-system/kubelet",
+		"kube-system/node-local-dns",
+		"kube-state-metrics/kube-state-metrics",
+		"default/kubernetes",
+	}
 )
 
 func ValidateRecordVersion(version int) error {
@@ -83,4 +134,29 @@ func (v versionOneRecordSerializer) ToRecords(partitionID int32, tenantID string
 		r.Headers = append(r.Headers, RecordVersionHeader(1))
 	}
 	return records, nil
+}
+
+func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, version int) error {
+	switch version {
+	case 0:
+		// V0 is body-compatible with V1.
+		fallthrough
+	case 1:
+		return deserializeRecordContentV1(content, wr)
+	case 2:
+		return deserializeRecordContentV2(content, wr)
+	default:
+		return fmt.Errorf("received a record with an unsupported version: %d, max supported version: %d", version, LatestRecordVersion)
+	}
+}
+
+func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest) error {
+	return wr.Unmarshal(content)
+}
+
+func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
+	wr.UnmarshalFromRW2 = true
+	wr.RW2SymbolOffset = V2RecordSymbolOffset
+	wr.RW2CommonSymbols = V2CommonSymbols
+	return wr.Unmarshal(content)
 }
