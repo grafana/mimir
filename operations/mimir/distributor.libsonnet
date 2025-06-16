@@ -24,8 +24,8 @@
 
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
-      'distributor.ha-tracker.store': 'etcd',
-      'distributor.ha-tracker.etcd.endpoints': 'etcd-client.%(namespace)s.svc.%(cluster_domain)s:2379' % $._config,
+      'distributor.ha-tracker.store': 'memberlist',
+      'distributor.ha-tracker.etcd.endpoints': null,
       'distributor.ha-tracker.prefix': 'prom_ha/',
 
       // The memory requests are 2G, and we barely use 100M.

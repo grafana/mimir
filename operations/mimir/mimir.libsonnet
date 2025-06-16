@@ -18,7 +18,6 @@
 (import 'overrides-exporter.libsonnet') +
 
 // Supporting services
-(import 'etcd.libsonnet') +
 (import 'memcached.libsonnet') +
 
 // Mimir features
