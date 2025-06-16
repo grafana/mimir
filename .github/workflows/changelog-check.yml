@@ -11,15 +11,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check if changelog-not-needed label exists
+      - name: Check if changelog should be skipped
         id: check-label
         run: |
-          if gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' | grep -q "changelog-not-needed"; then
+          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name')
+          
+          if echo "$LABELS" | grep -qE "(changelog-not-needed|dependency-update|vendored-mimir-prometheus-update|helm-weekly-release)"; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "PR has changelog-not-needed label, skipping changelog check"
+            echo "PR has a label that skips changelog check, skipping changelog check"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
-            echo "PR does not have changelog-not-needed label, will check changelog"
+            echo "PR does not have any labels that skip changelog check, will check changelog"
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -32,6 +34,6 @@ jobs:
             echo "✅ PR #${PR_NUMBER} is referenced in CHANGELOG.md"
           else
             echo "❌ PR #${PR_NUMBER} is not referenced in CHANGELOG.md"
-            echo "Please add an entry for this PR in CHANGELOG.md or add the 'changelog-not-needed' label if this change doesn't require a changelog entry."
+            echo "Please add an entry for this PR in CHANGELOG.md or add one of these labels if this change doesn't require a changelog entry: 'changelog-not-needed', 'dependency-update', 'vendored-mimir-prometheus-update', 'helm-weekly-release'"
             exit 1
           fi
