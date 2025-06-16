@@ -77,36 +77,6 @@ global:
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen, federation-frontend
   podLabels: {}
 
-# -- TLS configuration for all Mimir components
-tls:
-  # -- Enable TLS for all Mimir components
-  enabled: false
-  
-  # -- TLS certificate configuration
-  cert:
-    # -- Path to the server certificate file
-    file: /etc/mimir/tls/server.crt
-    # -- Path to the server key file
-    key: /etc/mimir/tls/server.key
-    # -- Path to the CA certificate file
-    ca: /etc/mimir/tls/ca.crt
-  
-  # -- Skip TLS verification (not recommended for production)
-  insecureSkipVerify: false
-  # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
-  clientAuthType: RequestClientCert
-  
-  # -- TLS secret configuration
-  secret:
-    # -- Name of the Kubernetes secret containing TLS certificates
-    name: mimir-tls
-    # -- Key in the secret containing the server certificate
-    certKey: tls.crt
-    # -- Key in the secret containing the server key
-    keyKey: tls.key
-    # -- Key in the secret containing the CA certificate
-    caKey: ca.crt
-
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
@@ -156,10 +126,14 @@ mimir:
       filepath: /active-query-tracker/activity.log
     
     server:
+    {{- if .Values.tls.mimir.enabled }}
+      tls_cipher_suites: {{ .Values.tls.mimir.server.tls_cipher_suites }}
+      tls_min_version: {{ .Values.tls.mimir.server.tls_min_version }}
       http_tls_config:
         {{- include "mimir.serverTlsConfig" . | nindent 4 }}
       grpc_tls_config:
         {{- include "mimir.serverTlsConfig" . | nindent 4 }}
+    {{- end }}
 
     {{- if .Values.enterprise.enabled }}
     admin_api:
@@ -186,6 +160,7 @@ mimir:
         cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.adminCacheAddress" . }}
             max_item_size: {{ mul (index .Values "admin-cache").maxItemMemory 1024 1024 }}
       {{- end }}
@@ -232,6 +207,7 @@ mimir:
         chunks_cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.chunksCacheAddress" . }}
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
             timeout: 750ms
@@ -241,6 +217,7 @@ mimir:
         index_cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
             timeout: 750ms
@@ -250,6 +227,7 @@ mimir:
         metadata_cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.metadataCacheAddress" . }}
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
             max_idle_connections: 150
@@ -296,6 +274,7 @@ mimir:
       results_cache:
         backend: memcached
         memcached:
+          {{- include "memcached.clientTlsConfig" . | nindent 6 }}
           timeout: 500ms
           addresses: {{ include "mimir.resultsCacheAddress" . }}
           max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
@@ -459,6 +438,7 @@ mimir:
       cache:
         backend: memcached
         memcached:
+          {{- include "memcached.clientTlsConfig" . | nindent 6 }}
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
           timeout: 500ms
@@ -491,11 +471,12 @@ mimir:
 
       write_proxy:
         distributor_client:
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
           address: dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
 
       querier:
         remote_read:
-          query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
+          query_address: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
         proxy_bad_requests: false
 
         schemas:
@@ -503,10 +484,12 @@ mimir:
           default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
         aggregation_cache:
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-aggr-cache.{{ .Release.Namespace}}.svc:11211
             timeout: 1s
         metric_name_cache:
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
             timeout: 1s
     {{- end}}
@@ -5016,3 +4999,56 @@ continuous_test:
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
+
+# # -- TLS configuration for all internal components
+tls:
+  mimir:
+    # -- Enable TLS for all Mimir components
+    enabled: false
+    server:
+      config:
+        # -- Path to the server certificate file
+        cert_file: ""
+        # -- Path to the server key file
+        key_file: ""
+        # -- Path to the CA certificate file
+        client_ca_file: ""
+        # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
+        client_auth_type: ""
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used
+      tls_cipher_suites: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      tls_min_version: ""
+    client:
+      # -- Path to the client certificate, which will be used for authenticating with the server
+      tls_cert_path: ""
+      # -- Path to the key for the client certificate
+      tls_key_path: ""
+      # -- Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used
+      tls_ca_path: ""
+      # -- Override the expected name on the server certificate
+      tls_server_name: ""
+      # -- Skip validating server certificate.
+      tls_insecure_skip_verify: false
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used
+      tls_cipher_suites: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      tls_min_version: ""
+  memcached:
+    enabled: false
+    cert_path: ""
+    key_path: ""
+    ca_path: ""
+    insecureSkipVerify: false
+    clientAuthType: ""
+  
+  # -- TLS secret configuration
+  secret:
+    # -- Name of the Kubernetes secret containing TLS certificates
+    name: ""
+    # -- Key in the secret containing the server certificate
+    certKey: tls.crt
+    # -- Key in the secret containing the server key
+    keyKey: tls.key
+    # -- Key in the secret containing the CA certificate
+    caKey: ca.crt
