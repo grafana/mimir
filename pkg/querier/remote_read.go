@@ -212,7 +212,7 @@ func remoteReadStreamedXORChunks(
 				level.Error(logger).Log("msg", "error while streaming remote read response", "err", err)
 			}
 			http.Error(w, err.Error(), code)
-			break
+			return
 		}
 	}
 	w.WriteHeader(http.StatusOK)
