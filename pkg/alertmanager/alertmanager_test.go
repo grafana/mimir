@@ -99,7 +99,7 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil, false))
 
 	now := time.Now()
 
@@ -184,7 +184,7 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil, false))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -535,7 +535,7 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil, false))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()
@@ -643,7 +643,6 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
 		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
 		GrafanaAlertmanagerCompatibility: true,
-		GrafanaAlertmanagerTenantSuffix:  suffix,
 	}, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -691,11 +690,12 @@ func TestGrafanaAlertmanager(t *testing.T) {
 	testTemplate := alertingTemplates.TemplateDefinition{
 		Name:     "test",
 		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
 	}
 
 	expectedImageURL := "http://example.com/image.png"
 
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil, true))
 
 	now := time.Now()
 	alert := types.Alert{
@@ -712,8 +712,10 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		},
 		UpdatedAt: now,
 	}
+	expected := testTemplate
+	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
 	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], testTemplate)
+	require.Equal(t, am.templates[0], expected)
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:
@@ -737,12 +739,13 @@ func TestGrafanaAlertmanager(t *testing.T) {
 	cfg, err = definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil, true))
 
 	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no non-empty receivers.
 	testTemplate = alertingTemplates.TemplateDefinition{
 		Name:     "test",
 		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
 	}
-	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil, true))
 }

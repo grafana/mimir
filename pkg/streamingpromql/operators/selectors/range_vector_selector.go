@@ -161,7 +161,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	m.Stats = params.QueryStats
-	return nil
+	return m.Selector.Prepare(ctx, params)
 }
 
 func (m *RangeVectorSelector) Close() {

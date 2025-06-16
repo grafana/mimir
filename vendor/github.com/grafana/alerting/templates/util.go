@@ -2,12 +2,15 @@ package templates
 
 import (
 	"fmt"
+	tmplhtml "html/template"
 	"sort"
-	"text/template"
+	tmpltext "text/template"
 	"text/template/parse"
+
+	"github.com/prometheus/alertmanager/template"
 )
 
-// TopTemplates returns the name of all templates in tmpl that are not
+// topTemplates returns the name of all templates in tmpl that are not
 // executed from a {{ template "name" }} block.
 //
 // All templates in text/template have a name and some text. In most cases,
@@ -15,16 +18,16 @@ import (
 // the text is parsed when calling tmpl.Parse(text). This text can include
 // actions for the template called "name", but also define other named templates
 // using either {{ block "name" pipeline }}{{ end }} or {{ define "name" }}{{ end }}.
-// TopTemplates returns the names of all such templates, including the template
+// topTemplates returns the names of all such templates, including the template
 // "name", that are not executed from a {{ template "name" }} block and
 // "name" if name contains text other than just template definitions.
-func TopTemplates(tmpl *template.Template) ([]string, error) {
+func topTemplates(tmpl *tmpltext.Template) ([]string, error) {
 	// definedTmpls is the list of all named templates in tmpl, including tmpl.
 	definedTmpls := tmpl.Templates()
 
 	// If the text contains just template definitions then ignore the template
 	// "name" but keep all of its named templates
-	candidateTmpls := make([]*template.Template, 0, len(definedTmpls))
+	candidateTmpls := make([]*tmpltext.Template, 0, len(definedTmpls))
 	for _, next := range definedTmpls {
 		if !(next.Name() == tmpl.ParseName && parse.IsEmptyTree(next.Root)) {
 			candidateTmpls = append(candidateTmpls, next)
@@ -54,10 +57,10 @@ func TopTemplates(tmpl *template.Template) ([]string, error) {
 
 // checkTmpl looks for all occurrences of {{ template "name" }} in the template.
 // It adds the name of each template executed in executedTmpls.
-func checkTmpl(tmpl *template.Template, executedTmpls map[string]struct{}) error {
+func checkTmpl(tmpl *tmpltext.Template, executedTmpls map[string]struct{}) error {
 	if tr := tmpl.Tree; tr == nil {
 		return fmt.Errorf("template %s has nil parse tree", tmpl.Name())
-	} else { //nolint
+	} else { // nolint
 		checkListNode(tr.Root, executedTmpls)
 		return nil
 	}
@@ -105,4 +108,34 @@ func checkNode(node parse.Node, executedTmpls map[string]struct{}) {
 		n := node.(*parse.WithNode)
 		checkBranchNode(&n.BranchNode, executedTmpls)
 	}
+}
+
+// ParseTemplateDefinition parses the test template and returns the top-level definitions that should be interpolated as results.
+// If TemplateDefinition.Kind is not known, GrafanaKind is assumed
+func ParseTemplateDefinition(def TemplateDefinition) ([]string, error) {
+	if err := ValidateKind(def.Kind); err != nil {
+		return nil, err
+	}
+
+	var tmpl *tmpltext.Template
+	var capture template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
+		tmpl = text
+	}
+
+	_, err := template.New(append(defaultOptionsPerKind(def.Kind, "grafana"), capture)...) // use static orgID because we don't need real one here
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err = tmpl.New(def.Name).Parse(def.Template)
+	if err != nil {
+		return nil, err
+	}
+
+	topLevel, err := topTemplates(tmpl)
+	if err != nil {
+		return nil, err
+	}
+
+	return topLevel, nil
 }

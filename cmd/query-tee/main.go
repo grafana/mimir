@@ -6,7 +6,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -82,13 +81,17 @@ func main() {
 }
 
 func initTracing() io.Closer {
-	name := os.Getenv("JAEGER_SERVICE_NAME")
-	if name == "" {
+	var name string
+	if otelEnvName := os.Getenv("OTEL_SERVICE_NAME"); otelEnvName != "" {
+		name = otelEnvName
+	} else if jaegerEnvName := os.Getenv("JAEGER_SERVICE_NAME"); jaegerEnvName != "" {
+		name = jaegerEnvName
+	} else {
 		name = "query-tee"
 	}
 
 	trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger)
-	if err != nil && !errors.Is(err, tracing.ErrBlankTraceConfiguration) {
+	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		return nil
 	}

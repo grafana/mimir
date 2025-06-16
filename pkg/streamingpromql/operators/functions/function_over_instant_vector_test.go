@@ -129,7 +129,7 @@ func (t *testScalarOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
 }
 
-func (t *testScalarOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (t *testScalarOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 

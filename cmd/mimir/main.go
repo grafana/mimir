@@ -11,9 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/go-kit/log/level"
@@ -195,7 +196,7 @@ func main() {
 			}
 		}
 
-		if trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger); err != nil && !errors.Is(err, tracing.ErrBlankTraceConfiguration) {
+		if trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
 			defer trace.Close()
@@ -206,21 +207,26 @@ func main() {
 	util_log.CheckFatal("initializing application", err)
 
 	if mainFlags.printModules {
-		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
-
+		dependentsByModule := map[string]map[string]struct{}{}
 		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
-			ix := sort.SearchStrings(allDeps, m)
-			included := ix < len(allDeps) && allDeps[ix] == m
-
-			if included {
-				fmt.Fprintln(os.Stdout, m, "*")
-			} else {
-				fmt.Fprintln(os.Stdout, m)
+			for _, mdep := range t.ModuleManager.DependenciesForModule(m) {
+				dependents, ok := dependentsByModule[mdep]
+				if !ok {
+					dependents = map[string]struct{}{}
+					dependentsByModule[mdep] = dependents
+				}
+				dependents[m] = struct{}{}
 			}
 		}
 
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout, "Modules marked with * are included in target All.")
+		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
+			fmt.Print(m)
+			if dependents, ok := dependentsByModule[m]; ok {
+				fmt.Print(" (in: ", strings.Join(slices.Collect(maps.Keys(dependents)), ", "), ")")
+			}
+			fmt.Println()
+		}
+
 		return
 	}
 

@@ -35,6 +35,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -958,10 +959,11 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	// Create a queryable on the fixtures.
 	queryable := storageSeriesQueryable(series)
+	_, engine := newEngineForTesting(t, querier.MimirEngine)
 
 	// Create a downstream handler serving range queries based on the provided queryable.
 	downstream := &downstreamHandler{
-		engine:    newEngine(),
+		engine:    engine,
 		queryable: queryable,
 	}
 

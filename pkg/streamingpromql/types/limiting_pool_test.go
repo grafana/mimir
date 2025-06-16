@@ -26,6 +26,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		limiter.FPointSlices,
 		FPointSize,
 		false,
 		nil,
@@ -79,6 +80,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		limiter.FPointSlices,
 		FPointSize,
 		false,
 		nil,
@@ -204,6 +206,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []int { return make([]int, 0, size) }),
+		limiter.IntSlices,
 		1,
 		false,
 		func(_ int) int { return 123 },

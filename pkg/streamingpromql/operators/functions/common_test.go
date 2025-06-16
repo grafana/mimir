@@ -45,7 +45,8 @@ func TestFloatTransformationFunc(t *testing.T) {
 		},
 	}
 	// Increase the memory tracker for 2 FPoints, and 1 HPoint
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2+types.HPointSize*1))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2, limiter.FPointSlices))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*1, limiter.HPointSlices))
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
@@ -78,7 +79,8 @@ func TestFloatTransformationDropHistogramsFunc(t *testing.T) {
 		},
 	}
 	// Increase the memory tracker for 2 FPoints, and 1 HPoint
-	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2+types.HPointSize*1))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*2, limiter.FPointSlices))
+	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*1, limiter.HPointSlices))
 
 	expected := types.InstantVectorSeriesData{
 		Floats: []promql.FPoint{
