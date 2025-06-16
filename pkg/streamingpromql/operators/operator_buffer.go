@@ -114,9 +114,8 @@ func (b *InstantVectorOperatorBuffer) Close() {
 	for _, d := range b.buffer {
 		types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
 	}
+
 	b.buffer = nil
 	b.output = nil
-
-	types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
-	b.seriesUsed = nil
+	b.seriesUsed = types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
 }

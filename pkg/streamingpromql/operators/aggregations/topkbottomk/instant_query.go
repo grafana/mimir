@@ -154,7 +154,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			}
 		}
 
-		instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+		g.series = instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 	}
 
 	return outputSeries, nil
@@ -296,9 +296,7 @@ func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams)
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
-
-	types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
-	t.values = nil
+	t.values = types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
 }
 
 type instantQueryGroup struct {

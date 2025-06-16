@@ -208,7 +208,7 @@ func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 
 	for _, d := range m.scalarArgsData {
-		types.FPointSlicePool.Put(d.Samples, m.MemoryConsumptionTracker)
+		_ = types.FPointSlicePool.Put(d.Samples, m.MemoryConsumptionTracker)
 	}
 
 	m.scalarArgsData = nil

@@ -95,10 +95,7 @@ func (q *QuantileAggregation) Prepare(ctx context.Context, params *types.Prepare
 }
 
 func (q *QuantileAggregation) Close() {
-	if q.Aggregation.ParamData.Samples != nil {
-		types.FPointSlicePool.Put(q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
-		q.Aggregation.ParamData.Samples = nil
-	}
+	q.Aggregation.ParamData.Samples = types.FPointSlicePool.Put(q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
 
 	if q.Param != nil {
 		q.Param.Close()
@@ -191,10 +188,8 @@ func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, t
 
 func (q *QuantileAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	for i, qGroup := range q.qGroups {
-		types.Float64SlicePool.Put(qGroup.points, memoryConsumptionTracker)
-		q.qGroups[i].points = nil
+		q.qGroups[i].points = types.Float64SlicePool.Put(qGroup.points, memoryConsumptionTracker)
 	}
 
-	qGroupPool.Put(q.qGroups, memoryConsumptionTracker)
-	q.qGroups = nil
+	q.qGroups = qGroupPool.Put(q.qGroups, memoryConsumptionTracker)
 }

@@ -142,8 +142,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 		c.series = append(c.series, points)
 
-		types.IntSlicePool.Put(s.count, c.MemoryConsumptionTracker)
-		s.count = nil
+		s.count = types.IntSlicePool.Put(s.count, c.MemoryConsumptionTracker)
 		countValuesSeriesPool.Put(s)
 	}
 
@@ -255,7 +254,7 @@ func (c *CountValues) Close() {
 	c.LabelName.Close()
 
 	for _, d := range c.series {
-		types.FPointSlicePool.Put(d, c.MemoryConsumptionTracker)
+		_ = types.FPointSlicePool.Put(d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil

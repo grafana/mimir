@@ -118,9 +118,7 @@ func (a *Absent) Prepare(ctx context.Context, params *types.PrepareParams) error
 
 func (a *Absent) Close() {
 	a.Inner.Close()
-
-	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
-	a.presence = nil
+	a.presence = types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
 }
 
 // CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched

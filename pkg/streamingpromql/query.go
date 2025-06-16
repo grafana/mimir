@@ -368,8 +368,8 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 		}
 
 		if len(floats) == 0 && len(histograms) == 0 {
-			types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
+			_ = types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
+			_ = types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
 			continue
 		}
 
@@ -420,13 +420,13 @@ func (q *Query) Close() {
 	switch v := q.result.Value.(type) {
 	case promql.Matrix:
 		for _, s := range v {
-			types.FPointSlicePool.Put(s.Floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(s.Histograms, q.memoryConsumptionTracker)
+			_ = types.FPointSlicePool.Put(s.Floats, q.memoryConsumptionTracker)
+			_ = types.HPointSlicePool.Put(s.Histograms, q.memoryConsumptionTracker)
 		}
 
 		types.PutMatrix(v)
 	case promql.Vector:
-		types.VectorPool.Put(v, q.memoryConsumptionTracker)
+		q.result.Value = types.VectorPool.Put(v, q.memoryConsumptionTracker)
 	case promql.Scalar:
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	case promql.String:

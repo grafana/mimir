@@ -105,13 +105,11 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 }
 
 func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.IntSlicePool.Put(g.leftSidePresence, memoryConsumptionTracker)
-	g.leftSidePresence = nil
+	g.leftSidePresence = types.IntSlicePool.Put(g.leftSidePresence, memoryConsumptionTracker)
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
 	// However, if the operator is being closed early, then we need to return mergedData to the pool.
 	types.PutInstantVectorSeriesData(g.mergedData, memoryConsumptionTracker)
-	g.mergedData = types.InstantVectorSeriesData{}
 }
 
 type oneToOneBinaryOperationOutputSeriesWithLabels struct {
@@ -185,9 +183,9 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	}
 
 	if len(allMetadata) == 0 {
-		types.SeriesMetadataSlicePool.Put(allMetadata, b.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(leftSeriesUsed, b.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(rightSeriesUsed, b.MemoryConsumptionTracker)
+		_ = types.SeriesMetadataSlicePool.Put(allMetadata, b.MemoryConsumptionTracker)
+		_ = types.BoolSlicePool.Put(leftSeriesUsed, b.MemoryConsumptionTracker)
+		_ = types.BoolSlicePool.Put(rightSeriesUsed, b.MemoryConsumptionTracker)
 		b.Close()
 		return nil, nil
 	}
@@ -597,11 +595,8 @@ func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
 
-	types.SeriesMetadataSlicePool.Put(b.leftMetadata, b.MemoryConsumptionTracker)
-	b.leftMetadata = nil
-
-	types.SeriesMetadataSlicePool.Put(b.rightMetadata, b.MemoryConsumptionTracker)
-	b.rightMetadata = nil
+	b.leftMetadata = types.SeriesMetadataSlicePool.Put(b.leftMetadata, b.MemoryConsumptionTracker)
+	b.rightMetadata = types.SeriesMetadataSlicePool.Put(b.rightMetadata, b.MemoryConsumptionTracker)
 
 	if b.leftBuffer != nil {
 		b.leftBuffer.Close()

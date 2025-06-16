@@ -169,7 +169,7 @@ func (t *RangeQuery) NextSeries(ctx context.Context) (types.InstantVectorSeriesD
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	series := t.currentGroup.series[t.seriesIndexInCurrentGroup]
+	series := &t.currentGroup.series[t.seriesIndexInCurrentGroup]
 
 	data, err := t.constructOutputSeries(series)
 	if err != nil {
@@ -209,7 +209,7 @@ func (t *RangeQuery) ensureCurrentGroupPopulated(ctx context.Context) error {
 	return nil
 }
 
-func (t *RangeQuery) constructOutputSeries(series rangeQuerySeries) (types.InstantVectorSeriesData, error) {
+func (t *RangeQuery) constructOutputSeries(series *rangeQuerySeries) (types.InstantVectorSeriesData, error) {
 	data := types.InstantVectorSeriesData{}
 
 	if series.pointCount == 0 {
@@ -244,7 +244,7 @@ func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 	}
 
 	// topk() and bottomk() ignore histograms, so return the HPoint slice to the pool now.
-	types.HPointSlicePool.Put(nextSeries.Histograms, t.MemoryConsumptionTracker)
+	nextSeries.Histograms = types.HPointSlicePool.Put(nextSeries.Histograms, t.MemoryConsumptionTracker)
 
 	g := t.remainingInnerSeriesToGroup[0]
 	t.remainingInnerSeriesToGroup = t.remainingInnerSeriesToGroup[1:]
@@ -252,7 +252,7 @@ func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 		return err
 	}
 
-	types.FPointSlicePool.Put(nextSeries.Floats, t.MemoryConsumptionTracker)
+	nextSeries.Floats = types.FPointSlicePool.Put(nextSeries.Floats, t.MemoryConsumptionTracker)
 
 	return nil
 }
@@ -373,7 +373,7 @@ func (t *RangeQuery) accumulatePointIntoGroup(g *rangeQueryGroup, timestampIndex
 	if currentWorstSeries.pointCount == 0 {
 		// We just replaced the last possible point the previous worst series could return.
 		// Return its slices to the pool.
-		t.returnSeriesToPool(*currentWorstSeries)
+		t.returnSeriesToPool(currentWorstSeries)
 
 		// Make sure we can't return the slices to the pool a second time when we emit this series later.
 		currentWorstSeries.shouldReturnPoint = nil
@@ -387,25 +387,24 @@ func (t *RangeQuery) accumulatePointIntoGroup(g *rangeQueryGroup, timestampIndex
 
 func (t *RangeQuery) returnGroupToPool(g *rangeQueryGroup) {
 	for _, ts := range g.seriesForTimestamps {
-		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
+		_ = types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
 	}
 
-	intSliceSlicePool.Put(g.seriesForTimestamps, t.MemoryConsumptionTracker)
-	rangeQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+	g.seriesForTimestamps = intSliceSlicePool.Put(g.seriesForTimestamps, t.MemoryConsumptionTracker)
+	g.series = rangeQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 }
 
-func (t *RangeQuery) returnSeriesToPool(series rangeQuerySeries) {
-	types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
-	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
+func (t *RangeQuery) returnSeriesToPool(series *rangeQuerySeries) {
+	series.shouldReturnPoint = types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
+	series.values = types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
 }
 
 func (t *RangeQuery) returnGroupAndSeriesToPool(g *rangeQueryGroup, firstSeriesIdxToReturn int) {
 	for _, s := range g.series[firstSeriesIdxToReturn:] {
-		t.returnSeriesToPool(s)
+		t.returnSeriesToPool(&s)
 	}
 
 	t.returnGroupToPool(g)
-
 }
 
 func (t *RangeQuery) ExpressionPosition() posrange.PositionRange {
@@ -423,8 +422,7 @@ func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
-	t.k = nil
+	t.k = types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
 
 	if t.currentGroup != nil {
 		t.returnGroupAndSeriesToPool(t.currentGroup, t.seriesIndexInCurrentGroup)

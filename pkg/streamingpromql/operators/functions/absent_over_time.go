@@ -124,7 +124,5 @@ func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParam
 
 func (a *AbsentOverTime) Close() {
 	a.Inner.Close()
-
-	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
-	a.presence = nil
+	a.presence = types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
 }

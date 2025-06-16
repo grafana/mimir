@@ -252,8 +252,7 @@ func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVector
 	defer func() {
 		// Reset the group before returning to the pool
 		thisGroup.lastInputSeriesIdx = 0
-		pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
-		thisGroup.pointBuckets = nil
+		thisGroup.pointBuckets = pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
 		bucketGroupPool.Put(thisGroup)
@@ -298,7 +297,7 @@ func (h *HistogramFunction) accumulateUntilGroupComplete(ctx context.Context, g 
 
 		// We are done with the FPoints, so return these now
 		// HPoints are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
-		types.FPointSlicePool.Put(s.Floats, h.memoryConsumptionTracker)
+		s.Floats = types.FPointSlicePool.Put(s.Floats, h.memoryConsumptionTracker)
 		h.currentInnerSeriesIndex++
 	}
 	return nil
@@ -437,14 +436,12 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 		}
 	}
 
-	// Return any retained native histogram to the pool
-	if g.nativeHistograms != nil {
-		types.HPointSlicePool.Put(g.nativeHistograms, h.memoryConsumptionTracker)
-	}
+	// Return any retained native histograms to the pool
+	g.nativeHistograms = types.HPointSlicePool.Put(g.nativeHistograms, h.memoryConsumptionTracker)
 
 	// We are done with all the point buckets, so return all those to the pool too
-	for _, b := range g.pointBuckets {
-		bucketSliceBucketedPool.Put(b, h.memoryConsumptionTracker)
+	for i := range g.pointBuckets {
+		g.pointBuckets[i] = bucketSliceBucketedPool.Put(g.pointBuckets[i], h.memoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
@@ -547,9 +544,7 @@ func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PreparePa
 
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
-
-	types.FPointSlicePool.Put(q.phValues.Samples, q.memoryConsumptionTracker)
-	q.phValues.Samples = nil
+	q.phValues.Samples = types.FPointSlicePool.Put(q.phValues.Samples, q.memoryConsumptionTracker)
 }
 
 type histogramFraction struct {
@@ -601,10 +596,6 @@ func (f *histogramFraction) Prepare(ctx context.Context, params *types.PreparePa
 func (f *histogramFraction) Close() {
 	f.lowerArg.Close()
 	f.upperArg.Close()
-
-	types.FPointSlicePool.Put(f.lowerValues.Samples, f.memoryConsumptionTracker)
-	f.lowerValues.Samples = nil
-
-	types.FPointSlicePool.Put(f.upperValues.Samples, f.memoryConsumptionTracker)
-	f.upperValues.Samples = nil
+	f.lowerValues.Samples = types.FPointSlicePool.Put(f.lowerValues.Samples, f.memoryConsumptionTracker)
+	f.upperValues.Samples = types.FPointSlicePool.Put(f.upperValues.Samples, f.memoryConsumptionTracker)
 }

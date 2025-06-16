@@ -303,24 +303,11 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 }
 
 func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
-	g.floats = nil
-
-	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
-	g.floatMeans = nil
-
-	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
-	g.floatCompensatingMeans = nil
-
-	types.BoolSlicePool.Put(g.incrementalMeans, memoryConsumptionTracker)
-	g.incrementalMeans = nil
-
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-	g.floatPresent = nil
-
-	types.HistogramSlicePool.Put(g.histograms, memoryConsumptionTracker)
-	g.histograms = nil
-
-	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-	g.groupSeriesCounts = nil
+	g.floats = types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
+	g.floatMeans = types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
+	g.floatCompensatingMeans = types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
+	g.incrementalMeans = types.BoolSlicePool.Put(g.incrementalMeans, memoryConsumptionTracker)
+	g.floatPresent = types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
+	g.histograms = types.HistogramSlicePool.Put(g.histograms, memoryConsumptionTracker)
+	g.groupSeriesCounts = types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
 }
