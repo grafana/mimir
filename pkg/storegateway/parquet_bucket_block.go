@@ -16,25 +16,27 @@ import (
 
 // parquetBlockSet holds all blocks.
 type parquetBlockSet struct {
-	mtx          sync.RWMutex            // nolint:unused
-	blockSet     sync.Map                // nolint:unused                // Maps block's ulid.ULID to the *bucketBlock.
-	sortedBlocks []*parquetBlockWithMeta // nolint:unused // Blocks sorted by mint, then maxt.
+	mtx          sync.RWMutex          // nolint:unused
+	blockSet     sync.Map              // nolint:unused                // Maps block's ulid.ULID to the *bucketBlock.
+	sortedBlocks []*parquetBucketBlock // nolint:unused // Blocks sorted by mint, then maxt.
 }
 
 // closeAll closes all blocks in the set and returns all encountered errors after trying all blocks.
 func (s *parquetBlockSet) closeAll() error {
 	errs := multierror.New()
 	s.blockSet.Range(func(_, val any) bool {
-		errs.Add(val.(*parquetBlockWithMeta).Close())
+		errs.Add(val.(*parquetBucketBlock).Close())
 		return true
 	})
 	return errs.Err()
 }
 
-// parquetBlockWithMeta wraps storage.ParquetShardOpener with metadata adds metadata about the block.
-type parquetBlockWithMeta struct {
-	storage.ParquetShardOpener
+// parquetBucketBlock wraps access to the block's storage.ParquetShard interface
+// with metadata, metrics and caching [etc once we fill in capabilities].
+type parquetBucketBlock struct {
 	BlockID ulid.ULID
+
+	storage.ParquetShard
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
@@ -44,12 +46,22 @@ type parquetBlockWithMeta struct {
 	queried atomic.Bool
 }
 
-func (b *parquetBlockWithMeta) MarkQueried() {
+func newParquetBlockWithMeta(
+	blockID ulid.ULID,
+	shard storage.ParquetShard,
+) *parquetBucketBlock {
+	return &parquetBucketBlock{
+		ParquetShard: shard,
+		BlockID:      blockID,
+	}
+}
+
+func (b *parquetBucketBlock) MarkQueried() {
 	b.queried.Store(true)
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
-func (b *parquetBlockWithMeta) Close() error {
+func (b *parquetBucketBlock) Close() error {
 	b.closedMtx.Lock()
 	b.closed = true
 	b.closedMtx.Unlock()

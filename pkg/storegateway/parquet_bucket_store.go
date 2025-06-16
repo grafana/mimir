@@ -8,9 +8,12 @@ package storegateway
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
@@ -275,7 +278,7 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 }
 
 // Placeholder methods for parquet-specific functionality
-func (s *ParquetBucketStore) openParquetShardsForReading(ctx context.Context, skipChunks bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBlockWithMeta {
+func (s *ParquetBucketStore) openParquetShardsForReading(ctx context.Context, skipChunks bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
 	// TODO: Implement parquet shard discovery and opening logic
 	// This should:
 	// 1. Discover parquet shards that intersect with the time range
@@ -296,7 +299,7 @@ func (s *ParquetBucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesSer
 	panic("TODO: implement sendHints")
 }
 
-func (s *ParquetBucketStore) createParquetSeriesSetForLabels(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBlockWithMeta, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
+func (s *ParquetBucketStore) createParquetSeriesSetForLabels(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
 	// TODO: Implement parquet series set creation for labels phase
 	// This should:
 	// 1. "Stream read" .labels.parquet files from shards using shard.LabelsFile()
@@ -317,7 +320,7 @@ func (s *ParquetBucketStore) sendStreamingChunks(req *storepb.SeriesRequest, srv
 	panic("TODO: implement sendStreamingChunks")
 }
 
-func (s *ParquetBucketStore) createParquetSeriesChunksSetIterator(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBlockWithMeta, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) iterator[seriesChunksSet] {
+func (s *ParquetBucketStore) createParquetSeriesChunksSetIterator(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) iterator[seriesChunksSet] {
 	// TODO: Implement parquet series chunks iterator creation
 	// This should:
 	// 1. Stream read .chunks.parquet files from shards using shard.ChunksFile()
@@ -331,7 +334,7 @@ func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv st
 	panic("TODO: implement sendSeriesChunks")
 }
 
-func (s *ParquetBucketStore) createParquetSeriesSetWithChunks(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBlockWithMeta, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
+func (s *ParquetBucketStore) createParquetSeriesSetWithChunks(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
 	// TODO: Implement parquet series set creation for non-streaming request
 	// I think this should create a series that includes the labels in one go and its typically called when skipchunks is true
 	panic("TODO: implement createParquetSeriesSetWithChunks")
@@ -350,6 +353,134 @@ func (s *ParquetBucketStore) recordRequestAmbientTime(stats *safeQueryStats, sta
 func (s *ParquetBucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats) error {
 	// TODO: Implement stats sending for parquet stores
 	panic("TODO: implement sendStats")
+}
+
+func (s *ParquetBucketStore) SyncBlocks(ctx context.Context) error {
+	return s.syncBlocks(ctx)
+}
+
+func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
+	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
+	// For partial view allow adding new blocks at least.
+	if metaFetchErr != nil && metas == nil {
+		return metaFetchErr
+	}
+
+	var wg sync.WaitGroup
+	blockc := make(chan *block.Meta)
+
+	for i := 0; i < s.blockSyncConcurrency; i++ {
+		wg.Add(1)
+		go func() {
+			for meta := range blockc {
+				if err := s.addBlock(ctx, meta); err != nil {
+					continue
+				}
+			}
+			wg.Done()
+		}()
+	}
+
+	for id, meta := range metas {
+		if s.blockSet.contains(id) {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+		case blockc <- meta:
+		}
+	}
+
+	close(blockc)
+	wg.Wait()
+
+	if metaFetchErr != nil {
+		return metaFetchErr
+	}
+
+	blockIDs := s.blockSet.openBlocksULIDs()
+	for _, id := range blockIDs {
+		if _, ok := metas[id]; ok {
+			continue
+		}
+		if err := s.removeBlock(id); err != nil {
+			level.Warn(s.logger).Log("msg", "drop of outdated block failed", "block", id, "err", err)
+		}
+		level.Info(s.logger).Log("msg", "dropped outdated block", "block", id)
+	}
+
+	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
+	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
+	// If it's already started this will return an error. We ignore that because syncBlocks can run multiple times
+	// We pass context.Background() because we want to stop it ourselves as opposed to stopping it as soon as the runtime context is cancelled..
+	//_ = s.snapshotter.StartAsync(context.Background())
+
+	return nil
+}
+
+func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+	dir := filepath.Join(s.localDir, meta.ULID.String())
+	start := time.Now()
+
+	level.Debug(s.logger).Log("msg", "loading new block", "id", meta.ULID)
+	defer func() {
+		if err != nil {
+			s.bucketMetrics.blockLoadFailures.Inc()
+			if err2 := os.RemoveAll(dir); err2 != nil {
+				level.Warn(s.logger).Log("msg", "failed to remove block we cannot load", "err", err2)
+			}
+			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
+		} else {
+			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
+		}
+	}()
+	s.bucketMetrics.blockLoads.Inc()
+
+	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
+		ctx,
+		s.logger,
+		s.bkt,
+		s.localDir,
+		meta.ULID,
+		s.postingOffsetsInMemSampling,
+		s.indexHeaderCfg,
+	)
+	if err != nil {
+		return errors.Wrap(err, "create index header reader")
+	}
+
+	defer func() {
+		if err != nil {
+			runutil.CloseWithErrCapture(&err, indexHeaderReader, "index-header")
+		}
+	}()
+
+	b, err := newBucketBlock(
+		ctx,
+		s.userID,
+		log.With(s.logger, "block", meta.ULID),
+		s.bucketMetrics,
+		meta,
+		s.bkt,
+		dir,
+		s.indexCache,
+		indexHeaderReader,
+		s.partitioners,
+	)
+	if err != nil {
+		return errors.Wrap(err, "new bucket block")
+	}
+	defer func() {
+		if err != nil {
+			runutil.CloseWithErrCapture(&err, b, "index-header")
+		}
+	}()
+
+	if err = s.blockSet.add(b); err != nil {
+		return errors.Wrap(err, "add block to set")
+	}
+
+	return nil
 }
 
 func (s *ParquetBucketStore) closeAllBlocks() error {
