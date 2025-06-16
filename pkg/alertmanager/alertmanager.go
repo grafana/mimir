@@ -443,22 +443,22 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string, usingGrafanaConfig bool) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, smtpConfig SmtpConfig, usingGrafanaConfig bool) error {
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 
 	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(cfg.Global.SMTPAuthPassword),
-		AuthUser:      cfg.Global.SMTPAuthUsername,
+		AuthPassword:  smtpConfig.Password,
+		AuthUser:      smtpConfig.User,
 		CertFile:      cfg.Global.HTTPConfig.TLSConfig.CertFile,
 		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  cfg.Global.SMTPHello,
+		EhloIdentity:  smtpConfig.EhloIdentity,
 		ExternalURL:   tmplExternalURL.String(),
-		FromAddress:   cfg.Global.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          cfg.Global.SMTPSmarthost.String(),
+		FromAddress:   smtpConfig.FromAddress,
+		FromName:      smtpConfig.FromName,
+		Host:          smtpConfig.Host,
 		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !cfg.Global.SMTPRequireTLS,
-		StaticHeaders: staticHeaders,
+		SkipVerify:    smtpConfig.SkipVerify,
+		StaticHeaders: smtpConfig.StaticHeaders,
 		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 

@@ -14,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
-	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
@@ -40,15 +39,6 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		}
 
 		amCfg.AlertmanagerConfig.Global = cfg.Global
-	}
-
-	// If configured, use the SMTP From address sent by Grafana.
-	if gCfg.SmtpFrom != "" {
-		if amCfg.AlertmanagerConfig.Global == nil {
-			defaultGlobals := config.DefaultGlobalConfig()
-			amCfg.AlertmanagerConfig.Global = &defaultGlobals
-		}
-		amCfg.AlertmanagerConfig.Global.SMTPFrom = gCfg.SmtpFrom
 	}
 
 	// We want to:
@@ -77,10 +67,24 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
 
+	var smtpCfg SmtpConfig
+	if gCfg.SmtpConfig != nil {
+		smtpCfg = SmtpConfig{
+			EhloIdentity:   gCfg.SmtpConfig.EhloIdentity,
+			FromAddress:    gCfg.SmtpConfig.FromAddress,
+			FromName:       gCfg.SmtpConfig.FromName,
+			Host:           gCfg.SmtpConfig.Host,
+			Password:       gCfg.SmtpConfig.Password,
+			SkipVerify:     gCfg.SmtpConfig.SkipVerify,
+			StartTLSPolicy: gCfg.SmtpConfig.StartTlsPolicy,
+			StaticHeaders:  gCfg.SmtpConfig.StaticHeaders,
+			User:           gCfg.SmtpConfig.User,
+		}
+	}
 	return amConfig{
 		AlertConfigDesc:    alertspb.ToProto(string(rawCfg), amCfg.Templates, gCfg.User),
 		tmplExternalURL:    externalURL,
-		staticHeaders:      gCfg.StaticHeaders,
 		usingGrafanaConfig: true,
+		smtpConfig:         smtpCfg,
 	}, nil
 }
