@@ -116,7 +116,9 @@ func (t *RangeQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer func() {
+		paramValues.Samples = types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	}()
 
 	t.k, err = types.Int64SlicePool.Get(t.TimeRange.StepCount, t.MemoryConsumptionTracker)
 	if err != nil {

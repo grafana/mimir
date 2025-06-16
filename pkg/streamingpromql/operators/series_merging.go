@@ -98,7 +98,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-		defer types.FPointSlicePool.Put(second.Floats, memoryConsumptionTracker)
+		defer func() { second.Floats = types.FPointSlicePool.Put(second.Floats, memoryConsumptionTracker) }()
 
 		if len(second.Floats) == 0 {
 			// We've reached the end of all series with floats.
@@ -125,8 +125,8 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 
 	// We're going to create a new slice, so return this one to the pool.
 	// We'll return the other slices in the for loop below.
-	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	defer types.FPointSlicePool.Put(data[0].Floats, memoryConsumptionTracker)
+	// We must defer and capture the original slice here, rather than at the end, as the merge loop below reslices Floats.
+	defer func(s []promql.FPoint) { _ = types.FPointSlicePool.Put(s, memoryConsumptionTracker) }(data[0].Floats)
 
 	// Re-slice the data with just the series with floats to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that sourceSeriesIndices remains longer.

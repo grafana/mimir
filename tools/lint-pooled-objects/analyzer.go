@@ -51,13 +51,20 @@ func runAnalysis(pass *analysis.Pass) (any, error) {
 
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(n ast.Node) bool {
-			expr, isExpr := n.(*ast.ExprStmt)
-			if !isExpr {
-				return true
-			}
+			var call *ast.CallExpr
 
-			call, isCallExpr := expr.X.(*ast.CallExpr)
-			if !isCallExpr {
+			switch expr := n.(type) {
+			case *ast.ExprStmt:
+				var ok bool
+				call, ok = expr.X.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+
+			case *ast.DeferStmt:
+				call = expr.Call
+
+			default:
 				return true
 			}
 

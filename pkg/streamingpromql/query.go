@@ -193,7 +193,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
+		defer func() { series = types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker) }()
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -206,7 +206,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
+		defer func() { series = types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker) }()
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
@@ -397,7 +397,7 @@ func (q *Query) populateMatrixFromScalarOperator(d types.ScalarData) promql.Matr
 }
 
 func (q *Query) populateScalarFromScalarOperator(d types.ScalarData) promql.Scalar {
-	defer types.FPointSlicePool.Put(d.Samples, q.memoryConsumptionTracker)
+	defer func() { d.Samples = types.FPointSlicePool.Put(d.Samples, q.memoryConsumptionTracker) }()
 
 	p := d.Samples[0]
 

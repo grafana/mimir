@@ -104,8 +104,8 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		return leftMetadata, nil
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
-	defer types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+	defer func() { leftMetadata = types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker) }()
+	defer func() { rightMetadata = types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker) }()
 
 	o.computeGroups(leftMetadata, rightMetadata)
 

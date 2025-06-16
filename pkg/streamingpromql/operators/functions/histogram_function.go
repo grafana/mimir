@@ -169,7 +169,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 	if err != nil {
 		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(innerSeries, h.memoryConsumptionTracker)
+	defer func() { innerSeries = types.SeriesMetadataSlicePool.Put(innerSeries, h.memoryConsumptionTracker) }()
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.

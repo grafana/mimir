@@ -13,6 +13,9 @@ func poolFromTypesPackage() {
 	types.BoolSlicePool.Put(b, tracker) // want `return value from 'Put' not used`
 	_ = types.BoolSlicePool.Put(b, tracker)
 	b = types.BoolSlicePool.Put(b, tracker)
+	defer types.BoolSlicePool.Put(b, tracker) // want `return value from 'Put' not used`
+	defer func() { b = types.BoolSlicePool.Put(b, tracker) }()
+	defer func() { types.BoolSlicePool.Put(b, tracker) }() // want `return value from 'Put' not used`
 }
 
 func localPool() {
@@ -31,6 +34,9 @@ func localPool() {
 	otherPool.Put(i, tracker) // want `return value from 'Put' not used`
 	_ = otherPool.Put(i, tracker)
 	i = otherPool.Put(i, tracker)
+	defer otherPool.Put(i, tracker) // want `return value from 'Put' not used`
+	defer func() { i = otherPool.Put(i, tracker) }()
+	defer func() { otherPool.Put(i, tracker) }() // want `return value from 'Put' not used`
 }
 
 func ignoresOtherTypeWithPutMethod() {

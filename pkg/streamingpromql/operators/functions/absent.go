@@ -47,7 +47,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	if err != nil {
 		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(innerMetadata, a.MemoryConsumptionTracker)
+	defer func() { innerMetadata = types.SeriesMetadataSlicePool.Put(innerMetadata, a.MemoryConsumptionTracker) }()
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {

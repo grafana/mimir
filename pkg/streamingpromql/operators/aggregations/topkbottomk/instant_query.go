@@ -62,7 +62,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(innerSeries, t.MemoryConsumptionTracker)
+	defer func() { innerSeries = types.SeriesMetadataSlicePool.Put(innerSeries, t.MemoryConsumptionTracker) }()
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
@@ -166,7 +166,9 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer func() {
+		paramValues.Samples = types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	}()
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
 
