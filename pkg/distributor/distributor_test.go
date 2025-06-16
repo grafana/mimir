@@ -7549,16 +7549,16 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		return ds[0], regs[0]
 	}
 	type expectedMetricsCfg struct {
-		requestsIn                      int
-		samplesIn                       int
-		exemplarsIn                     int
-		metadataIn                      int
-		receivedRequests                int
-		receivedSamples                 int
-		receivedExemplars               int
-		receivedMetadata                int
-		receivedNativeHistogramSamples  int
-		receivedNativeHistogramBuckets  int
+		requestsIn                     int
+		samplesIn                      int
+		exemplarsIn                    int
+		metadataIn                     int
+		receivedRequests               int
+		receivedSamples                int
+		receivedExemplars              int
+		receivedMetadata               int
+		receivedNativeHistogramSamples int
+		receivedNativeHistogramBuckets int
 	}
 	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		return fmt.Sprintf(`
@@ -7660,13 +7660,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 5,
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                10,
+			receivedExemplars:              5,
 			receivedMetadata:               10,
 			receivedNativeHistogramSamples: 5,
 			receivedNativeHistogramBuckets: 40})
@@ -7687,13 +7687,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   0,
-			receivedExemplars: 0,
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                0,
+			receivedExemplars:              0,
 			receivedMetadata:               10,
 			receivedNativeHistogramSamples: 0,
 			receivedNativeHistogramBuckets: 0})
@@ -7732,13 +7732,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        4,
-			samplesIn:         80,
-			exemplarsIn:       40,
-			metadataIn:        40,
-			receivedRequests:  2,
-			receivedSamples:   40,
-			receivedExemplars: 20,
+			requestsIn:                     4,
+			samplesIn:                      80,
+			exemplarsIn:                    40,
+			metadataIn:                     40,
+			receivedRequests:               2,
+			receivedSamples:                40,
+			receivedExemplars:              20,
 			receivedMetadata:               20,
 			receivedNativeHistogramSamples: 20,
 			receivedNativeHistogramBuckets: 160})
@@ -7760,13 +7760,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   20,
-			receivedExemplars: 0,
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                20,
+			receivedExemplars:              0,
 			receivedMetadata:               10,
 			receivedNativeHistogramSamples: 10,
 			receivedNativeHistogramBuckets: 80})
@@ -7799,13 +7799,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   10,
-			receivedExemplars: 5,
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                10,
+			receivedExemplars:              5,
 			receivedMetadata:               10,
 			receivedNativeHistogramSamples: 5,
 			receivedNativeHistogramBuckets: 40})
@@ -7914,13 +7914,13 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		dist.Push(getCtx(), req) //nolint:errcheck
 
 		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
-			requestsIn:        1,
-			samplesIn:         20,
-			exemplarsIn:       10,
-			metadataIn:        10,
-			receivedRequests:  1,
-			receivedSamples:   20,
-			receivedExemplars: 10,
+			requestsIn:                     1,
+			samplesIn:                      20,
+			exemplarsIn:                    10,
+			metadataIn:                     10,
+			receivedRequests:               1,
+			receivedSamples:                20,
+			receivedExemplars:              10,
 			receivedMetadata:               4,
 			receivedNativeHistogramSamples: 10,
 			receivedNativeHistogramBuckets: 80})
@@ -8835,7 +8835,6 @@ func (m *MockTimeSource) Sleep(d time.Duration) {
 func (m *MockTimeSource) Add(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)
 }
-
 
 func TestCountHistogramBuckets(t *testing.T) {
 	tests := []struct {
