@@ -273,7 +273,7 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 		}
 
 		if len(d.Floats)+len(d.Histograms) > 1 {
-			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+			d.Put(q.memoryConsumptionTracker)
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
@@ -297,7 +297,7 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 			d.Histograms[0].H = nil
 		}
 
-		types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+		d.Put(q.memoryConsumptionTracker)
 	}
 
 	return v, nil
@@ -317,7 +317,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 		}
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+			d.Put(q.memoryConsumptionTracker)
 			continue
 		}
 

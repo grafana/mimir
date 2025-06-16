@@ -32,7 +32,7 @@ func HistogramAvg(seriesData types.InstantVectorSeriesData, _ []types.ScalarData
 		})
 	}
 
-	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+	seriesData.Put(memoryConsumptionTracker)
 
 	return data, nil
 }
@@ -54,7 +54,7 @@ func HistogramCount(seriesData types.InstantVectorSeriesData, _ []types.ScalarDa
 		})
 	}
 
-	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+	seriesData.Put(memoryConsumptionTracker)
 
 	return data, nil
 }
@@ -109,7 +109,7 @@ func HistogramStdDevStdVar(isStdDev bool) InstantVectorSeriesFunction {
 			})
 		}
 
-		types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+		seriesData.Put(memoryConsumptionTracker)
 
 		return data, nil
 	}
@@ -132,7 +132,7 @@ func HistogramSum(seriesData types.InstantVectorSeriesData, _ []types.ScalarData
 		})
 	}
 
-	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+	seriesData.Put(memoryConsumptionTracker)
 
 	return data, nil
 }

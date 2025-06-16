@@ -66,6 +66,12 @@ func (d InstantVectorSeriesData) Clone(memoryConsumptionTracker *limiter.MemoryC
 	return clone, nil
 }
 
+// Put is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
+func (d *InstantVectorSeriesData) Put(tracker *limiter.MemoryConsumptionTracker) {
+	d.Floats = FPointSlicePool.Put(d.Floats, tracker)
+	d.Histograms = HPointSlicePool.Put(d.Histograms, tracker)
+}
+
 type InstantVectorSeriesDataIterator struct {
 	data   InstantVectorSeriesData
 	fIndex int

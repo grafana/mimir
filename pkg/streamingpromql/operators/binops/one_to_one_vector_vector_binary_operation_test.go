@@ -724,12 +724,12 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			// Read the first series.
 			d, err := o.NextSeries(ctx)
 			require.NoError(t, err)
-			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			d.Put(memoryConsumptionTracker)
 
 			if !closeAfterFirstSeries {
 				d, err = o.NextSeries(ctx)
 				require.NoError(t, err)
-				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+				d.Put(memoryConsumptionTracker)
 			}
 
 			// Close the operator and verify that the intermediate state is released.

@@ -56,7 +56,7 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 		g.accumulatePoint(timeRange.PointIndex(p.T))
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	data.Put(memoryConsumptionTracker)
 	return nil
 }
 

@@ -87,7 +87,7 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 			b.buffer[b.nextIndexToRead] = d
 		} else {
 			// We don't need this series at all, return the slice to the pool now.
-			types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
+			d.Put(b.memoryConsumptionTracker)
 		}
 
 		b.nextIndexToRead++
@@ -112,7 +112,7 @@ func (b *InstantVectorOperatorBuffer) Close() {
 	b.source.Close()
 
 	for _, d := range b.buffer {
-		types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
+		d.Put(b.memoryConsumptionTracker)
 	}
 
 	b.buffer = nil

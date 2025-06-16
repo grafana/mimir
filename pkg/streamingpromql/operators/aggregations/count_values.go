@@ -122,7 +122,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 			}
 		}
 
-		types.PutInstantVectorSeriesData(data, c.MemoryConsumptionTracker)
+		data.Put(c.MemoryConsumptionTracker)
 	}
 
 	outputMetadata, err := types.SeriesMetadataSlicePool.Get(len(accumulator), c.MemoryConsumptionTracker)

@@ -192,7 +192,7 @@ func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T)
 	series, err := buffer.GetSeries(ctx, []int{1})
 	require.NoError(t, err)
 	require.Equal(t, []types.InstantVectorSeriesData{series1Data}, series)
-	types.PutInstantVectorSeriesData(series[0], memoryConsumptionTracker)
+	series[0].Put(memoryConsumptionTracker)
 	require.Len(t, buffer.buffer, 1, "should have buffered first series")
 
 	// Close the buffer, which should release the buffered series.

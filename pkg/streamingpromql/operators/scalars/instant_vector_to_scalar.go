@@ -82,7 +82,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 			}
 		}
 
-		types.PutInstantVectorSeriesData(seriesData, i.MemoryConsumptionTracker)
+		seriesData.Put(i.MemoryConsumptionTracker)
 	}
 
 	return types.ScalarData{

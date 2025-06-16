@@ -199,7 +199,7 @@ func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.Instan
 			}
 
 			// If this is an 'and' operation, we should discard it and move on to the next series, as this series can't contribute to the result.
-			types.PutInstantVectorSeriesData(d, a.MemoryConsumptionTracker)
+			d.Put(a.MemoryConsumptionTracker)
 			continue
 		}
 
@@ -248,7 +248,7 @@ func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.C
 			}
 		}
 
-		types.PutInstantVectorSeriesData(data, a.MemoryConsumptionTracker)
+		data.Put(a.MemoryConsumptionTracker)
 		a.nextRightSeriesIndex++
 	}
 

@@ -86,7 +86,7 @@ func (g *MinMaxAggregationGroup) AccumulateSeries(data types.InstantVectorSeries
 		g.accumulatePoint(idx, p.F)
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	data.Put(memoryConsumptionTracker)
 	return nil
 }
 

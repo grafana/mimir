@@ -102,7 +102,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		if len(data.Floats) == 0 {
 			// No float values, nothing to do.
 			g.seriesCount-- // Avoid allocating space for this series if we can.
-			types.PutInstantVectorSeriesData(data, t.MemoryConsumptionTracker)
+			data.Put(t.MemoryConsumptionTracker)
 			continue
 		}
 
@@ -112,7 +112,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			outputSeriesCount++
 		}
 
-		types.PutInstantVectorSeriesData(data, t.MemoryConsumptionTracker)
+		data.Put(t.MemoryConsumptionTracker)
 	}
 
 	outputSeries, err := types.SeriesMetadataSlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)

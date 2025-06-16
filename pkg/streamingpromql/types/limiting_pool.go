@@ -228,9 +228,3 @@ func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumption
 	p.inner.Put(s)
 	return nil
 }
-
-// PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
-func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiter.MemoryConsumptionTracker) {
-	FPointSlicePool.Put(d.Floats, tracker)
-	HPointSlicePool.Put(d.Histograms, tracker)
-}

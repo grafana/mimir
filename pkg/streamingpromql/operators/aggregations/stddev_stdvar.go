@@ -79,7 +79,7 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 		g.floats[idx] += delta * (p.F - g.floatMeans[idx])
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	data.Put(memoryConsumptionTracker)
 	return nil
 }
 

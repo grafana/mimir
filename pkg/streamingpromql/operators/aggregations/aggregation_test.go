@@ -389,7 +389,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			seriesData, err := o.NextSeries(ctx)
 			require.NoError(t, err)
 
-			types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+			seriesData.Put(memoryConsumptionTracker)
 
 			// Close the operator and confirm all memory has been released.
 			o.Close()

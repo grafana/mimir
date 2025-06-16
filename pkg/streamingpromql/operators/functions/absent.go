@@ -78,7 +78,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		for _, s := range series.Histograms {
 			a.presence[a.TimeRange.PointIndex(s.T)] = true
 		}
-		types.PutInstantVectorSeriesData(series, a.MemoryConsumptionTracker)
+		series.Put(a.MemoryConsumptionTracker)
 	}
 	return metadata, nil
 }

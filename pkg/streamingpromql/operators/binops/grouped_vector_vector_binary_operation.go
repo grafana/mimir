@@ -88,7 +88,7 @@ func (s *manySide) latestSeriesIndex() int {
 }
 
 func (s *manySide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
+	s.mergedData.Put(memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 }
 
@@ -111,7 +111,7 @@ func (s *oneSide) latestSeriesIndex() int {
 }
 
 func (s *oneSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.PutInstantVectorSeriesData(s.mergedData, memoryConsumptionTracker)
+	s.mergedData.Put(memoryConsumptionTracker)
 	s.mergedData = types.InstantVectorSeriesData{}
 
 	if s.matchGroup != nil {

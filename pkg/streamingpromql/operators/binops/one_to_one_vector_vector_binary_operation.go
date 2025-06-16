@@ -109,7 +109,7 @@ func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limit
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
 	// However, if the operator is being closed early, then we need to return mergedData to the pool.
-	types.PutInstantVectorSeriesData(g.mergedData, memoryConsumptionTracker)
+	g.mergedData.Put(memoryConsumptionTracker)
 }
 
 type oneToOneBinaryOperationOutputSeriesWithLabels struct {
