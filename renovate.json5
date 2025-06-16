@@ -53,6 +53,7 @@
       }
     ],
     "branchPrefix": "deps-update/",
+    "labels": ["dependency-update"],
     "vulnerabilityAlerts": {
       "enabled": true,
       "labels": ["security-update"]

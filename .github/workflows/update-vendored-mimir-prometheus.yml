@@ -124,4 +124,5 @@ jobs:
           commit-message: Update mimir-prometheus to `${{ steps.get-commit-info.outputs.short_hash }}`
           branch: bot/${{ inputs.mimir_branch }}/update-mimir-prometheus-${{ steps.get-commit-info.outputs.short_hash }}-${{ steps.get-commit-info.outputs.timestamp }}
           base: ${{ inputs.mimir_branch }}
+          labels: vendored-mimir-prometheus-update
           delete-branch: true
