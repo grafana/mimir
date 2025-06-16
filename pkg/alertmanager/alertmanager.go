@@ -443,7 +443,7 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, smtpConfig SmtpConfig, usingGrafanaConfig bool) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, smtpConfig *SmtpConfig, usingGrafanaConfig bool) error {
 	cfg := definition.GrafanaToUpstreamConfig(conf)
 	emailCfg := am.createEmailSenderConfig(*cfg.Global, smtpConfig, tmplExternalURL.String())
 	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
@@ -537,8 +537,8 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 }
 
 // createEmailSenderConfig uses the custom SMTP configuration sent by Grafana, falling back to the globals.
-func (am *Alertmanager) createEmailSenderConfig(g config.GlobalConfig, c SmtpConfig, externalURL string) alertingReceivers.EmailSenderConfig {
-	// Create base configs using globals.
+func (am *Alertmanager) createEmailSenderConfig(g config.GlobalConfig, smtp *SmtpConfig, externalURL string) alertingReceivers.EmailSenderConfig {
+	// Create base config using globals.
 	cfg := alertingReceivers.EmailSenderConfig{
 		AuthPassword: string(g.SMTPAuthPassword),
 		AuthUser:     g.SMTPAuthUsername,
@@ -554,31 +554,33 @@ func (am *Alertmanager) createEmailSenderConfig(g config.GlobalConfig, c SmtpCon
 		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
 	}
 
-	// Use custom SMTP configs sent by Grafana.
-	if c.Password != "" {
-		cfg.AuthPassword = c.Password
+	// No SMTP configs sent from Grafana, return base config.
+	if smtp == nil {
+		return cfg
 	}
-	if c.User != "" {
-		cfg.AuthUser = c.User
+
+	// Patch the base config with the custom SMTP config sent by Grafana.
+	if smtp.Password != "" {
+		cfg.AuthPassword = smtp.Password
 	}
-	if c.EhloIdentity != "" {
-		cfg.EhloIdentity = c.EhloIdentity
+	if smtp.User != "" {
+		cfg.AuthUser = smtp.User
 	}
-	if c.FromAddress != "" {
-		cfg.FromAddress = c.FromAddress
+	if smtp.EhloIdentity != "" {
+		cfg.EhloIdentity = smtp.EhloIdentity
 	}
-	if c.FromName != "" {
-		cfg.FromName = c.FromName
+	if smtp.FromAddress != "" {
+		cfg.FromAddress = smtp.FromAddress
 	}
-	if c.Host != "" {
-		cfg.Host = c.Host
+	if smtp.FromName != "" {
+		cfg.FromName = smtp.FromName
 	}
-	// Only skip verification if it's explicitly disabled in the Grafana SMTP config.
-	if c.SkipVerify == true {
-		cfg.SkipVerify = true
+	if smtp.Host != "" {
+		cfg.Host = smtp.Host
 	}
-	if c.StaticHeaders != nil {
-		cfg.StaticHeaders = c.StaticHeaders
+	cfg.SkipVerify = smtp.SkipVerify
+	if smtp.StaticHeaders != nil {
+		cfg.StaticHeaders = smtp.StaticHeaders
 	}
 
 	return cfg

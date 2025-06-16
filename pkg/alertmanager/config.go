@@ -67,9 +67,9 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		return amConfig{}, fmt.Errorf("failed to marshal Grafana Alertmanager configuration %w", err)
 	}
 
-	var smtpCfg SmtpConfig
+	var smtpCfg *SmtpConfig
 	if gCfg.SmtpConfig != nil {
-		smtpCfg = SmtpConfig{
+		smtpCfg = &SmtpConfig{
 			EhloIdentity:   gCfg.SmtpConfig.EhloIdentity,
 			FromAddress:    gCfg.SmtpConfig.FromAddress,
 			FromName:       gCfg.SmtpConfig.FromName,

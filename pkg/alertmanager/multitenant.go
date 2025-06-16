@@ -893,7 +893,7 @@ type amConfig struct {
 	alertspb.AlertConfigDesc
 	tmplExternalURL    *url.URL
 	usingGrafanaConfig bool
-	smtpConfig         SmtpConfig
+	smtpConfig         *SmtpConfig
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
@@ -980,7 +980,7 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
-func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, smtpConfig SmtpConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *definition.PostableApiAlertingConfig, templates []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, smtpConfig *SmtpConfig, usingGrafanaConfig bool) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
 	tenantDir := am.getTenantDirectory(userID)
