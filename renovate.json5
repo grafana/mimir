@@ -33,7 +33,7 @@
       // Pin Go at the current version, since we want to upgrade it manually.
       // Remember to keep this in sync when upgrading our Go version!
       {
-        "matchDatasources": ["docker", "golang-version"],
+        "matchDatasources": ["docker", "golang-version", "github-releases"],
         "matchPackageNames": ["go", "golang"],
         "allowedVersions": "<=1.22.5"
       },
