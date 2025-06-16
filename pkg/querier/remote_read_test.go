@@ -906,8 +906,8 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 	})
 
 	testCases := map[string]struct {
-		getQuerierErr []error             // Changed to slice to support multiple queries
-		seriesSet     []storage.SeriesSet // Changed to slice to support multiple queries
+		getQuerierErr []error
+		seriesSet     []storage.SeriesSet
 
 		expectedStatusCode  int
 		expectedContentType string
