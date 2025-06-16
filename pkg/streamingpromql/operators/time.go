@@ -7,13 +7,13 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type Time struct {
 	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 }
 
@@ -21,7 +21,7 @@ var _ types.ScalarOperator = &Time{}
 
 func NewTime(
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *Time {
 	return &Time{
@@ -51,6 +51,11 @@ func (s *Time) GetValues(_ context.Context) (types.ScalarData, error) {
 
 func (s *Time) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *Time) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *Time) Close() {

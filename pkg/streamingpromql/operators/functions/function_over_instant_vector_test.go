@@ -11,9 +11,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Most of the functionality of functions is tested through the test scripts in
@@ -29,24 +29,25 @@ func TestFunctionOverInstantVector(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
+		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
 	}
 
 	metadataFuncCalled := false
-	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	mustBeCalledMetadata := func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		require.Equal(t, len(inner.Series), len(seriesMetadata))
 		metadataFuncCalled = true
 		return nil, nil
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, types.QueryTimeRange, *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(types.InstantVectorSeriesData, []types.ScalarData, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		return types.InstantVectorSeriesData{}, nil
 	}
 
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
-		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
 		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc: mustBeCalledSeriesData,
 			SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
@@ -74,6 +75,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
+		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
 	}
 
 	scalarOperator1 := &testScalarOperator{
@@ -85,7 +87,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	}
 
 	seriesDataFuncCalledTimes := 0
-	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	mustBeCalledSeriesData := func(_ types.InstantVectorSeriesData, scalarArgs []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		seriesDataFuncCalledTimes++
 		// Verify that the scalar arguments are correctly passed and in the order we expect
 		require.Equal(t, 2, len(scalarArgs))
@@ -97,7 +99,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
 		ScalarArgs:               []types.ScalarOperator{scalarOperator1, scalarOperator2},
-		MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
 		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc:         mustBeCalledSeriesData,
 			SeriesMetadataFunction: DropSeriesName,
@@ -125,6 +127,10 @@ func (t *testScalarOperator) GetValues(_ context.Context) (types.ScalarData, err
 
 func (t *testScalarOperator) ExpressionPosition() posrange.PositionRange {
 	return posrange.PositionRange{}
+}
+
+func (t *testScalarOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	return nil
 }
 
 func (t *testScalarOperator) Close() {}

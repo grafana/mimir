@@ -132,6 +132,11 @@ func (qb *queueBroker) dequeueRequestForQuerier(
 		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), ErrQuerierShuttingDown
 	}
 
+	// check if the specific querier-worker connection was deregistered since its dequeue request was submitted
+	if dequeueReq.WorkerID == unregisteredWorkerID {
+		return nil, nil, qb.tenantQuerierAssignments.queuingAlgorithm.TenantOrderIndex(), ErrQuerierWorkerDisconnected
+	}
+
 	var queuePath tree.QueuePath
 	var queueElement any
 	queuePath, queueElement = qb.tree.Dequeue(

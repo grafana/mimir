@@ -1,7 +1,7 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": [
-      "config:base"
+      "config:recommended"
     ],
     "baseBranches": ["main", "release-2.16", "release-2.15"],
     "postUpdateOptions": [
@@ -25,16 +25,16 @@
           "github.com/grafana/goautoneg",
           "github.com/grafana/opentracing-contrib-go-stdlib",
           "github.com/charleskorn/go-grpc",
-          "google.golang.org/grpc",
+          "github.com/charleskorn/objstore",
+          "github.com/grafana/mimir-otlptranslator",
         ],
         "enabled": false
       },
-      // Pin Go at the current version, since we want to upgrade it manually.
-      // Remember to keep this in sync when upgrading our Go version!
       {
-        "matchDatasources": ["docker", "golang-version"],
+        // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
+        "matchDatasources": ["docker", "golang-version", "github-releases"],
         "matchPackageNames": ["go", "golang"],
-        "allowedVersions": "<=1.22.5"
+        "groupName": "Go"
       },
       // Keep deps for the dashboard screenshotting tool up to date
       {

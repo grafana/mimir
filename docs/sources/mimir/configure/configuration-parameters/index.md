@@ -554,6 +554,10 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
 
+# If true, the max streams by connection gauge will be collected.
+# CLI flag: -server.grpc-collect-max-streams-by-conn
+[grpc_collect_max_streams_by_conn: <boolean> | default = true]
+
 # (experimental) Enables PROXY protocol.
 # CLI flag: -server.proxy-protocol-enabled
 [proxy_protocol_enabled: <boolean> | default = false]
@@ -756,6 +760,16 @@ grpc_tls_config:
 # server.log-request-headers is true.
 # CLI flag: -server.log-request-headers-exclude-list
 [log_request_exclude_headers_list: <string> | default = ""]
+
+# Optionally add request headers to tracing spans.
+# CLI flag: -server.trace-request-headers
+[trace_request_headers: <boolean> | default = false]
+
+# Comma separated list of headers to exclude from tracing spans. Only used if
+# server.trace-request-headers is true. The following headers are always
+# excluded: Authorization, Cookie, X-Csrf-Token.
+# CLI flag: -server.trace-request-headers-exclude-list
+[trace_request_exclude_headers_list: <string> | default = ""]
 
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
@@ -1579,7 +1593,7 @@ The `querier` block configures the querier.
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.query-engine
-[query_engine: <string> | default = "prometheus"]
+[query_engine: <string> | default = "mimir"]
 
 # (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus query engine for any queries not supported by the
@@ -1626,6 +1640,11 @@ mimir_query_engine:
   # (experimental) Use query planner when evaluating queries.
   # CLI flag: -querier.mimir-query-engine.use-query-planning
   [use_query_planning: <boolean> | default = false]
+
+  # (experimental) Enable common subexpression elimination when evaluating
+  # queries. Only applies if query planner is enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
+  [enable_common_subexpression_elimination: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1797,6 +1816,16 @@ client_cluster_validation:
   # (experimental) Optionally define the cluster validation label.
   # CLI flag: -query-frontend.client-cluster-validation.label
   [label: <string> | default = ""]
+
+# (experimental) Query engine to use, either 'prometheus' or 'mimir'
+# CLI flag: -query-frontend.query-engine
+[query_engine: <string> | default = "prometheus"]
+
+# (experimental) If set to true and the Mimir query engine is in use, fall back
+# to using the Prometheus query engine for any queries not supported by the
+# Mimir query engine.
+# CLI flag: -query-frontend.enable-query-engine-fallback
+[enable_query_engine_fallback: <boolean> | default = true]
 ```
 
 ### query_scheduler
@@ -1939,11 +1968,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.rule-path
 [rule_path: <string> | default = "./data-ruler/"]
 
-# Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
-# to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per
-# group can be supported by using DNS service discovery format, comprehensive of
-# the scheme. Basic auth is supported as part of the URL.
-# CLI flag: -ruler.alertmanager-url
+# (deprecated) Deprecated, use
+# limits.ruler_alertmanager_client_config.alertmanager_url instead.
 [alertmanager_url: <string> | default = ""]
 
 # (advanced) How long to wait between refreshing DNS resolutions of Alertmanager
@@ -1961,33 +1987,25 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.notification-timeout
 [notification_timeout: <duration> | default = 10s]
 
+# Deprecated, use limits.ruler_alertmanager_client_config instead.
 alertmanager_client:
-  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
-  # CLI flag: -ruler.alertmanager-client.tls-enabled
-  [tls_enabled: <boolean> | default = true]
+  # (advanced)
+  [tls_enabled: <boolean> | default = ]
 
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ruler.alertmanager-client.tls-cert-path
+  # (advanced)
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
-  # CLI flag: -ruler.alertmanager-client.tls-key-path
+  # (advanced)
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ruler.alertmanager-client.tls-ca-path
+  # (advanced)
   [tls_ca_path: <string> | default = ""]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ruler.alertmanager-client.tls-server-name
+  # (advanced)
   [tls_server_name: <string> | default = ""]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+  # (advanced)
+  [tls_insecure_skip_verify: <boolean> | default = ]
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
@@ -2020,50 +2038,28 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
   # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
   # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-  # CLI flag: -ruler.alertmanager-client.tls-cipher-suites
   [tls_cipher_suites: <string> | default = ""]
 
-  # (advanced) Override the default minimum TLS version. Allowed values:
-  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  # CLI flag: -ruler.alertmanager-client.tls-min-version
+  # (advanced)
   [tls_min_version: <string> | default = ""]
 
-  # HTTP Basic authentication username. It overrides the username set in the URL
-  # (if any).
-  # CLI flag: -ruler.alertmanager-client.basic-auth-username
   [basic_auth_username: <string> | default = ""]
 
-  # HTTP Basic authentication password. It overrides the password set in the URL
-  # (if any).
-  # CLI flag: -ruler.alertmanager-client.basic-auth-password
-  [basic_auth_password: <string> | default = ""]
+  basic_auth_password:
 
   oauth2:
-    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
-    # Alertmanager.
-    # CLI flag: -ruler.alertmanager-client.oauth.client_id
     [client_id: <string> | default = ""]
 
-    # OAuth2 client secret.
-    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
-    [client_secret: <string> | default = ""]
+    client_secret:
 
-    # Endpoint used to fetch access token.
-    # CLI flag: -ruler.alertmanager-client.oauth.token_url
     [token_url: <string> | default = ""]
 
-    # Optional scopes to include with the token request.
-    # CLI flag: -ruler.alertmanager-client.oauth.scopes
     [scopes: <string> | default = ""]
 
-    # (advanced) Optional additional URL parameters to send to the token URL.
-    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
-    [endpoint_params: <map of string to string> | default = {}]
+    # (advanced)
+    [endpoint_params: <map of string to string> | default = ]
 
-  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
-  # requests through. Applies to all requests, including auxiliary traffic, such
-  # as OAuth token requests.
-  # CLI flag: -ruler.alertmanager-client.proxy-url
+  # (advanced)
   [proxy_url: <string> | default = ""]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
@@ -2433,10 +2429,11 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
-# (experimental) Skip starting the Alertmanager for tenants matching this suffix
-# unless they have a promoted, non-default Grafana Alertmanager configuration.
-# CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
-[grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
+# (experimental) Duration to wait before shutting down an idle Alertmanager
+# using an unpromoted or default configuration when strict initialization is
+# enabled.
+# CLI flag: -alertmanager.grafana-alertmanager-grace-period
+[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
@@ -2602,6 +2599,12 @@ alertmanager_client:
 # removed for any tenant that does not have a configuration.
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
+
+# (experimental) Skip initializing Alertmanagers for tenants without a
+# non-default, non-empty configuration. For Grafana Alertmanager tenants,
+# configurations not marked as 'promoted' will also be skipped.
+# CLI flag: -alertmanager.strict-initialization-enabled
+[strict_initialization: <boolean> | default = false]
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
@@ -3674,7 +3677,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_query_expression_size_bytes: <int> | default = 0]
 
 # (experimental) List of queries to block.
-[blocked_queries: <blocked_queries_config...> | default = ]
+# Example:
+#   The following configuration blocks the query "rate(metric_counter[5m])".
+#   Setting the pattern to ".*" and regex to true blocks all queries.
+#   blocked_queries:
+#       - pattern: rate(metric_counter[5m])
+#         reason: because the query is misconfigured
+[blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
 
 # (experimental) List of queries to limit and duration to limit them for.
 # Example:
@@ -3726,6 +3735,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # /api/v1/cardinality/label_values API call.
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
+
+# (experimental) Maximum number of series that can be requested in a single
+# cardinality API request.
+# CLI flag: -querier.cardinality-api-max-series-limit
+[cardinality_analysis_max_results: <int> | default = 500]
 
 # (experimental) Maximum size of an active series or active native histogram
 # series request result shard in bytes. 0 to disable.
@@ -3821,6 +3835,124 @@ The `limits` block configures default and per-tenant limits imposed by component
 # being greater than 0. Ideally this flag should be a lower value. 0 to disable.
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
 [ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
+
+# Per-tenant Alertmanager client configuration. If not supplied, the tenant's
+# notifications are sent to the ruler-wide default.
+ruler_alertmanager_client_config:
+  # Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
+  # to. Each URL is treated as a separate group. Multiple Alertmanagers in HA
+  # per group can be supported by using DNS service discovery format,
+  # comprehensive of the scheme. Basic auth is supported as part of the URL.
+  # CLI flag: -ruler.alertmanager-url
+  [alertmanager_url: <string> | default = ""]
+
+  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
+  # CLI flag: -ruler.alertmanager-client.tls-enabled
+  [tls_enabled: <boolean> | default = true]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ruler.alertmanager-client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ruler.alertmanager-client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ruler.alertmanager-client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ruler.alertmanager-client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ruler.alertmanager-client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ruler.alertmanager-client.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
+  # HTTP Basic authentication username. It overrides the username set in the URL
+  # (if any).
+  # CLI flag: -ruler.alertmanager-client.basic-auth-username
+  [basic_auth_username: <string> | default = ""]
+
+  # HTTP Basic authentication password. It overrides the password set in the URL
+  # (if any).
+  # CLI flag: -ruler.alertmanager-client.basic-auth-password
+  [basic_auth_password: <string> | default = ""]
+
+  oauth2:
+    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
+    # Alertmanager.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_id
+    [client_id: <string> | default = ""]
+
+    # OAuth2 client secret.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
+    [client_secret: <string> | default = ""]
+
+    # Endpoint used to fetch access token.
+    # CLI flag: -ruler.alertmanager-client.oauth.token_url
+    [token_url: <string> | default = ""]
+
+    # Optional scopes to include with the token request.
+    # CLI flag: -ruler.alertmanager-client.oauth.scopes
+    [scopes: <string> | default = ""]
+
+    # (advanced) Optional additional URL parameters to send to the token URL.
+    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
+    [endpoint_params: <map of string to string> | default = {}]
+
+  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
+  # requests through. Applies to all requests, including auxiliary traffic, such
+  # as OAuth token requests.
+  # CLI flag: -ruler.alertmanager-client.proxy-url
+  [proxy_url: <string> | default = ""]
+
+# (experimental) Minimum allowable evaluation interval for rule groups.
+# CLI flag: -ruler.min-rule-evaluation-interval
+[ruler_min_rule_evaluation_interval: <duration> | default = 0s]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
@@ -4156,6 +4288,10 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
+  # (experimental) The record version that this producer sends.
+  # CLI flag: -ingest-storage.kafka.producer-record-version
+  [producer_record_version: <int> | default = 0]
+
   # The maximum amount of time a Kafka broker waits for some records before a
   # Fetch response is returned.
   # CLI flag: -ingest-storage.kafka.fetch-max-wait
@@ -4216,6 +4352,17 @@ migration:
   # written to both backends.
   # CLI flag: -ingest-storage.migration.distributor-send-to-ingesters-enabled
   [distributor_send_to_ingesters_enabled: <boolean> | default = false]
+
+  # When enabled, errors writing to ingest storage are logged but do not affect
+  # write success or quorum. When disabled, write requests fail if ingest
+  # storage write fails.
+  # CLI flag: -ingest-storage.migration.ignore-ingest-storage-errors
+  [ignore_ingest_storage_errors: <boolean> | default = false]
+
+  # The maximum time a write request that goes through the ingest storage waits
+  # before it times out. Set to `0` to disable the timeout.
+  # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
+  [ingest_storage_max_wait_time: <duration> | default = 0s]
 ```
 
 ### blocks_storage
@@ -5231,7 +5378,7 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 
 # (experimental) Allow client creation even if initial DNS resolution fails.
 # CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = false]
+[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### redis

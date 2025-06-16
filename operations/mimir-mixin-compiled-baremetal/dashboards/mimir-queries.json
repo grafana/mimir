@@ -135,7 +135,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "ms"
+                        "unit": "short"
                      },
                      "overrides": [ ]
                   },
@@ -176,7 +176,7 @@
                   "type": "timeseries",
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "ms",
                         "label": null,
                         "logBase": 1,
                         "max": null,
@@ -1029,7 +1029,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_instances_hit_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
@@ -1108,7 +1108,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_querier_storegateway_refetches_per_query_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
@@ -1204,7 +1204,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{$read_path_matcher}[$__rate_interval]))",
@@ -1215,7 +1215,19 @@
                   ],
                   "title": "Consistency checks failed",
                   "type": "timeseries"
-               },
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Querier",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
                {
                   "datasource": "$datasource",
                   "description": "### Rejected queries\nThe proportion of all queries received by queriers that were rejected for some reason.\n\n",
@@ -1254,7 +1266,7 @@
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 4,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~\"(prometheus|api_prom)_api_v1_query(_range)?\"}[$__rate_interval]))",
@@ -1265,13 +1277,105 @@
                   ],
                   "title": "Rejected queries",
                   "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                  "id": 20,
+                  "options": {
+                     "calculate": true,
+                     "calculation": {
+                        "xBuckets": {
+                           "mode": "count",
+                           "value": 60
+                        },
+                        "yBuckets": {
+                           "mode": "count",
+                           "value": 40
+                        }
+                     },
+                     "cellGap": 0,
+                     "cellValues": {
+                        "unit": "reqps"
+                     },
+                     "legend": {
+                        "show": false
+                     },
+                     "tooltip": {
+                        "yHistogram": true
+                     },
+                     "yAxis": {
+                        "min": 0,
+                        "unit": "bytes"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Estimated memory consumption",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Estimated per-query memory consumption",
+                  "type": "heatmap"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 21,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)",
+                        "format": "time_series",
+                        "legendFormat": "Queries",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Fallback to Prometheus' query engine",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Querier",
+            "title": "",
             "titleSize": "h6"
          },
          {
@@ -1303,7 +1407,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1394,7 +1498,7 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1448,7 +1552,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 24,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1540,7 +1644,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1594,7 +1698,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1642,7 +1746,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1702,7 +1806,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1750,7 +1854,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1800,7 +1904,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1861,7 +1965,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1940,7 +2044,7 @@
                         }
                      ]
                   },
-                  "id": 30,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2025,7 +2129,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2091,7 +2195,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2139,7 +2243,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 35,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2219,7 +2323,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 36,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2311,7 +2415,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2360,7 +2464,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2409,7 +2513,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {

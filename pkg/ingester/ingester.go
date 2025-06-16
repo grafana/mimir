@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -73,9 +74,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var tracer = otel.Tracer("pkg/ingester")
 
 const (
 	// Number of timeseries to return in each batch of a QueryStream.
@@ -192,7 +194,7 @@ type Config struct {
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"advanced"`
+	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"deprecated"`
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
 
@@ -336,6 +338,9 @@ type Ingester struct {
 
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
+
+	// Tracks if a forced compaction is in progress
+	forcedCompactionInProgress atomic.Bool
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -656,10 +661,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if ro, _ := i.lifecycler.GetReadOnlyState(); !ro {
 		// If the ingester is not read-only, activate the push circuit breaker.
 		i.circuitBreaker.push.activate()
-	}
-
-	if i.reactiveLimiter.read != nil {
-		i.reactiveLimiter.read.activate()
 	}
 
 	return nil
@@ -1283,11 +1284,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(errMsg string, timestamp int64, labels []mimirpb.LabelAdapter) {
 				stats.newValueForTimestampCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonNewValueForTimestamp, startAppend)
 				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
-					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
+					return newSampleDuplicateTimestampError(errMsg, model.Time(timestamp), labels)
 				})
 			},
 			func(labels []mimirpb.LabelAdapter) {
@@ -1725,7 +1726,7 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.reactiveLimiter.isReadLimiterActive() && !i.reactiveLimiter.read.CanAcquirePermit() {
+	if i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
 		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
@@ -1750,7 +1751,7 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.reactiveLimiter.isReadLimiterActive() {
+	if i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
@@ -1773,9 +1774,8 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
+	spanlog, ctx := spanlogger.New(ctx, i.logger, tracer, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1886,7 +1886,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.LabelNames")
+	spanlog, ctx := spanlogger.New(ctx, i.logger, tracer, "Ingester.LabelNames")
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -2203,10 +2203,8 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
-	defer spanlog.Finish()
-	ctx = tracing.BridgeOpenTracingToOtel(ctx)
-
+	ctx := stream.Context()
+	spanlog := spanlogger.FromContext(ctx, i.logger)
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
@@ -3281,7 +3279,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	// This metric can be used in alerts and when troubleshooting.
 	if force {
 		i.metrics.forcedCompactionInProgress.Set(1)
-		defer i.metrics.forcedCompactionInProgress.Set(0)
+		i.forcedCompactionInProgress.Store(true)
+		defer func() {
+			i.metrics.forcedCompactionInProgress.Set(0)
+			i.forcedCompactionInProgress.Store(false)
+		}()
 	}
 
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
@@ -3874,10 +3876,6 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 			return
 		}
 
-		if i.reactiveLimiter.read != nil {
-			i.reactiveLimiter.read.deactivate()
-		}
-
 	case http.MethodDelete:
 		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
 		if err != nil {
@@ -3898,10 +3896,6 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 				level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
-			}
-
-			if i.reactiveLimiter.read != nil {
-				i.reactiveLimiter.read.activate()
 			}
 		}
 	}
@@ -3941,6 +3935,17 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// OnPartitionRingChanged resets the read reactive limiter when the ingester's partition transitions to active.
+func (i *Ingester) OnPartitionRingChanged(oldRing, newRing *ring.PartitionRingDesc) {
+	if i.reactiveLimiter.read != nil {
+		oldPartition, ok1 := oldRing.Partitions[i.ingestPartitionID]
+		newPartition, ok2 := newRing.Partitions[i.ingestPartitionID]
+		if ok1 && ok2 && oldPartition.State != newPartition.State && newPartition.State == ring.PartitionActive {
+			i.reactiveLimiter.read.Reset()
+		}
+	}
+}
+
 // checkAvailableForRead checks whether the ingester is available for read requests,
 // and if it is not the case returns an unavailableError error.
 func (i *Ingester) checkAvailableForRead() error {
@@ -3977,9 +3982,12 @@ func (i *Ingester) checkAvailableForPush() error {
 	return newUnavailableError(ingesterState)
 }
 
-// PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
-func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
-	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+// PushToStorageAndReleaseRequest implements ingest.Pusher interface for ingestion via ingest-storage.
+func (i *Ingester) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
+	err := i.PushWithCleanup(ctx, req, func() {
+		req.FreeBuffer()
+		mimirpb.ReuseSlice(req.Timeseries)
+	})
 	if err != nil {
 		return mapPushErrorToErrorWithStatus(err)
 	}
@@ -3992,7 +4000,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, errPushGrpcDisabled
 	}
 
-	err := i.PushToStorage(ctx, req)
+	err := i.PushToStorageAndReleaseRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}

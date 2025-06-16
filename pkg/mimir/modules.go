@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -19,18 +18,18 @@ import (
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
@@ -53,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -61,7 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -228,7 +228,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.BlocksStorage.BucketStore.ChunksCache.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.IndexCache.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.MetadataCache.Redis.TLS.Reader = t.Vault
-	t.Cfg.Frontend.QueryMiddleware.Redis.TLS.Reader = t.Vault
+	t.Cfg.Frontend.QueryMiddleware.ResultsCache.Redis.TLS.Reader = t.Vault
 
 	// Update Configs - GRPC Clients
 	// lint:sorted
@@ -238,10 +238,13 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
-	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
+	t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader = t.Vault
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
+
+	// Update Configs - LimitsConfigs
+	t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Vault
 
 	// Update the Server
 	updateServerTLSCfgFunc := func(vault *vault.Vault, tlsConfig *server.TLSConfig) error {
@@ -393,6 +396,28 @@ func (t *Mimir) initIngesterPartitionRing() (services.Service, error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+	// Add mappings here for config options that are being migrated to per-tenant limits.
+	// Ex:
+	// if t.Cfg.<Section>.<DeprecatedField> != <Default> {
+	//     t.Cfg.LimitsConfig.<NewField> = t.Cfg.<Section>.<DeprecatedField>
+	// }
+
+	// AlertmanagerURL and Notifier sub-options are moving from a global config to a per-tenant config.
+	// We need to preserve the option in the ruler yaml for at least two releases (that is, at least Mimir 3.0).
+	// If the ruler config is configured by the user, map it to its new place in the default limits.
+	if t.Cfg.Ruler.DeprecatedAlertmanagerURL != "" {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.AlertmanagerURL = t.Cfg.Ruler.DeprecatedAlertmanagerURL
+	}
+	if !t.Cfg.Ruler.DeprecatedNotifier.IsDefault() {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig = t.Cfg.Ruler.DeprecatedNotifier
+	}
+	// Ensure the TLS settings reader is propagated.
+	if t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader != t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader {
+		t.Cfg.LimitsConfig.RulerAlertmanagerClientConfig.NotifierConfig.TLS.Reader = t.Cfg.Ruler.DeprecatedNotifier.TLS.Reader
+	}
+
+	// End mappings for per-tenant config migrations.
+
 	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -630,9 +655,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		}
 
 		// Add a middleware to extract the trace context and add a header.
-		internalQuerierRouter = nethttp.MiddlewareFunc(opentracing.GlobalTracer(), internalQuerierRouter.ServeHTTP, nethttp.OperationNameFunc(func(*http.Request) string {
-			return "internalQuerier"
-		}))
+		internalQuerierRouter = middleware.Tracer{}.Wrap(internalQuerierRouter)
 
 		// If queries are processed using the external HTTP Server, we need wrap the internal querier with
 		// HTTP router with middleware to parse the tenant ID from the HTTP header and inject it into the
@@ -693,6 +716,9 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 		return
 	}
 
+	if t.IngesterPartitionRingWatcher != nil {
+		t.IngesterPartitionRingWatcher = t.IngesterPartitionRingWatcher.WithDelegate(t.Ingester)
+	}
 	if t.ActiveGroupsCleanup != nil {
 		t.ActiveGroupsCleanup.Register(t.Ingester)
 	}
@@ -773,8 +799,32 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
+	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	// Disable concurrency limits for sharded queries spawned by the query-frontend.
+	promOpts.ActiveQueryTracker = nil
+	// Always eagerly load selectors so that they are loaded in parallel in the background.
+	mqeOpts.EagerLoadSelectors = true
 
-	engineOpts, _ := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
+	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
+	var eng promql.QueryEngine
+	switch t.Cfg.Frontend.QueryEngine {
+	case querier.PrometheusEngine:
+		eng = promql.NewEngine(promOpts)
+	case querier.MimirEngine:
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), nil, util_log.Logger)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
+		}
+
+		if t.Cfg.Frontend.EnableQueryEngineFallback {
+			eng = streamingpromqlcompat.NewEngineWithFallback(streamingEngine, promql.NewEngine(promOpts), nil, util_log.Logger)
+		} else {
+			eng = streamingEngine
+		}
+	default:
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Querier.QueryEngine))
+	}
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -782,7 +832,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Overrides,
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
-		engineOpts,
+		eng,
+		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
 		t.Registerer,
 	)
@@ -831,7 +882,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
-	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
+	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
+	fallbackInjector := streamingpromqlcompat.EngineFallbackInjector{}
+	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -861,11 +914,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
 	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
 		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
-
-		t.QueryPlanner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-		t.QueryPlanner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 	}
 
 	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
@@ -985,7 +1035,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver, t.Overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -1168,7 +1218,7 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) initContinuousTest() (services.Service, error) {
-	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger)
+	client, err := continuoustest.NewClient(t.Cfg.ContinuousTest.Client, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to initialize continuous-test client")
 	}
@@ -1255,7 +1305,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
-		QueryPlanner:                     {API},
+		QueryPlanner:                     {API, ActivityTracker},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
 		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},

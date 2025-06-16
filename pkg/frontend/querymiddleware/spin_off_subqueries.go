@@ -35,7 +35,7 @@ type spinOffSubqueriesMiddleware struct {
 	limits    Limits
 	logger    log.Logger
 
-	engine          *promql.Engine
+	engine          promql.QueryEngine
 	defaultStepFunc func(int64) int64
 
 	metrics spinOffSubqueriesMetrics
@@ -90,7 +90,7 @@ func newSpinOffSubqueriesMetrics(registerer prometheus.Registerer) spinOffSubque
 func newSpinOffSubqueriesMiddleware(
 	limits Limits,
 	logger log.Logger,
-	engine *promql.Engine,
+	engine promql.QueryEngine,
 	registerer prometheus.Registerer,
 	rangeMiddleware MetricsQueryMiddleware,
 	defaultStepFunc func(int64) int64,
@@ -118,7 +118,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "spinOffSubqueriesMiddleware.Do")
 	defer spanLog.Finish()
 
 	// For now, the feature is completely opt-in
@@ -222,14 +222,17 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	warn = removeDuplicates(warn)
 	info = removeDuplicates(info)
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  queryable.getResponseHeaders(),
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  queryable.getResponseHeaders(),
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
 }

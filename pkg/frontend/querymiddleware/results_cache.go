@@ -19,11 +19,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -31,7 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -146,8 +144,13 @@ type Extractor interface {
 type PrometheusResponseExtractor struct{}
 
 // Extract extracts response for specific a range from a response.
+// The from Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
-	promRes := from.(*PrometheusResponse)
+	promRes, ok := from.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -166,8 +169,13 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 
 // ResponseWithoutHeaders is useful in caching data without headers since
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
+// The supplied Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
-	promRes := resp.(*PrometheusResponse)
+	promRes, ok := resp.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -279,8 +287,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 		return false, notCachableReasonTooNew
 	}
 
-	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
-		return false, notCachableReasonModifiersNotCachable
+	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
+		return false, reason
 	}
 
 	return true, ""
@@ -303,8 +311,9 @@ var (
 	errNegativeOffset     = errors.New("negative offset")
 )
 
-// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
-func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) bool {
+// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache,
+// false otherwise. The reason for not being safe to cache is returned as a string.
+func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) (bool, string) {
 	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -314,17 +323,20 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	//   3. When query contains a negative offset.
 	query := r.GetQuery()
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
-		return true
+		return true, ""
 	}
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
-		level.Warn(logger).Log("msg", "failed to parse query, considering @ modifier as not cachable", "query", query, "err", err)
-		return false
+		return false, notCachableReasonModifiersNotCachableFailedParse
 	}
 
 	// This resolves the start() and end() used with the @ modifier.
-	expr = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	if err != nil {
+		// We are being pessimistic in such cases.
+		return false, notCachableReasonModifiersNotCachableFailedPreprocess
+	}
 
 	end := r.GetEnd()
 	cachable := true
@@ -350,7 +362,10 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 		return nil
 	})
 
-	return cachable
+	if !cachable {
+		return false, notCachableReasonModifiersNotCachable
+	}
+	return true, ""
 }
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
@@ -395,11 +410,10 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-		accumulator.TraceId = jaegerTraceID(ctx)
+		accumulator.TraceId = otelTraceID(ctx)
 		// Calculate the samples processed per step in the subrange of the extent that is being merged with the accumulator.
 		samples := extractSamplesProcessedPerStep(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
 		accumulator.SamplesProcessedPerStep = mergeSamplesProcessedPerStep(accumulator.SamplesProcessedPerStep, samples)
-
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
@@ -430,7 +444,12 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	marshalled, err := types.MarshalAny(acc.Response)
+	promRes, ok := acc.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse or PrometheusResponseWithFinalizer")
+	}
+	marshalled, err := types.MarshalAny(promRes)
+
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +483,7 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 		Start:                   req.GetStart(),
 		End:                     req.GetEnd(),
 		Response:                marshalled,
-		TraceId:                 jaegerTraceID(ctx),
+		TraceId:                 otelTraceID(ctx),
 		QueryTimestampMs:        queryTime.UnixMilli(),
 		SamplesProcessedPerStep: approximateSamplesProcessedPerStep(req.GetStart(), req.GetEnd(), req.GetStep(), samplesProcessed),
 	}, nil
@@ -576,18 +595,12 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	return extents, nil
 }
 
-func jaegerTraceID(ctx context.Context) string {
-	span := opentracing.SpanFromContext(ctx)
-	if span == nil {
+func otelTraceID(ctx context.Context) string {
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	if !sc.IsValid() {
 		return ""
 	}
-
-	spanContext, ok := span.Context().(jaeger.SpanContext)
-	if !ok {
-		return ""
-	}
-
-	return spanContext.TraceID().String()
+	return sc.TraceID().String()
 }
 
 func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {

@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -250,7 +251,7 @@ func newOTLPParser(
 			}.Error())
 		}
 
-		spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
+		spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.decodeAndConvert")
 		defer spanLogger.Finish()
 
 		spanLogger.SetTag("content_type", contentType)
@@ -452,6 +453,12 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 		}
 	}
 
+	namer := otlptranslator.MetricNamer{
+		Namespace:          "",
+		WithMetricSuffixes: addSuffixes,
+		UTF8Allowed:        false,
+	}
+
 	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
@@ -462,7 +469,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: otlptranslator.BuildCompliantMetricName(metric, "", addSuffixes),
+					MetricFamilyName: namer.Build(translatorMetricFromOtelMetric(metric)),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -472,6 +479,33 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	}
 
 	return metadata
+}
+
+// copied from https://github.com/prometheus/prometheus/blob/main/storage/remote/otlptranslator/prometheusremotewrite/metrics_to_prw.go
+// TODO(zenador): remove this after making that function public
+func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
+	m := otlptranslator.Metric{
+		Name: metric.Name(),
+		Unit: metric.Unit(),
+		Type: otlptranslator.MetricTypeUnknown,
+	}
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		m.Type = otlptranslator.MetricTypeGauge
+	case pmetric.MetricTypeSum:
+		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
+			m.Type = otlptranslator.MetricTypeMonotonicCounter
+		} else {
+			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
+		}
+	case pmetric.MetricTypeSummary:
+		m.Type = otlptranslator.MetricTypeSummary
+	case pmetric.MetricTypeHistogram:
+		m.Type = otlptranslator.MetricTypeHistogram
+	case pmetric.MetricTypeExponentialHistogram:
+		m.Type = otlptranslator.MetricTypeExponentialHistogram
+	}
+	return m
 }
 
 func otelMetricsToTimeseries(
@@ -488,7 +522,7 @@ func otelMetricsToTimeseries(
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
-		PromoteResourceAttributes:           promoteResourceAttributes,
+		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
 	}

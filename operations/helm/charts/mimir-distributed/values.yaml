@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r339-0676ed7
+  tag: r346-ec32c174
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -817,10 +817,6 @@ alertmanager:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
   # -- Options to configure zone-aware replication for alertmanager
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -922,7 +918,11 @@ distributor:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1012,10 +1012,6 @@ distributor:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
 ingester:
   # -- Whether to render the manifests related to the ingester component.
@@ -1165,10 +1161,6 @@ ingester:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for ingester
   # Example configuration with full geographical redundancy:
@@ -1351,10 +1343,6 @@ overrides_exporter:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 ruler:
   enabled: true
 
@@ -1379,7 +1367,11 @@ ruler:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1477,10 +1469,6 @@ ruler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
   # -- If set to true, a dedicated query path will be deployed for the ruler and operational mode will be set to use remote evaluation. https://grafana.com/docs/mimir/latest/references/architecture/components/ruler/#remote
   # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
@@ -1608,10 +1596,6 @@ ruler_querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
@@ -1636,7 +1620,11 @@ ruler_query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1725,10 +1713,6 @@ ruler_query_frontend:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
@@ -1820,10 +1804,6 @@ ruler_query_scheduler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
 
 querier:
   # -- Whether to render the manifests related to the querier component.
@@ -1960,10 +1940,6 @@ querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
@@ -1990,7 +1966,11 @@ query_frontend:
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -2079,10 +2059,6 @@ query_frontend:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
 
 query_scheduler:
   enabled: true
@@ -2175,10 +2151,6 @@ query_scheduler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
 
 store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
@@ -2329,10 +2301,6 @@ store_gateway:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for store-gateway
   # Example configuration with full geographical redundancy:
@@ -2546,10 +2514,6 @@ compactor:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 memcached:
   image:
     # -- Memcached Docker image repository
@@ -2578,7 +2542,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.15.2
+    tag: v0.15.3
     pullPolicy: IfNotPresent
 
   resources:
@@ -3100,7 +3064,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.27-alpine
+    tag: 1.28-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -3477,7 +3441,11 @@ gateway:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
+    # -- Target CPU utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the CPU utilization autoscaling.
     targetCPUUtilizationPercentage: 70
+    # -- Target memory utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the memory utilization autoscaling.
     targetMemoryUtilizationPercentage: 70
 
   # -- Deployment strategy. See `kubectl explain deployment.spec.strategy` for more,
@@ -3503,9 +3471,6 @@ gateway:
   env: []
   # -- Environment variables from secrets or configmaps to add to the Pods.
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Volumes to add to the Pods
   extraVolumes: []
   # -- Volume mounts to add to the Pods
@@ -3647,7 +3612,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.27-alpine
+      tag: 1.28-alpine
 
     # -- Basic auth configuration
     basicAuth:
@@ -4162,7 +4127,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r339-0820ef11
+    tag: r346-b342d283
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4265,6 +4230,8 @@ provisioner:
     pullPolicy: IfNotPresent
   # -- Volume mounts to add to the provisioner pods
   extraVolumeMounts: []
+  # -- Volumes to add to the provisioner pods
+  extraVolumes: []
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
@@ -4357,10 +4324,6 @@ admin_api:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Cache for admin bucket.
 # If this is disabled, in-memory cache will be set by default.
 # You can use Redis too for cache and set the configuration via structuredConfig.
@@ -4533,9 +4496,6 @@ graphite:
 
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4618,9 +4578,6 @@ graphite:
     terminationGracePeriodSeconds: 180
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4858,10 +4815,6 @@ federation_frontend:
   podDisruptionBudget:
     maxUnavailable: 1
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Settings for the smoke-test job. This is meant to run as a Helm test hook
 # (`helm test RELEASE`) after installing the chart. It quickly verifies
 # that writing and reading metrics works. Currently not supported for
@@ -4942,9 +4895,6 @@ continuous_test:
   extraArgs: {}
   # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Extra volumes for the continuous test container
   extraVolumes: []
   # -- Extra volume mounts for the continuous test container

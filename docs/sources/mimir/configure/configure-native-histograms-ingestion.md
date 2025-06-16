@@ -7,10 +7,6 @@ weight: 160
 
 # Configure native histograms
 
-{{% admonition type="note" %}}
-Native histograms are an experimental feature of Grafana Mimir.
-{{% /admonition %}}
-
 You can configure native histograms ingestion via the Prometheus [remote write API](/docs/mimir/<MIMIR_VERSION>/references/http-api/#distributor) endpoint globally or per tenant.
 
 {{% admonition type="note" %}}

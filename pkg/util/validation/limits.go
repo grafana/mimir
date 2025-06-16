@@ -26,6 +26,7 @@ import (
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -190,7 +191,7 @@ type Limits struct {
 	ResultsCacheTTLForErrors               model.Duration         `yaml:"results_cache_ttl_for_errors" json:"results_cache_ttl_for_errors"`
 	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
-	BlockedQueries                         []*BlockedQuery        `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	BlockedQueries                         BlockedQueriesConfig   `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
 	LimitedQueries                         LimitedQueriesConfig   `yaml:"limited_queries,omitempty" json:"limited_queries,omitempty" doc:"nocli|description=List of queries to limit and duration to limit them for." category:"experimental"`
 	BlockedRequests                        []*BlockedRequest      `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of http requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
@@ -202,6 +203,7 @@ type Limits struct {
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
+	CardinalityAnalysisMaxResults                 int  `yaml:"cardinality_analysis_max_results" json:"cardinality_analysis_max_results" category:"experimental"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
 	// Cost attribution and limit.
@@ -210,17 +212,19 @@ type Limits struct {
 	CostAttributionCooldown       model.Duration         `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
-	RulerEvaluationDelay                                  model.Duration         `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
-	RulerTenantShardSize                                  int                    `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
-	RulerMaxRulesPerRuleGroup                             int                    `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
-	RulerMaxRuleGroupsPerTenant                           int                    `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
-	RulerRecordingRulesEvaluationEnabled                  bool                   `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
-	RulerAlertingRulesEvaluationEnabled                   bool                   `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
-	RulerSyncRulesOnChangesEnabled                        bool                   `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
-	RulerMaxRulesPerRuleGroupByNamespace                  flagext.LimitsMap[int] `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
-	RulerMaxRuleGroupsPerTenantByNamespace                flagext.LimitsMap[int] `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
-	RulerProtectedNamespaces                              flagext.StringSliceCSV `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
-	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                  `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
+	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
+	RulerTenantShardSize                                  int                               `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
+	RulerMaxRulesPerRuleGroup                             int                               `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
+	RulerMaxRuleGroupsPerTenant                           int                               `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerRecordingRulesEvaluationEnabled                  bool                              `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
+	RulerAlertingRulesEvaluationEnabled                   bool                              `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
+	RulerSyncRulesOnChangesEnabled                        bool                              `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
+	RulerMaxRulesPerRuleGroupByNamespace                  flagext.LimitsMap[int]            `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
+	RulerMaxRuleGroupsPerTenantByNamespace                flagext.LimitsMap[int]            `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
+	RulerProtectedNamespaces                              flagext.StringSliceCSV            `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
+	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                             `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
+	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"description=Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default."`
+	RulerMinRuleEvaluationInterval                        model.Duration                    `yaml:"ruler_min_rule_evaluation_interval" json:"ruler_min_rule_evaluation_interval" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -350,6 +354,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
+	f.IntVar(&l.CardinalityAnalysisMaxResults, "querier.cardinality-api-max-series-limit", 500, "Maximum number of series that can be requested in a single cardinality API request.")
+
 	_ = l.MaxCacheFreshness.Set("10m")
 	f.Var(&l.MaxCacheFreshness, "query-frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 
@@ -381,6 +387,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.RulerMaxRuleGroupsPerTenantByNamespace, "ruler.max-rule-groups-per-tenant-by-namespace", "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.")
 	f.Var(&l.RulerProtectedNamespaces, "ruler.protected-namespaces", "List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.")
 	f.Int64Var(&l.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant, "ruler.max-independent-rule-evaluation-concurrency-per-tenant", 4, "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.")
+	if !l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams.IsInitialized() {
+		l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
+	}
+	l.RulerAlertmanagerClientConfig.RegisterFlags(f)
+	_ = l.RulerMinRuleEvaluationInterval.Set("0s")
+	f.Var(&l.RulerMinRuleEvaluationInterval, "ruler.min-rule-evaluation-interval", "Minimum allowable evaluation interval for rule groups.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -1058,6 +1070,14 @@ func (o *Overrides) RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID
 	return o.getOverridesForUser(userID).RulerMaxIndependentRuleEvaluationConcurrencyPerTenant
 }
 
+func (o *Overrides) RulerAlertmanagerClientConfig(userID string) notifier.AlertmanagerClientConfig {
+	return o.getOverridesForUser(userID).RulerAlertmanagerClientConfig
+}
+
+func (o *Overrides) RulerMinRuleEvaluationInterval(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).RulerMinRuleEvaluationInterval)
+}
+
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize
@@ -1287,6 +1307,12 @@ func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 
 func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
+}
+
+// CardinalityAnalysisMaxResults returns the maximum number of results that
+// can be returned in a single cardinality API request.
+func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
+	return o.getOverridesForUser(userID).CardinalityAnalysisMaxResults
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

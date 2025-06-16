@@ -47,8 +47,6 @@
     $.util.resourcesLimits(null, '24Gi'),
 
   querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
-
     // Dynamically set GOMAXPROCS based on CPU request.
     GOMAXPROCS: std.toString(
       std.ceil(

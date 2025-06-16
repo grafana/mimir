@@ -324,6 +324,25 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "absent(a_X > Inf)",
 		},
+		// Common subexpression elimination cases
+		{
+			Expr: "a_X + a_X",
+		},
+		{
+			Expr: "sum(a_X) + sum(a_X)",
+		},
+		{
+			Expr: "max(a_X) - min(a_X)",
+		},
+		{
+			Expr: "a_X / (a_X + b_X)",
+		},
+		{
+			Expr: "sum(a_X) / (sum(a_X) + sum(b_X))",
+		},
+		{
+			Expr: "min(a_X) / (max(a_X) + max(b_X))",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

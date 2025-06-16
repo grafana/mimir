@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
@@ -51,22 +52,23 @@ const (
 )
 
 var (
+	tracer                = otel.Tracer("pkg/querymiddleware")
 	labelValuesPathSuffix = regexp.MustCompile(`\/api\/v1\/label\/([^\/]+)\/values$`)
 )
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCacheConfig       `yaml:"results_cache"`
-	CacheResults             bool          `yaml:"cache_results"`
-	CacheErrors              bool          `yaml:"cache_errors"`
-	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
-	PrunedQueries            bool          `yaml:"prune_queries" category:"experimental"`
-	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	SplitQueriesByInterval   time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache             ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults             bool               `yaml:"cache_results"`
+	CacheErrors              bool               `yaml:"cache_errors"`
+	MaxRetries               int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool               `yaml:"parallelize_shardable_queries"`
+	PrunedQueries            bool               `yaml:"prune_queries" category:"experimental"`
+	TargetSeriesPerShard     uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool               `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool               `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -98,7 +100,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	cfg.ResultsCacheConfig.RegisterFlags(f)
+	cfg.ResultsCache.RegisterFlags(f)
 }
 
 // Validate validates the config.
@@ -110,7 +112,7 @@ func (cfg *Config) Validate() error {
 	}
 
 	if cfg.CacheResults || cfg.CacheErrors || cfg.cardinalityBasedShardingEnabled() {
-		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
+		if err := cfg.ResultsCache.Validate(); err != nil {
 			return errors.Wrap(err, "invalid query-frontend results cache config")
 		}
 	}
@@ -205,11 +207,12 @@ func NewTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
+	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engine, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -225,33 +228,35 @@ func newQueryTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
+	engine promql.QueryEngine,
 	engineOpts promql.EngineOpts,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	// Disable concurrency limits for sharded queries.
-	engineOpts.ActiveQueryTracker = nil
-	engine := promql.NewEngine(engineOpts)
-
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.
 	parser.EnableExperimentalFunctions = true
+
+	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
+	parser.ExperimentalDurationExpr = true
 
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error
 
-		c, err = newResultsCache(cfg.ResultsCacheConfig, log, registerer)
+		c, err = newResultsCache(cfg.ResultsCache, log, registerer)
 		if err != nil {
 			return nil, err
 		}
-		c = cache.NewCompression(cfg.Compression, c, log)
+		c = cache.NewCompression(cfg.ResultsCache.Compression, c, log)
 	}
 
 	cacheKeyGenerator := cfg.CacheKeyGenerator
 	if cacheKeyGenerator == nil {
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
+
+	retryMetrics := newRetryMetrics(registerer)
 
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(
 		cfg,
@@ -262,8 +267,9 @@ func newQueryTripperware(
 		cacheKeyGenerator,
 		cacheExtractor,
 		engine,
-		engineOpts.NoStepSubqueryIntervalFn,
+		engineOpts,
 		registerer,
+		retryMetrics,
 	)
 	requestBlocker := newRequestBlocker(limits, log, registerer)
 
@@ -285,6 +291,13 @@ func newQueryTripperware(
 		activeNativeHistogramMetrics := next
 		labels := next
 		series := next
+
+		if cfg.MaxRetries > 0 {
+			cardinality = newRetryRoundTripper(cardinality, log, cfg.MaxRetries, retryMetrics)
+			series = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+			labels = newRetryRoundTripper(labels, log, cfg.MaxRetries, retryMetrics)
+			activeSeries = newRetryRoundTripper(series, log, cfg.MaxRetries, retryMetrics)
+		}
 
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
@@ -358,9 +371,10 @@ func newQueryMiddlewares(
 	cacheClient cache.Cache,
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
-	engine *promql.Engine,
-	defaultStepFunc func(rangeMillis int64) int64,
+	engine promql.QueryEngine,
+	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
+	retryMetrics prometheus.Observer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
@@ -373,7 +387,6 @@ func newQueryMiddlewares(
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
-	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -453,7 +466,7 @@ func newQueryMiddlewares(
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newInstrumentMiddleware("spin_off_subqueries", metrics),
-		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
+		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, engineOpts.NoStepSubqueryIntervalFn),
 	)
 
 	if cfg.ShardedQueries {
@@ -509,8 +522,9 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
+		remoteReadMiddleware = append(remoteReadMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMetrics))
 	}
 
 	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental

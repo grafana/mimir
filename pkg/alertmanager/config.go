@@ -11,8 +11,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
@@ -20,7 +22,7 @@ import (
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The SMTP and HTTP settings in this section can be used to configure Grafana receivers.
-func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
+func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
 		return amConfig{}, err
@@ -36,7 +38,17 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 		if err != nil {
 			return amConfig{}, fmt.Errorf("failed to unmarshal Mimir Alertmanager configuration: %w", err)
 		}
+
 		amCfg.AlertmanagerConfig.Global = cfg.Global
+	}
+
+	// If configured, use the SMTP From address sent by Grafana.
+	if gCfg.SmtpFrom != "" {
+		if amCfg.AlertmanagerConfig.Global == nil {
+			defaultGlobals := config.DefaultGlobalConfig()
+			amCfg.AlertmanagerConfig.Global = &defaultGlobals
+		}
+		amCfg.AlertmanagerConfig.Global.SMTPFrom = gCfg.SmtpFrom
 	}
 
 	// We want to:
@@ -53,7 +65,7 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 			for _, integration := range rcv.GrafanaManagedReceivers {
 				itypes = append(itypes, integration.Type)
 			}
-			level.Debug(am.logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", rcv.Name, "overwritten_integrations", strings.Join(itypes, ","))
+			level.Debug(logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", rcv.Name, "overwritten_integrations", strings.Join(itypes, ","))
 			continue
 		}
 		rcvs = append(rcvs, rcv)

@@ -532,8 +532,6 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: distributor
@@ -629,8 +627,6 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: querier
@@ -709,9 +705,6 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
@@ -875,9 +868,6 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: ruler
@@ -1166,8 +1156,6 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1261,7 +1249,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1314,7 +1302,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1367,7 +1355,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1420,7 +1408,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.2
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1503,8 +1491,6 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
         image: grafana/mimir:2.16.0
         imagePullPolicy: IfNotPresent
         name: store-gateway

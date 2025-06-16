@@ -214,6 +214,16 @@
         },
         {
           "kind": "field",
+          "name": "grpc_collect_max_streams_by_conn",
+          "required": false,
+          "desc": "If true, the max streams by connection gauge will be collected.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "server.grpc-collect-max-streams-by-conn",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "proxy_protocol_enabled",
           "required": false,
           "desc": "Enables PROXY protocol.",
@@ -703,6 +713,26 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.log-request-headers-exclude-list",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_headers",
+          "required": false,
+          "desc": "Optionally add request headers to tracing spans.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.trace-request-headers",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_exclude_headers_list",
+          "required": false,
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.trace-request-headers-exclude-list",
           "fieldType": "string"
         },
         {
@@ -2162,7 +2192,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -2255,6 +2285,17 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "querier.mimir-query-engine.use-query-planning",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_common_subexpression_elimination",
+              "required": false,
+              "desc": "Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -4861,8 +4902,8 @@
           "required": false,
           "desc": "List of queries to block.",
           "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldType": "blocked_queries_config...",
+          "fieldDefaultValue": [],
+          "fieldType": "list of pattern (string), regex (bool), and, optionally, reason (string)",
           "fieldCategory": "experimental"
         },
         {
@@ -4957,6 +4998,17 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "querier.label-values-max-cardinality-label-names-per-request",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "cardinality_analysis_max_results",
+          "required": false,
+          "desc": "Maximum number of series that can be requested in a single cardinality API request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 500,
+          "fieldFlag": "querier.cardinality-api-max-series-limit",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -5115,6 +5167,217 @@
           "fieldDefaultValue": 4,
           "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency-per-tenant",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "ruler_alertmanager_client_config",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "alertmanager_url",
+              "required": false,
+              "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-url",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-cert-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-key-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-ca-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "Override the expected name on the server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-server-name",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "Skip validating server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.alertmanager-client.tls-insecure-skip-verify",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cipher_suites",
+              "required": false,
+              "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-cipher-suites",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_min_version",
+              "required": false,
+              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-min-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_username",
+              "required": false,
+              "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.basic-auth-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_password",
+              "required": false,
+              "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "oauth2",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "client_id",
+                  "required": false,
+                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "client_secret",
+                  "required": false,
+                  "desc": "OAuth2 client secret.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "token_url",
+                  "required": false,
+                  "desc": "Endpoint used to fetch access token.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "scopes",
+                  "required": false,
+                  "desc": "Optional scopes to include with the token request.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": {},
+                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "proxy_url",
+              "required": false,
+              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.proxy-url",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "ruler_min_rule_evaluation_interval",
+          "required": false,
+          "desc": "Minimum allowable evaluation interval for rule groups.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.min-rule-evaluation-interval",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {
@@ -6833,7 +7096,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -7289,6 +7552,28 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "query_engine",
+          "required": false,
+          "desc": "Query engine to use, either 'prometheus' or 'mimir'",
+          "fieldValue": null,
+          "fieldDefaultValue": "prometheus",
+          "fieldFlag": "query-frontend.query-engine",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_query_engine_fallback",
+          "required": false,
+          "desc": "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -7528,6 +7813,17 @@
             },
             {
               "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "fetch_max_wait",
               "required": false,
               "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
@@ -7635,6 +7931,26 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.migration.distributor-send-to-ingesters-enabled",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ignore_ingest_storage_errors",
+              "required": false,
+              "desc": "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.migration.ignore-ingest-storage-errors",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingest_storage_max_wait_time",
+              "required": false,
+              "desc": "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.migration.ingest-storage-max-wait-time",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,
@@ -9007,7 +9323,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -9570,7 +9886,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -10157,7 +10473,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -13071,11 +13387,11 @@
           "kind": "field",
           "name": "alertmanager_url",
           "required": false,
-          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
+          "desc": "Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "ruler.alertmanager-url",
-          "fieldType": "string"
+          "fieldType": "string",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -13120,10 +13436,9 @@
               "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldDefaultValue": false,
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -13131,10 +13446,9 @@
               "kind": "field",
               "name": "tls_cert_path",
               "required": false,
-              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-cert-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13142,10 +13456,9 @@
               "kind": "field",
               "name": "tls_key_path",
               "required": false,
-              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-key-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13153,10 +13466,9 @@
               "kind": "field",
               "name": "tls_ca_path",
               "required": false,
-              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-ca-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13164,10 +13476,9 @@
               "kind": "field",
               "name": "tls_server_name",
               "required": false,
-              "desc": "Override the expected name on the server certificate.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-server-name",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13175,10 +13486,9 @@
               "kind": "field",
               "name": "tls_insecure_skip_verify",
               "required": false,
-              "desc": "Skip validating server certificate.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ruler.alertmanager-client.tls-insecure-skip-verify",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -13189,7 +13499,6 @@
               "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-cipher-suites",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13197,10 +13506,9 @@
               "kind": "field",
               "name": "tls_min_version",
               "required": false,
-              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -13208,21 +13516,18 @@
               "kind": "field",
               "name": "basic_auth_username",
               "required": false,
-              "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.basic-auth-username",
               "fieldType": "string"
             },
             {
-              "kind": "field",
+              "kind": "block",
               "name": "basic_auth_password",
               "required": false,
-              "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
-              "fieldType": "string"
+              "fieldDefaultValue": null
             },
             {
               "kind": "block",
@@ -13234,50 +13539,44 @@
                   "kind": "field",
                   "name": "client_id",
                   "required": false,
-                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
                   "fieldType": "string"
                 },
                 {
-                  "kind": "field",
+                  "kind": "block",
                   "name": "client_secret",
                   "required": false,
-                  "desc": "OAuth2 client secret.",
+                  "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
-                  "fieldType": "string"
+                  "fieldDefaultValue": null
                 },
                 {
                   "kind": "field",
                   "name": "token_url",
                   "required": false,
-                  "desc": "Endpoint used to fetch access token.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
                   "fieldType": "string"
                 },
                 {
                   "kind": "field",
                   "name": "scopes",
                   "required": false,
-                  "desc": "Optional scopes to include with the token request.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
                   "fieldType": "string"
                 },
                 {
                   "kind": "field",
                   "name": "endpoint_params",
                   "required": false,
-                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": {},
-                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
                   "fieldType": "map of string to string",
                   "fieldCategory": "advanced"
                 }
@@ -13289,10 +13588,9 @@
               "kind": "field",
               "name": "proxy_url",
               "required": false,
-              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.proxy-url",
               "fieldType": "string",
               "fieldCategory": "advanced"
             }
@@ -15497,7 +15795,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -16366,13 +16664,13 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
+          "name": "grafana_alertmanager_idle_grace_period",
           "required": false,
-          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
           "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
-          "fieldType": "string",
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {
@@ -16701,6 +16999,17 @@
           "fieldFlag": "alertmanager.enable-state-cleanup",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "strict_initialization",
+          "required": false,
+          "desc": "Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.strict-initialization-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

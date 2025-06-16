@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package commonsubexpressionelimination;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.equal_all) = false;
+option (gogoproto.messagename_all) = true;
+
+message DuplicateDetails {
+  // No fields yet.
+}

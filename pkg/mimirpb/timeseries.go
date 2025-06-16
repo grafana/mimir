@@ -66,6 +66,13 @@ type PreallocWriteRequest struct {
 
 	// UnmarshalRW2 is set to true if the Unmarshal method should unmarshal the data as a remote write 2.0 message.
 	UnmarshalFromRW2 bool
+
+	// RW2SymbolOffset is an optimization used for RW2-adjacent applications where typical symbol refs are shifted by an offset.
+	// This allows certain symbols to be reserved without being present in the symbols list.
+	RW2SymbolOffset uint32
+	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
+	// These symbols are never sent in the request to begin with.
+	RW2CommonSymbols []string
 }
 
 // Unmarshal implements proto.Message.
@@ -75,6 +82,8 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
+	p.rw2symbols.offset = p.RW2SymbolOffset
+	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
@@ -116,9 +125,9 @@ func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string
 	}
 }
 
-func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
-	for idx := range p.Timeseries {
-		p.Timeseries[idx].clearUnmarshalData()
+func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range m.Timeseries {
+		m.Timeseries[idx].clearUnmarshalData()
 	}
 }
 
@@ -515,6 +524,13 @@ func ReuseSlice(ts []PreallocTimeseries) {
 		ReusePreallocTimeseries(&ts[i])
 	}
 
+	ReuseSliceOnly(ts)
+}
+
+// ReuseSliceOnly reuses the slice of timeseries, but not its contents.
+// Only use this if you have another means of reusing the individual timeseries contained within.
+// Most times, you want to use ReuseSlice instead.
+func ReuseSliceOnly(ts []PreallocTimeseries) {
 	preallocTimeseriesSlicePool.Put(ts[:0])
 }
 
@@ -767,7 +783,7 @@ func copyHistogram(src Histogram) Histogram {
 
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
-func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
+func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
 	var timeseriesCount, metadataCount int
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
@@ -782,17 +798,17 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
-			metadata = append(metadata, p.Metadata[i-initialMetadataIndex])
+			metadata = append(metadata, m.Metadata[i-initialMetadataIndex])
 		} else {
-			timeseries = append(timeseries, p.Timeseries[i])
+			timeseries = append(timeseries, m.Timeseries[i])
 		}
 	}
 
 	return &WriteRequest{
 		Timeseries:          timeseries,
 		Metadata:            metadata,
-		Source:              p.Source,
-		SkipLabelValidation: p.SkipLabelValidation,
+		Source:              m.Source,
+		SkipLabelValidation: m.SkipLabelValidation,
 	}
 }
 
@@ -801,4 +817,18 @@ func preallocSliceIfNeeded[T any](size int) []T {
 		return make([]T, 0, size)
 	}
 	return nil
+}
+
+// MakeReferencesSafeToRetain converts all of ts' unsafe references to safe copies.
+func (ts *TimeSeries) MakeReferencesSafeToRetain() {
+	for i, l := range ts.Labels {
+		ts.Labels[i].Name = strings.Clone(l.Name)
+		ts.Labels[i].Value = strings.Clone(l.Value)
+	}
+	for i, e := range ts.Exemplars {
+		for j, l := range e.Labels {
+			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
+			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+		}
+	}
 }

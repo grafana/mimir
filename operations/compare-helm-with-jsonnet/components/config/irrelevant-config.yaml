@@ -81,3 +81,6 @@ config:
   common:
     storage:
       backend:
+  limits:
+    ruler_alertmanager_client_config:
+      alertmanager_url:

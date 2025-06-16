@@ -13,33 +13,33 @@ std.manifestYamlDoc({
     self.kafka_2 +
     self.kafka_3 +
     self.redpanda_console +
-    self.jaeger +
+    self.tempo +
     self.blockbuilder +
     self.blockbuilderscheduler +
     {},
 
   write:: {
     // Zone-a.
+    'mimir-write-zone-a-0': mimirService({
+      name: 'mimir-write-zone-a-0',
+      target: 'write',
+      publishedHttpPort: 8001,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-0:/data:delegated'],
+    }),
     'mimir-write-zone-a-1': mimirService({
       name: 'mimir-write-zone-a-1',
       target: 'write',
-      publishedHttpPort: 8001,
+      publishedHttpPort: 8002,
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
       extraVolumes: ['.data-mimir-write-zone-a-1:/data:delegated'],
     }),
     'mimir-write-zone-a-2': mimirService({
       name: 'mimir-write-zone-a-2',
       target: 'write',
-      publishedHttpPort: 8002,
-      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
-    }),
-    'mimir-write-zone-a-3': mimirService({
-      name: 'mimir-write-zone-a-3',
-      target: 'write',
       publishedHttpPort: 8003,
       extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
-      extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
+      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
     }),
     // mimir-write-zone-c-61 is an instance that's not connected to the rest of the cluster.
     // The idea is that it can be used to test replay speed on a kafka partition without affecting the
@@ -66,42 +66,42 @@ std.manifestYamlDoc({
   },
 
   read:: {
-    'mimir-read-1': mimirService({
-      name: 'mimir-read-1',
+    'mimir-read-0': mimirService({
+      name: 'mimir-read-0',
       target: 'read',
       publishedHttpPort: 8004,
     }),
-    'mimir-read-2': mimirService({
-      name: 'mimir-read-2',
+    'mimir-read-1': mimirService({
+      name: 'mimir-read-1',
       target: 'read',
       publishedHttpPort: 8005,
     }),
   },
 
   backend:: {
-    'mimir-backend-1': mimirService({
-      name: 'mimir-backend-1',
+    'mimir-backend-0': mimirService({
+      name: 'mimir-backend-0',
       target: 'backend',
       publishedHttpPort: 8006,
     }),
-    'mimir-backend-2': mimirService({
-      name: 'mimir-backend-2',
+    'mimir-backend-1': mimirService({
+      name: 'mimir-backend-1',
       target: 'backend',
       publishedHttpPort: 8007,
     }),
   },
 
   blockbuilder:: {
-    'mimir-block-builder-1': mimirService({
-      name: 'mimir-block-builder-1',
+    'mimir-block-builder-0': mimirService({
+      name: 'mimir-block-builder-0',
       target: 'block-builder',
       publishedHttpPort: 8008,
     }),
   },
 
   blockbuilderscheduler:: {
-    'mimir-block-builder-scheduler-1': mimirService({
-      name: 'mimir-block-builder-scheduler-1',
+    'mimir-block-builder-scheduler-0': mimirService({
+      name: 'mimir-block-builder-scheduler-0',
       target: 'block-builder-scheduler',
       publishedHttpPort: 8019,
     }),
@@ -126,7 +126,7 @@ std.manifestYamlDoc({
 
   minio:: {
     minio: {
-      image: 'minio/minio',
+      image: 'minio/minio:RELEASE.2025-05-24T17-08-30Z',
       command: ['server', '--console-address', ':9001', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
@@ -263,21 +263,24 @@ std.manifestYamlDoc({
     },
   },
 
-  jaeger:: {
-    jaeger: {
-      // Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
-      image: 'jaegertracing/all-in-one:1.62.0',
-      ports: ['16686:16686', '14268'],
+  tempo:: {
+    tempo: {
+      image: 'grafana/tempo:latest',
+      command: ['-config.file=/etc/config/tempo.yaml'],
+      volumes: ['./config:/etc/config'],
+      ports: [
+        '3200',  // tempo: this is where metrics are scraped and where datasource queries are sent.
+        '9095',  // tempo grpc
+        '4317',  // otlp grpc
+        '4318',  // otlp http, this is the one we use for local tracing.
+      ],
     },
   },
 
-  local jaegerEnv(appName) = {
-    JAEGER_AGENT_HOST: 'jaeger',
-    JAEGER_AGENT_PORT: 6831,
-    JAEGER_SAMPLER_TYPE: 'const',
-    JAEGER_SAMPLER_PARAM: 1,
-    JAEGER_TAGS: 'app=%s' % appName,
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
+  local otelTracingEnv(appName) = {
+    // We could send traces to Alloy and let it send them to Tempo,
+    // but this is local so let's skip one hop and send them directly to Tempo.
+    OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'http://tempo:4318/v1/traces',
   },
 
   // This function builds docker-compose declaration for Mimir service.
@@ -292,7 +295,7 @@ std.manifestYamlDoc({
         kafka_1: { condition: 'service_healthy' },
         kafka_2: { condition: 'service_healthy' },
       },
-      env: jaegerEnv(self.target),
+      env: otelTracingEnv(self.target),
       extraArguments: [],
       debug: false,
       debugPort: self.publishedHttpPort + 3000,

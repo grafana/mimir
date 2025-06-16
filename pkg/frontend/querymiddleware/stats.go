@@ -20,19 +20,14 @@ import (
 )
 
 type queryStatsMiddleware struct {
-	engine                      *promql.Engine
-	nonAlignedQueries           prometheus.Counter
+	engine                      promql.QueryEngine
 	regexpMatcherCount          prometheus.Counter
 	regexpMatcherOptimizedCount prometheus.Counter
 	consistencyCounter          *prometheus.CounterVec
 	next                        MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) MetricsQueryMiddleware {
-	nonAlignedQueries := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_non_step_aligned_queries_total",
-		Help: "Total queries sent that are not step aligned.",
-	})
+func newQueryStatsMiddleware(reg prometheus.Registerer, engine promql.QueryEngine) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_regexp_matcher_count",
 		Help: "Total number of regexp matchers",
@@ -49,7 +44,6 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) M
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
 			engine:                      engine,
-			nonAlignedQueries:           nonAlignedQueries,
 			regexpMatcherCount:          regexpMatcherCount,
 			regexpMatcherOptimizedCount: regexpMatcherOptimizedCount,
 			consistencyCounter:          consistencyCounter,
@@ -59,10 +53,6 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) M
 }
 
 func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	if !isRequestStepAligned(req) {
-		s.nonAlignedQueries.Inc()
-	}
-
 	s.trackRegexpMatchers(req)
 	s.trackReadConsistency(ctx)
 	s.populateQueryDetails(ctx, req)
@@ -109,17 +99,11 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
 
-	query, err := newQuery(ctx, req, s.engine, queryStatsErrQueryable)
-	if err != nil {
-		return
-	}
-	defer query.Close()
-
-	evalStmt, ok := query.Statement().(*parser.EvalStmt)
+	minT, maxT, ok := s.findMinMaxTime(ctx, req)
 	if !ok {
 		return
 	}
-	minT, maxT := promql.FindMinMaxTime(evalStmt)
+
 	// This middleware may run multiple times for the same request in case of a remote read request
 	// (once for each query in the request). In such case, we compute the minT/maxT time as the min/max
 	// timestamp we see across all queries in the request.
@@ -128,6 +112,29 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	if maxT != 0 && (details.MaxT.IsZero() || details.MaxT.Before(time.UnixMilli(maxT))) {
 		details.MaxT = time.UnixMilli(maxT)
+	}
+}
+
+func (s queryStatsMiddleware) findMinMaxTime(ctx context.Context, req MetricsQueryRequest) (int64, int64, bool) {
+	switch r := req.(type) {
+	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
+		query, err := newQuery(ctx, req, s.engine, queryStatsErrQueryable)
+		if err != nil {
+			return 0, 0, false
+		}
+		defer query.Close()
+
+		evalStmt, ok := query.Statement().(*parser.EvalStmt)
+		if !ok {
+			return 0, 0, false
+		}
+		minT, maxT := promql.FindMinMaxTime(evalStmt)
+		return minT, maxT, true
+	case *remoteReadQueryRequest:
+		minT := r.GetStart() + 1 // The query time range is left-open, but minT is expected to be inclusive.
+		return minT, r.GetEnd(), true
+	default:
+		return 0, 0, false
 	}
 }
 

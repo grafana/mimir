@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"path"
 
-	"github.com/grafana/mimir/pkg/util/instrumentation"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // RoundTripper that forwards requests to downstream URL.
@@ -24,7 +24,7 @@ func NewDownstreamRoundTripper(downstreamURL string) (http.RoundTripper, error) 
 		return nil, err
 	}
 
-	return &instrumentation.TracerTransport{Next: downstreamRoundTripper{downstreamURL: u}}, nil
+	return otelhttp.NewTransport(downstreamRoundTripper{downstreamURL: u}), nil
 }
 
 func (d downstreamRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {

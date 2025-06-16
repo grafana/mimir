@@ -57,11 +57,11 @@ func (b *ErrorInjectedBucketClient) Exists(ctx context.Context, name string) (bo
 	return b.Bucket.Exists(ctx, name)
 }
 
-func (b *ErrorInjectedBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
+func (b *ErrorInjectedBucketClient) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
 	if err := b.injectError(OpUpload, name); err != nil {
 		return err
 	}
-	return b.Bucket.Upload(ctx, name, r)
+	return b.Bucket.Upload(ctx, name, r, opts...)
 }
 
 func (b *ErrorInjectedBucketClient) Delete(ctx context.Context, name string) error {
