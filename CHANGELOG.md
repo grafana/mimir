@@ -122,6 +122,7 @@
 ### Mimirtool
 
 * [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
+* [BUGFIX] Fix issue where `remote-read` doesn't behave like other mimirtool commands for authentication. #11402
 
 ### Mimir Continuous Test
 
