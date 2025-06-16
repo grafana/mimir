@@ -508,9 +508,8 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
         - -distributor.ha-tracker.prefix=prom_ha/
-        - -distributor.ha-tracker.store=etcd
+        - -distributor.ha-tracker.store=memberlist
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
@@ -1557,36 +1556,3 @@ spec:
         requests:
           storage: 50Gi
       storageClassName: standard
----
-apiVersion: etcd.database.coreos.com/v1beta2
-kind: EtcdCluster
-metadata:
-  annotations:
-    etcd.database.coreos.com/scope: clusterwide
-  name: etcd
-  namespace: default
-spec:
-  pod:
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchLabels:
-              etcd_cluster: etcd
-          topologyKey: kubernetes.io/hostname
-    annotations:
-      prometheus.io/port: "2379"
-      prometheus.io/scrape: "true"
-    etcdEnv:
-    - name: ETCD_AUTO_COMPACTION_RETENTION
-      value: 1h
-    labels:
-      name: etcd
-    resources:
-      limits:
-        memory: 512Mi
-      requests:
-        cpu: 500m
-        memory: 512Mi
-  size: 3
-  version: 3.3.13
