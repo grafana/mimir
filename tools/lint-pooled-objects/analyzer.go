@@ -20,19 +20,25 @@ const putMethodName = "Put"
 func runAnalysis(pass *analysis.Pass) (any, error) {
 	var limitingBucketedPoolType types.Type
 
-	for _, pkg := range pass.Pkg.Imports() {
-		if pkg.Path() != "github.com/grafana/mimir/pkg/streamingpromql/types" {
-			continue
-		}
-
-		o := pkg.Scope().Lookup("LimitingBucketedPool")
-		if o == nil {
-			return nil, fmt.Errorf("type LimitingBucketedPool not found in package %v", pkg.Path())
-		}
-
-		limitingBucketedPoolType = o.Type()
+	// Check the current package for the limiting pool type (in the case where the package being analysed contains the type)...
+	limitingBucketedPoolType, err := findLimitingBucketedPoolType(pass.Pkg)
+	if err != nil {
+		return nil, err
 	}
 
+	// ...and if it's not there, check all the imported packages too.
+	if limitingBucketedPoolType == nil {
+		for _, pkg := range pass.Pkg.Imports() {
+			limitingBucketedPoolType, err = findLimitingBucketedPoolType(pkg)
+			if err != nil {
+				return nil, err
+			} else if limitingBucketedPoolType != nil {
+				break
+			}
+		}
+	}
+
+	// We couldn't find the limiting pool type in the package or its imports, so we are done.
 	if limitingBucketedPoolType == nil {
 		// Nothing to do, the 'types' package is not imported.
 		return nil, nil
@@ -91,6 +97,19 @@ func runAnalysis(pass *analysis.Pass) (any, error) {
 	}
 
 	return nil, nil
+}
+
+func findLimitingBucketedPoolType(pkg *types.Package) (types.Type, error) {
+	if pkg.Path() != "github.com/grafana/mimir/pkg/streamingpromql/types" {
+		return nil, nil
+	}
+
+	o := pkg.Scope().Lookup("LimitingBucketedPool")
+	if o == nil {
+		return nil, fmt.Errorf("type LimitingBucketedPool not found in package %v", pkg.Path())
+	}
+
+	return o.Type(), nil
 }
 
 // HACK: it does not seem to be straightforward to take an instantiated types.Type (eg. LimitingBucketedPool[[]int, int])
