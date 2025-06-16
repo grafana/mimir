@@ -51,6 +51,7 @@ const (
 	HistogramPointerSlices
 	SeriesMetadataSlices
 	BucketSlices
+	BucketsSlices
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
@@ -89,6 +90,8 @@ func (s MemoryConsumptionSource) String() string {
 	case SeriesMetadataSlices:
 		return "[]SeriesMetadata"
 	case BucketSlices:
+		return "[]promql.Bucket"
+	case BucketsSlices:
 		return "[]promql.Buckets"
 	case QuantileGroupSlices:
 		return "[]aggregations.qGroup"
