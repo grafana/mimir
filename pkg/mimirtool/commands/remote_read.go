@@ -338,7 +338,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 		log.Debugf("Processing chunked streaming response")
 		return c.handleChunkedResponse(httpResp, queries)
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
-		log.Debugf("Processing sampled response")
+		log.Debugf("Processing samples response")
 		return c.handleSamplesResponse(httpResp, queries)
 	default:
 		return nil, fmt.Errorf("unsupported content type: %s", contentType)
