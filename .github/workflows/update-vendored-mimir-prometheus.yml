@@ -147,7 +147,7 @@ jobs:
         uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5.0.3
         with:
           token: ${{ steps.app-token.outputs.token }}
-          title: \[${{ inputs.mimir_branch }}\] Update mimir-prometheus to ${{ steps.get-commit-info.outputs.short_hash }}
+          title: '[${{ steps.branch-names.outputs.mimir_branch }}] Update mimir-prometheus to ${{ steps.get-commit-info.outputs.short_hash }}'
           body: |
             ## Update mimir-prometheus dependency
 
