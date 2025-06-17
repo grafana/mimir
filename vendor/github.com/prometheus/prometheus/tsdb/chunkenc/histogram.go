@@ -201,8 +201,7 @@ type HistogramAppender struct {
 	schema         int32
 	zThreshold     float64
 	pSpans, nSpans []histogram.Span
-	// customValues is read only after the first sample is appended.
-	customValues []float64
+	customValues   []float64
 
 	// Although we intend to start new chunks on counter resets, we still
 	// have to handle negative deltas for gauge histograms. Therefore, even
@@ -996,8 +995,8 @@ func (it *histogramIterator) AtHistogram(h *histogram.Histogram) (int64, *histog
 	h.NegativeBuckets = resize(h.NegativeBuckets, len(it.nBuckets))
 	copy(h.NegativeBuckets, it.nBuckets)
 
-	// Custom values are interned. The single copy is here in the iterator.
-	h.CustomValues = it.customValues
+	h.CustomValues = resize(h.CustomValues, len(it.customValues))
+	copy(h.CustomValues, it.customValues)
 
 	return it.t, h
 }
@@ -1050,8 +1049,8 @@ func (it *histogramIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int
 		fh.NegativeBuckets[i] = currentNegative
 	}
 
-	// Custom values are interned. The single copy is here in the iterator.
-	fh.CustomValues = it.customValues
+	fh.CustomValues = resize(fh.CustomValues, len(it.customValues))
+	copy(fh.CustomValues, it.customValues)
 
 	return it.t, fh
 }
@@ -1082,6 +1081,7 @@ func (it *histogramIterator) Reset(b []byte) {
 		it.atHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
 		it.pSpans, it.nSpans = nil, nil
+		it.customValues = nil
 	} else {
 		it.pBuckets = it.pBuckets[:0]
 		it.nBuckets = it.nBuckets[:0]
@@ -1089,6 +1089,7 @@ func (it *histogramIterator) Reset(b []byte) {
 	if it.atFloatHistogramCalled {
 		it.atFloatHistogramCalled = false
 		it.pFloatBuckets, it.nFloatBuckets = nil, nil
+		it.customValues = nil
 	} else {
 		it.pFloatBuckets = it.pFloatBuckets[:0]
 		it.nFloatBuckets = it.nFloatBuckets[:0]
@@ -1101,7 +1102,6 @@ func (it *histogramIterator) Reset(b []byte) {
 	it.leading = 0
 	it.trailing = 0
 	it.err = nil
-	it.customValues = nil
 }
 
 func (it *histogramIterator) Next() ValueType {
@@ -1211,7 +1211,13 @@ func (it *histogramIterator) Next() ValueType {
 		} else {
 			it.nSpans = nil
 		}
-		// it.CustomValues are interned, so we don't need to copy them.
+		if len(it.customValues) > 0 {
+			newCustomValues := make([]float64, len(it.customValues))
+			copy(newCustomValues, it.customValues)
+			it.customValues = newCustomValues
+		} else {
+			it.customValues = nil
+		}
 	}
 
 	if it.atHistogramCalled {

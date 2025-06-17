@@ -377,6 +377,9 @@ func (in Intervals) Add(n Interval) Intervals {
 	if n.Mint < in[mini].Mint {
 		in[mini].Mint = n.Mint
 	}
-	in[mini].Maxt = max(n.Maxt, in[maxi+mini-1].Maxt)
+	in[mini].Maxt = in[maxi+mini-1].Maxt
+	if n.Maxt > in[mini].Maxt {
+		in[mini].Maxt = n.Maxt
+	}
 	return append(in[:mini+1], in[maxi+mini:]...)
 }

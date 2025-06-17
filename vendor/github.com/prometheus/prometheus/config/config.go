@@ -21,7 +21,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -175,7 +174,7 @@ var (
 
 	DefaultRuntimeConfig = RuntimeConfig{
 		// Go runtime tuning.
-		GoGC: getGoGC(),
+		GoGC: 75,
 	}
 
 	// DefaultScrapeConfig is the default scrape configuration.
@@ -385,6 +384,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// We have to restore it here.
 	if c.Runtime.isZero() {
 		c.Runtime = DefaultRuntimeConfig
+		// Use the GOGC env var value if the runtime section is empty.
+		c.Runtime.GoGC = getGoGCEnv()
 	}
 
 	for _, rf := range c.RuleFiles {
@@ -650,27 +651,10 @@ func (c *GlobalConfig) isZero() bool {
 		!c.AlwaysScrapeClassicHistograms
 }
 
-const DefaultGoGCPercentage = 75
-
 // RuntimeConfig configures the values for the process behavior.
 type RuntimeConfig struct {
 	// The Go garbage collection target percentage.
 	GoGC int `yaml:"gogc,omitempty"`
-
-	// Below are guidelines for adding a new field:
-	//
-	// For config that shouldn't change after startup, you might want to use
-	// flags https://prometheus.io/docs/prometheus/latest/command-line/prometheus/.
-	//
-	// Consider when the new field is first applied: at the very beginning of instance
-	// startup, after the TSDB is loaded etc. See https://github.com/prometheus/prometheus/pull/16491
-	// for an example.
-	//
-	// Provide a test covering various scenarios: empty config file, empty or incomplete runtime
-	// config block, precedence over other inputs (e.g., env vars, if applicable) etc.
-	// See TestRuntimeGOGCConfig (or https://github.com/prometheus/prometheus/pull/15238).
-	// The test should also verify behavior on reloads, since this config should be
-	// adjustable at runtime.
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -1125,11 +1109,13 @@ func (v *AlertmanagerAPIVersion) UnmarshalYAML(unmarshal func(interface{}) error
 		return err
 	}
 
-	if !slices.Contains(SupportedAlertmanagerAPIVersions, *v) {
-		return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
+	for _, supportedVersion := range SupportedAlertmanagerAPIVersions {
+		if *v == supportedVersion {
+			return nil
+		}
 	}
 
-	return nil
+	return fmt.Errorf("expected Alertmanager api version to be one of %v but got %v", SupportedAlertmanagerAPIVersions, *v)
 }
 
 const (
@@ -1509,7 +1495,7 @@ func fileErr(filename string, err error) error {
 	return fmt.Errorf("%q: %w", filePath(filename), err)
 }
 
-func getGoGC() int {
+func getGoGCEnv() int {
 	goGCEnv := os.Getenv("GOGC")
 	// If the GOGC env var is set, use the same logic as upstream Go.
 	if goGCEnv != "" {
@@ -1522,7 +1508,7 @@ func getGoGC() int {
 			return i
 		}
 	}
-	return DefaultGoGCPercentage
+	return DefaultRuntimeConfig.GoGC
 }
 
 type translationStrategyOption string
@@ -1555,9 +1541,7 @@ var (
 
 // OTLPConfig is the configuration for writing to the OTLP endpoint.
 type OTLPConfig struct {
-	PromoteAllResourceAttributes      bool                      `yaml:"promote_all_resource_attributes,omitempty"`
 	PromoteResourceAttributes         []string                  `yaml:"promote_resource_attributes,omitempty"`
-	IgnoreResourceAttributes          []string                  `yaml:"ignore_resource_attributes,omitempty"`
 	TranslationStrategy               translationStrategyOption `yaml:"translation_strategy,omitempty"`
 	KeepIdentifyingResourceAttributes bool                      `yaml:"keep_identifying_resource_attributes,omitempty"`
 	ConvertHistogramsToNHCB           bool                      `yaml:"convert_histograms_to_nhcb,omitempty"`
@@ -1571,41 +1555,21 @@ func (c *OTLPConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if c.PromoteAllResourceAttributes {
-		if len(c.PromoteResourceAttributes) > 0 {
-			return errors.New("'promote_all_resource_attributes' and 'promote_resource_attributes' cannot be configured simultaneously")
-		}
-		if err := sanitizeAttributes(c.IgnoreResourceAttributes, "ignored"); err != nil {
-			return fmt.Errorf("invalid 'ignore_resource_attributes': %w", err)
-		}
-	} else {
-		if len(c.IgnoreResourceAttributes) > 0 {
-			return errors.New("'ignore_resource_attributes' cannot be configured unless 'promote_all_resource_attributes' is true")
-		}
-		if err := sanitizeAttributes(c.PromoteResourceAttributes, "promoted"); err != nil {
-			return fmt.Errorf("invalid 'promote_resource_attributes': %w", err)
-		}
-	}
-
-	return nil
-}
-
-func sanitizeAttributes(attributes []string, adjective string) error {
 	seen := map[string]struct{}{}
 	var err error
-	for i, attr := range attributes {
+	for i, attr := range c.PromoteResourceAttributes {
 		attr = strings.TrimSpace(attr)
 		if attr == "" {
-			err = errors.Join(err, fmt.Errorf("empty %s OTel resource attribute", adjective))
+			err = errors.Join(err, errors.New("empty promoted OTel resource attribute"))
 			continue
 		}
 		if _, exists := seen[attr]; exists {
-			err = errors.Join(err, fmt.Errorf("duplicated %s OTel resource attribute %q", adjective, attr))
+			err = errors.Join(err, fmt.Errorf("duplicated promoted OTel resource attribute %q", attr))
 			continue
 		}
 
 		seen[attr] = struct{}{}
-		attributes[i] = attr
+		c.PromoteResourceAttributes[i] = attr
 	}
 	return err
 }

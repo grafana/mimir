@@ -93,7 +93,6 @@ type LeveledCompactor struct {
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
-	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
@@ -181,8 +180,6 @@ type LeveledCompactorOptions struct {
 	EnableOverlappingCompaction bool
 	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
 	Metrics *CompactorMetrics
-	// UseUncachedIO allows bypassing the page cache when appropriate.
-	UseUncachedIO bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -238,7 +235,6 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		metrics:                     opts.Metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
-		useUncachedIO:               opts.UseUncachedIO,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
@@ -860,7 +856,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		// Populate chunk and index files into temporary directory with
 		// data of all blocks.
 		var chunkw ChunkWriter
-		chunkw, err = chunks.NewWriter(chunkDir(tmp), chunks.WithSegmentSize(c.maxBlockChunkSegmentSize), chunks.WithUncachedIO(c.useUncachedIO))
+		chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
 		if err != nil {
 			return fmt.Errorf("open chunk writer: %w", err)
 		}

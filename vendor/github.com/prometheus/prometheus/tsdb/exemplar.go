@@ -296,7 +296,10 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 	ce.nextIndex = 0
 
 	// Replay as many entries as needed, starting with oldest first.
-	count := min(l, int64(len(oldBuffer)))
+	count := int64(len(oldBuffer))
+	if l < count {
+		count = l
+	}
 
 	migrated := 0
 

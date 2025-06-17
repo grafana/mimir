@@ -23,6 +23,8 @@ import (
 
 	proto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type MetricStreamingDecoder struct {
@@ -151,16 +153,12 @@ func (m *MetricStreamingDecoder) GetLabel() {
 	panic("don't use GetLabel, use Label instead")
 }
 
-type scratchBuilder interface {
-	Add(name, value string)
-}
-
 // Label parses labels into labels scratch builder. Metric name is missing
 // given the protobuf metric model and has to be deduced from the metric family name.
 // TODO: The method name intentionally hide MetricStreamingDecoder.Metric.Label
 // field to avoid direct use (it's not parsed). In future generator will generate
 // structs tailored for streaming decoding.
-func (m *MetricStreamingDecoder) Label(b scratchBuilder) error {
+func (m *MetricStreamingDecoder) Label(b *labels.ScratchBuilder) error {
 	for _, l := range m.labels {
 		if err := parseLabel(m.mData[l.start:l.end], b); err != nil {
 			return err
@@ -171,7 +169,7 @@ func (m *MetricStreamingDecoder) Label(b scratchBuilder) error {
 
 // parseLabel is essentially LabelPair.Unmarshal but directly adding into scratch builder
 // and reusing strings.
-func parseLabel(dAtA []byte, b scratchBuilder) error {
+func parseLabel(dAtA []byte, b *labels.ScratchBuilder) error {
 	var name, value string
 	l := len(dAtA)
 	iNdEx := 0
