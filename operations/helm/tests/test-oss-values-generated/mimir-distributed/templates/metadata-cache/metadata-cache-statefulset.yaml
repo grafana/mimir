@@ -66,6 +66,14 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+          readinessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            tcpSocket:
+              port: client
+            timeoutSeconds: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

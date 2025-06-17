@@ -2472,21 +2472,15 @@ memcached:
       drop: [ALL]
     allowPrivilegeEscalation: false
 
-  readinessProbe: {}
-#    tcpSocket:
-#      port: 11211
-#    initialDelaySeconds: 5
-#    periodSeconds: 5
-#    timeoutSeconds: 3
-#    failureThreshold: 6
-#    successThreshold: 1
+  readinessProbe:
+    tcpSocket:
+      port: client
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
+    successThreshold: 1
 
-  livenessProbe: {}
-#    initialDelaySeconds: 30
-#    periodSeconds: 10
-#    timeoutSeconds: 5
-#    failureThreshold: 6
-#    successThreshold: 1
 
 memcachedExporter:
   # -- Whether memcached metrics should be exported

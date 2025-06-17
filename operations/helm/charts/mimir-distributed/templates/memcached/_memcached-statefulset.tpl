@@ -125,14 +125,6 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with $.ctx.Values.memcached.livenessProbe }}
-          livenessProbe:
-            exec:
-              command:
-                - pgrep
-                - memcached
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
           volumeMounts:
