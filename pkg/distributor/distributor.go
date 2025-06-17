@@ -1968,7 +1968,7 @@ func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.Wr
 		receivedExemplars += len(ts.Exemplars)
 		receivedHistograms += len(ts.Histograms)
 		for _, h := range ts.Histograms {
-			receivedHistogramBuckets += h.BucketsCount()
+			receivedHistogramBuckets += h.BucketCount()
 		}
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())

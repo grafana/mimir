@@ -1633,7 +1633,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
 				numFloats := len(ts.Samples)
 				if numFloats == 0 || ts.Samples[numFloats-1].TimestampMs < lastNativeHistogram.Timestamp {
-					numNativeHistogramBuckets = lastNativeHistogram.BucketsCount()
+					numNativeHistogramBuckets = lastNativeHistogram.BucketCount()
 				}
 			}
 		}

@@ -214,7 +214,7 @@ func TestHistogram_BucketsCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.histogram.BucketsCount())
+			assert.Equal(t, tt.expected, tt.histogram.BucketCount())
 		})
 	}
 }

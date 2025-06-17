@@ -237,8 +237,8 @@ func (h Histogram) IsGauge() bool {
 	return h.ResetHint == Histogram_GAUGE
 }
 
-// BucketsCount counts the total number of buckets in the native histogram.
-func (h *Histogram) BucketsCount() int {
+// BucketCount counts the total number of buckets in the native histogram.
+func (h *Histogram) BucketCount() int {
 	return len(h.PositiveCounts) + len(h.NegativeCounts) + len(h.PositiveDeltas) + len(h.NegativeDeltas)
 }
 
