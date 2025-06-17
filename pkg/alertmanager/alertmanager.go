@@ -443,9 +443,8 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, smtpConfig *SmtpConfig, usingGrafanaConfig bool) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) error {
 	cfg := definition.GrafanaToUpstreamConfig(conf)
-	emailCfg := am.createEmailSenderConfig(*cfg.Global, smtpConfig, tmplExternalURL.String())
 	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
 	if err != nil {
 		return err
@@ -534,56 +533,6 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 
 	am.configHashMetric.Set(md5HashAsMetricValue([]byte(rawCfg)))
 	return nil
-}
-
-// createEmailSenderConfig uses the custom SMTP configuration sent by Grafana, falling back to the globals.
-func (am *Alertmanager) createEmailSenderConfig(g config.GlobalConfig, smtp *SmtpConfig, externalURL string) alertingReceivers.EmailSenderConfig {
-	// Create base config using globals.
-	cfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword: string(g.SMTPAuthPassword),
-		AuthUser:     g.SMTPAuthUsername,
-		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes: []string{"text/html"},
-		EhloIdentity: g.SMTPHello,
-		ExternalURL:  externalURL,
-		FromAddress:  g.SMTPFrom,
-		FromName:     "Grafana",
-		Host:         g.SMTPSmarthost.String(),
-		KeyFile:      g.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:   !g.SMTPRequireTLS,
-		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
-	}
-
-	// No SMTP configs sent from Grafana, return base config.
-	if smtp == nil {
-		return cfg
-	}
-
-	// Patch the base config with the custom SMTP config sent by Grafana.
-	if smtp.Password != "" {
-		cfg.AuthPassword = smtp.Password
-	}
-	if smtp.User != "" {
-		cfg.AuthUser = smtp.User
-	}
-	if smtp.EhloIdentity != "" {
-		cfg.EhloIdentity = smtp.EhloIdentity
-	}
-	if smtp.FromAddress != "" {
-		cfg.FromAddress = smtp.FromAddress
-	}
-	if smtp.FromName != "" {
-		cfg.FromName = smtp.FromName
-	}
-	if smtp.Host != "" {
-		cfg.Host = smtp.Host
-	}
-	cfg.SkipVerify = smtp.SkipVerify
-	if smtp.StaticHeaders != nil {
-		cfg.StaticHeaders = smtp.StaticHeaders
-	}
-
-	return cfg
 }
 
 // Stop stops the Alertmanager.

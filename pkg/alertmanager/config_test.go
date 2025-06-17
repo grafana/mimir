@@ -169,13 +169,13 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.smtpConfig.StaticHeaders)
+			require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.emailConfig.StaticHeaders)
 			require.Equal(t, test.grafanaConfig.User, cfg.User)
 			require.Equal(t, test.grafanaConfig.ExternalUrl, cfg.tmplExternalURL.String())
 			require.True(t, cfg.usingGrafanaConfig)
 
 			// Custom SMTP settings should be part of the config.
-			require.Equal(t, test.expSmtpConfig, cfg.smtpConfig)
+			require.Equal(t, test.expSmtpConfig, cfg.emailConfig)
 
 			// Receiver names should be unique.
 			var finalCfg definition.PostableApiAlertingConfig

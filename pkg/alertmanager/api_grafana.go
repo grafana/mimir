@@ -400,8 +400,8 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	var cfg UserGrafanaConfig
-	err = json.Unmarshal(payload, &cfg)
+	cfg := &UserGrafanaConfig{}
+	err = json.Unmarshal(payload, cfg)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)

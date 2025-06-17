@@ -3413,7 +3413,7 @@ func TestComputeConfig(t *testing.T) {
 
 			require.True(t, startAM)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.smtpConfig.StaticHeaders)
+			require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
 			if test.expURL == "" {
 				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
 			} else {
@@ -3431,7 +3431,7 @@ func TestComputeConfig(t *testing.T) {
 
 			require.Equal(t, test.expStartAM, startAM)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.smtpConfig.StaticHeaders)
+			require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
 			if test.expURL == "" {
 				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
 			} else {
