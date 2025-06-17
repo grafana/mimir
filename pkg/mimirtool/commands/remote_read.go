@@ -339,7 +339,7 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 		return c.handleChunkedResponse(httpResp, queries)
 	case strings.HasPrefix(contentType, "application/x-protobuf"):
 		log.Debugf("Processing sampled response")
-		return c.handleSampledResponse(httpResp, queries)
+		return c.handleSamplesResponse(httpResp, queries)
 	default:
 		return nil, fmt.Errorf("unsupported content type: %s", contentType)
 	}
@@ -372,8 +372,8 @@ func (c *combinedSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-// handleSampledResponse handles the traditional sampled response format
-func (c *RemoteReadCommand) handleSampledResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
+// handleSamplesResponse handles the traditional samples response format
+func (c *RemoteReadCommand) handleSamplesResponse(httpResp *http.Response, queries []*prompb.Query) (storage.SeriesSet, error) {
 	// Read and decompress response
 	compressedResp, err := io.ReadAll(httpResp.Body)
 	if err != nil {
