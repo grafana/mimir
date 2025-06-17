@@ -246,6 +246,10 @@ func (c *CountValues) ExpressionPosition() posrange.PositionRange {
 	return c.expressionPosition
 }
 
+func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return c.Inner.Prepare(ctx, params)
+}
+
 func (c *CountValues) Close() {
 	c.Inner.Close()
 	c.LabelName.Close()

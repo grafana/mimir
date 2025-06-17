@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -143,6 +144,8 @@ type Distributor struct {
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
+	receivedNativeHistogramSamples   *prometheus.CounterVec
+	receivedNativeHistogramBuckets   *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
@@ -412,7 +415,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
-			Help: "The total number of received samples, excluding rejected and deduped samples.",
+			Help: "The total number of received samples, including native histogram samples, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
@@ -421,6 +424,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_metadata_total",
 			Help: "The total number of received metadata, excluding rejected.",
+		}, []string{"user"}),
+		receivedNativeHistogramSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_samples_total",
+			Help: "The total number of received native histogram samples, excluding rejected and deduped samples.",
+		}, []string{"user"}),
+		receivedNativeHistogramBuckets: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_buckets_total",
+			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
@@ -733,6 +744,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
+	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
+	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -1234,6 +1247,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
+		const maxMetricsWithDeduplicatedSamplesToTrace = 10
+		var dedupedPerUnsafeMetricName map[string]int
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1249,6 +1264,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
+			rawSamples := len(ts.Samples)
+			rawHistograms := len(ts.Histograms)
 			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
@@ -1266,8 +1283,43 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 				continue
 			}
 
+			dedupedSamplesAndHistograms := (rawSamples - len(ts.Samples)) + (rawHistograms - len(ts.Histograms))
+			if dedupedSamplesAndHistograms > 0 {
+				if dedupedPerUnsafeMetricName == nil {
+					dedupedPerUnsafeMetricName = make(map[string]int, maxMetricsWithDeduplicatedSamplesToTrace)
+				}
+				name, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+				if err != nil {
+					name = "unnamed"
+				}
+				increment := len(dedupedPerUnsafeMetricName) < maxMetricsWithDeduplicatedSamplesToTrace
+				if !increment {
+					// If at max capacity, only touch pre-existing entries.
+					_, increment = dedupedPerUnsafeMetricName[name]
+				}
+				if increment {
+					dedupedPerUnsafeMetricName[name] += dedupedSamplesAndHistograms
+				}
+			}
+
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+		}
+
+		if len(dedupedPerUnsafeMetricName) > 0 {
+			// Emit tracing span events for metrics with deduped samples.
+			sp := trace.SpanFromContext(ctx)
+			for unsafeMetricName, deduped := range dedupedPerUnsafeMetricName {
+				sp.AddEvent(
+					"Distributor.prePushValidationMiddleware[deduplicated samples/histograms with conflicting timestamps from write request]",
+					trace.WithAttributes(
+						// unsafeMetricName is an unsafe reference to a gRPC unmarshalling buffer,
+						// clone it for safe retention.
+						attribute.String("metric", strings.Clone(unsafeMetricName)),
+						attribute.Int("count", deduped),
+					),
+				)
+			}
 		}
 
 		if droppedNativeHistograms > 0 {
@@ -1932,16 +1984,21 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 }
 
 func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedHistograms, receivedExemplars, receivedMetadata int
+	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
-		receivedHistograms += len(ts.Histograms)
 		receivedExemplars += len(ts.Exemplars)
+		receivedHistograms += len(ts.Histograms)
+		for _, h := range ts.Histograms {
+			receivedHistogramBuckets += h.BucketCount()
+		}
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
+	d.receivedNativeHistogramSamples.WithLabelValues(userID).Add(float64(receivedHistograms))
+	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 

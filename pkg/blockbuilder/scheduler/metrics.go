@@ -17,6 +17,7 @@ type schedulerMetrics struct {
 	outstandingJobs          prometheus.Gauge
 	assignedJobs             prometheus.Gauge
 	pendingJobs              *prometheus.GaugeVec
+	persistentJobFailures    prometheus.Counter
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -46,6 +47,10 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		fetchOffsetsFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_fetch_offsets_failed_total",
 			Help: "The number of times we've persistently failed to fetch committed offsets.",
+		}),
+		persistentJobFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_persistent_job_failures_total",
+			Help: "The number of times a job failed persistently beyond the allowed max fail count.",
 		}),
 		outstandingJobs: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_blockbuilder_scheduler_outstanding_jobs",

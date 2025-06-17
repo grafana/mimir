@@ -214,6 +214,16 @@
         },
         {
           "kind": "field",
+          "name": "grpc_collect_max_streams_by_conn",
+          "required": false,
+          "desc": "If true, the max streams by connection gauge will be collected.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "server.grpc-collect-max-streams-by-conn",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "proxy_protocol_enabled",
           "required": false,
           "desc": "Enables PROXY protocol.",
@@ -703,6 +713,26 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "server.log-request-headers-exclude-list",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_headers",
+          "required": false,
+          "desc": "Optionally add request headers to tracing spans.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.trace-request-headers",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_exclude_headers_list",
+          "required": false,
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.trace-request-headers-exclude-list",
           "fieldType": "string"
         },
         {
@@ -2162,7 +2192,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -4971,6 +5001,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_analysis_max_results",
+          "required": false,
+          "desc": "Maximum number of series that can be requested in a single cardinality API request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 500,
+          "fieldFlag": "querier.cardinality-api-max-series-limit",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_results_max_size_bytes",
           "required": false,
           "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
@@ -5327,6 +5368,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "ruler_min_rule_evaluation_interval",
+          "required": false,
+          "desc": "Minimum allowable evaluation interval for rule groups.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.min-rule-evaluation-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -7044,7 +7096,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -7500,6 +7552,28 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "query_engine",
+          "required": false,
+          "desc": "Query engine to use, either 'prometheus' or 'mimir'",
+          "fieldValue": null,
+          "fieldDefaultValue": "prometheus",
+          "fieldFlag": "query-frontend.query-engine",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_query_engine_fallback",
+          "required": false,
+          "desc": "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -9249,7 +9323,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -9812,7 +9886,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -10399,7 +10473,7 @@
                       "required": false,
                       "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
+                      "fieldDefaultValue": true,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
@@ -15721,7 +15795,7 @@
                   "required": false,
                   "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
@@ -16590,20 +16664,9 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
-          "required": false,
-          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration or they are receiving requests.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "grafana_alertmanager_idle_grace_period",
           "required": false,
-          "desc": "Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
           "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",

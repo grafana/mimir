@@ -70,10 +70,11 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 		return c.next.Do(ctx, request)
 	}
 
-	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
+	userID := tenant.JoinTenantIDs(tenants)
+	k := generateCardinalityEstimationCacheKey(userID, request, cardinalityEstimateBucketSize)
 	spanLog.LogKV("cache key", k)
 
-	estimatedCardinality, estimateAvailable := c.lookupCardinalityForKey(ctx, k)
+	estimatedCardinality, estimateAvailable := c.lookupCardinalityForKey(ctx, k, userID)
 	if estimateAvailable {
 		newRequest, err := request.WithEstimatedSeriesCountHint(estimatedCardinality)
 		if err != nil {
@@ -98,7 +99,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 	spanLog.LogKV("actual cardinality", actualCardinality)
 
 	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {
-		c.storeCardinalityForKey(k, actualCardinality)
+		c.storeCardinalityForKey(k, actualCardinality, userID)
 		spanLog.LogKV("cache updated", true)
 	}
 
@@ -114,7 +115,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 
 // lookupCardinalityForKey fetches a cardinality estimate for the given key from
 // the results cache.
-func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key string) (uint64, bool) {
+func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key string, userId string) (uint64, bool) {
 	if c.cache == nil {
 		return 0, false
 	}
@@ -126,6 +127,10 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 			level.Warn(c.logger).Log("msg", "failed to unmarshal cardinality estimate")
 			return 0, false
 		}
+		// Ensure there's no hashed key collision.
+		if qs.UserID != userId {
+			return 0, false
+		}
 		return qs.EstimatedSeriesCount, true
 	}
 	return 0, false
@@ -133,11 +138,11 @@ func (c *cardinalityEstimation) lookupCardinalityForKey(ctx context.Context, key
 
 // storeCardinalityForKey stores a cardinality estimate for the given key in the
 // results cache.
-func (c *cardinalityEstimation) storeCardinalityForKey(key string, count uint64) {
+func (c *cardinalityEstimation) storeCardinalityForKey(key string, count uint64, userID string) {
 	if c.cache == nil {
 		return
 	}
-	m := &QueryStatistics{EstimatedSeriesCount: count}
+	m := &QueryStatistics{EstimatedSeriesCount: count, UserID: userID}
 	marshaled, err := proto.Marshal(m)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to marshal cardinality estimate")
@@ -174,6 +179,11 @@ func generateCardinalityEstimationCacheKey(userID string, r MetricsQueryRequest,
 	startBucket := (r.GetStart() + int64(offset)) / bucketSize.Milliseconds()
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
+	// Apply a hash function to user controlled input to make sure we don't exceed
+	// the max number of bytes for the cache key (250 bytes in Memcached).
+	queryHash := cacheHashKey(r.GetQuery())
+	userIDHash := cacheHashKey(userID)
+
 	// Prefix key with `QS` (short for "query statistics").
-	return fmt.Sprintf("QS:%s:%s:%d:%d", userID, cacheHashKey(r.GetQuery()), startBucket, rangeBucket)
+	return fmt.Sprintf("QS:%s:%s:%d:%d", userIDHash, queryHash, startBucket, rangeBucket)
 }

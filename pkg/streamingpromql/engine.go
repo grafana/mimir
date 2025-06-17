@@ -46,10 +46,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
 	}
 
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errors.New("enabling per-step stats not supported by Mimir query engine")
-	}
-
 	if opts.CommonOpts.EnableDelayedNameRemoval {
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
@@ -69,6 +65,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -78,9 +75,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:         opts.Pedantic,
-		useQueryPlanning: opts.UseQueryPlanning,
-		planner:          planner,
+		pedantic:           opts.Pedantic,
+		eagerLoadSelectors: opts.EagerLoadSelectors,
+		useQueryPlanning:   opts.UseQueryPlanning,
+		planner:            planner,
 	}, nil
 }
 
@@ -89,6 +87,7 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
+	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -102,6 +101,8 @@ type Engine struct {
 	//
 	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
+
+	eagerLoadSelectors bool
 
 	useQueryPlanning bool
 	planner          *QueryPlanner

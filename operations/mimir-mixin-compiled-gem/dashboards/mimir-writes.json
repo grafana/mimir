@@ -1995,6 +1995,85 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Request added latency\nArtificial delay added by distributors to requests.\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 17,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "99th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "histogram_quantile(0.01, sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "1st percentile",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(histogram_sum(sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval])))) / sum(histogram_count(sum(rate(cortex_request_added_latency_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval])))) * 1e3",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Request added latency",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Added latency",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
                   "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to distributor.\nRejected requests are requests that distributor fails to handle because of distributor instance limits.\nWhen distributor is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen distributor is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
                   "fieldConfig": {
                      "defaults": {
@@ -2305,7 +2384,7 @@
                         }
                      ]
                   },
-                  "id": 17,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2359,7 +2438,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 19,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2438,7 +2517,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2794,7 +2873,7 @@
                         }
                      ]
                   },
-                  "id": 20,
+                  "id": 21,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2848,7 +2927,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 22,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2927,7 +3006,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3046,7 +3125,7 @@
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3107,7 +3186,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3156,7 +3235,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3205,7 +3284,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 26,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3416,7 +3495,7 @@
                         }
                      ]
                   },
-                  "id": 27,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3464,7 +3543,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 29,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3706,7 +3785,7 @@
                         }
                      ]
                   },
-                  "id": 29,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3754,7 +3833,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 31,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3996,7 +4075,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4044,7 +4123,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 33,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4167,7 +4246,7 @@
                         }
                      ]
                   },
-                  "id": 33,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4222,7 +4301,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 35,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4345,7 +4424,7 @@
                         }
                      ]
                   },
-                  "id": 35,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4400,7 +4479,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 37,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -4523,7 +4602,7 @@
                         }
                      ]
                   },
-                  "id": 37,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4609,7 +4688,7 @@
                         }
                      ]
                   },
-                  "id": 38,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4665,7 +4744,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4745,7 +4824,7 @@
                         }
                      ]
                   },
-                  "id": 40,
+                  "id": 41,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4812,7 +4891,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 42,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4861,7 +4940,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 43,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4910,7 +4989,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 43,
+                  "id": 44,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4959,7 +5038,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 44,
+                  "id": 45,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -5019,7 +5098,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 45,
+                  "id": 46,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -5067,7 +5146,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 46,
+                  "id": 47,
                   "links": [ ],
                   "options": {
                      "legend": {

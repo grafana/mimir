@@ -194,7 +194,7 @@ type Config struct {
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"advanced"`
+	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"deprecated"`
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
 
@@ -338,6 +338,9 @@ type Ingester struct {
 
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
+
+	// Tracks if a forced compaction is in progress
+	forcedCompactionInProgress atomic.Bool
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -1630,13 +1633,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
 				numFloats := len(ts.Samples)
 				if numFloats == 0 || ts.Samples[numFloats-1].TimestampMs < lastNativeHistogram.Timestamp {
-					numNativeHistogramBuckets = 0
-					for _, span := range lastNativeHistogram.PositiveSpans {
-						numNativeHistogramBuckets += int(span.Length)
-					}
-					for _, span := range lastNativeHistogram.NegativeSpans {
-						numNativeHistogramBuckets += int(span.Length)
-					}
+					numNativeHistogramBuckets = lastNativeHistogram.BucketCount()
 				}
 			}
 		}
@@ -2200,9 +2197,8 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, tracer, "Ingester.QueryStream")
-	defer spanlog.Finish()
-
+	ctx := stream.Context()
+	spanlog := spanlogger.FromContext(ctx, i.logger)
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
@@ -3277,7 +3273,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 	// This metric can be used in alerts and when troubleshooting.
 	if force {
 		i.metrics.forcedCompactionInProgress.Set(1)
-		defer i.metrics.forcedCompactionInProgress.Set(0)
+		i.forcedCompactionInProgress.Store(true)
+		defer func() {
+			i.metrics.forcedCompactionInProgress.Set(0)
+			i.forcedCompactionInProgress.Store(false)
+		}()
 	}
 
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {

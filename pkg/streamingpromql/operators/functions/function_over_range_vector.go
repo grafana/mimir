@@ -188,6 +188,22 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 	m.Annotations.Add(generator(metricName, pos))
 }
 
+func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	err := m.Inner.Prepare(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	for _, sa := range m.ScalarArgs {
+		err := sa.Prepare(ctx, params)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
 

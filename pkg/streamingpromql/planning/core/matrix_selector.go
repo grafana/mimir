@@ -69,11 +69,12 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		Offset:                   m.Offset.Milliseconds(),
 		Range:                    m.Range,
 		Matchers:                 matchers,
+		EagerLoad:                params.EagerLoadSelectors,
 		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.Stats)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
