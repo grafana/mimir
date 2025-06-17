@@ -417,10 +417,11 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 	// Use the chunked reader from the remote package
 	reader := remote.NewChunkedReader(httpResp.Body, c.readSizeLimit, nil)
 
-	// Collect all series from all queries
-	var allSeries []storage.Series
 	processedQueries := make(map[int64]int)
 	totalBytes := 0
+
+	// Collect unique series, merging chunks for duplicate series
+	var uniqueSeries []*multiQueryChunkedSeries
 
 	for {
 		var chunkedResp prompb.ChunkedReadResponse
@@ -449,12 +450,27 @@ func (c *RemoteReadCommand) handleChunkedResponse(httpResp *http.Response, queri
 			for _, l := range chunkSeries.Labels {
 				builder.Add(l.Name, l.Value)
 			}
-			series := &multiQueryChunkedSeries{
-				labels: builder.Labels(),
-				chunks: chunkSeries.Chunks,
+			seriesLabels := builder.Labels()
+
+			// Check if this series already exists (same labels as the last series)
+			if len(uniqueSeries) > 0 && labels.Equal(uniqueSeries[len(uniqueSeries)-1].labels, seriesLabels) {
+				// Merge chunks with the existing series
+				uniqueSeries[len(uniqueSeries)-1].chunks = append(uniqueSeries[len(uniqueSeries)-1].chunks, chunkSeries.Chunks...)
+			} else {
+				// Create new series
+				series := &multiQueryChunkedSeries{
+					labels: seriesLabels,
+					chunks: chunkSeries.Chunks,
+				}
+				uniqueSeries = append(uniqueSeries, series)
 			}
-			allSeries = append(allSeries, series)
 		}
+	}
+
+	// Convert to []storage.Series for the combinedSeriesSet
+	allSeries := make([]storage.Series, len(uniqueSeries))
+	for i, s := range uniqueSeries {
+		allSeries[i] = s
 	}
 
 	log.Infof("Combined %d series from %d queries using chunked streaming (%d bytes)", len(allSeries), len(queries), totalBytes)
