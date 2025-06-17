@@ -1533,74 +1533,74 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 	}{
 		"should do nothing on no downstream requests": {
 			requests: splitRequests{
-				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.Stats{}},
-				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.Stats{}},
+				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.QueryStats{}},
+				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.QueryStats{}},
 			},
 			responses: nil,
 			expected: splitRequests{
-				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.Stats{}},
-				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.Stats{}},
+				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.QueryStats{}},
+				{downstreamRequests: []MetricsQueryRequest{}, downstreamResponses: []Response{}, downstreamStatistics: []*stats.QueryStats{}},
 			},
 		},
 		"should associate downstream responses to requests": {
 			requests: splitRequests{{
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses:  []Response{nil, nil},
-				downstreamStatistics: []*stats.Stats{nil, nil},
+				downstreamStatistics: []*stats.QueryStats{nil, nil},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{},
 				downstreamResponses:  []Response{},
-				downstreamStatistics: []*stats.Stats{},
+				downstreamStatistics: []*stats.QueryStats{},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses:  []Response{nil},
-				downstreamStatistics: []*stats.Stats{nil},
+				downstreamStatistics: []*stats.QueryStats{nil},
 			}},
 			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 1, id: 1},
 				Response: &PrometheusResponse{Status: "response-1"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 2, id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}},
 			expected: splitRequests{{
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses:  []Response{&PrometheusResponse{Status: "response-1"}, &PrometheusResponse{Status: "response-2"}},
-				downstreamStatistics: []*stats.Stats{new(stats.Stats), new(stats.Stats)},
+				downstreamStatistics: []*stats.QueryStats{new(stats.QueryStats), new(stats.QueryStats)},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{},
 				downstreamResponses:  []Response{},
-				downstreamStatistics: []*stats.Stats{},
+				downstreamStatistics: []*stats.QueryStats{},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses:  []Response{&PrometheusResponse{Status: "response-3"}},
-				downstreamStatistics: []*stats.Stats{new(stats.Stats)},
+				downstreamStatistics: []*stats.QueryStats{new(stats.QueryStats)},
 			}},
 		},
 		"should return error if a downstream response is missing": {
 			requests: splitRequests{{
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses:  []Response{nil, nil},
-				downstreamStatistics: []*stats.Stats{nil, nil},
+				downstreamStatistics: []*stats.QueryStats{nil, nil},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses:  []Response{nil},
-				downstreamStatistics: []*stats.Stats{nil},
+				downstreamStatistics: []*stats.QueryStats{nil},
 			}},
 			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 2, id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}},
 			expectedErr: "consistency check failed: missing downstream response",
 		},
@@ -1608,20 +1608,20 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 			requests: splitRequests{{
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses:  []Response{nil, nil},
-				downstreamStatistics: []*stats.Stats{nil, nil},
+				downstreamStatistics: []*stats.QueryStats{nil, nil},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses:  []Response{nil},
-				downstreamStatistics: []*stats.Stats{nil},
+				downstreamStatistics: []*stats.QueryStats{nil},
 			}},
 			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 2, id: 3},
 				Response: &PrometheusResponse{Status: "response-2"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}},
 			expectedErr: "consistency check failed: conflicting downstream request ID",
 		},
@@ -1629,28 +1629,28 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 			requests: splitRequests{{
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 1, id: 1}, &PrometheusRangeQueryRequest{start: 2, id: 2}},
 				downstreamResponses:  []Response{nil, nil},
-				downstreamStatistics: []*stats.Stats{nil, nil},
+				downstreamStatistics: []*stats.QueryStats{nil, nil},
 			}, {
 				downstreamRequests:   []MetricsQueryRequest{&PrometheusRangeQueryRequest{start: 3, id: 3}},
 				downstreamResponses:  []Response{nil},
-				downstreamStatistics: []*stats.Stats{nil},
+				downstreamStatistics: []*stats.QueryStats{nil},
 			}},
 			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{start: 3, id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 2, id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 1, id: 1},
 				Response: &PrometheusResponse{Status: "response-1"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}, {
 				Request:  &PrometheusRangeQueryRequest{start: 4, id: 4},
 				Response: &PrometheusResponse{Status: "response-4"},
-				Stats:    &stats.Stats{},
+				Stats:    &stats.QueryStats{},
 			}},
 			expectedErr: "consistency check failed: received more responses than expected (expected: 3, got: 4)",
 		},

@@ -15,7 +15,7 @@ import "google/protobuf/duration.proto";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message StatsData {
+message Stats {
   // The sum of all wall time spent in the querier to execute the query.
   google.protobuf.Duration wall_time = 1 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   // The number of series fetched for the query

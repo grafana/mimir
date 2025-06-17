@@ -329,7 +329,7 @@ func (f *Handler) reportQueryStats(
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
-	var stats *querier_stats.Stats
+	var stats *querier_stats.QueryStats
 	var samplesProcessedFromCache uint64
 	if details != nil {
 		stats = details.QuerierStats

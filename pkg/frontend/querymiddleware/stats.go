@@ -149,7 +149,7 @@ func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
 }
 
 type QueryDetails struct {
-	QuerierStats *stats.Stats
+	QuerierStats *stats.QueryStats
 
 	// Start and End are the parsed start and end times of the unmodified user request.
 	Start, End time.Time
