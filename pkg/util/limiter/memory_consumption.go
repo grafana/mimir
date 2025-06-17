@@ -163,10 +163,10 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
-		traceID, sampled := tracing.ExtractSampledTraceID(l.ctx)
+		traceID, ok := tracing.ExtractTraceID(l.ctx)
 		traceDescription := ""
 
-		if sampled {
+		if ok {
 			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
 		}
 
