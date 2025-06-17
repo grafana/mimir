@@ -1204,6 +1204,10 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		"scalar": {},
 		"vector": {},
 		"pi":     {},
+		"ts_of_min_over_time": {},
+		"ts_of_last_over_time": {},
+		"ts_of_max_over_time": {},
+
 	}
 	for _, tc := range testsToIgnore {
 		fnToIgnore[tc.fn] = struct{}{}
