@@ -12,9 +12,6 @@
 * [CHANGE] Frontend: The subquery spin-off feature is now enabled with `-query-frontend.subquery-spin-off-enabled=true` instead of `-query-frontend.instant-queries-with-subquery-spin-off=.*` #11153
 * [CHANGE] Overrides-exporter: Don't export per-tenant overrides that are set to their default values. #11173
 * [CHANGE] gRPC/HTTP clients: Rename metric `cortex_client_request_invalid_cluster_validation_labels_total` to `cortex_client_invalid_cluster_validation_label_requests_total`. #11237
-<<<<<<< dv-sample-delay
-* [CHANGE] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to to wall clock. #11573
-=======
 * [CHANGE] Querier: Use Mimir Query Engine (MQE) by default. Set `-querier.query-engine=prometheus` to continue using Prometheus' engine. #11501
 * [CHANGE] Memcached: Ignore initial DNS resolution failure, meaning don't depend on Memcached on startup. #11602
 * [CHANGE] Ingester: The `-ingester.stream-chunks-when-using-blocks` CLI flag and `ingester_stream_chunks_when_using_blocks` runtime configuration option have been deprecated and will be removed in a future release. #11711
@@ -22,7 +19,6 @@
 * [CHANGE] Distributor: renamed few metrics used by experimental ingest storage. #11766
   * Renamed `cortex_ingest_storage_writer_produce_requests_total` to `cortex_ingest_storage_writer_produce_records_enqueued_total`
   * Renamed `cortex_ingest_storage_writer_produce_failures_total` to `cortex_ingest_storage_writer_produce_records_failed_total`
->>>>>>> main
 * [FEATURE] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: Created timestamp is ignored, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192 #11143
 * [FEATURE] Query-frontend: expand `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` configuration options to cache non-transient response failures for instant queries. #11120
 * [FEATURE] Query-frontend: Allow use of Mimir Query Engine (MQE) via the experimental CLI flags `-query-frontend.query-engine` or `-query-frontend.enable-query-engine-fallback` or corresponding YAML. #11417
@@ -77,6 +73,7 @@
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [ENHANCEMENT] Ruler: Add new per-tenant limit on minimum rule evaluation interval. #11665
 * [ENHANCEMENT] store-gateway: download sparse headers on startup when lazy loading is enabled. #11686
+* [ENHANCEMENT] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to wall clock. #11573
 * [ENHANCEMENT] Distributor: added more metrics to troubleshoot Kafka records production latency when experimental ingest storage is enabled. #11766
   * Added `cortex_ingest_storage_writer_produce_remaining_deadline_seconds` metric, to measure the remaining deadline (in seconds) when records are requested to be produced.
   * Added `cortex_ingest_storage_writer_produce_records_enqueue_duration_seconds` metric, to measure how long it takes to enqueue produced Kafka records in the client.
