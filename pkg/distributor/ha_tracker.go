@@ -41,6 +41,7 @@ type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
+	SetHATrackerTimeouts(user string, update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration)
 }
 
 type haTracker interface {
@@ -141,16 +142,8 @@ func (r *ReplicaDesc) Clone() memberlist.Mergeable {
 // create an HA Tracker.
 type HATrackerConfig struct {
 	EnableHATracker bool `yaml:"enable_ha_tracker"`
-	// We should only update the timestamp if the difference
-	// between the stored timestamp and the time we received a sample at
-	// is more than this duration.
-	UpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced"`
-	UpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced"`
-	// We should only failover to accepting samples from a replica
-	// other than the replica written in the KVStore if the difference
-	// between the stored timestamp and the time we received a sample is
-	// more than this duration
-	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
+
+	HATrackerTimeoutsConfig `yaml:",inline"`
 
 	// This is a potentially high cardinality metric, so it is disabled by default.
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
@@ -173,8 +166,31 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
+type HATrackerTimeoutsConfig struct {
+	// We should only update the timestamp if the difference
+	// between the stored timestamp and the time we received a sample at
+	// is more than this duration.
+	UpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced"`
+	UpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced"`
+	// We should only failover to accepting samples from a replica
+	// other than the replica written in the KVStore if the difference
+	// between the stored timestamp and the time we received a sample is
+	// more than this duration
+	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
+}
+
+func (cfg *HATrackerTimeoutsConfig) overrideFromLimits(user string, limits haTrackerLimits) error {
+	var newCfg HATrackerTimeoutsConfig
+	limits.SetHATrackerTimeouts(user, &newCfg.UpdateTimeout, &newCfg.UpdateTimeoutJitterMax, &newCfg.FailoverTimeout)
+	if err := newCfg.Validate(); err != nil {
+		return err
+	}
+	*cfg = newCfg
+	return nil
+}
+
 // Validate config and returns error on failure
-func (cfg *HATrackerConfig) Validate() error {
+func (cfg HATrackerTimeoutsConfig) Validate() error {
 	if cfg.UpdateTimeoutJitterMax < 0 {
 		return errNegativeUpdateTimeoutJitterMax
 	}
@@ -231,15 +247,10 @@ type haClusterInfo struct {
 // newHaTracker returns a new HA cluster tracker using either Consul,
 // etcd, or an in-memory KV store. Tracker must be started via StartAsync().
 func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*defaultHaTracker, error) {
-	var jitter time.Duration
-	if cfg.UpdateTimeoutJitterMax > 0 {
-		jitter = time.Duration(rand.Int63n(int64(2*cfg.UpdateTimeoutJitterMax))) - cfg.UpdateTimeoutJitterMax
-	}
-
 	t := &defaultHaTracker{
 		logger:              log.With(logger, "component", "ha-tracker"),
 		cfg:                 cfg,
-		updateTimeoutJitter: jitter,
+		updateTimeoutJitter: computeUpdateTimeoutJitter(cfg.UpdateTimeoutJitterMax),
 		limits:              limits,
 		clusters:            map[string]map[string]*haClusterInfo{},
 
@@ -310,6 +321,13 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 
 	t.Service = services.NewBasicService(t.syncHATrackerStateOnStart, t.loop, nil)
 	return t, nil
+}
+
+func computeUpdateTimeoutJitter(maxJitter time.Duration) time.Duration {
+	if maxJitter > 0 {
+		return time.Duration(rand.Int63n(int64(2*maxJitter))) - maxJitter
+	}
+	return 0
 }
 
 func (h *defaultHaTracker) syncHATrackerStateOnStart(ctx context.Context) error {
@@ -459,17 +477,18 @@ func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) 
 	// Note the maps may change when we release the lock while talking to KVStore;
 	// the Go language allows this: https://golang.org/ref/spec#For_range note 3.
 	for userID, clusters := range h.clusters {
+		uh := h.forUser(userID)
 		for cluster, entry := range clusters {
-			if h.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
+			if uh.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
 				continue // Some other process updated it recently; nothing to do.
 			}
 			var replica string
 			var receivedAt int64
-			if h.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
+			if uh.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
 				// We have seen the elected replica recently; carry on with that choice.
 				replica = entry.elected.Replica
 				receivedAt = entry.electedLastSeenTimestamp
-			} else if h.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
+			} else if uh.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
 				// Not seen elected but have seen another: attempt to fail over.
 				replica = entry.nonElectedLastSeenReplica
 				receivedAt = entry.nonElectedLastSeenTimestamp
@@ -478,7 +497,7 @@ func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) 
 			}
 			// Release lock while we talk to KVStore, which could take a while.
 			h.electedLock.RUnlock()
-			err := h.updateKVStore(ctx, userID, cluster, replica, now, receivedAt)
+			err := uh.updateKVStore(ctx, cluster, replica, now, receivedAt)
 			h.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
@@ -593,7 +612,8 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 		return newTooManyClustersError(limit)
 	}
 
-	err := h.updateKVStore(ctx, userID, cluster, replica, now, now.UnixMilli())
+	uh := h.forUser(userID)
+	err := uh.updateKVStore(ctx, cluster, replica, now, now.UnixMilli())
 	if err != nil {
 		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
@@ -602,7 +622,34 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 	return h.checkReplica(ctx, userID, cluster, replica, now)
 }
 
-func (h *defaultHaTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
+type defaultHaTrackerForUser struct {
+	*defaultHaTracker
+	userID              string
+	cfg                 HATrackerTimeoutsConfig
+	updateTimeoutJitter time.Duration
+}
+
+func (h *defaultHaTracker) forUser(userID string) defaultHaTrackerForUser {
+	uh := defaultHaTrackerForUser{
+		defaultHaTracker: h,
+		userID:           userID,
+		cfg: HATrackerTimeoutsConfig{
+			UpdateTimeout:          h.cfg.UpdateTimeout,
+			UpdateTimeoutJitterMax: h.cfg.UpdateTimeoutJitterMax,
+			FailoverTimeout:        h.cfg.FailoverTimeout,
+		},
+		updateTimeoutJitter: h.updateTimeoutJitter,
+	}
+	err := uh.cfg.overrideFromLimits(userID, h.limits)
+	if err != nil {
+		level.Warn(h.logger).Log("msg", "invalid HA tracker timeouts config for tenant; using defaults", "user", userID, "err", err)
+	} else {
+		uh.updateTimeoutJitter = computeUpdateTimeoutJitter(uh.cfg.UpdateTimeoutJitterMax)
+	}
+	return uh
+}
+
+func (h *defaultHaTrackerForUser) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
 	return now.Sub(timestamp.Time(receivedAt)) < h.cfg.UpdateTimeout+h.updateTimeoutJitter
 }
 
@@ -638,8 +685,8 @@ func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time, receivedAt int64) error {
-	key := fmt.Sprintf("%s/%s", userID, cluster)
+func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, replica string, now time.Time, receivedAt int64) error {
+	key := fmt.Sprintf("%s/%s", h.userID, cluster)
 	var desc *ReplicaDesc
 	var electedAtTime, electedChanges int64
 	err := h.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -662,10 +709,10 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 			// If our replica is different, wait until the failover time
 			if desc.Replica != replica {
 				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
-					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 					return nil, false, nil
 				}
-				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 				electedAtTime = timestamp.FromTime(now)
 				electedChanges = desc.ElectedChanges + 1
 			}
@@ -685,11 +732,11 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 		}
 		return desc, true, nil
 	})
-	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
+	h.kvCASCalls.WithLabelValues(h.userID, cluster).Inc()
 	// Add data stored or received from KVStore, if available.
 	if err == nil && desc != nil {
 		h.electedLock.Lock()
-		h.updateCache(userID, cluster, desc)
+		h.updateCache(h.userID, cluster, desc)
 		h.electedLock.Unlock()
 	}
 	return err

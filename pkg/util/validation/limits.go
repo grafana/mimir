@@ -106,15 +106,21 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate                                 float64             `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
-	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	IngestionBurstFactor                        float64             `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
-	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters                               int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	RequestRate          float64 `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize     int     `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate        float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize   int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples      bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel       string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	// See distributor.HATrackerTimeoutsConfig.UpdateTimeout
+	HATrackerUpdateTimeout *time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced"`
+	// See distributor.HATrackerTimeoutsConfig.UpdateTimeoutJitterMax
+	HATrackerUpdateTimeoutJitterMax *time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced"`
+	// See distributor.HATrackerTimeoutsConfig.FailoverTimeout
+	HATrackerFailoverTimeout                    *time.Duration      `yaml:"ha_tracker_failover_timeout" category:"advanced"`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
@@ -1086,6 +1092,19 @@ func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 // MaxHAClusters returns maximum number of clusters that HA tracker will track for a user.
 func (o *Overrides) MaxHAClusters(user string) int {
 	return o.getOverridesForUser(user).HAMaxClusters
+}
+
+func (o *Overrides) SetHATrackerTimeouts(user string, update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
+	uo := o.getOverridesForUser(user)
+	if uo.HATrackerUpdateTimeout != nil {
+		*update = *uo.HATrackerUpdateTimeout
+	}
+	if uo.HATrackerUpdateTimeoutJitterMax != nil {
+		*updateJitterMax = *uo.HATrackerUpdateTimeoutJitterMax
+	}
+	if uo.HATrackerFailoverTimeout != nil {
+		*failover = *uo.HATrackerFailoverTimeout
+	}
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.
