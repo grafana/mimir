@@ -571,7 +571,7 @@ Only one of the namespace selection flags can be specified.
 Grafana Mimir exposes a [remote read API] which allows the system to access the stored series.
 The `remote-read` subcommand `mimirtool` enables you to interact with its API, and to determine which series are stored.
 
-The remote-read commands support multiple `--selector` flags to query multiple series selectors in a single request, leveraging the remote read protocol's native batching capabilities for improved performance.
+The remote-read commands support multiple `--selector` flags to query multiple series selectors in a single request, leveraging the remote read protocol's native batching capabilities for improved performance. When multiple selectors are specified, their results are combined into a single unified output.
 
 Additionally, you can control the response format using the `--use-chunks` flag:
 
