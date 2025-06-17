@@ -95,7 +95,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
 
@@ -185,7 +185,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		expectedBytes := len(records[0].Value) + len(records[1].Value)
 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
 
@@ -596,7 +596,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes sent to the ingest storage.
+			# HELP cortex_ingest_storage_writer_sent_bytes_total Total number of bytes produced to the Kafka backend.
 			# TYPE cortex_ingest_storage_writer_sent_bytes_total counter
 			cortex_ingest_storage_writer_sent_bytes_total %d
 

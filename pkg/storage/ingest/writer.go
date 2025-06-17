@@ -67,15 +67,25 @@ type Writer struct {
 	serializer recordSerializer
 
 	// Metrics.
-	writeLatency      prometheus.Histogram
-	writeBytesTotal   prometheus.Counter
-	recordsPerRequest prometheus.Histogram
+	writeSuccessLatency prometheus.Observer
+	writeFailureLatency prometheus.Observer
+	writeBytesTotal     prometheus.Counter
+	recordsPerRequest   prometheus.Histogram
 
 	// The following settings can only be overridden in tests.
 	maxInflightProduceRequests int
 }
 
 func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+	writeLatency := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "cortex_ingest_storage_writer_latency_seconds",
+		Help:                            "Latency to write an incoming request to the Kafka backend, after the request has been split to per-partition Kafka records. Latency is tracked individually for each partition.",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+		NativeHistogramMaxBucketNumber:  100,
+		Buckets:                         prometheus.DefBuckets,
+	}, []string{"outcome"})
+
 	w := &Writer{
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
@@ -85,17 +95,11 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
 		// Metrics.
-		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:                            "cortex_ingest_storage_writer_latency_seconds",
-			Help:                            "Latency to write an incoming request to the ingest storage.",
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
-			NativeHistogramMaxBucketNumber:  100,
-			Buckets:                         prometheus.DefBuckets,
-		}),
+		writeSuccessLatency: writeLatency.WithLabelValues("success"),
+		writeFailureLatency: writeLatency.WithLabelValues("failure"),
 		writeBytesTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_writer_sent_bytes_total",
-			Help: "Total number of bytes sent to the ingest storage.",
+			Help: "Total number of bytes produced to the Kafka backend.",
 		}),
 		recordsPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_ingest_storage_writer_records_per_write_request",
@@ -161,10 +165,14 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 
 	res := writer.ProduceSync(ctx, records)
 
-	// Track latency only for successfully written records.
+	// We track the latency both in case of success and failure (but with a different label), to avoid misunderstandings
+	// when we look at it in case Kafka Produce requests time out (if latency wasn't tracked on error, we would see low
+	// latency but in practice many are very high latency and timing out).
 	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
-		w.writeLatency.Observe(time.Since(startTime).Seconds())
+		w.writeSuccessLatency.Observe(time.Since(startTime).Seconds())
 		w.writeBytesTotal.Add(float64(sizeBytes))
+	} else {
+		w.writeFailureLatency.Observe(time.Since(startTime).Seconds())
 	}
 
 	if err := res.FirstErr(); err != nil {
