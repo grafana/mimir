@@ -913,13 +913,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
-	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
-		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
-	}
+	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
+	t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 
-	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
-	// error message in this case, indicating that query planning is disabled.
 	analysisHandler := streamingpromql.AnalysisHandler(t.QueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 

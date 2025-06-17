@@ -50,8 +50,8 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
-	if opts.UseQueryPlanning && planner == nil {
-		return nil, errors.New("query planning enabled but no planner provided")
+	if planner == nil {
+		return nil, errors.New("no query planner provided")
 	}
 
 	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
@@ -77,7 +77,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 		pedantic:           opts.Pedantic,
 		eagerLoadSelectors: opts.EagerLoadSelectors,
-		useQueryPlanning:   opts.UseQueryPlanning,
 		planner:            planner,
 	}, nil
 }
@@ -104,16 +103,11 @@ type Engine struct {
 
 	eagerLoadSelectors bool
 
-	useQueryPlanning bool
-	planner          *QueryPlanner
+	planner *QueryPlanner
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	if e.useQueryPlanning {
-		return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
-	}
-
-	return e.newQueryFromExpression(ctx, q, opts, qs, ts, ts, 0)
+	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
 }
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
@@ -125,11 +119,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
 	}
 
-	if e.useQueryPlanning {
-		return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))
-	}
-
-	return e.newQueryFromExpression(ctx, q, opts, qs, start, end, interval)
+	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))
 }
 
 func (e *Engine) newQueryFromPlanner(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
