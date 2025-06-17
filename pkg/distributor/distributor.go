@@ -454,7 +454,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleDelayHistogram: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_sample_delay_seconds",
 			Help:                            "Number of seconds by which a sample came in late wrt wallclock.",
-			NativeHistogramBucketFactor:     2,
+			NativeHistogramBucketFactor:     1.1,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user"}),
