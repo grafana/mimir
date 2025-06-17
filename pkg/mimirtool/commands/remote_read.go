@@ -568,6 +568,12 @@ func (it *multiQueryChunkedIterator) AtT() int64 {
 }
 
 func (it *multiQueryChunkedIterator) Seek(t int64) chunkenc.ValueType {
+	// Check current position and return early if seeking backwards
+	if it.cur != nil && t <= it.AtT() {
+		// Instead of inferring the sample types again, we rely on the underlying implementation to know its own type.
+		return it.cur.Seek(it.cur.AtT())
+	}
+
 	// Reset to beginning and iterate until we find t
 	it.chunkIdx = 0
 	it.cur = nil
