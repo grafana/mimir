@@ -38,6 +38,8 @@ const (
 	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
 	minProducerRecordDataBytesLimit = 1024 * 1024
 
+	defaultMaxInflightProduceRequests = 20
+
 	writerMetricsPrefix = "cortex_ingest_storage_writer_"
 )
 
@@ -80,7 +82,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		registerer:                 reg,
 		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
 		serializer:                 recordSerializerFromCfg(kafkaCfg),
-		maxInflightProduceRequests: 20,
+		maxInflightProduceRequests: defaultMaxInflightProduceRequests,
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{

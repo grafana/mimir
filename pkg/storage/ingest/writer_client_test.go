@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"crypto/rand"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -155,6 +157,117 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 	wg.Wait()
 }
 
+func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName                     = "test"
+		tenantID                      = "user-1"
+		numPartitions                 = 100
+		produceRecordsInterval        = 2 * time.Millisecond
+		produceRecordsDuration        = 10 * time.Second
+		produceRecordsTotal           = produceRecordsDuration / produceRecordsInterval
+		produceRecordsThroughputBytes = 50_000_000
+		produceRecordSizeBytes        = produceRecordsThroughputBytes / int(time.Second/produceRecordsInterval)
+		produceLatency                = 2 * time.Second
+	)
+
+	// Set a max execution time for this test.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	// Simulate high latency on Produce requests.
+	cluster.ControlKey(int16(kmsg.Produce), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		req := kreq.(*kmsg.ProduceRequest)
+
+		numRecords, err := getProduceRequestRecordsCount(req)
+		require.NoError(t, err)
+		highestTimestamp, err := getProduceRequestHighestTimestamp(req)
+		require.NoError(t, err)
+
+		// The fake Kafka server we use in unit tests have a single thread control loop. This means that when we
+		// add latency to a request, other requests pipelined on the same connections are not evaluated until
+		// the previous requests are processed.
+		//
+		// In this test we want to simulate the case each Produce takes X time to execute since when it was written
+		// on the wire. We don't have the timestamp when it was sent on the network, so we use the highest record timestamp
+		// as an approximation.
+		simulatedLatency := max(0, produceLatency-time.Since(highestTimestamp))
+		t.Log(time.Now().String(), "Produce - num records:", numRecords, "highestTimestamp:", highestTimestamp.String(), "simulatedLatency:", simulatedLatency)
+
+		cluster.KeepControl()
+		cluster.SleepControl(func() {
+			select {
+			case <-ctx.Done():
+			case <-time.After(simulatedLatency):
+			}
+		})
+
+		return nil, nil, false
+	})
+
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, reg)
+	t.Cleanup(producer.Close)
+
+	// Generate a random payload to reduce its compression ratio.
+	recordPayload, err := generateRandomBytes(produceRecordSizeBytes)
+	require.NoError(t, err)
+
+	// Produce records at fixed interval.
+	produceLatencySecondsSum := atomic.NewFloat64(0)
+	producerWg := sync.WaitGroup{}
+	producerWg.Add(1)
+
+	go func() {
+		recordsAcked := atomic.NewInt32(0)
+
+		for recordID := 0; recordID < int(produceRecordsTotal); recordID++ {
+			producer.Produce(ctx, &kgo.Record{
+				Key:       []byte(tenantID),
+				Value:     recordPayload,
+				Partition: int32(recordID % numPartitions), // Round robin across partitions.
+				Timestamp: time.Now(),
+			}, func(record *kgo.Record, err error) {
+				// Keep track of the latency.
+				produceLatencySecondsSum.Add(time.Since(record.Timestamp).Seconds())
+
+				// We're done once we've got the ACK for all records we produced.
+				if recordsAcked.Inc() >= int32(produceRecordsTotal) {
+					producerWg.Done()
+				}
+			})
+
+			// Throttle.
+			select {
+			case <-ctx.Done():
+				// The test timed out. Let's unblock the main test goroutine.
+				producerWg.Done()
+				return
+
+			case <-time.After(produceRecordsInterval):
+			}
+		}
+	}()
+
+	// Wait until all records have been produced.
+	producerWg.Wait()
+
+	// Ensure the test didn't timed out.
+	require.NoError(t, ctx.Err())
+
+	// We expect the average produce latency to be close to the simulated Kafka produce latency.
+	averageProduceLatencySeconds := produceLatencySecondsSum.Load() / float64(produceRecordsTotal)
+	t.Logf("average produce latency seconds: %.2f", averageProduceLatencySeconds)
+	require.InDelta(t, produceLatency.Seconds(), averageProduceLatencySeconds, 1.)
+}
+
 func getSummaryQuantileValue(t require.TestingT, reg prometheus.Gatherer, metricName string, quantile float64) float64 {
 	const delta = 0.0001
 
@@ -178,4 +291,10 @@ func getSummaryQuantileValue(t require.TestingT, reg prometheus.Gatherer, metric
 
 	require.Failf(t, "summary metric %s or quantile %f not found", metricName, quantile)
 	return 0
+}
+
+func generateRandomBytes(n int) ([]byte, error) {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	return b, err
 }
