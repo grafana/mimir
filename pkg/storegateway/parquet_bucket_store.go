@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
@@ -41,11 +42,11 @@ type ParquetBucketStore struct {
 
 	logger log.Logger
 
-	userID        string
-	localDir      string
-	bucketMetrics *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
-	bkt           objstore.InstrumentedBucketReader
-	fetcher       block.MetadataFetcher
+	userID   string
+	localDir string
+	metrics  *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
+	bkt      objstore.InstrumentedBucketReader
+	fetcher  block.MetadataFetcher
 
 	// Set of blocks that have the same labels
 	blockSet *parquetBlockSet
@@ -92,9 +93,9 @@ func NewParquetBucketStore(
 		userID:   userID,
 		localDir: localDir,
 
-		bucketMetrics: metrics,
-		bkt:           bkt,
-		fetcher:       blockMetaFetcher,
+		metrics: metrics,
+		bkt:     bkt,
+		fetcher: blockMetaFetcher,
 
 		blockSet:             &parquetBlockSet{},
 		blockSyncConcurrency: bucketStoreConfig.BlockSyncConcurrency,
@@ -188,7 +189,7 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		resHints = &hintspb.SeriesResponseHints{}
 	)
 	for _, shard := range shards {
-		resHints.AddQueriedBlock(shard.BlockID)
+		resHints.AddQueriedBlock(shard.meta.ULID)
 		shard.MarkQueried()
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
@@ -200,8 +201,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		var (
 			seriesSet       storepb.SeriesSet
 			seriesLoadStart = time.Now()
-			chunksLimiter   = s.chunksLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("chunks"))
-			seriesLimiter   = s.seriesLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("series"))
+			chunksLimiter   = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 		)
 
 		// Placeholder: Create series set for streaming labels from parquet shards
@@ -228,8 +229,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 
 	// We create the limiter twice in the case of streaming so that we don't double count the series
 	// and hit the limit prematurely.
-	chunksLimiter := s.chunksLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("chunks"))
-	seriesLimiter := s.seriesLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("series"))
+	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
@@ -419,14 +420,14 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 }
 
 func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
-	dir := filepath.Join(s.localDir, meta.ULID.String())
+	blockLocalDir := filepath.Join(s.localDir, meta.ULID.String())
 	start := time.Now()
 
 	level.Debug(s.logger).Log("msg", "loading new block", "id", meta.ULID)
 	defer func() {
 		if err != nil {
-			s.bucketMetrics.blockLoadFailures.Inc()
-			if err2 := os.RemoveAll(dir); err2 != nil {
+			s.metrics.blockLoadFailures.Inc()
+			if err2 := os.RemoveAll(blockLocalDir); err2 != nil {
 				level.Warn(s.logger).Log("msg", "failed to remove block we cannot load", "err", err2)
 			}
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
@@ -434,42 +435,36 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
 		}
 	}()
-	s.bucketMetrics.blockLoads.Inc()
+	s.metrics.blockLoads.Inc()
 
-	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
-		ctx,
-		s.logger,
-		s.bkt,
-		s.localDir,
-		meta.ULID,
-		s.postingOffsetsInMemSampling,
-		s.indexHeaderCfg,
-	)
-	if err != nil {
-		return errors.Wrap(err, "create index header reader")
-	}
+	// TODO get shard reader from pool
+	//indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
+	//	ctx,
+	//	s.logger,
+	//	s.bkt,
+	//	s.localDir,
+	//	meta.ULID,
+	//	s.postingOffsetsInMemSampling,
+	//	s.indexHeaderCfg,
+	//)
+	//if err != nil {
+	//	return errors.Wrap(err, "create index header reader")
+	//}
 
-	defer func() {
-		if err != nil {
-			runutil.CloseWithErrCapture(&err, indexHeaderReader, "index-header")
-		}
-	}()
+	//defer func() {
+	//	if err != nil {
+	//		runutil.CloseWithErrCapture(&err, indexHeaderReader, "index-header")
+	//	}
+	//}()
 
-	b, err := newBucketBlock(
-		ctx,
-		s.userID,
-		log.With(s.logger, "block", meta.ULID),
-		s.bucketMetrics,
+	b := newParquetBucketBlock(
 		meta,
-		s.bkt,
-		dir,
-		s.indexCache,
-		indexHeaderReader,
-		s.partitioners,
+		nil,
+		blockLocalDir,
 	)
-	if err != nil {
-		return errors.Wrap(err, "new bucket block")
-	}
+	//if err != nil {
+	//	return errors.Wrap(err, "new bucket block")
+	//}
 	defer func() {
 		if err != nil {
 			runutil.CloseWithErrCapture(&err, b, "index-header")
@@ -480,6 +475,31 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 		return errors.Wrap(err, "add block to set")
 	}
 
+	return nil
+}
+
+func (s *ParquetBucketStore) removeBlock(id ulid.ULID) (returnErr error) {
+	defer func() {
+		if returnErr != nil {
+			s.metrics.blockDropFailures.Inc()
+		}
+	}()
+
+	b := s.blockSet.remove(id)
+	if b == nil {
+		return nil
+	}
+
+	// The block has already been removed from BucketStore, so we track it as removed
+	// even if releasing its resources could fail below.
+	s.metrics.blockDrops.Inc()
+
+	if err := b.Close(); err != nil {
+		return errors.Wrap(err, "close block")
+	}
+	if err := os.RemoveAll(b.localDir); err != nil {
+		return errors.Wrap(err, "delete block")
+	}
 	return nil
 }
 
