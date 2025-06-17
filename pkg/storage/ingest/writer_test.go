@@ -113,13 +113,13 @@ func TestWriter_WriteSync(t *testing.T) {
 			cortex_ingest_storage_writer_records_per_write_request_sum 1
 			cortex_ingest_storage_writer_records_per_write_request_count 1
 
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
 		`, len(fetches.Records()[0].Value))),
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
-			"cortex_ingest_storage_writer_produce_requests_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
 	})
 
 	t.Run("should block until data has been committed to storage (WriteRequest stored in multiple records)", func(t *testing.T) {
@@ -203,13 +203,13 @@ func TestWriter_WriteSync(t *testing.T) {
 			cortex_ingest_storage_writer_records_per_write_request_sum 2
 			cortex_ingest_storage_writer_records_per_write_request_count 1
 
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 2
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 2
 		`, expectedBytes)),
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
-			"cortex_ingest_storage_writer_produce_requests_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total"))
 	})
 
 	t.Run("should write to the requested partition", func(t *testing.T) {
@@ -263,18 +263,18 @@ func TestWriter_WriteSync(t *testing.T) {
 				// the case of 1 and 2 clients.
 				if writeClients == 1 {
 					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-						# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-						# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-						cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 2
-					`), "cortex_ingest_storage_writer_produce_requests_total"))
+						# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+						# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+						cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 2
+					`), "cortex_ingest_storage_writer_produce_records_enqueued_total"))
 				}
 				if writeClients == 2 {
 					assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-						# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-						# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-						cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
-						cortex_ingest_storage_writer_produce_requests_total{client_id="1"} 1
-					`), "cortex_ingest_storage_writer_produce_requests_total"))
+						# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+						# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+						cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
+						cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="1"} 1
+					`), "cortex_ingest_storage_writer_produce_records_enqueued_total"))
 				}
 			})
 		}
@@ -330,7 +330,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Cleanup(cancelSecondRequest)
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			assert.Equal(t, context.DeadlineExceeded, writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}))
+			assert.ErrorIs(t, writer.WriteSync(secondRequestCtx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series2, Metadata: nil, Source: mimirpb.API}), context.DeadlineExceeded)
 		})
 
 		runAsyncAfter(&wg, firstRequestReceived, func() {
@@ -430,16 +430,16 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
 
-			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="other"} 1
+			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="other"} 1
 		`),
-			"cortex_ingest_storage_writer_produce_requests_total",
-			"cortex_ingest_storage_writer_produce_failures_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total",
+			"cortex_ingest_storage_writer_produce_records_failed_total"))
 	})
 
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
@@ -464,16 +464,16 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 1
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 1
 
-			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="timeout"} 1
+			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="timeout"} 1
 		`),
-			"cortex_ingest_storage_writer_produce_requests_total",
-			"cortex_ingest_storage_writer_produce_failures_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total",
+			"cortex_ingest_storage_writer_produce_records_failed_total"))
 	})
 
 	// This test documents how the Kafka client works. It's not what we ideally want, but it's how it works.
@@ -614,18 +614,18 @@ func TestWriter_WriteSync(t *testing.T) {
 			cortex_ingest_storage_writer_records_per_write_request_sum 2
 			cortex_ingest_storage_writer_records_per_write_request_count 1
 
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 2
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 2
 
-			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="record-too-large"} 1
+			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="record-too-large"} 1
 		`, len(fetches.Records()[0].Value))),
 			"cortex_ingest_storage_writer_sent_bytes_total",
 			"cortex_ingest_storage_writer_records_per_write_request",
-			"cortex_ingest_storage_writer_produce_requests_total",
-			"cortex_ingest_storage_writer_produce_failures_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total",
+			"cortex_ingest_storage_writer_produce_records_failed_total"))
 	})
 
 	t.Run("should not block the WriteSync() because Kafka buffer is full", func(t *testing.T) {
@@ -733,17 +733,17 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 10
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 10
 
-			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="buffer-full"} 7
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="timeout"} 3
+			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="buffer-full"} 7
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="timeout"} 3
 		`),
-			"cortex_ingest_storage_writer_produce_requests_total",
-			"cortex_ingest_storage_writer_produce_failures_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total",
+			"cortex_ingest_storage_writer_produce_records_failed_total"))
 
 		// Unblock produce requests and wait until all goroutines are done.
 		doUnblockProduceRequests()
@@ -763,17 +763,17 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Check metrics.
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_writer_produce_requests_total Total number of produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_requests_total counter
-			cortex_ingest_storage_writer_produce_requests_total{client_id="0"} 13
+			# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+			# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+			cortex_ingest_storage_writer_produce_records_enqueued_total{client_id="0"} 13
 
-			# HELP cortex_ingest_storage_writer_produce_failures_total Total number of failed produce requests issued to Kafka.
-			# TYPE cortex_ingest_storage_writer_produce_failures_total counter
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="buffer-full"} 7
-			cortex_ingest_storage_writer_produce_failures_total{client_id="0",reason="timeout"} 3
+			# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+			# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="buffer-full"} 7
+			cortex_ingest_storage_writer_produce_records_failed_total{client_id="0",reason="timeout"} 3
 		`),
-			"cortex_ingest_storage_writer_produce_requests_total",
-			"cortex_ingest_storage_writer_produce_failures_total"))
+			"cortex_ingest_storage_writer_produce_records_enqueued_total",
+			"cortex_ingest_storage_writer_produce_records_failed_total"))
 	})
 }
 
