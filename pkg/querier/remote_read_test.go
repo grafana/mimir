@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 
@@ -243,9 +242,8 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 
 	for queryType, queryData := range queries {
 		t.Run(queryType, func(t *testing.T) {
-			var actualQueryTimeRanges []queryStartEnd
-			actualQueryTimeRangesMtx := sync.Mutex{}
-			callCount := atomic.NewInt64(0)
+			// Create a slice of atomics, one per query
+			queryCalls := make([]atomic.Int64, len(queryData.query))
 
 			q := &mockSampleAndChunkQueryable{
 				queryableFn: func(_, _ int64) (storage.Querier, error) {
@@ -253,14 +251,17 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 							require.NotNil(t, hints, "select hints must be set")
 
-							// Track all query time ranges
-							actualQueryTimeRangesMtx.Lock()
-							actualQueryTimeRanges = append(actualQueryTimeRanges, queryStartEnd{
-								start: hints.Start,
-								end:   hints.End,
-							})
-							actualQueryTimeRangesMtx.Unlock()
-							callCount.Inc()
+							// Find which query this request corresponds to
+							queryIndex := findQueryIndexByMatchers(queryData.query, matchers)
+							require.True(t, queryIndex >= 0 && queryIndex < len(queryData.expectedResults), "Failed to find matching query for matchers")
+
+							// Verify the start and end times match the expected query
+							expectedResult := queryData.expectedResults[queryIndex]
+							require.Equal(t, expectedResult.start, hints.Start, "Start time mismatch for query %d", queryIndex)
+							require.Equal(t, expectedResult.end, hints.End, "End time mismatch for query %d", queryIndex)
+
+							// Increment the call count for this specific query
+							queryCalls[queryIndex].Inc()
 
 							// Return different data based on matchers
 							var metricName string
@@ -337,18 +338,10 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 			}
 			require.Equal(t, expected, response)
 
-			// Verify the number of queries executed
-			require.EqualValues(t, len(queryData.query), callCount.Load())
-
-			// Use elements matching to verify the expected time ranges
-			var expectedTimeRanges []queryStartEnd
-			for _, expected := range queryData.expectedResults {
-				expectedTimeRanges = append(expectedTimeRanges, queryStartEnd{
-					start: expected.start,
-					end:   expected.end,
-				})
+			// Verify each query was called exactly once
+			for i, queryCall := range queryCalls {
+				require.Equal(t, int64(1), queryCall.Load(), "Query %d should be called exactly once", i)
 			}
-			require.ElementsMatch(t, expectedTimeRanges, actualQueryTimeRanges)
 		})
 	}
 }
@@ -356,6 +349,63 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 type queryStartEnd struct {
 	start int64
 	end   int64
+}
+
+// findQueryIndexByMatchers finds the index of the query that matches the given matchers
+func findQueryIndexByMatchers(queries []*prompb.Query, matchers []*labels.Matcher) int {
+	// If there's only one query, return index 0
+	if len(queries) == 1 {
+		return 0
+	}
+
+	// For multiple queries, match by comparing matchers
+	for i, query := range queries {
+		if matchersEqual(query.Matchers, matchers) {
+			return i
+		}
+	}
+
+	return -1 // Not found
+}
+
+// matchersEqual compares prompb matchers with labels matchers
+func matchersEqual(prompbMatchers []*prompb.LabelMatcher, labelsMatchers []*labels.Matcher) bool {
+	if len(prompbMatchers) != len(labelsMatchers) {
+		return false
+	}
+
+	// Convert prompb matchers to a map for easier comparison
+	prompbMap := make(map[string]*prompb.LabelMatcher)
+	for _, m := range prompbMatchers {
+		key := m.Name + ":" + m.Value + ":" + m.Type.String()
+		prompbMap[key] = m
+	}
+
+	// Check if all labels matchers have corresponding prompb matchers
+	for _, m := range labelsMatchers {
+		key := m.Name + ":" + m.Value + ":" + matcherTypeToPrompbType(m.Type).String()
+		if _, exists := prompbMap[key]; !exists {
+			return false
+		}
+	}
+
+	return true
+}
+
+// matcherTypeToPrompbType converts labels.MatchType to prompb.LabelMatcher_Type
+func matcherTypeToPrompbType(t labels.MatchType) prompb.LabelMatcher_Type {
+	switch t {
+	case labels.MatchEqual:
+		return prompb.LabelMatcher_EQ
+	case labels.MatchNotEqual:
+		return prompb.LabelMatcher_NEQ
+	case labels.MatchRegexp:
+		return prompb.LabelMatcher_RE
+	case labels.MatchNotRegexp:
+		return prompb.LabelMatcher_NRE
+	default:
+		return prompb.LabelMatcher_EQ
+	}
 }
 
 func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
@@ -714,8 +764,8 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 
-			var actualQueryTimeRanges []queryStartEnd
-			actualQueryTImeRangesMtx := sync.Mutex{}
+			// Create a slice of atomics, one per query
+			queryCalls := make([]atomic.Int64, len(testData.query))
 
 			q := &mockSampleAndChunkQueryable{
 				chunkQueryableFn: func(int64, int64) (storage.ChunkQuerier, error) {
@@ -723,13 +773,17 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 						selectFn: func(_ context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
 							require.NotNil(t, hints, "select hints must be set")
 
-							// Track all query time ranges
-							actualQueryTImeRangesMtx.Lock()
-							actualQueryTimeRanges = append(actualQueryTimeRanges, queryStartEnd{
-								start: hints.Start,
-								end:   hints.End,
-							})
-							actualQueryTImeRangesMtx.Unlock()
+							// Find which query this request corresponds to
+							queryIndex := findQueryIndexByMatchers(testData.query, matchers)
+							require.True(t, queryIndex >= 0 && queryIndex < len(testData.expectedResults), "Failed to find matching query for matchers")
+
+							// Verify the start and end times match the expected query
+							expectedResult := testData.expectedResults[queryIndex]
+							require.Equal(t, expectedResult.start, hints.Start, "Start time mismatch for query %d", queryIndex)
+							require.Equal(t, expectedResult.end, hints.End, "End time mismatch for query %d", queryIndex)
+
+							// Increment the call count for this specific query
+							queryCalls[queryIndex].Inc()
 
 							// Return different data based on matchers for multiple queries
 							var metricName string
@@ -828,15 +882,10 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 				require.Equal(t, expectedResponses, actualResponsesByQuery[queryID])
 			}
 
-			// Use elements matching to verify the expected time ranges
-			var expectedTimeRanges []queryStartEnd
-			for _, expected := range testData.expectedResults {
-				expectedTimeRanges = append(expectedTimeRanges, queryStartEnd{
-					start: expected.start,
-					end:   expected.end,
-				})
+			// Verify each query was called exactly once
+			for i, queryCall := range queryCalls {
+				require.Equal(t, int64(1), queryCall.Load(), "Query %d should be called exactly once", i)
 			}
-			require.ElementsMatch(t, expectedTimeRanges, actualQueryTimeRanges)
 		})
 	}
 }
