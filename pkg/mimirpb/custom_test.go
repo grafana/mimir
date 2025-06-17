@@ -186,3 +186,61 @@ type fakeCodecV2 struct {
 func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
 	return encoding.GetCodecV2(proto.Name).Marshal(v)
 }
+
+func TestHistogram_BucketsCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		histogram *Histogram
+		expected  int
+	}{
+		{
+			name: "empty histogram",
+			histogram: &Histogram{
+				PositiveSpans: []BucketSpan{},
+				NegativeSpans: []BucketSpan{},
+			},
+			expected: 0,
+		},
+		{
+			name: "positive buckets only",
+			histogram: &Histogram{
+				PositiveSpans: []BucketSpan{
+					{Offset: 0, Length: 5},
+					{Offset: 2, Length: 3},
+				},
+				NegativeSpans: []BucketSpan{},
+			},
+			expected: 8, // 5 + 3
+		},
+		{
+			name: "negative buckets only",
+			histogram: &Histogram{
+				PositiveSpans: []BucketSpan{},
+				NegativeSpans: []BucketSpan{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 2},
+				},
+			},
+			expected: 6, // 4 + 2
+		},
+		{
+			name: "both positive and negative buckets",
+			histogram: &Histogram{
+				PositiveSpans: []BucketSpan{
+					{Offset: 0, Length: 3},
+				},
+				NegativeSpans: []BucketSpan{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 4},
+				},
+			},
+			expected: 9, // 3 + 2 + 4
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.histogram.BucketsCount())
+		})
+	}
+}

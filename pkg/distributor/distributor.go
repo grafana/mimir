@@ -1961,18 +1961,6 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
-// countHistogramBuckets counts the total number of buckets in a native histogram
-func countHistogramBuckets(h *mimirpb.Histogram) int {
-	buckets := 0
-	for _, span := range h.PositiveSpans {
-		buckets += int(span.Length)
-	}
-	for _, span := range h.NegativeSpans {
-		buckets += int(span.Length)
-	}
-	return buckets
-}
-
 func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
@@ -1980,7 +1968,7 @@ func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.Wr
 		receivedExemplars += len(ts.Exemplars)
 		receivedHistograms += len(ts.Histograms)
 		for _, h := range ts.Histograms {
-			receivedHistogramBuckets += countHistogramBuckets(&h)
+			receivedHistogramBuckets += h.BucketsCount()
 		}
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())

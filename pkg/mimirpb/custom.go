@@ -237,6 +237,18 @@ func (h Histogram) IsGauge() bool {
 	return h.ResetHint == Histogram_GAUGE
 }
 
+// BucketsCount counts the total number of buckets in the native histogram.
+func (h *Histogram) BucketsCount() int {
+	buckets := 0
+	for _, span := range h.PositiveSpans {
+		buckets += int(span.Length)
+	}
+	for _, span := range h.NegativeSpans {
+		buckets += int(span.Length)
+	}
+	return buckets
+}
+
 // ReduceResolution will reduce the resolution of the histogram by one level.
 // Returns the resulting bucket count and an error if the histogram is not
 // possible to reduce further.
