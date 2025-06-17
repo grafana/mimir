@@ -199,7 +199,10 @@ func remoteReadStreamedXORChunks(
 		return
 	}
 
-	// Stream the results in order
+	// We can't send the header after we've streamed the responses.
+	// We don't set the header because the http stdlib will automatically set it to 200 on the first Write().
+	// In case of an error, we will break the stream below.
+
 	for i, result := range results {
 		if err := streamChunkedReadResponses(
 			prom_remote.NewChunkedWriter(w, f),
@@ -211,11 +214,13 @@ func remoteReadStreamedXORChunks(
 			if code/100 != 4 {
 				level.Error(logger).Log("msg", "error while streaming remote read response", "err", err)
 			}
+
+			// Unless we encountered the error before we called Write(), most of this http.Error() call won't have an effect.
+			// But we do it on a best-effort basis, since the remote read protocol doesn't have native error handling.
 			http.Error(w, err.Error(), code)
 			return
 		}
 	}
-	w.WriteHeader(http.StatusOK)
 }
 
 func remoteReadErrorStatusCode(err error) int {
