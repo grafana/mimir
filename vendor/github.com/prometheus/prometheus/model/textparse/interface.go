@@ -51,13 +51,11 @@ type Parser interface {
 	// Type returns the metric name and type in the current entry.
 	// Must only be called after Next returned a type entry.
 	// The returned byte slices become invalid after the next call to Next.
-	// TODO(bwplotka): Once type-and-unit-labels stabilizes we could remove this method.
 	Type() ([]byte, model.MetricType)
 
 	// Unit returns the metric name and unit in the current entry.
 	// Must only be called after Next returned a unit entry.
 	// The returned byte slices become invalid after the next call to Next.
-	// TODO(bwplotka): Once type-and-unit-labels stabilizes we could remove this method.
 	Unit() ([]byte, []byte)
 
 	// Comment returns the text of the current comment.
@@ -130,20 +128,19 @@ func extractMediaType(contentType, fallbackType string) (string, error) {
 // An error may also be returned if fallbackType had to be used or there was some
 // other error parsing the supplied Content-Type.
 // If the returned parser is nil then the scrape must fail.
-func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries, enableTypeAndUnitLabels bool, st *labels.SymbolTable) (Parser, error) {
+func New(b []byte, contentType, fallbackType string, parseClassicHistograms, skipOMCTSeries bool, st *labels.SymbolTable) (Parser, error) {
 	mediaType, err := extractMediaType(contentType, fallbackType)
 	// err may be nil or something we want to warn about.
 
 	switch mediaType {
 	case "application/openmetrics-text":
 		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = skipOMCTSeries
-			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
+			o.SkipCTSeries = skipOMCTSeries
 		}), err
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st), err
+		return NewProtobufParser(b, parseClassicHistograms, st), err
 	case "text/plain":
-		return NewPromParser(b, st, enableTypeAndUnitLabels), err
+		return NewPromParser(b, st), err
 	default:
 		return nil, err
 	}

@@ -1087,21 +1087,11 @@ yydefault:
 	case 21:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			// Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
-			// like 'sum (some_metric) by test'
-			if len(yylex.(*parser).closingParens) > 1 {
-				yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-			}
 			yyVAL.node = yylex.(*parser).newAggregateExpr(yyDollar[1].item, yyDollar[2].node, yyDollar[3].node)
 		}
 	case 22:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
-			// Need to consume the position of the first RIGHT_PAREN. It might not exist on garbage input
-			// like 'sum by test (some_metric)'
-			if len(yylex.(*parser).closingParens) > 1 {
-				yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
-			}
 			yyVAL.node = yylex.(*parser).newAggregateExpr(yyDollar[1].item, yyDollar[3].node, yyDollar[2].node)
 		}
 	case 23:
@@ -1329,10 +1319,9 @@ yydefault:
 				Args: yyDollar[2].node.(Expressions),
 				PosRange: posrange.PositionRange{
 					Start: yyDollar[1].item.Pos,
-					End:   yylex.(*parser).closingParens[0],
+					End:   yylex.(*parser).lastClosing,
 				},
 			}
-			yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
 		}
 	case 63:
 		yyDollar = yyS[yypt-3 : yypt+1]
@@ -1364,7 +1353,6 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			yyVAL.node = &ParenExpr{Expr: yyDollar[2].node.(Expr), PosRange: mergeRanges(&yyDollar[1].item, &yyDollar[3].item)}
-			yylex.(*parser).closingParens = yylex.(*parser).closingParens[1:]
 		}
 	case 69:
 		yyDollar = yyS[yypt-1 : yypt+1]
@@ -1384,7 +1372,7 @@ yydefault:
 		yyDollar = yyS[yypt-3 : yypt+1]
 		{
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				yylex.(*parser).addOffset(yyDollar[1].node, time.Duration(math.Round(numLit.Val*float64(time.Second))))
+				yylex.(*parser).addOffset(yyDollar[1].node, time.Duration(numLit.Val*1000)*time.Millisecond)
 				yyVAL.node = yyDollar[1].node
 				break
 			}
@@ -1435,7 +1423,7 @@ yydefault:
 
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				rangeNl = time.Duration(numLit.Val*1000) * time.Millisecond
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &MatrixSelector{
@@ -1451,11 +1439,11 @@ yydefault:
 			var rangeNl time.Duration
 			var stepNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				rangeNl = time.Duration(numLit.Val*1000) * time.Millisecond
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			if numLit, ok := yyDollar[5].node.(*NumberLiteral); ok {
-				stepNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				stepNl = time.Duration(numLit.Val*1000) * time.Millisecond
 			}
 			stepExpr, _ := yyDollar[5].node.(*DurationExpr)
 			yyVAL.node = &SubqueryExpr{
@@ -1472,7 +1460,7 @@ yydefault:
 		{
 			var rangeNl time.Duration
 			if numLit, ok := yyDollar[3].node.(*NumberLiteral); ok {
-				rangeNl = time.Duration(math.Round(numLit.Val * float64(time.Second)))
+				rangeNl = time.Duration(numLit.Val*1000) * time.Millisecond
 			}
 			rangeExpr, _ := yyDollar[3].node.(*DurationExpr)
 			yyVAL.node = &SubqueryExpr{
