@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/version"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/prometheus/alertmanager/config"
 )
 
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
@@ -71,6 +72,11 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 
 	// Create base config using globals.
 	g := amCfg.AlertmanagerConfig.Global
+	if g == nil {
+		defaultGlobals := config.DefaultGlobalConfig()
+		g = &defaultGlobals
+	}
+
 	emailCfg := alertingReceivers.EmailSenderConfig{
 		AuthPassword: string(g.SMTPAuthPassword),
 		AuthUser:     g.SMTPAuthUsername,

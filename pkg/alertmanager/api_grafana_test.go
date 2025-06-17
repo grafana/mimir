@@ -242,11 +242,20 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "default": false,
 				 "promoted": true,
 				 "external_url": %q,
-				 "smtp_from": %q,
-				 "static_headers": {
-					"Header-1": "Value-1",
-					"Header-2": "Value-2"
-				 }
+				 "smtp_config": {
+					"from_address": %q,
+					"static_headers": {
+						"Header-1": "Value-1",	
+						"Header-2": "Value-2"
+					},
+					"ehlo_identity": "",
+					"from_name": "",
+					"host": "",
+					"password": "",
+					"skip_verify": false,
+					"start_tls_policy": "",
+					"user": ""
+				}
 			},
 			"status": "success"
 		}
