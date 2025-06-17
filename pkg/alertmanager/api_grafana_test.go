@@ -250,7 +250,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 			},
 			"status": "success"
 		}
-		`, testGrafanaConfig, now, externalURL, smtpFrom)
+		`, testGrafanaConfig, now, externalURL, smtpConfig.FromAddress)
 
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))

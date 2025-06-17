@@ -84,68 +84,78 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 		name          string
 		grafanaConfig alertspb.GrafanaAlertConfigDesc
 		mimirConfig   string
+		expSmtpConfig *SmtpConfig
 		expErr        string
 	}{
 		{
-			"empty grafana config",
-			alertspb.GrafanaAlertConfigDesc{
+			name: "empty grafana config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: "http://test:3000",
 				RawConfig:   "",
 			},
-			simpleConfigOne,
-			"failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
+			mimirConfig: simpleConfigOne,
+			expErr:      "failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
 		},
 		{
-			"invalid grafana config",
-			alertspb.GrafanaAlertConfigDesc{
+			name: "invalid grafana config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: "http://test:3000",
 				RawConfig:   "invalid",
 				SmtpConfig:  smtpConfig,
 			},
-			simpleConfigOne,
-			"failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
+			mimirConfig: simpleConfigOne,
+			expErr:      "failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
 		},
 		{
-			"no mimir config",
-			alertspb.GrafanaAlertConfigDesc{
+			name: "no mimir config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: "http://test:3000",
 				RawConfig:   grafanaConfig,
 				SmtpConfig:  smtpConfig,
 			},
-			"",
-			"",
+			expSmtpConfig: &SmtpConfig{
+				FromAddress:   smtpConfig.FromAddress,
+				StaticHeaders: smtpConfig.StaticHeaders,
+			},
 		},
 		{
-			"duplicate grafana receiver name config",
-			alertspb.GrafanaAlertConfigDesc{
+			name: "duplicate grafana receiver name config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: "http://test:3000",
 				RawConfig:   grafanaConfigWithDuplicateReceiverName,
 				SmtpConfig:  smtpConfig,
 			},
-			"",
-			"",
+			expSmtpConfig: &SmtpConfig{
+				FromAddress:   smtpConfig.FromAddress,
+				StaticHeaders: smtpConfig.StaticHeaders,
+			},
 		},
 		{
-			"non-empty mimir config",
-			alertspb.GrafanaAlertConfigDesc{
+			name: "non-empty mimir config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: "http://test:3000",
 				RawConfig:   grafanaConfig,
 				SmtpConfig:  smtpConfig,
 			},
-			simpleConfigOne,
-			"",
+			mimirConfig: simpleConfigOne,
+			expSmtpConfig: &SmtpConfig{
+				FromAddress:   smtpConfig.FromAddress,
+				StaticHeaders: smtpConfig.StaticHeaders,
+			},
 		},
 		{
-			"non-empty mimir config, empty SMTP from address",
-			alertspb.GrafanaAlertConfigDesc{
+			name: "non-empty mimir config, empty SMTP from address",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: "http://test:3000",
 				RawConfig:   grafanaConfig,
 				SmtpConfig: &alertspb.SmtpConfig{
 					StaticHeaders: staticHeaders,
 				},
 			},
-			simpleConfigOne,
-			"",
+			mimirConfig: simpleConfigOne,
+			expSmtpConfig: &SmtpConfig{
+				StaticHeaders: smtpConfig.StaticHeaders,
+			},
 		},
 	}
 
@@ -164,24 +174,8 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 			require.Equal(t, test.grafanaConfig.ExternalUrl, cfg.tmplExternalURL.String())
 			require.True(t, cfg.usingGrafanaConfig)
 
-			if test.mimirConfig != "" {
-				// The resulting config should contain Mimir's globals with Grafana's "from" address.
-				mCfg, err := definition.LoadCompat([]byte(test.mimirConfig))
-				require.NoError(t, err)
-
-				var gCfg GrafanaAlertmanagerConfig
-				require.NoError(t, json.Unmarshal([]byte(test.grafanaConfig.RawConfig), &gCfg))
-
-				gCfg.AlertmanagerConfig.Global = mCfg.Global
-				if test.grafanaConfig.SmtpConfig.FromAddress != "" {
-					gCfg.AlertmanagerConfig.Global.SMTPFrom = test.grafanaConfig.SmtpConfig.FromAddress
-				}
-
-				b, err := json.Marshal(gCfg.AlertmanagerConfig)
-				require.NoError(t, err)
-
-				require.Equal(t, string(b), cfg.RawConfig)
-			}
+			// Custom SMTP settings should be part of the config.
+			require.Equal(t, test.expSmtpConfig, cfg.smtpConfig)
 
 			// Receiver names should be unique.
 			var finalCfg definition.PostableApiAlertingConfig
