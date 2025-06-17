@@ -33,11 +33,6 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, logger log.Logger) (*Engine, error) {
-	lookbackDelta := opts.CommonOpts.LookbackDelta
-	if lookbackDelta == 0 {
-		lookbackDelta = defaultLookbackDelta
-	}
-
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -60,7 +55,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	}
 
 	return &Engine{
-		lookbackDelta:            lookbackDelta,
+		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
@@ -79,6 +74,15 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		eagerLoadSelectors: opts.EagerLoadSelectors,
 		planner:            planner,
 	}, nil
+}
+
+func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
+	lookbackDelta := opts.LookbackDelta
+	if lookbackDelta == 0 {
+		lookbackDelta = defaultLookbackDelta
+	}
+
+	return lookbackDelta
 }
 
 type Engine struct {

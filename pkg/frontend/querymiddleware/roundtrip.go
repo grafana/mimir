@@ -385,7 +385,7 @@ func newQueryMiddlewares(
 
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, blockedQueriesCounter)
 	queryLimiterMiddleware := newQueryLimiterMiddleware(cacheClient, cacheKeyGenerator, limits, log, blockedQueriesCounter)
-	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
+	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engineOpts)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
