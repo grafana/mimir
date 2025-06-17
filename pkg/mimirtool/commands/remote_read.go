@@ -286,7 +286,6 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 		AcceptedResponseTypes: acceptedTypes,
 	}
 
-	// Marshal the batched request
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal read request: %w", err)
