@@ -215,7 +215,7 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		recordsCount := float64(len(records))
 
 		c.produceRecordsEnqueuedTotal.Add(recordsCount)
-		c.produceRecordsFailedTotal.WithLabelValues(produceErrReason(err)).Add(recordsCount)
+		c.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing").Add(recordsCount)
 
 		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
 		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done")}}

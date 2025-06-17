@@ -196,7 +196,7 @@ func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.
 
 		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
 		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
-		cortex_ingest_storage_writer_produce_records_failed_total{reason="timeout"} 1
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="cancelled-before-producing"} 1
 	`),
 		"cortex_ingest_storage_writer_produce_records_enqueued_total",
 		"cortex_ingest_storage_writer_produce_records_failed_total"))
