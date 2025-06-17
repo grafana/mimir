@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestWriteRequest_MinTimestamp(t *testing.T) {
@@ -190,51 +192,23 @@ func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
 func TestHistogram_BucketsCount(t *testing.T) {
 	tests := []struct {
 		name      string
-		histogram *Histogram
+		histogram Histogram
 		expected  int
 	}{
 		{
-			name: "empty histogram",
-			histogram: &Histogram{
-				PositiveSpans: []BucketSpan{},
-				NegativeSpans: []BucketSpan{},
-			},
-			expected: 0,
+			name:      "empty histogram",
+			histogram: Histogram{},
+			expected:  0,
 		},
 		{
-			name: "positive buckets only",
-			histogram: &Histogram{
-				PositiveSpans: []BucketSpan{
-					{Offset: 0, Length: 5},
-					{Offset: 2, Length: 3},
-				},
-				NegativeSpans: []BucketSpan{},
-			},
-			expected: 8, // 5 + 3
+			name:      "int histogram",
+			histogram: FromHistogramToHistogramProto(0, test.GenerateTestHistogram(0)),
+			expected:  8,
 		},
 		{
-			name: "negative buckets only",
-			histogram: &Histogram{
-				PositiveSpans: []BucketSpan{},
-				NegativeSpans: []BucketSpan{
-					{Offset: 0, Length: 4},
-					{Offset: 1, Length: 2},
-				},
-			},
-			expected: 6, // 4 + 2
-		},
-		{
-			name: "both positive and negative buckets",
-			histogram: &Histogram{
-				PositiveSpans: []BucketSpan{
-					{Offset: 0, Length: 3},
-				},
-				NegativeSpans: []BucketSpan{
-					{Offset: 0, Length: 2},
-					{Offset: 1, Length: 4},
-				},
-			},
-			expected: 9, // 3 + 2 + 4
+			name:      "float histogram",
+			histogram: FromFloatHistogramToHistogramProto(0, test.GenerateTestFloatHistogram(0)),
+			expected:  8,
 		},
 	}
 
