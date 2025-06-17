@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -155,6 +156,58 @@ func TestKafkaProducer_ProduceSync_ShouldTrackBufferedProduceBytes(t *testing.T)
 	// Release Produce requests and wait until done.
 	close(unblockProduceRequests)
 	wg.Wait()
+}
+
+func TestKafkaProducer_ProduceSync_ShouldCircuitBreakIfContextIsDone(t *testing.T) {
+	const (
+		numPartitions = 1
+		topicName     = "test"
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	ctx := context.Background()
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+
+	client, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, log.NewNopLogger(), prefixedReg)
+	require.NoError(t, err)
+
+	producer := NewKafkaProducer(client, cfg.ProducerMaxBufferedBytes, prefixedReg)
+	t.Cleanup(producer.Close)
+
+	// Create a context with an expired deadline.
+	expiredCtx, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+
+	res := producer.ProduceSync(expiredCtx, []*kgo.Record{{Key: []byte("test"), Value: []byte("message 1")}})
+	require.ErrorIs(t, res.FirstErr(), context.DeadlineExceeded)
+
+	// We expect no records buffered in the Kafka client, because of the circuit breaker.
+	require.Equal(t, int64(0), producer.BufferedProduceRecords())
+
+	// Even if no record was actually enqueued, we expect the metric was tracked anyway to keep it consistent
+	// (we don't want to lose track of such records that, if context wasn't already done, they would have been produced).
+	assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingest_storage_writer_produce_records_enqueued_total Total number of Kafka records enqueued to be sent to the Kafka backend (includes records that fail to be successfully sent to the Kafka backend).
+		# TYPE cortex_ingest_storage_writer_produce_records_enqueued_total counter
+		cortex_ingest_storage_writer_produce_records_enqueued_total{} 1
+
+		# HELP cortex_ingest_storage_writer_produce_records_failed_total Total number of Kafka records that failed to be sent to the Kafka backend.
+		# TYPE cortex_ingest_storage_writer_produce_records_failed_total counter
+		cortex_ingest_storage_writer_produce_records_failed_total{reason="cancelled-before-producing"} 1
+	`),
+		"cortex_ingest_storage_writer_produce_records_enqueued_total",
+		"cortex_ingest_storage_writer_produce_records_failed_total"))
+
+	// We expect the circuit breaker triggers after we track the remaining context deadline (that in this case is 0).
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	histogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_ingest_storage_writer_produce_remaining_deadline_seconds")
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), *histogram.SampleCount)
+	require.Equal(t, float64(0), *histogram.SampleSum)
 }
 
 func TestKafkaProducer_ProduceSync_LatencyShouldBeDrivenByKafkaProduceLatency(t *testing.T) {

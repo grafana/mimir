@@ -206,6 +206,21 @@ func (c *KafkaProducer) ProduceSync(ctx context.Context, records []*kgo.Record) 
 		c.produceRemainingDeadline.Observe(max(0, deadline.Sub(time.Now()).Seconds()))
 	}
 
+	// As a safety mechanism, we want to make sure that the context is not already canceled or its deadline exceeded.
+	// The reason is that once we buffer records to the Kafka client (later in this function), these records will be
+	// sent to the Kafka backend regardless the context is canceled or not. There's no way, in the Kafka client, to
+	// pull out records from a batch buffer. So, if the context is canceled, we circuit break instead of buffering
+	// records that may be sent to the Kafka backend, but that the caller will not know about because context is done.
+	if err := ctx.Err(); err != nil {
+		recordsCount := float64(len(records))
+
+		c.produceRecordsEnqueuedTotal.Add(recordsCount)
+		c.produceRecordsFailedTotal.WithLabelValues("cancelled-before-producing").Add(recordsCount)
+
+		// We wrap the error to make it cristal clear where the context canceled/timeout comes from.
+		return kgo.ProduceResults{{Err: errors.Wrap(context.Cause(ctx), "skipped producing Kafka records because context is already done")}}
+	}
+
 	onProduceDone := func(r *kgo.Record, err error) {
 		if c.maxBufferedBytes > 0 {
 			c.bufferedBytes.Add(-int64(len(r.Value)))
