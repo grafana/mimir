@@ -24,7 +24,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -262,8 +261,6 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 
 // executeMultipleQueries sends multiple queries in a single protobuf request
 func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClient remote.ReadClient, queries []*prompb.Query) (storage.SeriesSet, error) {
-	// We'll use reflection to access the private fields of the client to send a batched request
-	// This is hacky but gets the job done for now
 	client, ok := readClient.(*remote.Client)
 	if !ok {
 		return nil, fmt.Errorf("unexpected readClient type: %T", readClient)
@@ -297,13 +294,16 @@ func (c *RemoteReadCommand) executeMultipleQueries(ctx context.Context, readClie
 
 	compressed := snappy.Encode(nil, data)
 
-	// Use reflection to get the URL from the client
-	clientValue := reflect.ValueOf(client).Elem()
-	urlStringField := clientValue.FieldByName("urlString")
-	if !urlStringField.IsValid() {
-		return nil, fmt.Errorf("unable to access urlString field")
+	// Build URL from address and remoteReadPath fields
+	addressURL, err := url.Parse(c.address)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing address: %w", err)
 	}
-	urlString := urlStringField.String()
+	remoteReadPathURL, err := url.Parse(c.remoteReadPath)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing remote read path: %w", err)
+	}
+	urlString := addressURL.ResolveReference(remoteReadPathURL).String()
 
 	// Create HTTP request
 	httpReq, err := http.NewRequest(http.MethodPost, urlString, bytes.NewReader(compressed))
