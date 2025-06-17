@@ -199,8 +199,11 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		logger: test.NewTestingLogger(t),
 	}
 
+	smtpConfig := &alertspb.SmtpConfig{
+		FromAddress:   "test@grafana.com",
+		StaticHeaders: map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
+	}
 	externalURL := "http://test.grafana.com"
-	smtpFrom := "test@grafana.com"
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          testGrafanaConfig,
@@ -209,8 +212,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        externalURL,
-		SmtpFrom:           smtpFrom,
-		StaticHeaders:      map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
+		SmtpConfig:         smtpConfig,
 	}))
 
 	require.Len(t, storage.Objects(), 1)
