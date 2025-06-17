@@ -144,6 +144,8 @@ type Distributor struct {
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
+	receivedNativeHistogramSamples   *prometheus.CounterVec
+	receivedNativeHistogramBuckets   *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
@@ -412,7 +414,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
-			Help: "The total number of received samples, excluding rejected and deduped samples.",
+			Help: "The total number of received samples, including native histogram samples, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
@@ -421,6 +423,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_metadata_total",
 			Help: "The total number of received metadata, excluding rejected.",
+		}, []string{"user"}),
+		receivedNativeHistogramSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_samples_total",
+			Help: "The total number of received native histogram samples, excluding rejected and deduped samples.",
+		}, []string{"user"}),
+		receivedNativeHistogramBuckets: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_buckets_total",
+			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
@@ -726,6 +736,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
+	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
+	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -1950,16 +1962,21 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 }
 
 func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedHistograms, receivedExemplars, receivedMetadata int
+	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
-		receivedHistograms += len(ts.Histograms)
 		receivedExemplars += len(ts.Exemplars)
+		receivedHistograms += len(ts.Histograms)
+		for _, h := range ts.Histograms {
+			receivedHistogramBuckets += h.BucketCount()
+		}
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
+	d.receivedNativeHistogramSamples.WithLabelValues(userID).Add(float64(receivedHistograms))
+	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 

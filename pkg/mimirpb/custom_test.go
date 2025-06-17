@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestWriteRequest_MinTimestamp(t *testing.T) {
@@ -185,4 +187,34 @@ type fakeCodecV2 struct {
 
 func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
 	return encoding.GetCodecV2(proto.Name).Marshal(v)
+}
+
+func TestHistogram_BucketsCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		histogram Histogram
+		expected  int
+	}{
+		{
+			name:      "empty histogram",
+			histogram: Histogram{},
+			expected:  0,
+		},
+		{
+			name:      "int histogram",
+			histogram: FromHistogramToHistogramProto(0, test.GenerateTestHistogram(0)),
+			expected:  8,
+		},
+		{
+			name:      "float histogram",
+			histogram: FromFloatHistogramToHistogramProto(0, test.GenerateTestFloatHistogram(0)),
+			expected:  8,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.histogram.BucketCount())
+		})
+	}
 }
