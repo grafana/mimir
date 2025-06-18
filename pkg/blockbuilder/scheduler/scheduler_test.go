@@ -955,24 +955,6 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
 	assert.Equal(t, 0, pt.pendingJobs.Len(), "a single enqueue call should have drained all pending jobs")
 }
 
-func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
-	sched, _ := mustScheduler(t)
-	sched.cfg.MaxJobsPerPartition = 0
-	sched.completeObservationMode(context.Background())
-
-	part := int32(1)
-	pt := sched.getPartitionState(part)
-	pt.addPendingJob(&offsetRange{start: 10, end: 20})
-
-	sched.advanceCommittedOffset("ingest", part, 20)
-
-	assert.Equal(t, 1, pt.pendingJobs.Len())
-	assert.Equal(t, 0, sched.jobs.count())
-	sched.enqueuePendingJobs()
-	assert.Equal(t, 0, pt.pendingJobs.Len())
-	assert.Equal(t, 0, sched.jobs.count(), "the job should have been ignored because it's behind the committed offset")
-}
-
 func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	sched.cfg.MaxJobsPerPartition = 0

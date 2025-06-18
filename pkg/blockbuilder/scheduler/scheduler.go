@@ -301,15 +301,9 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			e := ps.pendingJobs.Front()
 			or := e.Value.(*offsetRange)
 
-			// The job discovery process happens concurrently with ongoing job
-			// completions. Now that we have the lock, ignore this job if it's
-			// older than our committed offset.
-			if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok && or.end <= c.At {
-				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset (expected at startup)",
-					"partition", partition, "start", or.start, "end", or.end, "committed", c.At)
-				ps.pendingJobs.Remove(e)
-				continue
-			}
+			// Note: as job discovery is concurrent with job completions, this
+			// pending job could be behind the committed offset at this point.
+			// This is okay because we'll omit these stale jobs at job assignment time.
 
 			jobID := fmt.Sprintf("%s/%d/%d", s.cfg.Kafka.Topic, partition, or.start)
 			spec := schedulerpb.JobSpec{
