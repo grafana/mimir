@@ -3343,13 +3343,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 100]
 
-# (advanced)
+# (advanced) Update the timestamp in the KV store for a given cluster/replica
+# only after this amount of time has passed since the current stored timestamp.
 [ha_tracker_update_timeout: <optional duration> | default = ]
 
-# (advanced)
+# (advanced) Maximum jitter applied to the update timeout, in order to spread
+# the HA heartbeats over time.
 [ha_tracker_update_timeout_jitter_max: <optional duration> | default = ]
 
-# (advanced)
+# (advanced) If we don't receive any samples from the accepted replica for a
+# cluster in this amount of time we will failover to the next replica we receive
+# a sample from. This value must be greater than the update timeout.
 [ha_tracker_failover_timeout: <optional duration> | default = ]
 
 # (advanced) This flag can be used to specify label names that to drop during

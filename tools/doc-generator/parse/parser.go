@@ -514,6 +514,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(flagext.LimitsMap[int]{})
 	case "list of durations":
 		return reflect.TypeOf(tsdb.DurationList{})
+	case "optional duration":
+		return reflect.TypeOf((*time.Duration)(nil))
 	default:
 		panic("unknown field type " + typ)
 	}
