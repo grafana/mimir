@@ -1016,6 +1016,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "timestamp"},
 		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
+		{fn: "ts_of_last_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
 	}
 	testsForFloatsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "abs"},
@@ -1072,6 +1073,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		// holt_winters is a backwards compatible alias for double_exponential_smoothing.
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
 		{fn: "year"},
+		{fn: "ts_of_min_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
+		{fn: "ts_of_max_over_time", rangeQuery: true, allowedErr: compat.NotSupportedError{}},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "histogram_count"},
@@ -1200,13 +1203,10 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 	}
 
 	fnToIgnore := map[string]struct{}{
-		"time":                 {},
-		"scalar":               {},
-		"vector":               {},
-		"pi":                   {},
-		"ts_of_min_over_time":  {},
-		"ts_of_last_over_time": {},
-		"ts_of_max_over_time":  {},
+		"time":   {},
+		"scalar": {},
+		"vector": {},
+		"pi":     {},
 	}
 	for _, tc := range testsToIgnore {
 		fnToIgnore[tc.fn] = struct{}{}
