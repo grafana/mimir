@@ -50,7 +50,8 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					for name, readSeries := range map[string]bool{"read one series": true, "read no series": false} {
 						t.Run(name, func(t *testing.T) {
-							memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+							ctx := context.Background()
+							memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 							inner := &operators.TestOperator{
 								Series: inputSeries,
@@ -68,7 +69,6 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 							param := scalars.NewScalarConstant(6, timeRange, memoryConsumptionTracker, posrange.PositionRange{})
 							o := New(inner, param, timeRange, nil, false, isTopK, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
 
-							ctx := context.Background()
 							series, err := o.SeriesMetadata(ctx)
 							require.NoError(t, err)
 

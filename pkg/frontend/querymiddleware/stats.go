@@ -4,7 +4,6 @@ package querymiddleware
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/grafana/dskit/tenant"
@@ -13,21 +12,22 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type queryStatsMiddleware struct {
-	engine                      promql.QueryEngine
+	lookbackDelta               time.Duration
 	regexpMatcherCount          prometheus.Counter
 	regexpMatcherOptimizedCount prometheus.Counter
 	consistencyCounter          *prometheus.CounterVec
 	next                        MetricsQueryHandler
 }
 
-func newQueryStatsMiddleware(reg prometheus.Registerer, engine promql.QueryEngine) MetricsQueryMiddleware {
+func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_regexp_matcher_count",
 		Help: "Total number of regexp matchers",
@@ -43,7 +43,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine promql.QueryEngin
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &queryStatsMiddleware{
-			engine:                      engine,
+			lookbackDelta:               streamingpromql.DetermineLookbackDelta(engineOpts),
 			regexpMatcherCount:          regexpMatcherCount,
 			regexpMatcherOptimizedCount: regexpMatcherOptimizedCount,
 			consistencyCounter:          consistencyCounter,
@@ -78,10 +78,6 @@ func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
 		}
 	}
 }
-
-var queryStatsErrQueryable = &storage.MockQueryable{MockQuerier: &storage.MockQuerier{SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
-	return storage.ErrSeriesSet(errors.New("cannot use query stats queryable for running queries"))
-}}}
 
 func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req MetricsQueryRequest) {
 	details := QueryDetailsFromContext(ctx)
@@ -118,16 +114,19 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 func (s queryStatsMiddleware) findMinMaxTime(ctx context.Context, req MetricsQueryRequest) (int64, int64, bool) {
 	switch r := req.(type) {
 	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
-		query, err := newQuery(ctx, req, s.engine, queryStatsErrQueryable)
+		expr, err := parser.ParseExpr(r.GetQuery())
 		if err != nil {
 			return 0, 0, false
 		}
-		defer query.Close()
 
-		evalStmt, ok := query.Statement().(*parser.EvalStmt)
-		if !ok {
-			return 0, 0, false
+		evalStmt := &parser.EvalStmt{
+			Expr:          expr,
+			Start:         util.TimeFromMillis(req.GetStart()),
+			End:           util.TimeFromMillis(req.GetEnd()),
+			Interval:      time.Duration(req.GetStep()) * time.Millisecond,
+			LookbackDelta: s.lookbackDelta,
 		}
+
 		minT, maxT := promql.FindMinMaxTime(evalStmt)
 		return minT, maxT, true
 	case *remoteReadQueryRequest:

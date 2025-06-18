@@ -212,7 +212,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 				reg := prometheus.NewPedanticRegistry()
-				mw := newQueryStatsMiddleware(reg, eng)
+				mw := newQueryStatsMiddleware(reg, opts)
 				ctx := context.Background()
 				if tt.args.ctx != nil {
 					ctx = tt.args.ctx
