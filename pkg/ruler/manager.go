@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
 	"go.opentelemetry.io/otel"
@@ -440,7 +441,7 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup, node 
 	}
 
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i]) {
+		for _, err := range r.Validate(node.Rules[i], validation.LegacyNamingScheme) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

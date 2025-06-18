@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -108,7 +109,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 
 	defer p.activeQueryTracker.Delete(queryID)
 
-	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
+	expr, err := p.runASTStage("Parsing", observer, func() (parser.Expr, error) { return ParseExpr(qs) })
 	if err != nil {
 		return nil, err
 	}
@@ -703,4 +704,13 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(d), nil
 	}
 	return 0, fmt.Errorf("cannot parse %q to a valid duration", s)
+}
+
+// ParseExpr is like parser.ParseExpr but uses legacy naming scheme.
+func ParseExpr(expr string) (parser.Expr, error) {
+	p := parser.NewParser(
+		expr,
+		parser.WithValidationScheme(validation.LegacyNamingScheme),
+	)
+	return p.ParseExpr()
 }

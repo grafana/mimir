@@ -14,12 +14,13 @@ import (
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
-	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 // TestLegacyNameValidation_DistributorWrite ensures that distributors discard invalid
@@ -28,6 +29,8 @@ func TestLegacyNameValidation_DistributorWrite(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
+
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte("")))
 
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, blocksBucketName)
