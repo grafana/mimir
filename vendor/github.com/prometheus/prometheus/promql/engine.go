@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -328,6 +329,9 @@ type EngineOpts struct {
 	EnableDelayedNameRemoval bool
 	// EnableTypeAndUnitLabels will allow PromQL Engine to make decisions based on the type and unit labels.
 	EnableTypeAndUnitLabels bool
+
+	// ValidationScheme to use when validating metric and label names. Defaults to UTF8Validation.
+	ValidationScheme validation.NamingScheme
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -347,12 +351,16 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	nameValidationScheme     validation.NamingScheme
 }
 
 // NewEngine returns a new engine.
 func NewEngine(opts EngineOpts) *Engine {
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
+	}
+	if opts.ValidationScheme == "" {
+		opts.ValidationScheme = validation.UTF8NamingScheme
 	}
 
 	queryResultSummary := prometheus.NewSummaryVec(prometheus.SummaryOpts{
@@ -439,6 +447,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		enablePerStepStats:       opts.EnablePerStepStats,
 		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  opts.EnableTypeAndUnitLabels,
+		nameValidationScheme:     opts.ValidationScheme,
 	}
 }
 
@@ -751,6 +760,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
+			nameValidationScheme:     ng.nameValidationScheme,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -809,8 +819,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
-		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
+		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
+		nameValidationScheme:     ng.nameValidationScheme,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1085,6 +1096,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
+	nameValidationScheme     validation.NamingScheme
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1672,7 +1684,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if e.Op == parser.COUNT_VALUES {
 			valueLabel := param.(*parser.StringLiteral)
-			if !model.LabelName(valueLabel.Val).IsValid() {
+			if !ev.nameValidationScheme.IsValidLabelName(valueLabel.Val) {
 				ev.errorf("invalid label name %s", valueLabel)
 			}
 			if !e.Without {
@@ -2078,6 +2090,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			nameValidationScheme:     ev.nameValidationScheme,
 		}
 
 		if e.Step != 0 {
@@ -2124,6 +2137,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			nameValidationScheme:     ev.nameValidationScheme,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples

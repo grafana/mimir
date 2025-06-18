@@ -21,6 +21,8 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/common/model"
+
+	"github.com/prometheus/prometheus/model/validation"
 )
 
 const (
@@ -101,23 +103,16 @@ func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // IsValid checks if the metric name or label names are valid.
-func (ls Labels) IsValid(validationScheme model.ValidationScheme) bool {
+//
+//nolint:forbidigo
+func (ls Labels) IsValid(validationScheme validation.NamingScheme) bool {
 	err := ls.Validate(func(l Label) error {
 		if l.Name == model.MetricNameLabel {
-			// If the default validation scheme has been overridden with legacy mode,
-			// we need to call the special legacy validation checker.
-			if validationScheme == model.LegacyValidation && !model.IsValidLegacyMetricName(string(model.LabelValue(l.Value))) {
-				return strconv.ErrSyntax
-			}
-			if !model.IsValidMetricName(model.LabelValue(l.Value)) {
+			if !validationScheme.IsValidMetricName(l.Value) {
 				return strconv.ErrSyntax
 			}
 		}
-		if validationScheme == model.LegacyValidation {
-			if !model.LabelName(l.Name).IsValidLegacy() || !model.LabelValue(l.Value).IsValid() {
-				return strconv.ErrSyntax
-			}
-		} else if !model.LabelName(l.Name).IsValid() || !model.LabelValue(l.Value).IsValid() {
+		if !validationScheme.IsValidLabelName(l.Name) || !model.LabelValue(l.Value).IsValid() {
 			return strconv.ErrSyntax
 		}
 		return nil
