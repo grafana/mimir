@@ -55,6 +55,8 @@ spec:
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
+            - name: runtime-config
+              mountPath: /var/mimir
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -68,6 +70,7 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 45
           resources:
             limits:
@@ -94,5 +97,8 @@ spec:
         - name: license
           secret:
             secretName: test-enterprise-federation-frontend-values-mimir-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-federation-frontend-values-mimir-runtime
         - name: active-queries
           emptyDir: {}

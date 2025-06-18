@@ -69,11 +69,13 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 45
           readinessProbe:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 45
           resources:
             limits:
