@@ -73,6 +73,7 @@
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [ENHANCEMENT] Ruler: Add new per-tenant limit on minimum rule evaluation interval. #11665
 * [ENHANCEMENT] store-gateway: download sparse headers on startup when lazy loading is enabled. #11686
+* [ENHANCEMENT] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to wall clock. #11573
 * [ENHANCEMENT] Distributor: added more metrics to troubleshoot Kafka records production latency when experimental ingest storage is enabled. #11766
   * Added `cortex_ingest_storage_writer_produce_remaining_deadline_seconds` metric, to measure the remaining deadline (in seconds) when records are requested to be produced.
   * Added `cortex_ingest_storage_writer_produce_records_enqueue_duration_seconds` metric, to measure how long it takes to enqueue produced Kafka records in the client.
