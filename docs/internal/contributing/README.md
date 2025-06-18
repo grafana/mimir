@@ -17,7 +17,7 @@ Before a piece of work is finished:
 - Organize it into one or more commits, and include a commit message for each that describes all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.
 - Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
-- Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
+- Ensure the pull request title and labels are suitable for the [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
 - If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
 
 ## Grafana Mimir Helm chart
@@ -124,17 +124,43 @@ To add a new error:
 
 ## Changelog
 
-When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
+We use the title and labels of merged pull requests to auto-generate the changelog, so there is no need to manually update [`CHANGELOG.md`](https://github.com/grafana/mimir/blob/main/CHANGELOG.md).
 
-The ordering of entries in the changelog should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`.
+There's a GitHub action available in the repository named [Changelog Generation](https://github.com/grafana/mimir/actions/workflows/changelog-gen.yml) that can be triggered manually to re-generate the changelog for any release.
+
+An active decision to include a change in the changelog needs to be taken for every pull request. There's a pull request check named `Changelog Checks` that enforces this rule. By adding or removing labels on the pull request or updating the pull request title, description, or both, the check is re-evaluated.
+
+### Skip changelog
+
+If you don't want to include your change in the changelog, you need to add a label named `changelog-not-needed` to the pull request.
+
+There are other labels that are automatically excluded from the changelog but are mainly applied by GitHub Actions, e.g. `dependency-update`, `vendored-mimir-prometheus-update`, `helm-weekly-release`.
+
+### Include in changelog
+
+To include a pull request in the changelog, add a label named `add-to-changelog` to the pull request. Then the following additional validation rules are checked:
+
+- The title must be formatted according to `<Area>: <Summary>` (both "Area" and "Summary" should start with a capital letter), and it will appear as a line in the changelog verbatim.
+- There must be a label for the area as appropriate: `area/mimir`, `area/mixin`, `area/jsonnet`, `area/mimirtool`, `area/continuous-test`, `area/query-tee`, `area/docs`, `area/tools`
+- There must be a label for the [scope](#scopes).
+
+Not complying with above rules can make the **Changelog Check** fail with validation errors.
+
+### Scopes
+
+When appending to the changelog, the changes must be listed with a corresponding scope. A scope denotes the type of change that has occurred.
 
 #### [CHANGE]
 
 The CHANGE scope denotes a change that changes the expected behavior of the project while not adding new functionality or fixing an underling issue. This commonly occurs when renaming things to make them more consistent or to accommodate updated versions of vendored dependencies.
 
+Use the label `scope/change`.
+
 #### [FEATURE]
 
 The FEATURE scope denotes a change that adds new functionality to the project/service.
+
+Use the label `scope/feature`.
 
 #### [ENHANCEMENT]
 
@@ -143,6 +169,10 @@ The ENHANCEMENT scope denotes a change that improves upon the current functional
 - An optimization on a particular process in a service that makes it more performant
 - Simpler syntax for setting a configuration value, like allowing `1m` instead of 60 for a duration setting.
 
+Use the label `scope/enhancement`.
+
 #### [BUGFIX]
 
 The BUGFIX scope denotes a change that fixes an issue with the project in question. A BUGFIX should align the behaviour of the service with the current expected behaviour of the service. If a BUGFIX introduces new unexpected behaviour to ameliorate the issue, a corresponding FEATURE or ENHANCEMENT scope should also be added to the changelog.
+
+Use the label `scope/bugfix`.

@@ -1,0 +1,23 @@
+[
+  {
+    "type": "check-changelog",
+    "title": "Label Check - Changelog",
+    "labels": {
+      "exists": "Changelog enabled",
+      "notExists": "Changelog decision needed",
+      "matches": [
+        "add-to-changelog"
+      ]
+    },
+    "skip": {
+      "message": "Changelog skipped",
+      "matches": [
+        "changelog-not-needed",
+        "dependency-update",
+        "vendored-mimir-prometheus-update",
+        "helm-weekly-release"
+      ]
+    },
+    "targetUrl": "https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog"
+  }
+]

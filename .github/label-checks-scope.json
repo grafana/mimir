@@ -1,0 +1,26 @@
+[
+  {
+    "type": "check-label",
+    "title": "Label Check - Scope",
+    "labels": {
+      "exists": "Scope label exists for changelog",
+      "notExists": "Need to add scope/.+ label for changelog",
+      "matches": [
+        "scope/change",
+        "scope/feature",
+        "scope/enhancement",
+        "scope/bugfix"
+      ]
+    },
+    "skip": {
+      "message": "Scope label check skipped",
+      "matches": [
+        "changelog-not-needed",
+        "dependency-update",
+        "vendored-mimir-prometheus-update",
+        "helm-weekly-release"
+      ]
+    },
+    "targetUrl": "https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog"
+  }
+]

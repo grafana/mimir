@@ -14,5 +14,5 @@ Fixes #<issue number>
 
 - [ ] Tests updated.
 - [ ] Documentation added.
-- [ ] `CHANGELOG.md` updated - the order of entries should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`. If changelog entry is not needed, please add the `changelog-not-needed` label to the PR.
+- [ ] [Format the PR title and add labels to the PR as appropriate](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog) so we can auto-generate the changelog entry. If changelog entry is not needed, please add the `changelog-not-needed` label to the PR.
 - [ ] [`about-versioning.md`](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/configure/about-versioning.md) updated with experimental features.
