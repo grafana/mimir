@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -41,6 +42,7 @@ func NewTestEngineOpts() EngineOpts {
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
 			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
+			ValidationScheme:         validation.LegacyNamingScheme,
 		},
 
 		Pedantic: true,

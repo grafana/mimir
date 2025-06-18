@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"      //lint:ignore faillint streamingpromql is fine
@@ -66,6 +67,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
+		ValidationScheme: validation.LegacyNamingScheme,
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts

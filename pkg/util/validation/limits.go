@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/validation"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
@@ -528,6 +529,10 @@ func (l *Limits) validate() error {
 	for _, cfg := range l.MetricRelabelConfigs {
 		if cfg == nil {
 			return errors.New("invalid metric_relabel_configs")
+		}
+		cfg.MetricNameValidationScheme = validation.LegacyNamingScheme
+		if err := cfg.Validate(validation.LegacyNamingScheme); err != nil {
+			return err
 		}
 	}
 

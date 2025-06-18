@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -199,6 +200,7 @@ type API struct {
 	Queryable         storage.SampleAndChunkQueryable
 	QueryEngine       promql.QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
+	NamingScheme      validation.NamingScheme
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
 	targetRetriever       func(context.Context) TargetRetriever
@@ -270,6 +272,7 @@ func NewAPI(
 		QueryEngine:       qe,
 		Queryable:         q,
 		ExemplarQueryable: eq,
+		NamingScheme:      validation.UTF8NamingScheme,
 
 		scrapePoolsRetriever:  spsr,
 		targetRetriever:       tr,
@@ -782,8 +785,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		name = model.UnescapeName(name, model.ValueEncodingEscaping)
 	}
 
-	label := model.LabelName(name)
-	if !label.IsValid() {
+	if !api.NamingScheme.IsValidLabelName(name) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 

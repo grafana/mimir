@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -71,6 +72,8 @@ type parser struct {
 
 	generatedParserResult interface{}
 	parseErrors           ParseErrors
+
+	nameValidationScheme validation.NamingScheme
 }
 
 type Opt func(p *parser)
@@ -78,6 +81,13 @@ type Opt func(p *parser)
 func WithFunctions(functions map[string]*Function) Opt {
 	return func(p *parser) {
 		p.functions = functions
+	}
+}
+
+// WithValidationScheme controls how labels are validated at parse time.
+func WithValidationScheme(scheme validation.NamingScheme) Opt {
+	return func(p *parser) {
+		p.nameValidationScheme = scheme
 	}
 }
 
@@ -90,6 +100,7 @@ func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexporte
 	p.parseErrors = nil
 	p.generatedParserResult = nil
 	p.closingParens = make([]posrange.Pos, 0)
+	p.nameValidationScheme = validation.UTF8NamingScheme
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
