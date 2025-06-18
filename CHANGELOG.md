@@ -73,10 +73,16 @@
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [ENHANCEMENT] Ruler: Add new per-tenant limit on minimum rule evaluation interval. #11665
 * [ENHANCEMENT] store-gateway: download sparse headers on startup when lazy loading is enabled. #11686
+* [ENHANCEMENT] Distributor: added more metrics to troubleshoot Kafka records production latency when experimental ingest storage is enabled: #11766 #11771
+  * `cortex_ingest_storage_writer_produce_remaining_deadline_seconds`: measures the remaining deadline (in seconds) when records are requested to be produced.
+  * `cortex_ingest_storage_writer_produce_records_enqueue_duration_seconds`: measures how long it takes to enqueue produced Kafka records in the client.
+  * `cortex_ingest_storage_writer_kafka_write_wait_seconds`: measures the time spent waiting to write to Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_write_time_seconds`: measures the time spent writing to Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_read_wait_seconds`: measures the time spent waiting to read from Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_read_time_seconds`: measures the time spent reading from Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds`: measures the time from the start of when a Kafka request is written to the end of when the response for that request was fully read from the Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_request_throttled_seconds`: measures how long Kafka requests have been throttled by the Kafka client.
 * [ENHANCEMENT] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to wall clock. #11573
-* [ENHANCEMENT] Distributor: added more metrics to troubleshoot Kafka records production latency when experimental ingest storage is enabled. #11766
-  * Added `cortex_ingest_storage_writer_produce_remaining_deadline_seconds` metric, to measure the remaining deadline (in seconds) when records are requested to be produced.
-  * Added `cortex_ingest_storage_writer_produce_records_enqueue_duration_seconds` metric, to measure how long it takes to enqueue produced Kafka records in the client.
 * [ENHANCEMENT] Distributor: added circuit breaker to not produce Kafka records at all if the context is already canceled / expired. This applied only when experimental ingest storage is enabled. #11768
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
