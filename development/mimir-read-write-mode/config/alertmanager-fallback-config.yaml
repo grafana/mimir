@@ -1,8 +1,3 @@
-global:
-  smtp_from: noreply@grafana.net
-  smtp_hello: localhost
-  smtp_smarthost: mailhog:1025
-
 route:
   group_wait: 0s
   receiver: empty-receiver

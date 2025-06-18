@@ -5,8 +5,9 @@ std.manifestYamlDoc({
     self.read +
     self.backend +
     self.nginx +
-    self.mailhog +
     self.minio +
+    self.grafana +
+    self.grafana_agent +
     self.memcached +
     self.prometheus +
     {},
@@ -56,13 +57,6 @@ std.manifestYamlDoc({
       target: 'backend',
       publishedHttpPort: 8007,
     }),
-  },
-
-  mailhog:: {
-    mailhog: {
-      image: 'mailhog/mailhog',
-      ports: ['8025:8025', '1025:1025'],
-    },
   },
 
   nginx:: {
