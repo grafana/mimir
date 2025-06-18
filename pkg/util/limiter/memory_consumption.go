@@ -201,16 +201,14 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 }
 
 // IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
-func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(_ labels.Labels) error {
-	// TODO: Use lb.ByteSize() from https://github.com/prometheus/prometheus/pull/16717
-	if err := l.IncreaseMemoryConsumption(0, Labels); err != nil {
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
+	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
 		return err
 	}
 	return nil
 }
 
 // DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
-func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(_ labels.Labels) {
-	// TODO: Use lb.ByteSize() from https://github.com/prometheus/prometheus/pull/16717
-	l.DecreaseMemoryConsumption(0, Labels)
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
+	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
 }
