@@ -726,7 +726,8 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 
 		if c, ok := s.committed.Lookup(spec.Topic, spec.Partition); ok && spec.EndOffset <= c.At {
 			// Job is before the committed offset. Remove it.
-			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset", "job_id",
+			level.Info(s.logger).Log(
+				"msg", "removing job as it's behind the committed offset", "job_id", k.id, "epoch", k.epoch,
 				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", c.At)
 			s.jobs.removeJob(k)
 			continue
