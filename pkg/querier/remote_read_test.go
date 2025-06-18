@@ -353,11 +353,6 @@ type queryStartEnd struct {
 
 // findQueryIndexByMatchers finds the index of the query that matches the given matchers
 func findQueryIndexByMatchers(queries []*prompb.Query, matchers []*labels.Matcher) int {
-	// If there's only one query, return index 0
-	if len(queries) == 1 {
-		return 0
-	}
-
 	// For multiple queries, match by comparing matchers
 	for i, query := range queries {
 		if matchersEqual(query.Matchers, matchers) {
