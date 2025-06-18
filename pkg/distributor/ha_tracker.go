@@ -41,7 +41,9 @@ type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
-	SetHATrackerTimeouts(user string, update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration)
+	// HATrackerTimeouts returns timeouts that override the default. They may be nil, indicating there
+	// are no overrides for the user.
+	HATrackerTimeouts(user string) (update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration)
 }
 
 type haTracker interface {
@@ -177,16 +179,6 @@ type HATrackerTimeoutsConfig struct {
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
 	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
-}
-
-func (cfg *HATrackerTimeoutsConfig) overrideFromLimits(user string, limits haTrackerLimits) error {
-	var newCfg HATrackerTimeoutsConfig
-	limits.SetHATrackerTimeouts(user, &newCfg.UpdateTimeout, &newCfg.UpdateTimeoutJitterMax, &newCfg.FailoverTimeout)
-	if err := newCfg.Validate(); err != nil {
-		return err
-	}
-	*cfg = newCfg
-	return nil
 }
 
 // Validate config and returns error on failure
@@ -633,19 +625,30 @@ func (h *defaultHaTracker) forUser(userID string) defaultHaTrackerForUser {
 	uh := defaultHaTrackerForUser{
 		defaultHaTracker: h,
 		userID:           userID,
-		cfg: HATrackerTimeoutsConfig{
-			UpdateTimeout:          h.cfg.UpdateTimeout,
-			UpdateTimeoutJitterMax: h.cfg.UpdateTimeoutJitterMax,
-			FailoverTimeout:        h.cfg.FailoverTimeout,
-		},
+
+		// Initially copy default values.
+		cfg:                 h.cfg.HATrackerTimeoutsConfig,
 		updateTimeoutJitter: h.updateTimeoutJitter,
 	}
-	err := uh.cfg.overrideFromLimits(userID, h.limits)
-	if err != nil {
+
+	// Override from tenant-specific limits, if provided and valid.
+	update, updateJitterMax, failover := h.limits.HATrackerTimeouts(userID)
+	if update != nil {
+		uh.cfg.UpdateTimeout = *update
+	}
+	if updateJitterMax != nil {
+		uh.cfg.UpdateTimeoutJitterMax = *updateJitterMax
+	}
+	if failover != nil {
+		uh.cfg.FailoverTimeout = *failover
+	}
+	if err := uh.cfg.Validate(); err != nil {
 		level.Warn(h.logger).Log("msg", "invalid HA tracker timeouts config for tenant; using defaults", "user", userID, "err", err)
+		uh.cfg = h.cfg.HATrackerTimeoutsConfig // Restore defaults
 	} else {
 		uh.updateTimeoutJitter = computeUpdateTimeoutJitter(uh.cfg.UpdateTimeoutJitterMax)
 	}
+
 	return uh
 }
 

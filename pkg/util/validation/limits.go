@@ -1094,17 +1094,10 @@ func (o *Overrides) MaxHAClusters(user string) int {
 	return o.getOverridesForUser(user).HAMaxClusters
 }
 
-func (o *Overrides) SetHATrackerTimeouts(user string, update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
+// See distributor.haTrackerLimits.SetHATrackerTimeouts
+func (o *Overrides) HATrackerTimeouts(user string) (update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
 	uo := o.getOverridesForUser(user)
-	if uo.HATrackerUpdateTimeout != nil {
-		*update = *uo.HATrackerUpdateTimeout
-	}
-	if uo.HATrackerUpdateTimeoutJitterMax != nil {
-		*updateJitterMax = *uo.HATrackerUpdateTimeoutJitterMax
-	}
-	if uo.HATrackerFailoverTimeout != nil {
-		*failover = *uo.HATrackerFailoverTimeout
-	}
+	return uo.HATrackerUpdateTimeout, uo.HATrackerUpdateTimeoutJitterMax, uo.HATrackerFailoverTimeout
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.

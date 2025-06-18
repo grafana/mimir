@@ -1152,19 +1152,11 @@ func (l trackerLimits) MaxHAClusters(_ string) int {
 	return l.maxClusters
 }
 
-func (l trackerLimits) SetHATrackerTimeouts(userID string, update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
+func (l trackerLimits) HATrackerTimeouts(userID string) (update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
 	if l.userID != "" && userID != l.userID {
-		panic("SetHATrackerTimeouts called with unexpected userID: " + userID)
+		panic("HATrackerTimeouts called with unexpected userID: " + userID)
 	}
-	if l.haTrackerUpdateTimeout != nil {
-		*update = *l.haTrackerUpdateTimeout
-	}
-	if l.haTrackerUpdateTimeoutJitterMax != nil {
-		*updateJitterMax = *l.haTrackerUpdateTimeoutJitterMax
-	}
-	if l.haTrackerFailoverTimeout != nil {
-		*failover = *l.haTrackerFailoverTimeout
-	}
+	return l.haTrackerUpdateTimeout, l.haTrackerUpdateTimeoutJitterMax, l.haTrackerFailoverTimeout
 }
 
 func TestHATracker_MetricsCleanup(t *testing.T) {
