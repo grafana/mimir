@@ -188,7 +188,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 		}
 
 		// Recursively re-iterate if it's a struct and it's not a custom type.
-		if _, custom := getCustomFieldType(field.Type); (field.Type.Kind() == reflect.Struct || field.Type.Kind() == reflect.Ptr) && !custom {
+		if _, custom := getCustomFieldType(field.Type); isStruct(field.Type) && !custom {
 			// Check whether the sub-block is a root config block
 			rootName, rootDesc, isRoot := isRootBlock(field.Type, rootBlocks)
 
@@ -256,7 +256,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			// Add ConfigBlock for slices only if the field isn't a custom type,
 			// which shouldn't be inspected because doesn't have YAML tags, flag registrations, etc.
 			_, isCustomType := getFieldCustomType(field.Type)
-			isSliceOfStructs := field.Type.Kind() == reflect.Slice && (field.Type.Elem().Kind() == reflect.Struct || field.Type.Elem().Kind() == reflect.Ptr)
+			isSliceOfStructs := field.Type.Kind() == reflect.Slice && isStruct(field.Type.Elem())
 			if !isCustomType && isSliceOfStructs {
 				element = &ConfigBlock{
 					Name: fieldName,
@@ -432,7 +432,12 @@ func getFieldType(t reflect.Type) (string, error) {
 	case reflect.Struct:
 		return t.Name(), nil
 	case reflect.Ptr:
-		return getFieldType(t.Elem())
+		elemType, err := getFieldType(t.Elem())
+		if err != nil {
+			return "", err
+		}
+
+		return "optional " + elemType, nil
 
 	default:
 		return "", fmt.Errorf("unsupported data type %s", t.Kind())
@@ -739,4 +744,8 @@ func parseDocTag(f reflect.StructField) map[string]string {
 	}
 
 	return cfg
+}
+
+func isStruct(v reflect.Type) bool {
+	return v.Kind() == reflect.Struct || (v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Struct)
 }

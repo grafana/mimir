@@ -3343,6 +3343,15 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 100]
 
+# (advanced)
+[ha_tracker_update_timeout: <optional duration> | default = ]
+
+# (advanced)
+[ha_tracker_update_timeout_jitter_max: <optional duration> | default = ]
+
+# (advanced)
+[ha_tracker_failover_timeout: <optional duration> | default = ]
+
 # (advanced) This flag can be used to specify label names that to drop during
 # sample ingestion within the distributor and can be repeated in order to drop
 # multiple labels.
