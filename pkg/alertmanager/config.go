@@ -111,6 +111,9 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 			emailCfg.AuthPassword = s.Password
 		}
 		emailCfg.SkipVerify = s.SkipVerify
+		if s.StartTlsPolicy != "" {
+			emailCfg.StartTLSPolicy = s.StartTlsPolicy
+		}
 		if s.StaticHeaders != nil {
 			emailCfg.StaticHeaders = s.StaticHeaders
 		}
