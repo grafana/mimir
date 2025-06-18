@@ -1630,8 +1630,6 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 
 func TestHATracker_InvalidUserSpecificTimeoutsUsesDefaults(t *testing.T) {
 	const userID = "test-user"
-	const cluster = "test-cluster"
-	const replica = "test-replica"
 
 	codec := GetReplicaDescCodec()
 	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
