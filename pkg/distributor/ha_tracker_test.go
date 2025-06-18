@@ -1606,26 +1606,34 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	now = now.Add(2 * time.Second)
 	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now.UnixMilli())
 	assert.NoError(t, err)
+	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
 	assert.Equal(t, firstReceivedAt, tracker.clusters[userID][cluster].elected.ReceivedAt)
+	tracker.electedLock.Unlock()
 
 	// Request after user-specific timeout should trigger an update
 	now = now.Add(userSpecificUpdateTimeout) // Beyond user-specific timeout
 	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now.UnixMilli())
 	assert.NoError(t, err)
+	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
 	assert.Equal(t, now.UnixMilli(), tracker.clusters[userID][cluster].elected.ReceivedAt) // Timestamp is updated
+	tracker.electedLock.Unlock()
 
 	// Failover shouldn't happen before FailoverTimeout
 	err = userTracker.updateKVStore(context.Background(), cluster, otherReplica, now, now.UnixMilli())
 	assert.NoError(t, err)
+	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
+	tracker.electedLock.Unlock()
 
 	// After FailoverTimeout, new value should be set
 	now = now.Add(userSpecificFailoverTimeout)
 	err = userTracker.updateKVStore(context.Background(), cluster, otherReplica, now, now.UnixMilli())
 	assert.NoError(t, err)
+	tracker.electedLock.Lock()
 	assert.Equal(t, otherReplica, tracker.clusters[userID][cluster].elected.Replica)
+	tracker.electedLock.Unlock()
 }
 
 func TestHATracker_InvalidUserSpecificTimeoutsUsesDefaults(t *testing.T) {
