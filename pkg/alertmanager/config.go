@@ -15,12 +15,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
 	alertingReceivers "github.com/grafana/alerting/receivers"
-
-	"github.com/grafana/mimir/pkg/util/version"
-
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/util/version"
 )
 
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
