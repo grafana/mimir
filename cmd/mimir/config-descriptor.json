@@ -4348,6 +4348,36 @@
         },
         {
           "kind": "field",
+          "name": "ha_tracker_update_timeout",
+          "required": false,
+          "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "optional duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_update_timeout_jitter_max",
+          "required": false,
+          "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "optional duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_failover_timeout",
+          "required": false,
+          "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "optional duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "drop_labels",
           "required": false,
           "desc": "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.",
