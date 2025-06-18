@@ -335,8 +335,9 @@ func newEngineForTesting(t *testing.T, engine string, opts ...engineOpt) (promql
 	case querier.MimirEngine:
 		limits := streamingpromql.NewStaticQueryLimitsProvider(0)
 		metrics := stats.NewQueryMetrics(promOpts.Reg)
+		planner := streamingpromql.NewQueryPlanner(mqeOpts)
 		logger := log.NewNopLogger()
-		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, nil, logger)
+		eng, err := streamingpromql.NewEngine(mqeOpts, limits, metrics, planner, logger)
 		if err != nil {
 			t.Fatalf("error creating MQE engine for testing: %s", err)
 		}
