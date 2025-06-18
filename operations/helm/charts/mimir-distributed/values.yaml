@@ -124,7 +124,7 @@ mimir:
 
     activity_tracker:
       filepath: /active-query-tracker/activity.log
-    
+
     server:
     {{- if .Values.tls.mimir.enabled }}
       tls_cipher_suites: {{ .Values.tls.mimir.server.tls_cipher_suites }}
@@ -4959,7 +4959,7 @@ tls:
       # -- Path to the server certificate file
       cert_path: "/etc/mimir/certificates/server.crt"
       # -- Path to the server key file
-      key_path: "/etc/mimir/certificates/server.key" 
+      key_path: "/etc/mimir/certificates/server.key"
       # -- Path to the CA certificate file
       ca_path: "/etc/mimir/certificates/root.crt"
       # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
