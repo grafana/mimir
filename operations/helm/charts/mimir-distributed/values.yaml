@@ -4956,49 +4956,48 @@ tls:
     # -- Enable TLS for all Mimir components
     enabled: false
     server:
-      config:
-        # -- Path to the server certificate file
-        cert_file: ""
-        # -- Path to the server key file
-        key_file: ""
-        # -- Path to the CA certificate file
-        client_ca_file: ""
-        # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
-        client_auth_type: ""
-      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used
-      tls_cipher_suites: ""
+      # -- Path to the server certificate file
+      cert_path: "/etc/mimir/certificates/server.crt"
+      # -- Path to the server key file
+      key_path: "/etc/mimir/certificates/server.key" 
+      # -- Path to the CA certificate file
+      ca_path: "/etc/mimir/certificates/root.crt"
+      # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
+      client_auth_type: ""
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suites: ""
       # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
-      tls_min_version: ""
+      min_version: ""
     client:
       # -- Path to the client certificate, which will be used for authenticating with the server
-      tls_cert_path: ""
+      cert_path: "/etc/mimir/certificates/client.crt"
       # -- Path to the key for the client certificate
-      tls_key_path: ""
+      key_path: "/etc/mimir/certificates/client.key"
       # -- Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used
-      tls_ca_path: ""
+      ca_path: "/etc/mimir/certificates/root.crt"
       # -- Override the expected name on the server certificate
-      tls_server_name: ""
-      # -- Skip validating server certificate.
-      tls_insecure_skip_verify: false
-      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used
-      tls_cipher_suites: ""
+      server_name: ""
+      # -- Skip validating server certificate
+      insecure_skip_verify: false
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suites: ""
       # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
-      tls_min_version: ""
+      min_version: ""
   memcached:
+    # -- Enable connecting to Memcached with TLS
     enabled: false
-    cert_path: ""
-    key_path: ""
-    ca_path: ""
-    insecureSkipVerify: false
-    clientAuthType: ""
-  
-  # -- TLS secret configuration
-  secret:
-    # -- Name of the Kubernetes secret containing TLS certificates
-    name: ""
-    # -- Key in the secret containing the server certificate
-    certKey: tls.crt
-    # -- Key in the secret containing the server key
-    keyKey: tls.key
-    # -- Key in the secret containing the CA certificate
-    caKey: ca.crt
+    client:
+      # -- Path to the client certificate, which will be used for authenticating with the server
+      cert_path: "/etc/mimir/certificates/client.crt"
+      # -- Path to the key for the client certificate
+      key_path: "/etc/mimir/certificates/client.key"
+      # -- Path to the CA certificates to validate server certificate against
+      ca_path: "/etc/mimir/certificates/root.crt"
+      # -- Override the expected name on the server certificate
+      server_name: ""
+      # -- Skip validating server certificate
+      insecure_skip_verify: false
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suits: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      min_version: ""
