@@ -478,11 +478,8 @@ func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheT
 		"-query-frontend.parallelize-shardable-queries":     "true",
 		"-query-frontend.split-queries-by-interval":         config.splitQueriesByInterval,
 		"-query-frontend.max-cache-freshness":               "10m",
-		"-query-frontend.align-queries-with-step":           "true", // to make sure we hit the cache
-
-		// These two flags enable per-step stats.
-		"-query-frontend.cache-queryable-samples-stats": "true",
-		"-querier.per-step-stats-enabled":               "true",
+		"-query-frontend.align-queries-with-step":           "true", // to make sure we hit the cache.
+		"-query-frontend.cache-queryable-samples-stats":     "true", // to collect and cache per-step stats.
 	})
 
 	// Start the query-scheduler

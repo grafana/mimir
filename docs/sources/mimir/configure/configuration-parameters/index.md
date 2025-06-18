@@ -1636,10 +1636,6 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
-# (advanced) Enable returning samples stats per steps in query stats.
-# CLI flag: -querier.per-step-stats-enabled
-[per_step_stats_enabled: <boolean> | default = false]
-
 mimir_query_engine:
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
@@ -1808,8 +1804,7 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# Cache Statistics of processed samples on results cache. Should be enabled in
-# conjunction with querier.per-step-stats-enabled.
+# Cache Statistics of processed samples on results cache.
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
 

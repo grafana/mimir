@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
-	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -54,11 +53,11 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "query-frontend.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 }
 
-func (cfg *CombinedFrontendConfig) Validate(qCfg querier.Config) error {
+func (cfg *CombinedFrontendConfig) Validate() error {
 	if err := cfg.FrontendV2.Validate(); err != nil {
 		return err
 	}
-	if err := cfg.QueryMiddleware.Validate(qCfg); err != nil {
+	if err := cfg.QueryMiddleware.Validate(); err != nil {
 		return err
 	}
 	return nil

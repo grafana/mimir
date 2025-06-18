@@ -2211,8 +2211,6 @@ Usage of ./cmd/mimir/mimir:
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
-  -querier.per-step-stats-enabled
-    	Enable returning samples stats per steps in query stats.
   -querier.query-engine string
     	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "mimir")
   -querier.query-ingesters-within duration
@@ -2332,7 +2330,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.cache-results
     	Cache query results.
   -query-frontend.cache-samples-processed-stats
-    	Cache Statistics of processed samples on results cache. Should be enabled in conjunction with querier.per-step-stats-enabled.
+    	Cache Statistics of processed samples on results cache.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
   -query-frontend.client-cluster-validation.label string
