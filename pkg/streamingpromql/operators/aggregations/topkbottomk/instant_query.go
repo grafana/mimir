@@ -141,7 +141,6 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
-			// TODO: check again this
 			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
 			if err != nil {
 				return nil, err
