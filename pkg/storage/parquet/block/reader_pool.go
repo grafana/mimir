@@ -153,14 +153,6 @@ func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyReaderLocalLabelsBucke
 	return idle
 }
 
-func (p *ReaderPool) isTracking(r *LazyReaderLocalLabelsBucketChunks) bool {
-	p.lazyReadersMx.Lock()
-	defer p.lazyReadersMx.Unlock()
-
-	_, ok := p.lazyReaders[r]
-	return ok
-}
-
 func (p *ReaderPool) onLazyReaderClosed(r *LazyReaderLocalLabelsBucketChunks) {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()

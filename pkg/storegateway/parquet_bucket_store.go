@@ -23,6 +23,8 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/parquet-common/schema"
+	parquetstorage "github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -32,13 +34,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/prometheus-community/parquet-common/schema"
-	parquetstorage "github.com/prometheus-community/parquet-common/storage"
-
-	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/parquet"
+	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -234,8 +232,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 	// Send the series back to the querier (same series set for both streaming and non-streaming)
 	if req.StreamingChunksBatchSize > 0 {
 		seriesLoadStart := time.Now()
-
-		streamingSeriesCount, err := s.sendStreamingSeriesLabelsAndStats(req, srv, stats, labelsIt)
+		var streamingSeriesCount int
+		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, labelsIt)
 		if err != nil {
 			return err
 		}
@@ -326,7 +324,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	seriesLimiter SeriesLimiter,
 	stats *safeQueryStats,
 ) (iterator[labels.Labels], iterator[[]storepb.AggrChunk], error) {
-	// TODO(jesusvazquez) This shardfinder function could be extracted to a varaible and perhaps we dont need to filter mint and maxt
+	// TODO(jesusvazquez) This shardfinder function could be extracted to a variable and perhaps we dont need to filter mint and maxt
 	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
 		var parquetShards []parquetstorage.ParquetShard
 		for _, shard := range shards {
@@ -750,7 +748,7 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	return nil
 }
 
-func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
+func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} { // nolint:unused
 	// TODO implement for parquet blocks
 	// previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.localDir)
 	// if err != nil {
@@ -850,12 +848,6 @@ func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
 	return nil
 }
 
-// chunkSeriesSetToStorePBSeriesSet adapts a prometheus storage.SeriesSet to storepb.SeriesSet
-type chunkSeriesSetToStorePBSeriesSet struct {
-	chunkSeriesSet storage.ChunkSeriesSet
-	skipChunks     bool
-}
-
 // toLabelsAndAggChunksSlice pulls all labels and chunks from the
 // storage.ChunkSeriesSet and returns them as slices, converting the chunks to
 // storepb.AggrChunk format. If skipChunks is true, the chunks slice will be
@@ -920,4 +912,9 @@ func (a *concreteIterator[T]) Err() error {
 
 func (a *concreteIterator[T]) At() T {
 	return a.items[a.curr]
+}
+
+// TimeRange returns the minimum and maximum timestamp of data available in the store.
+func (s *ParquetBucketStore) TimeRange() (mint, maxt int64) {
+	return s.blockSet.timerange()
 }
