@@ -288,14 +288,12 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 }
 
 // Placeholder methods for parquet-specific functionality
-func (s *ParquetBucketStore) openParquetShardsForReading(ctx context.Context, skipChunks bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
-	// TODO: Implement parquet shard discovery and opening logic
-	// This should:
-	// 1. Discover parquet shards that intersect with the time range
-	// 2. Use storage.ParquetShardOpener to open .currLabels.parquet and .chunks.parquet files
-	// 3. Read parquet schemas and metadata for efficient querying using shard.TSDBSchema()
-	// 4. Wrap opened ParquetShard with metadata (BlockID, queried status)
-	panic("TODO: implement openParquetShardsForReading")
+func (s *ParquetBucketStore) openParquetShardsForReading(_ context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
+	var blocks []*parquetBucketBlock
+	s.blockSet.filter(minTime, maxTime, reqBlockMatchers, func(b *parquetBucketBlock) {
+		blocks = append(blocks, b)
+	})
+	return blocks
 }
 
 func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (func(), error) {
