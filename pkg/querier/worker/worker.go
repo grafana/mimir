@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	httpgrpcserver "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -122,7 +124,7 @@ type querierWorker struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewQuerierWorker(cfg Config, handler http.Handler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	if cfg.QuerierID == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -160,6 +162,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 		grpcCfg = cfg.QueryFrontendGRPCClientConfig
 		workerClient = "query-frontend-worker"
+		handler := httpgrpcserver.NewServer(handler, httpgrpcserver.WithReturn4XXErrors)
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:

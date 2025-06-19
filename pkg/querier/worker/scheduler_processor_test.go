@@ -50,7 +50,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			return nil, toRPCErr(loopClient.Context().Err())
 		})
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Return() // TODO: remove
 
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
@@ -72,7 +72,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -85,7 +85,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
@@ -94,7 +94,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 			// Intentionally slow down the query execution, to double check the worker waits until done.
 			time.Sleep(time.Second)
-		}).Return(&httpgrpc.HTTPResponse{}, nil)
+		})
 
 		startTime := time.Now()
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
@@ -122,7 +122,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -137,8 +137,8 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			}
 		})
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-			ctx := args.Get(0).(context.Context)
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			ctx := args.Get(1).(*http.Request).Context()
 
 			// Trigger the shutdown of the scheduler.
 			close(queryEvaluationBegun)
@@ -150,7 +150,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case <-time.After(time.Second):
 				require.Fail(t, "expected query execution context to be cancelled when scheduler shut down")
 			}
-		}).Return(&httpgrpc.HTTPResponse{}, nil)
+		})
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
@@ -190,7 +190,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			return nil, status.Error(codes.Unknown, schedulerpb.ErrSchedulerIsNotRunning.Error())
 		})
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Return() // TODO: remove?
 
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
@@ -210,7 +210,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 				}, nil
@@ -228,9 +228,9 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		defer workerCancel()
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			// Ensure the execution context hasn't been canceled yet.
-			ctx := args.Get(0).(context.Context)
+			ctx := args.Get(1).(*http.Request).Context()
 			require.NoError(t, ctx.Err())
 
 			// Trigger Recv() returning an error.
@@ -239,7 +239,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			// Wait for the querier loop to observe the error, and make sure the query context has not been cancelled.
 			time.Sleep(500 * time.Millisecond)
 			require.NoError(t, ctx.Err())
-		}).Return(&httpgrpc.HTTPResponse{}, nil)
+		})
 
 		go func() {
 			sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
@@ -274,7 +274,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			case 1:
 				return &schedulerpb.SchedulerToQuerier{
 					QueryID:         1,
-					HttpRequest:     nil,
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 					FrontendAddress: frontend.addr,
 					UserID:          "user-1",
 					StatsEnabled:    statsEnabled,
@@ -289,10 +289,11 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			workerCancel()
 
-			stat := querier_stats.FromContext(args.Get(0).(context.Context))
+			req := args.Get(1).(*http.Request)
+			stat := querier_stats.FromContext(req.Context())
 
 			if statsEnabled {
 				require.Equal(t, queueTime, stat.LoadQueueTime())
@@ -304,7 +305,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			} else {
 				require.Equal(t, time.Duration(0), stat.LoadQueueTime())
 			}
-		}).Return(&httpgrpc.HTTPResponse{}, nil)
+		})
 
 		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
@@ -360,14 +361,13 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		}
 	}
 
-	returnResponses := func(res []*httpgrpc.HTTPResponse) func() (*httpgrpc.HTTPResponse, error) {
-		nextResp := atomic.NewInt64(0)
-		return func() (*httpgrpc.HTTPResponse, error) {
-			return res[nextResp.Inc()-1], nil
-		}
+	respondWith := func(t *testing.T, args mock.Arguments, body []byte) {
+		w := args.Get(0).(http.ResponseWriter)
+		w.Header().Set(ResponseStreamingEnabledHeader, "true")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write(body)
+		require.NoError(t, err)
 	}
-
-	streamingEnabledHeader := &httpgrpc.Header{Key: ResponseStreamingEnabledHeader, Values: []string{"true"}}
 
 	for _, tc := range []struct {
 		name                    string
@@ -410,19 +410,16 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 			queryID := uint64(1)
 			requestQueue := []*schedulerpb.SchedulerToQuerier{
-				{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+				{QueryID: queryID, HttpRequest: &httpgrpc.HTTPRequest{}, FrontendAddress: frontend.addr, UserID: "test"},
 			}
-			responses := []*httpgrpc.HTTPResponse{{
-				Code: http.StatusOK, Body: tc.responseBodyBytes,
-				Headers: []*httpgrpc.Header{streamingEnabledHeader},
-			}}
 
 			processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
 			ctx, cancel := context.WithCancel(context.Background())
 
-			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
-				func(mock.Arguments) { cancel() },
-			).Return(returnResponses(responses)())
+			requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				cancel()
+				respondWith(t, args, tc.responseBodyBytes)
+			})
 
 			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
 
@@ -453,6 +450,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
@@ -462,11 +460,9 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		})
 
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
-			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
-				Body: bytes.Repeat([]byte("a"), responseBodySize)},
-			nil,
-		)
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			respondWith(t, args, bytes.Repeat([]byte("a"), responseBodySize))
+		})
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
@@ -498,6 +494,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 				}, nil
 			default:
 				<-loopClient.Context().Done()
@@ -508,14 +505,12 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
 		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			// cancel the worker context before response streaming begins
 			workerCancel()
-		}).Return(
-			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
-				Body: responseBody},
-			nil,
-		)
+
+			respondWith(t, args, responseBody)
+		})
 
 		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
@@ -540,6 +535,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 					QueryID:         queryID,
 					FrontendAddress: frontend.addr,
 					UserID:          "test",
+					HttpRequest:     &httpgrpc.HTTPRequest{},
 				}, nil
 			default:
 				<-frontend.responseStreamStarted
@@ -549,11 +545,9 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		responseBodySize := 4*responseStreamingBodyChunkSizeBytes + 1
 		responseBody := bytes.Repeat([]byte("a"), responseBodySize)
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(
-			&httpgrpc.HTTPResponse{Code: http.StatusOK, Headers: []*httpgrpc.Header{streamingEnabledHeader},
-				Body: responseBody},
-			nil,
-		)
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			respondWith(t, args, responseBody)
+		})
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
@@ -581,22 +575,19 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 		queryID := uint64(1)
 		requestQueue := []*schedulerpb.SchedulerToQuerier{
-			{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+			{QueryID: queryID, HttpRequest: &httpgrpc.HTTPRequest{}, FrontendAddress: frontend.addr, UserID: "test"},
 		}
 
 		responseBodyBytes := bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1)
 
-		responses := []*httpgrpc.HTTPResponse{{
-			Code: http.StatusOK, Body: responseBodyBytes,
-			Headers: []*httpgrpc.Header{streamingEnabledHeader},
-		}}
-
 		processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
 		ctx, cancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
-			func(mock.Arguments) { cancel() },
-		).Return(returnResponses(responses)())
+		requestHandler.On("ServeHTTP", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			cancel()
+
+			respondWith(t, args, responseBodyBytes)
+		})
 
 		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
 
@@ -604,7 +595,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	})
 }
 
-func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
+func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *httpRequestHandlerMock, *frontendForQuerierMockServer) {
 	loopClient := &querierLoopClientMock{}
 	loopClient.On("Send", mock.Anything).Return(nil)
 	loopClient.On("Context").Return(func() context.Context {
@@ -618,7 +609,7 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 		loopClient.ctx, loopClient.cancelCtx = context.WithCancel(ctx)
 	}).Return(loopClient, nil)
 
-	requestHandler := &requestHandlerMock{}
+	requestHandler := &httpRequestHandlerMock{}
 
 	sp, _ := newSchedulerProcessor(Config{QuerierID: "test-querier-id"}, requestHandler, log.NewNopLogger(), nil)
 	sp.schedulerClientFactory = func(_ *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
@@ -722,13 +713,12 @@ func (m *querierLoopClientMock) RecvMsg(msg interface{}) error {
 	return args.Error(0)
 }
 
-type requestHandlerMock struct {
+type httpRequestHandlerMock struct {
 	mock.Mock
 }
 
-func (m *requestHandlerMock) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
-	args := m.Called(ctx, req)
-	return args.Get(0).(*httpgrpc.HTTPResponse), args.Error(1)
+func (m *httpRequestHandlerMock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	m.Called(w, r)
 }
 
 type frontendForQuerierMockServer struct {

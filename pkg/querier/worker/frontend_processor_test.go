@@ -216,7 +216,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 	})
 }
 
-func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock, *requestHandlerMock) {
+func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock, *httpgrpcRequestHandlerMock) {
 	var processCtx context.Context
 
 	processClient := &frontendProcessClientMock{}
@@ -230,7 +230,7 @@ func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock,
 		processCtx = args.Get(0).(context.Context)
 	}).Return(processClient, nil)
 
-	requestHandler := &requestHandlerMock{}
+	requestHandler := &httpgrpcRequestHandlerMock{}
 
 	fp := newFrontendProcessor(Config{QuerierID: "test-querier-id", QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1}}, requestHandler, log.NewNopLogger())
 	fp.frontendClientFactory = func(_ *grpc.ClientConn) frontendv1pb.FrontendClient {
@@ -238,6 +238,15 @@ func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock,
 	}
 
 	return fp, processClient, requestHandler
+}
+
+type httpgrpcRequestHandlerMock struct {
+	mock.Mock
+}
+
+func (m *httpgrpcRequestHandlerMock) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(*httpgrpc.HTTPResponse), args.Error(1)
 }
 
 type frontendClientMock struct {

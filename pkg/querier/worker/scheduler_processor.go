@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -55,7 +56,7 @@ var tracer = otel.Tracer("querier/worker")
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 
-func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
+func newSchedulerProcessor(cfg Config, handler http.Handler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:              log,
 		handler:          handler,
@@ -105,7 +106,7 @@ type frontendResponseStreamer func(
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
 	log              log.Logger
-	handler          RequestHandler
+	handler          http.Handler
 	streamResponse   frontendResponseStreamer
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
@@ -269,45 +270,60 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		stats.AddQueueTime(queueTime)
 	}
 
-	response, err := sp.handler.Handle(ctx, request)
+	req, err := httpgrpc.ToHTTPRequest(ctx, request)
 	if err != nil {
-		var ok bool
-		response, ok = httpgrpc.HTTPResponseFromError(err)
-		if !ok {
-			response = &httpgrpc.HTTPResponse{
-				Code: http.StatusInternalServerError,
-				Body: []byte(err.Error()),
-			}
-		}
+		sp.sendError(ctx, logger, queryID, frontendAddress, http.StatusInternalServerError, err.Error())
+		return
 	}
+
+	w := httptest.NewRecorder()
+	sp.handler.ServeHTTP(w, req)
+	responseBodyLength := w.Body.Len()
 
 	// Ensure responses that are too big are not retried.
-	if len(response.Body) >= sp.maxMessageSize {
-		level.Error(logger).Log("msg", "response larger than max message size", "size", len(response.Body), "maxMessageSize", sp.maxMessageSize)
-
-		errMsg := fmt.Sprintf("response larger than the max message size (%d vs %d)", len(response.Body), sp.maxMessageSize)
-		response = &httpgrpc.HTTPResponse{
-			Code: http.StatusRequestEntityTooLarge,
-			Body: []byte(errMsg),
-		}
+	if responseBodyLength >= sp.maxMessageSize {
+		level.Error(logger).Log("msg", "response larger than max message size", "size", responseBodyLength, "maxMessageSize", sp.maxMessageSize)
+		sp.sendError(ctx, logger, queryID, frontendAddress, http.StatusRequestEntityTooLarge, fmt.Sprintf("response larger than the max message size (%d vs %d)", responseBodyLength, sp.maxMessageSize))
+		return
 	}
-	var c client.PoolClient
 
+	response := &httpgrpc.HTTPResponse{
+		Code:    int32(w.Code),
+		Headers: httpgrpc.FromHeader(w.Header()),
+		Body:    w.Body.Bytes(),
+	}
+
+	var hasStreamHeader bool
+	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
+	shouldStream := hasStreamHeader && sp.streamingEnabled && responseBodyLength > responseStreamingBodyChunkSizeBytes
+
+	// Protect against not-yet-exited querier handler goroutines that could
+	// still be incrementing stats when sent for marshaling below.
+	stats = stats.Copy()
+	sp.sendResponse(ctx, logger, queryID, frontendAddress, shouldStream, response, stats)
+}
+
+func (sp *schedulerProcessor) sendError(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, code int32, err string) {
+	response := &httpgrpc.HTTPResponse{
+		Code: code,
+		Body: []byte(err),
+	}
+
+	sp.sendResponse(ctx, logger, queryID, frontendAddress, false, response, nil)
+}
+
+func (sp *schedulerProcessor) sendResponse(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, shouldStream bool, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) {
 	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
 	frontendCtx := context.WithoutCancel(ctx)
+
 	bof := backoff.New(frontendCtx, backoff.Config{
 		MinBackoff: 5 * time.Millisecond,
 		MaxBackoff: 100 * time.Millisecond,
 		MaxRetries: maxNotifyFrontendRetries,
 	})
 
-	var hasStreamHeader bool
-	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
-	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
-
-	// Protect against not-yet-exited querier handler goroutines that could
-	// still be incrementing stats when sent for marshaling below.
-	stats = stats.Copy()
+	var c client.PoolClient
+	var err error
 
 	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
