@@ -150,6 +150,7 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 			a.lastLeftSeriesIndexToRead = seriesIdx
 		}
 	}
+
 	return leftMetadata[:nextOutputSeriesIndex]
 }
 
