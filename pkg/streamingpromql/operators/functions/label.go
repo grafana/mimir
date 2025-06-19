@@ -85,8 +85,8 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 				lb.Reset(seriesMetadata[i].Labels)
 				lb.Set(dst, string(res))
 				seriesMetadata[i].Labels = lb.Labels()
-				tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			}
+			tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 		}
 
 		return seriesMetadata, nil
