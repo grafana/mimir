@@ -13,6 +13,7 @@ import (
 	types "github.com/gogo/protobuf/types"
 	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
+	stats "github.com/grafana/mimir/pkg/querier/stats"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -400,7 +401,7 @@ type Extent struct {
 	// When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
 	QueryTimestampMs int64 `protobuf:"varint,6,opt,name=query_timestamp_ms,json=queryTimestampMs,proto3" json:"query_timestamp_ms,omitempty"`
 	// Number of samples processed per step to create this Extent. Should be sorted by timestamp in ascending order.
-	SamplesProcessedPerStep []StepStat `protobuf:"bytes,7,rep,name=samples_processed_per_step,json=samplesProcessedPerStep,proto3" json:"samples_processed_per_step"`
+	SamplesProcessedPerStep []stats.StepStat `protobuf:"bytes,7,rep,name=samples_processed_per_step,json=samplesProcessedPerStep,proto3" json:"samples_processed_per_step"`
 }
 
 func (m *Extent) Reset()      { *m = Extent{} }
@@ -470,62 +471,11 @@ func (m *Extent) GetQueryTimestampMs() int64 {
 	return 0
 }
 
-func (m *Extent) GetSamplesProcessedPerStep() []StepStat {
+func (m *Extent) GetSamplesProcessedPerStep() []stats.StepStat {
 	if m != nil {
 		return m.SamplesProcessedPerStep
 	}
 	return nil
-}
-
-type StepStat struct {
-	Timestamp int64 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Value     int64 `protobuf:"varint,2,opt,name=value,proto3" json:"value,omitempty"`
-}
-
-func (m *StepStat) Reset()      { *m = StepStat{} }
-func (*StepStat) ProtoMessage() {}
-func (*StepStat) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{7}
-}
-func (m *StepStat) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *StepStat) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_StepStat.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *StepStat) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StepStat.Merge(m, src)
-}
-func (m *StepStat) XXX_Size() int {
-	return m.Size()
-}
-func (m *StepStat) XXX_DiscardUnknown() {
-	xxx_messageInfo_StepStat.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_StepStat proto.InternalMessageInfo
-
-func (m *StepStat) GetTimestamp() int64 {
-	if m != nil {
-		return m.Timestamp
-	}
-	return 0
-}
-
-func (m *StepStat) GetValue() int64 {
-	if m != nil {
-		return m.Value
-	}
-	return 0
 }
 
 type Options struct {
@@ -540,7 +490,7 @@ type Options struct {
 func (m *Options) Reset()      { *m = Options{} }
 func (*Options) ProtoMessage() {}
 func (*Options) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{8}
+	return fileDescriptor_4c16552f9fdb66d8, []int{7}
 }
 func (m *Options) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -612,7 +562,7 @@ type QueryStatistics struct {
 func (m *QueryStatistics) Reset()      { *m = QueryStatistics{} }
 func (*QueryStatistics) ProtoMessage() {}
 func (*QueryStatistics) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{9}
+	return fileDescriptor_4c16552f9fdb66d8, []int{8}
 }
 func (m *QueryStatistics) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -671,7 +621,7 @@ type CachedHTTPResponse struct {
 func (m *CachedHTTPResponse) Reset()      { *m = CachedHTTPResponse{} }
 func (*CachedHTTPResponse) ProtoMessage() {}
 func (*CachedHTTPResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{10}
+	return fileDescriptor_4c16552f9fdb66d8, []int{9}
 }
 func (m *CachedHTTPResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -737,7 +687,7 @@ type CachedHTTPHeader struct {
 func (m *CachedHTTPHeader) Reset()      { *m = CachedHTTPHeader{} }
 func (*CachedHTTPHeader) ProtoMessage() {}
 func (*CachedHTTPHeader) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4c16552f9fdb66d8, []int{11}
+	return fileDescriptor_4c16552f9fdb66d8, []int{10}
 }
 func (m *CachedHTTPHeader) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -788,7 +738,6 @@ func init() {
 	proto.RegisterType((*CachedError)(nil), "queryrange.CachedError")
 	proto.RegisterType((*CachedResponse)(nil), "queryrange.CachedResponse")
 	proto.RegisterType((*Extent)(nil), "queryrange.Extent")
-	proto.RegisterType((*StepStat)(nil), "queryrange.StepStat")
 	proto.RegisterType((*Options)(nil), "queryrange.Options")
 	proto.RegisterType((*QueryStatistics)(nil), "queryrange.QueryStatistics")
 	proto.RegisterType((*CachedHTTPResponse)(nil), "queryrange.CachedHTTPResponse")
@@ -1145,33 +1094,6 @@ func (this *Extent) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *StepStat) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*StepStat)
-	if !ok {
-		that2, ok := that.(StepStat)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Timestamp != that1.Timestamp {
-		return false
-	}
-	if this.Value != that1.Value {
-		return false
-	}
-	return true
-}
 func (this *Options) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -1415,23 +1337,12 @@ func (this *Extent) GoString() string {
 	}
 	s = append(s, "QueryTimestampMs: "+fmt.Sprintf("%#v", this.QueryTimestampMs)+",\n")
 	if this.SamplesProcessedPerStep != nil {
-		vs := make([]StepStat, len(this.SamplesProcessedPerStep))
+		vs := make([]stats.StepStat, len(this.SamplesProcessedPerStep))
 		for i := range vs {
 			vs[i] = this.SamplesProcessedPerStep[i]
 		}
 		s = append(s, "SamplesProcessedPerStep: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *StepStat) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 6)
-	s = append(s, "&querymiddleware.StepStat{")
-	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
-	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1889,39 +1800,6 @@ func (m *Extent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *StepStat) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *StepStat) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *StepStat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.Value != 0 {
-		i = encodeVarintModel(dAtA, i, uint64(m.Value))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.Timestamp != 0 {
-		i = encodeVarintModel(dAtA, i, uint64(m.Timestamp))
-		i--
-		dAtA[i] = 0x8
-	}
-	return len(dAtA) - i, nil
-}
-
 func (m *Options) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -2304,21 +2182,6 @@ func (m *Extent) Size() (n int) {
 	return n
 }
 
-func (m *StepStat) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	if m.Timestamp != 0 {
-		n += 1 + sovModel(uint64(m.Timestamp))
-	}
-	if m.Value != 0 {
-		n += 1 + sovModel(uint64(m.Value))
-	}
-	return n
-}
-
 func (m *Options) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2512,7 +2375,7 @@ func (this *Extent) String() string {
 	}
 	repeatedStringForSamplesProcessedPerStep := "[]StepStat{"
 	for _, f := range this.SamplesProcessedPerStep {
-		repeatedStringForSamplesProcessedPerStep += strings.Replace(strings.Replace(f.String(), "StepStat", "StepStat", 1), `&`, ``, 1) + ","
+		repeatedStringForSamplesProcessedPerStep += fmt.Sprintf("%v", f) + ","
 	}
 	repeatedStringForSamplesProcessedPerStep += "}"
 	s := strings.Join([]string{`&Extent{`,
@@ -2522,17 +2385,6 @@ func (this *Extent) String() string {
 		`Response:` + strings.Replace(fmt.Sprintf("%v", this.Response), "Any", "types.Any", 1) + `,`,
 		`QueryTimestampMs:` + fmt.Sprintf("%v", this.QueryTimestampMs) + `,`,
 		`SamplesProcessedPerStep:` + repeatedStringForSamplesProcessedPerStep + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *StepStat) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&StepStat{`,
-		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
-		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -3706,99 +3558,11 @@ func (m *Extent) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.SamplesProcessedPerStep = append(m.SamplesProcessedPerStep, StepStat{})
+			m.SamplesProcessedPerStep = append(m.SamplesProcessedPerStep, stats.StepStat{})
 			if err := m.SamplesProcessedPerStep[len(m.SamplesProcessedPerStep)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipModel(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *StepStat) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowModel
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: StepStat: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StepStat: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
-			}
-			m.Timestamp = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowModel
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Timestamp |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
-			}
-			m.Value = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowModel
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Value |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipModel(dAtA[iNdEx:])
