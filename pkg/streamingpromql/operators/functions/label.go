@@ -53,7 +53,10 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 			lb.Set(dst, sb.String())
 			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			seriesMetadata[i].Labels = lb.Labels()
-			tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return seriesMetadata, nil
@@ -86,7 +89,10 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 				lb.Set(dst, string(res))
 				seriesMetadata[i].Labels = lb.Labels()
 			}
-			tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return seriesMetadata, nil

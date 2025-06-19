@@ -18,7 +18,10 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 		for i := range seriesMetadata {
 			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
-			tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return seriesMetadata, nil
