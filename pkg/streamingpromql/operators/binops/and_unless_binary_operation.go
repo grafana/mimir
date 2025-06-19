@@ -149,7 +149,10 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 			a.lastLeftSeriesIndexToRead = seriesIdx
 		}
 	}
-
+	// Return Labels memory consumption for the series that are not returned
+	for _, seriesMetadata := range leftMetadata[nextOutputSeriesIndex:] {
+		a.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(seriesMetadata.Labels)
+	}
 	return leftMetadata[:nextOutputSeriesIndex]
 }
 
