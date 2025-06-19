@@ -204,7 +204,15 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	if gatewayCfg.ParquetEnabled {
 		level.Info(logger).Log("msg", "store-gateway using parquet block format")
-		g.stores, err = NewParquetBucketStores(logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+		g.stores, err = NewParquetBucketStores(
+			storageCfg,
+			limits,
+			allowedTenants,
+			shardingStrategy,
+			bucketClient,
+			logger,
+			prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg),
+		)
 		if err != nil {
 			return nil, errors.Wrap(err, "create parquet bucket stores")
 		}
