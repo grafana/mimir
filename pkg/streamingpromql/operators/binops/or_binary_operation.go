@@ -212,7 +212,7 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			o.rightSeriesCount[len(o.rightSeriesCount)-1]++
 		}
 
-		series = append(series, rightMetadata[nextRightSeriesToRead])
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, rightMetadata[nextRightSeriesToRead])
 	}
 
 	// Check if there are any remaining series on the left side.
