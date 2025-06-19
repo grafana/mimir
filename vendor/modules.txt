@@ -1142,7 +1142,9 @@ github.com/power-devops/perfstat
 # github.com/prometheus-community/parquet-common v0.0.0-20250612090827-2b68cd3ab6ca
 ## explicit; go 1.23.4
 github.com/prometheus-community/parquet-common/convert
+github.com/prometheus-community/parquet-common/queryable
 github.com/prometheus-community/parquet-common/schema
+github.com/prometheus-community/parquet-common/search
 github.com/prometheus-community/parquet-common/storage
 github.com/prometheus-community/parquet-common/util
 # github.com/prometheus/alertmanager v0.28.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
