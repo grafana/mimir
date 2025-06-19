@@ -152,9 +152,11 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
 	// Force queier to track PerStepStats, so they could be cached.
-	req, err = req.WithStats("all")
-	if err != nil {
-		return nil, err
+	if s.cacheSamplesProcessedStats {
+		req, err = req.WithStats("all")
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Split the input requests by the configured interval (eg. day).
@@ -163,7 +165,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	if err != nil {
 		return nil, err
 	}
-	var cachedStepStats [][]StepStat
+	perStepStats := make([][]StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
 	// Lookup the results cache.
 	if isCacheEnabled {
 		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
@@ -200,7 +202,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			// to generate the queries for the missing parts.
 			requests, responses, extentStepStats, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
 			if len(extentStepStats) > 0 {
-				cachedStepStats = append(cachedStepStats, extentStepStats)
+				perStepStats = append(perStepStats, extentStepStats)
 			}
 			if err != nil {
 				return nil, err
@@ -311,23 +313,21 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		}
 	}
 
-	// Update query stats by merging the cached per-step stats with the current query stats.
 	samplesProcessed := queryStats.LoadSamplesProcessedPerStep()
-	// Convert stats.StepStat to querymiddleware.StepStat
-	// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
-	convertedSamplesProcessed := make([]StepStat, len(samplesProcessed))
-	for i, stat := range samplesProcessed {
-		convertedSamplesProcessed[i] = StepStat{
-			Timestamp: stat.Timestamp,
-			Value:     stat.Value,
+	if len(samplesProcessed) > 0 {
+		// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
+		convertedSamplesProcessed := make([]StepStat, len(samplesProcessed))
+		for i, stat := range samplesProcessed {
+			convertedSamplesProcessed[i] = StepStat{
+				Timestamp: stat.Timestamp,
+				Value:     stat.Value,
+			}
 		}
+		perStepStats = append(perStepStats, convertedSamplesProcessed)
 	}
 
-	cachedStepStats = append(cachedStepStats, convertedSamplesProcessed)
-	total := mergeManySamplesProcessedPerStep(cachedStepStats...)
-
-	// Track samples processed from cache in metrics
 	if details := QueryDetailsFromContext(ctx); details != nil {
+		total := mergeManySamplesProcessedPerStep(perStepStats...)
 		var totalSamplesProcessed uint64 = 0
 		for _, stepStat := range total {
 			totalSamplesProcessed += uint64(stepStat.Value)

@@ -139,6 +139,7 @@ type MetricsQueryRequest interface {
 	// GetLookbackDelta returns the lookback delta for the request.
 	GetLookbackDelta() time.Duration
 	// GetStats returns the stats parameter for the request.
+	// See WithStats() comment for more details.
 	GetStats() string
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
@@ -160,6 +161,12 @@ type MetricsQueryRequest interface {
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(span trace.Span)
 	// WithStats clones the current request with a a provided value for the stats parameter.
+	// stats parameter controls prometheus query stats collection in the querier.
+	// Note, that these are not returned in the PrometheusResponse, but collected and used for querier.Stats.
+	// Possible values are:
+	// - any non-empty string: stats are collected
+	// - "all": stats including perStepStats are collected
+	// - "": no stats are collected.
 	WithStats(string) (MetricsQueryRequest, error)
 }
 

@@ -754,9 +754,7 @@ type heapItem struct {
 	itemIdx  int
 }
 
-// mergeManySamplesProcessedPerStep efficiently merges multiple sorted arrays of StepStat
-// using a min-heap approach. This is more efficient than repeatedly calling mergeSamplesProcessedPerStep
-// for multiple arrays (O(NM log N) vs O(N²M) where N is number of arrays and M is average array size).
+// mergeManySamplesProcessedPerStep merges multiple sorted arrays of StepStat using a min-heap.
 func mergeManySamplesProcessedPerStep(arrays ...[]StepStat) []StepStat {
 	// Filter out empty arrays
 	nonEmptyArrays := make([][]StepStat, 0, len(arrays))
