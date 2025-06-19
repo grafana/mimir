@@ -4349,7 +4349,7 @@
           "kind": "field",
           "name": "ha_tracker_update_timeout_jitter_max",
           "required": false,
-          "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over model. If zero, it defaults to the base HA tracker configuration.",
+          "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. If zero, it defaults to the base HA tracker configuration.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldType": "int",

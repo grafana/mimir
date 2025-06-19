@@ -3345,7 +3345,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [ha_tracker_update_timeout: <int> | default = ]
 
 # (advanced) Maximum jitter applied to the update timeout, in order to spread
-# the HA heartbeats over model. If zero, it defaults to the base HA tracker
+# the HA heartbeats over time. If zero, it defaults to the base HA tracker
 # configuration.
 [ha_tracker_update_timeout_jitter_max: <int> | default = ]
 
