@@ -10,7 +10,7 @@ package queryrange;
 
 option go_package = "querymiddleware";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "google/protobuf/any.proto";
 
