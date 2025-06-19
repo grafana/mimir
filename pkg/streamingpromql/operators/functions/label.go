@@ -19,7 +19,7 @@ import (
 )
 
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
 		if !model.LabelName(dst).IsValid() {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
@@ -51,7 +51,9 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 
 			lb.Reset(seriesMetadata[i].Labels)
 			lb.Set(dst, sb.String())
+			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			seriesMetadata[i].Labels = lb.Labels()
+			tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 		}
 
 		return seriesMetadata, nil
