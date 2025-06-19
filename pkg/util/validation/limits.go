@@ -75,7 +75,10 @@ const (
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
+	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 )
+
+const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -115,12 +118,16 @@ type Limits struct {
 	HAClusterLabel       string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
-	// See distributor.HATrackerTimeoutsConfig.UpdateTimeout
-	HATrackerUpdateTimeout model.Duration `yaml:"ha_tracker_update_timeout" json:"ha_tracker_update_timeout" category:"advanced" doc:"description=Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. If zero, it defaults to the base HA tracker configuration."`
-	// See distributor.HATrackerTimeoutsConfig.UpdateTimeoutJitterMax
-	HATrackerUpdateTimeoutJitterMax model.Duration `yaml:"ha_tracker_update_timeout_jitter_max" json:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"description=Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. If zero, it defaults to the base HA tracker configuration."`
-	// See distributor.HATrackerTimeoutsConfig.FailoverTimeout
-	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout. If zero, it defaults to the base HA tracker configuration."`
+	// We should only update the timestamp if the difference
+	// between the stored timestamp and the time we received a sample at
+	// is more than this duration.
+	HATrackerUpdateTimeout          model.Duration `yaml:"ha_tracker_update_timeout" json:"ha_tracker_update_timeout" category:"advanced" doc:"flag=distributor.ha-tracker.update-timeout|description=Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp."`
+	HATrackerUpdateTimeoutJitterMax model.Duration `yaml:"ha_tracker_update_timeout_jitter_max" json:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"flag=distributor.ha-tracker.update-timeout-jitter-max|description=Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time."`
+	// We should only failover to accepting samples from a replica
+	// other than the replica written in the KVStore if the difference
+	// between the stored timestamp and the time we received a sample is
+	// more than this duration
+	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"flag=distributor.ha-tracker.failover-timeout|description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
@@ -543,6 +550,15 @@ func (l *Limits) validate() error {
 
 	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
+	}
+
+	if l.HATrackerUpdateTimeoutJitterMax < 0 {
+		return errNegativeUpdateTimeoutJitterMax
+	}
+
+	minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
+	if l.HATrackerFailoverTimeout < minFailureTimeout {
+		return fmt.Errorf(errInvalidFailoverTimeout, l.HATrackerFailoverTimeout, minFailureTimeout)
 	}
 
 	return nil
@@ -1094,10 +1110,30 @@ func (o *Overrides) MaxHAClusters(user string) int {
 	return o.getOverridesForUser(user).HAMaxClusters
 }
 
-// See distributor.haTrackerLimits.SetHATrackerTimeouts
+// See distributor.haTrackerLimits.HATrackerTimeouts
 func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
 	uo := o.getOverridesForUser(user)
-	return time.Duration(uo.HATrackerUpdateTimeout), time.Duration(uo.HATrackerUpdateTimeoutJitterMax), time.Duration(uo.HATrackerFailoverTimeout)
+
+	update = time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
+	if uo.HATrackerUpdateTimeout > 0 {
+		update = time.Duration(uo.HATrackerUpdateTimeout)
+	}
+
+	updateJitterMax = time.Duration(o.defaultLimits.HATrackerUpdateTimeoutJitterMax)
+	if uo.HATrackerUpdateTimeoutJitterMax > 0 {
+		updateJitterMax = time.Duration(uo.HATrackerUpdateTimeoutJitterMax)
+	}
+
+	failover = time.Duration(o.defaultLimits.HATrackerFailoverTimeout)
+	if uo.HATrackerFailoverTimeout > 0 {
+		failover = time.Duration(uo.HATrackerFailoverTimeout)
+	}
+
+	return update, updateJitterMax, failover
+}
+
+func (o *Overrides) DefaultHATrackerTimeouts() (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout), time.Duration(o.defaultLimits.HATrackerUpdateTimeoutJitterMax), time.Duration(o.defaultLimits.HATrackerFailoverTimeout)
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.

@@ -520,6 +520,14 @@ func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map
 	if isAbsentInCLI(field) {
 		return nil, nil
 	}
+	if flagName := getDocTagValue(field, "flag"); flagName != "" {
+		for _, flag := range flags {
+			if flag.Name == flagName {
+				return flag, nil
+			}
+		}
+		return nil, fmt.Errorf("field %s references CLI flag %s but it doesn't exist", field.Name, flagName)
+	}
 	fieldPtr := fieldValue.Addr().Pointer()
 	fieldFlag, ok := flags[fieldPtr]
 	if !ok {

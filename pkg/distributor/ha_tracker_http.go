@@ -50,8 +50,8 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Replica:             desc.Replica,
 				LastElectionTime:    timestamp.Time(desc.ElectedAt),
 				ElectedLastSeenTime: timestamp.Time(desc.ReceivedAt),
-				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.cfg.UpdateTimeout)),
-				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.cfg.FailoverTimeout)),
+				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.updateTimeout)),
+				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.failoverTimeout)),
 			})
 		}
 	}

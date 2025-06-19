@@ -333,6 +333,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+
+	migrateParameter((*time.Duration)(&c.LimitsConfig.HATrackerUpdateTimeout), c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
+	migrateParameter((*time.Duration)(&c.LimitsConfig.HATrackerUpdateTimeoutJitterMax), c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
+	migrateParameter((*time.Duration)(&c.LimitsConfig.HATrackerFailoverTimeout), c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
 	// validate the default limits
 	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
 		return err
@@ -1030,5 +1034,13 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 		}
 
 		util.WriteTextResponse(w, "ready")
+	}
+}
+
+// migrateParameter sets a parameter from a deprecated parameter, if the former is not set.
+func migrateParameter[T comparable](dst *T, deprecated T) {
+	var zero T
+	if *dst == zero {
+		*dst = deprecated
 	}
 }

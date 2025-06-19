@@ -287,12 +287,12 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
 			MemberlistKV: memberListSvc.GetMemberlistKV,
 		}},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          updateTimeout,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        failoverTimeout,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          updateTimeout,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        failoverTimeout,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
 
@@ -370,12 +370,12 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
 			MemberlistKV: memberListSvc.GetMemberlistKV,
 		}},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          updateTimeout,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        failoverTimeout,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, logger)
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          updateTimeout,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        failoverTimeout,
+	}, nil, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
 
@@ -431,12 +431,12 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	c, err = newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mockCountingClient},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          time.Millisecond * 100,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Millisecond * 2,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          time.Millisecond * 100,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Millisecond * 2,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
@@ -458,12 +458,12 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	c, err = newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mockCountingClient},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          time.Millisecond * 100,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Millisecond * 2,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          time.Millisecond * 100,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Millisecond * 2,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(context.Background(), c)) })
@@ -480,75 +480,6 @@ func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
 }
 
-func TestHATrackerConfig_Validate(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		cfg         HATrackerConfig
-		expectedErr error
-	}{
-		"should pass with default config": {
-			cfg: func() HATrackerConfig {
-				cfg := HATrackerConfig{}
-				flagext.DefaultValues(&cfg)
-
-				return cfg
-			}(),
-			expectedErr: nil,
-		},
-		"should fail if max update timeout jitter is negative": {
-			cfg: func() HATrackerConfig {
-				cfg := HATrackerConfig{}
-				flagext.DefaultValues(&cfg)
-				cfg.UpdateTimeoutJitterMax = -1
-
-				return cfg
-			}(),
-			expectedErr: errNegativeUpdateTimeoutJitterMax,
-		},
-		"should fail if failover timeout is < update timeout + jitter + 1 sec": {
-			cfg: func() HATrackerConfig {
-				cfg := HATrackerConfig{}
-				flagext.DefaultValues(&cfg)
-				cfg.FailoverTimeout = 5 * time.Second
-				cfg.UpdateTimeout = 4 * time.Second
-				cfg.UpdateTimeoutJitterMax = 2 * time.Second
-
-				return cfg
-			}(),
-			expectedErr: fmt.Errorf(errInvalidFailoverTimeout, 5*time.Second, 7*time.Second),
-		},
-		"should pass if failover timeout is >= update timeout + jitter + 1 sec": {
-			cfg: func() HATrackerConfig {
-				cfg := HATrackerConfig{}
-				flagext.DefaultValues(&cfg)
-				cfg.FailoverTimeout = 7 * time.Second
-				cfg.UpdateTimeout = 4 * time.Second
-				cfg.UpdateTimeoutJitterMax = 2 * time.Second
-
-				return cfg
-			}(),
-			expectedErr: nil,
-		},
-		"should pass if KV backend is set to memberlist": {
-			cfg: func() HATrackerConfig {
-				cfg := HATrackerConfig{}
-				flagext.DefaultValues(&cfg)
-				cfg.KVStore.Store = "memberlist"
-
-				return cfg
-			}(),
-			expectedErr: nil,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
-		})
-	}
-}
-
 // Test that values are set in the HATracker after WatchPrefix has found it in the KVStore.
 func TestHATrackerWatchPrefixAssignment(t *testing.T) {
 	cluster := "c1"
@@ -562,12 +493,12 @@ func TestHATrackerWatchPrefixAssignment(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          time.Millisecond,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Millisecond * 2,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          time.Millisecond,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Millisecond * 2,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -589,12 +520,12 @@ func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Store: "inmemory"},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          100 * time.Millisecond,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          100 * time.Millisecond,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -639,12 +570,12 @@ func TestHATrackerCheckReplicaMultiCluster(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Store: "inmemory"},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          100 * time.Millisecond,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, reg, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          100 * time.Millisecond,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -691,12 +622,12 @@ func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Store: "inmemory"},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          100 * time.Millisecond,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, reg, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          100 * time.Millisecond,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -774,12 +705,12 @@ func TestHATrackerCheckReplicaUpdateTimeout(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -837,12 +768,12 @@ func TestHATrackerCheckReplicaShouldFixZeroElectedAtTimestamp(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 	t.Cleanup(func() {
@@ -883,12 +814,12 @@ func TestHATrackerCheckReplicaMultiUser(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          100 * time.Millisecond,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          100 * time.Millisecond,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -967,12 +898,12 @@ func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 			c, err := newHaTracker(HATrackerConfig{
 				EnableHATracker: true,
 				KVStore:         kv.Config{Mock: mock},
-				HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-					UpdateTimeout:          testData.updateTimeout,
-					UpdateTimeoutJitterMax: 0,
-					FailoverTimeout:        time.Second,
-				},
-			}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+			}, trackerLimits{
+				maxClusters:            100,
+				updateTimeout:          testData.updateTimeout,
+				updateTimeoutJitterMax: 0,
+				failoverTimeout:        time.Second,
+			}, nil, log.NewNopLogger())
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 			defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -983,7 +914,9 @@ func TestHATrackerCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 
 			// Override the jitter so that it's not based on a random value
 			// we can't control in tests
-			c.updateTimeoutJitter = testData.updateJitter
+			c.computeUpdateTimeoutJitter = func(_ time.Duration) time.Duration {
+				return testData.updateJitter
+			}
 
 			// Init the replica in the KV Store
 			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.startTime)
@@ -1066,16 +999,16 @@ func TestHATrackerClustersLimit(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
-	limits := trackerLimits{maxClusters: 2}
+	limits := trackerLimits{
+		maxClusters:            2,
+		updateTimeout:          time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}
 
 	t1, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
 	}, limits, nil, log.NewNopLogger())
 
 	require.NoError(t, err)
@@ -1141,22 +1074,30 @@ func waitForClustersUpdate(t *testing.T, expected int, tr *defaultHaTracker, use
 }
 
 type trackerLimits struct {
-	userID                          string
-	maxClusters                     int
-	haTrackerUpdateTimeout          time.Duration
-	haTrackerUpdateTimeoutJitterMax time.Duration
-	haTrackerFailoverTimeout        time.Duration
+	maxClusters            int
+	updateTimeout          time.Duration
+	updateTimeoutJitterMax time.Duration
+	failoverTimeout        time.Duration
+
+	forUser map[string]trackerLimits
 }
 
-func (l trackerLimits) MaxHAClusters(_ string) int {
+func (l trackerLimits) MaxHAClusters(userID string) int {
+	if ul, ok := l.forUser[userID]; ok {
+		l = ul
+	}
 	return l.maxClusters
 }
 
 func (l trackerLimits) HATrackerTimeouts(userID string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
-	if l.userID != "" && userID != l.userID {
-		panic("HATrackerTimeouts called with unexpected userID: " + userID)
+	if ul, ok := l.forUser[userID]; ok {
+		l = ul
 	}
-	return l.haTrackerUpdateTimeout, l.haTrackerUpdateTimeoutJitterMax, l.haTrackerFailoverTimeout
+	return l.updateTimeout, l.updateTimeoutJitterMax, l.failoverTimeout
+}
+
+func (l trackerLimits) DefaultHATrackerTimeouts() (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+	return l.updateTimeout, l.updateTimeoutJitterMax, l.failoverTimeout
 }
 
 func TestHATracker_MetricsCleanup(t *testing.T) {
@@ -1170,12 +1111,12 @@ func TestHATracker_MetricsCleanup(t *testing.T) {
 	tr, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          1 * time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, reg, logger)
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          1 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, reg, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tr))
 
@@ -1246,12 +1187,12 @@ func TestHATracker_RecordElectedReplicaStatus(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          1 * time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, reg, logger)
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          1 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, reg, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -1307,12 +1248,12 @@ func TestHATrackerCheckReplicaCleanup(t *testing.T) {
 	c, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          1 * time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        time.Second,
-		},
-	}, trackerLimits{maxClusters: 100}, reg, logger)
+	}, trackerLimits{
+		maxClusters:            100,
+		updateTimeout:          1 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        time.Second,
+	}, reg, logger)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -1461,23 +1402,23 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	t1, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          5 * time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        5 * time.Second,
-		},
-	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            2,
+		updateTimeout:          5 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        5 * time.Second,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	t2, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          5 * time.Second,
-			UpdateTimeoutJitterMax: 0,
-			FailoverTimeout:        5 * time.Second,
-		},
-	}, trackerLimits{maxClusters: 2}, nil, log.NewNopLogger())
+	}, trackerLimits{
+		maxClusters:            2,
+		updateTimeout:          5 * time.Second,
+		updateTimeoutJitterMax: 0,
+		failoverTimeout:        5 * time.Second,
+	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), t1))
@@ -1557,23 +1498,25 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	mock := kv.PrefixClient(kvStore, "prefix")
 
 	defaultUpdateTimeout := 15 * time.Second
+	defaultFailoverTimeout := 30 * time.Second
 	userSpecificUpdateTimeout := 5 * time.Second
 	userSpecificFailoverTimeout := 10 * time.Second // Must be > UpdateTimeout + UpdateTimeoutJitterMax + 1s
+
+	limitsForUser := map[string]trackerLimits{}
+	limitsForUser[userID] = trackerLimits{
+		updateTimeout:   userSpecificUpdateTimeout,
+		failoverTimeout: userSpecificFailoverTimeout,
+	}
 
 	tracker, err := newHaTracker(HATrackerConfig{
 		EnableHATracker: true,
 		KVStore:         kv.Config{Mock: mock},
-		// Default timeouts
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          defaultUpdateTimeout,
-			UpdateTimeoutJitterMax: time.Second,
-			FailoverTimeout:        30 * time.Second,
-		},
 	}, trackerLimits{
-		userID:                   userID,
-		maxClusters:              100,
-		haTrackerUpdateTimeout:   userSpecificUpdateTimeout,
-		haTrackerFailoverTimeout: userSpecificFailoverTimeout,
+		maxClusters: 100,
+		// Default timeouts
+		updateTimeout:   defaultUpdateTimeout,
+		failoverTimeout: defaultFailoverTimeout,
+		forUser:         limitsForUser,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -1582,8 +1525,8 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	userTracker := tracker.forUser(userID)
 
 	// Verify that the user-specific timeouts are used instead of the default
-	assert.Equal(t, userSpecificUpdateTimeout, userTracker.cfg.UpdateTimeout)
-	assert.Equal(t, userSpecificFailoverTimeout, userTracker.cfg.FailoverTimeout)
+	assert.Equal(t, userSpecificUpdateTimeout, userTracker.updateTimeout)
+	assert.Equal(t, userSpecificFailoverTimeout, userTracker.failoverTimeout)
 
 	now := time.Now()
 
@@ -1626,42 +1569,4 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	tracker.electedLock.Lock()
 	assert.Equal(t, otherReplica, tracker.clusters[userID][cluster].elected.Replica)
 	tracker.electedLock.Unlock()
-}
-
-func TestHATracker_InvalidUserSpecificTimeoutsUsesDefaults(t *testing.T) {
-	const userID = "test-user"
-
-	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(kvStore, "prefix")
-
-	defaultUpdateTimeout := 15 * time.Second
-	defaultFailoverTimeout := 30 * time.Second
-	userSpecificUpdateTimeout := 5 * time.Second
-	userSpecificFailoverTimeout := 3 * time.Second // Invalid
-
-	tracker, err := newHaTracker(HATrackerConfig{
-		EnableHATracker: true,
-		KVStore:         kv.Config{Mock: mock},
-		// Default timeouts
-		HATrackerTimeoutsConfig: HATrackerTimeoutsConfig{
-			UpdateTimeout:          defaultUpdateTimeout,
-			UpdateTimeoutJitterMax: time.Second,
-			FailoverTimeout:        defaultFailoverTimeout,
-		},
-	}, trackerLimits{
-		userID:                   userID,
-		maxClusters:              100,
-		haTrackerUpdateTimeout:   userSpecificUpdateTimeout,
-		haTrackerFailoverTimeout: userSpecificFailoverTimeout,
-	}, nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	userTracker := tracker.forUser(userID)
-
-	// Verify that the default timeouts are used instead of the (invalid) user-specific values
-	assert.Equal(t, defaultUpdateTimeout, userTracker.cfg.UpdateTimeout)
-	assert.Equal(t, defaultFailoverTimeout, userTracker.cfg.FailoverTimeout)
-
 }

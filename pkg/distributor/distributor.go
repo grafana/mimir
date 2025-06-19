@@ -300,9 +300,6 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	if err := cfg.HATrackerConfig.Validate(); err != nil {
-		return err
-	}
 	return cfg.RetryConfig.Validate()
 }
 

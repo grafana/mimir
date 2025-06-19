@@ -7,7 +7,6 @@ package distributor
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -32,18 +31,13 @@ import (
 	mimirsync "github.com/grafana/mimir/pkg/util/sync"
 )
 
-var (
-	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
-	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
-)
-
 type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
-	// HATrackerTimeouts returns timeouts that override the default. They may be zero, indicating there
-	// are no overrides for the user.
+	// HATrackerTimeouts returns timeouts that may be specific for the user.
 	HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration)
+	DefaultHATrackerTimeouts() (update time.Duration, updateJitterMax time.Duration, failover time.Duration)
 }
 
 type haTracker interface {
@@ -145,21 +139,28 @@ func (r *ReplicaDesc) Clone() memberlist.Mergeable {
 type HATrackerConfig struct {
 	EnableHATracker bool `yaml:"enable_ha_tracker"`
 
-	HATrackerTimeoutsConfig `yaml:",inline"`
-
 	// This is a potentially high cardinality metric, so it is disabled by default.
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
 
 	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Note that memberlist support is experimental."`
+
+	DeprecatedHATrackerTimeoutsConfig `yaml:",inline"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableHATracker, "distributor.ha-tracker.enable", false, "Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).")
-	f.DurationVar(&cfg.UpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
-	f.DurationVar(&cfg.UpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
-	f.DurationVar(&cfg.FailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
 	f.BoolVar(&cfg.EnableElectedReplicaMetric, "distributor.ha-tracker.enable-elected-replica-metric", false, "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.")
+
+	// Even though those are deprecated in favor of Limits, we need to keep the flags
+	// here for backwards-compatibility. Otherwise, the flag's default values would always
+	// overrride the HATrackerConfig values, even though they're not explicitly set.
+	//
+	// This is all transparent anyway because those deprecated values are copied to Limits
+	// if they are unset in Limits.
+	f.DurationVar(&cfg.DeprecatedUpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
+	f.DurationVar(&cfg.DeprecatedUpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
+	f.DurationVar(&cfg.DeprecatedFailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
 
 	// We want the ability to use different instances for the ring and
 	// for HA cluster tracking. We also customize the default keys prefix, in
@@ -168,31 +169,13 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.KVStore.RegisterFlagsWithPrefix("distributor.ha-tracker.", "ha-tracker/", f)
 }
 
-type HATrackerTimeoutsConfig struct {
-	// We should only update the timestamp if the difference
-	// between the stored timestamp and the time we received a sample at
-	// is more than this duration.
-	UpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced"`
-	UpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced"`
-	// We should only failover to accepting samples from a replica
-	// other than the replica written in the KVStore if the difference
-	// between the stored timestamp and the time we received a sample is
-	// more than this duration
-	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
-}
-
-// Validate config and returns error on failure
-func (cfg HATrackerTimeoutsConfig) Validate() error {
-	if cfg.UpdateTimeoutJitterMax < 0 {
-		return errNegativeUpdateTimeoutJitterMax
-	}
-
-	minFailureTimeout := cfg.UpdateTimeout + cfg.UpdateTimeoutJitterMax + time.Second
-	if cfg.FailoverTimeout < minFailureTimeout {
-		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
-	}
-
-	return nil
+// DeprecatedHATrackerTimeoutsConfig is kept for backwards-compatibility in the
+// YAML config files. Values are copied to limits config, and must be accesed
+// through haTrackerLimits.HATrackerTimeouts.
+type DeprecatedHATrackerTimeoutsConfig struct {
+	DeprecatedUpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_update_timeout."`
+	DeprecatedUpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_update_timeout_jitter_max."`
+	DeprecatedFailoverTimeout        time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_failover_timeout."`
 }
 
 func GetReplicaDescCodec() codec.Proto {
@@ -204,11 +187,10 @@ func GetReplicaDescCodec() codec.Proto {
 type defaultHaTracker struct {
 	services.Service
 
-	logger              log.Logger
-	cfg                 HATrackerConfig
-	client              kv.Client
-	updateTimeoutJitter time.Duration
-	limits              haTrackerLimits
+	logger log.Logger
+	cfg    HATrackerConfig
+	client kv.Client
+	limits haTrackerLimits
 
 	electedLock sync.RWMutex                         // protects clusters maps
 	clusters    map[string]map[string]*haClusterInfo // Known clusters with elected replicas per user. First key = user, second key = cluster name.
@@ -226,6 +208,10 @@ type defaultHaTracker struct {
 	deletedReplicas                  prometheus.Counter
 	markingForDeletionsFailed        prometheus.Counter
 	replicasDescFailedTypeAssertions prometheus.Counter
+
+	// computeUpdateTimeoutJitter overrides the computeUpdateTimeoutJitter function
+	// for deterministic tests.
+	computeUpdateTimeoutJitter func(maxJitter time.Duration) time.Duration
 }
 
 // For one cluster, the information we need to do ha-tracking.
@@ -240,11 +226,10 @@ type haClusterInfo struct {
 // etcd, or an in-memory KV store. Tracker must be started via StartAsync().
 func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*defaultHaTracker, error) {
 	t := &defaultHaTracker{
-		logger:              log.With(logger, "component", "ha-tracker"),
-		cfg:                 cfg,
-		updateTimeoutJitter: computeUpdateTimeoutJitter(cfg.UpdateTimeoutJitterMax),
-		limits:              limits,
-		clusters:            map[string]map[string]*haClusterInfo{},
+		logger:   log.With(logger, "component", "ha-tracker"),
+		cfg:      cfg,
+		limits:   limits,
+		clusters: map[string]map[string]*haClusterInfo{},
 
 		electedReplicaStatus: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_elected_replica_status",
@@ -445,7 +430,8 @@ const (
 func (h *defaultHaTracker) updateKVLoop(ctx context.Context) {
 	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer cleanupTick.Stop()
-	tick := time.NewTicker(h.cfg.UpdateTimeout)
+	updateTimeout, _, _ := h.limits.DefaultHATrackerTimeouts()
+	tick := time.NewTicker(updateTimeout)
 	defer tick.Stop()
 
 	for {
@@ -617,43 +603,31 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 type defaultHaTrackerForUser struct {
 	*defaultHaTracker
 	userID              string
-	cfg                 HATrackerTimeoutsConfig
+	updateTimeout       time.Duration
 	updateTimeoutJitter time.Duration
+	failoverTimeout     time.Duration
 }
 
 func (h *defaultHaTracker) forUser(userID string) defaultHaTrackerForUser {
 	uh := defaultHaTrackerForUser{
 		defaultHaTracker: h,
 		userID:           userID,
-
-		// Initially copy default values.
-		cfg:                 h.cfg.HATrackerTimeoutsConfig,
-		updateTimeoutJitter: h.updateTimeoutJitter,
 	}
 
-	// Override from tenant-specific limits, if provided and valid.
-	update, updateJitterMax, failover := h.limits.HATrackerTimeouts(userID)
-	if update > 0 {
-		uh.cfg.UpdateTimeout = update
+	var updateJitterMax time.Duration
+	uh.updateTimeout, updateJitterMax, uh.failoverTimeout = h.limits.HATrackerTimeouts(userID)
+
+	computeJitter := h.computeUpdateTimeoutJitter
+	if computeJitter == nil {
+		computeJitter = computeUpdateTimeoutJitter
 	}
-	if updateJitterMax > 0 {
-		uh.cfg.UpdateTimeoutJitterMax = updateJitterMax
-	}
-	if failover > 0 {
-		uh.cfg.FailoverTimeout = failover
-	}
-	if err := uh.cfg.Validate(); err != nil {
-		level.Warn(h.logger).Log("msg", "invalid HA tracker timeouts config for tenant; using defaults", "user", userID, "err", err)
-		uh.cfg = h.cfg.HATrackerTimeoutsConfig // Restore defaults
-	} else {
-		uh.updateTimeoutJitter = computeUpdateTimeoutJitter(uh.cfg.UpdateTimeoutJitterMax)
-	}
+	uh.updateTimeoutJitter = computeJitter(updateJitterMax)
 
 	return uh
 }
 
 func (h *defaultHaTrackerForUser) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
-	return now.Sub(timestamp.Time(receivedAt)) < h.cfg.UpdateTimeout+h.updateTimeoutJitter
+	return now.Sub(timestamp.Time(receivedAt)) < h.updateTimeout+h.updateTimeoutJitter
 }
 
 // Must be called with electedLock held.
@@ -711,7 +685,7 @@ func (h *defaultHaTrackerForUser) updateKVStore(ctx context.Context, cluster, re
 
 			// If our replica is different, wait until the failover time
 			if desc.Replica != replica {
-				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.failoverTimeout {
 					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", h.userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
 					return nil, false, nil
 				}
