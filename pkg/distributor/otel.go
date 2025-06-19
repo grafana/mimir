@@ -59,6 +59,7 @@ type OTLPHandlerLimits interface {
 	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 	OTelConvertHistogramsToNHCB(id string) bool
+	OTelNativeDeltaIngestion(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -277,11 +278,12 @@ func newOTLPParser(
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
+		allowDeltaTemporality := limits.OTelNativeDeltaIngestion(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, metricsDropped, err := otelMetricsToTimeseries(ctx, otlpConverter, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, convertHistogramsToNHCB, otlpReq.Metrics(), spanLogger)
+		metrics, metricsDropped, err := otelMetricsToTimeseries(ctx, otlpConverter, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, convertHistogramsToNHCB, allowDeltaTemporality, otlpReq.Metrics(), spanLogger)
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -515,6 +517,7 @@ func otelMetricsToTimeseries(
 	promoteResourceAttributes []string,
 	keepIdentifyingResourceAttributes bool,
 	convertHistogramsToNHCB bool,
+	allowDeltaTemporality bool,
 	md pmetric.Metrics,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
@@ -525,6 +528,7 @@ func otelMetricsToTimeseries(
 		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
+		AllowDeltaTemporality:               allowDeltaTemporality,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 
