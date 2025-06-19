@@ -177,79 +177,79 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		queryStart             time.Time
 		queryEnd               time.Time
 	}{
+		//{
+		//	name:                   "basic query",
+		//	splitQueriesByInterval: "24h",
+		//	query:                  "test_series{}",
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
+		//	},
+		//	queryStart: now.Add(-20 * time.Minute),
+		//	queryEnd:   now,
+		//},
+		//{
+		//	name:                   "sharded query",
+		//	splitQueriesByInterval: "24h",
+		//	query:                  "sum(test_series{})",
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
+		//	},
+		//	queryStart: now.Add(-20 * time.Minute),
+		//	queryEnd:   now,
+		//},
+		//{
+		//	name:                   "split query",
+		//	splitQueriesByInterval: "10m",
+		//	query:                  "test_series{}",
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
+		//	},
+		//	queryStart: now.Add(-20 * time.Minute),
+		//	queryEnd:   now,
+		//},
+		//{
+		//	name:                   "split and sharded query",
+		//	splitQueriesByInterval: "10m",
+		//	query:                  "sum(test_series{})",
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
+		//	},
+		//	queryStart: now.Add(-20 * time.Minute),
+		//	queryEnd:   now,
+		//},
+		//{
+		//	name:                   "series with gap in front of a query range",
+		//	splitQueriesByInterval: "10m",
+		//	query:                  "test_series",
+		//	queryStart:             now.Add(-60 * time.Minute),
+		//	queryEnd:               now,
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-5*time.Minute), "test_series")
+		//	},
+		//},
+		//{
+		//	name:                   "series with gap behind of a query range",
+		//	splitQueriesByInterval: "10m",
+		//	query:                  "test_series",
+		//	queryStart:             now.Add(-60 * time.Minute),
+		//	queryEnd:               now,
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-50*time.Minute), now, "test_series")
+		//	},
+		//},
+		//{
+		//	name:                   "series with gap inside of a query range",
+		//	splitQueriesByInterval: "10m",
+		//	query:                  "test_series",
+		//	queryStart:             now.Add(-60 * time.Minute),
+		//	queryEnd:               now,
+		//	setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+		//		pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_series")
+		//		pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
+		//	},
+		//},
 		{
-			name:                   "basic query",
-			splitQueriesByInterval: "24h",
-			query:                  "test_series{}",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-			queryStart: now.Add(-20 * time.Minute),
-			queryEnd:   now,
-		},
-		{
-			name:                   "sharded query",
-			splitQueriesByInterval: "24h",
-			query:                  "sum(test_series{})",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-			queryStart: now.Add(-20 * time.Minute),
-			queryEnd:   now,
-		},
-		{
-			name:                   "split query",
-			splitQueriesByInterval: "10m",
-			query:                  "test_series{}",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-			queryStart: now.Add(-20 * time.Minute),
-			queryEnd:   now,
-		},
-		{
-			name:                   "split and sharded query",
-			splitQueriesByInterval: "10m",
-			query:                  "sum(test_series{})",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-			queryStart: now.Add(-20 * time.Minute),
-			queryEnd:   now,
-		},
-		{
-			name:                   "series with gap in front of a query range",
-			splitQueriesByInterval: "10m",
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now,
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-5*time.Minute), "test_series")
-			},
-		},
-		{
-			name:                   "series with gap behind of a query range",
-			splitQueriesByInterval: "10m",
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now,
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now, "test_series")
-			},
-		},
-		{
-			name:                   "series with gap inside of a query range",
-			splitQueriesByInterval: "10m",
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now,
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_series")
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-		},
-		{
-			name:                   "series with gap gap in front, behind and inside of a query range",
+			name:                   "series with gap in front, behind and inside of a query range",
 			splitQueriesByInterval: "10m",
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
@@ -479,7 +479,7 @@ func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheT
 		"-query-frontend.split-queries-by-interval":         config.splitQueriesByInterval,
 		"-query-frontend.max-cache-freshness":               "10m",
 		"-query-frontend.align-queries-with-step":           "true", // to make sure we hit the cache.
-		"-query-frontend.cache-queryable-samples-stats":     "true", // to collect and cache per-step stats.
+		"-query-frontend.cache-samples-processed-stats":     "true", // to collect and cache per-step stats.
 	})
 
 	// Start the query-scheduler

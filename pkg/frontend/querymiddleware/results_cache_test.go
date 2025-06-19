@@ -925,7 +925,6 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			shouldTruncate: []bool{true},
 			// 1 hour with 1000ms step is a 3601 data points. 10 samples per step, so 36010 samples.
 			// Truncation keeps half the range - 1801 datapoints, 10 samples per step, so 18010 samples.
-			// Last timestamp stats is truncated from stats in filterRecentCacheExtent: 18010 - 10 = 18000
 			expectedSamples: []uint64{18010},
 		},
 		{
@@ -946,7 +945,7 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 			shouldTruncate: []bool{false, true},
 			// First extent - 1 hour with 1000ms step is a 3601 data points - 36010 samples - not truncated
 			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples.
-			// Truncated to 54010 samples and  data point is truncated from stats in filterRecentCacheExtent - 54000
+			// Truncated to 54010 samples.
 			expectedSamples: []uint64{36010, 54010},
 		},
 	}

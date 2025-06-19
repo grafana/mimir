@@ -500,7 +500,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
-	var perStepStats [][]StepStat
+	var cachedPerStepStat []StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -533,11 +533,8 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-		// Extract the per step stats for the overlap and collect them for efficient merging.
-		extentStepStats := extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End))
-		if len(extentStepStats) > 0 {
-			perStepStats = append(perStepStats, extentStepStats)
-		}
+		// Extract the per step stats for the overlap.
+		cachedPerStepStat = mergeSamplesProcessedPerStep(cachedPerStepStat, extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End)))
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -571,9 +568,6 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	// Efficiently merge all collected step stats arrays at once
-	cachedPerStepStat := mergeManySamplesProcessedPerStep(perStepStats...)
-
 	return requests, cachedResponses, cachedPerStepStat, nil
 }
 
@@ -582,9 +576,7 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
-			// Use maxCacheTime-1 as the end boundary to avoid double-counting the sample at maxCacheTime.
-			// The stats at maxCacheTime timestamp will be included in the request for maxCacheInterval range.
-			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime-1)
+			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime)
 			extents[i].SamplesProcessedPerStep = perStepStats
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
