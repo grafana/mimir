@@ -162,6 +162,7 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 // DeprecatedHATrackerTimeoutsConfig is kept for backwards-compatibility in the
 // YAML config files. Values are copied to limits config, and must be accesed
 // through haTrackerLimits.HATrackerTimeouts.
+// TODO: Remove in Mimir 2.18.0
 type DeprecatedHATrackerTimeoutsConfig struct {
 	DeprecatedUpdateTimeout          time.Duration `yaml:"ha_tracker_update_timeout" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_update_timeout."`
 	DeprecatedUpdateTimeoutJitterMax time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"nocli|description=Deprecated. Use limits.ha_tracker_update_timeout_jitter_max."`
