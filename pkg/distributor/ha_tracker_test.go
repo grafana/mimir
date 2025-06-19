@@ -1143,16 +1143,16 @@ func waitForClustersUpdate(t *testing.T, expected int, tr *defaultHaTracker, use
 type trackerLimits struct {
 	userID                          string
 	maxClusters                     int
-	haTrackerUpdateTimeout          *time.Duration
-	haTrackerUpdateTimeoutJitterMax *time.Duration
-	haTrackerFailoverTimeout        *time.Duration
+	haTrackerUpdateTimeout          time.Duration
+	haTrackerUpdateTimeoutJitterMax time.Duration
+	haTrackerFailoverTimeout        time.Duration
 }
 
 func (l trackerLimits) MaxHAClusters(_ string) int {
 	return l.maxClusters
 }
 
-func (l trackerLimits) HATrackerTimeouts(userID string) (update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
+func (l trackerLimits) HATrackerTimeouts(userID string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
 	if l.userID != "" && userID != l.userID {
 		panic("HATrackerTimeouts called with unexpected userID: " + userID)
 	}
@@ -1572,8 +1572,8 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	}, trackerLimits{
 		userID:                   userID,
 		maxClusters:              100,
-		haTrackerUpdateTimeout:   &userSpecificUpdateTimeout,
-		haTrackerFailoverTimeout: &userSpecificFailoverTimeout,
+		haTrackerUpdateTimeout:   userSpecificUpdateTimeout,
+		haTrackerFailoverTimeout: userSpecificFailoverTimeout,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), tracker))
@@ -1653,8 +1653,8 @@ func TestHATracker_InvalidUserSpecificTimeoutsUsesDefaults(t *testing.T) {
 	}, trackerLimits{
 		userID:                   userID,
 		maxClusters:              100,
-		haTrackerUpdateTimeout:   &userSpecificUpdateTimeout,
-		haTrackerFailoverTimeout: &userSpecificFailoverTimeout,
+		haTrackerUpdateTimeout:   userSpecificUpdateTimeout,
+		haTrackerFailoverTimeout: userSpecificFailoverTimeout,
 	}, nil, log.NewNopLogger())
 	require.NoError(t, err)
 

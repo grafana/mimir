@@ -116,11 +116,11 @@ type Limits struct {
 	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
 	// See distributor.HATrackerTimeoutsConfig.UpdateTimeout
-	HATrackerUpdateTimeout *time.Duration `yaml:"ha_tracker_update_timeout" json:"ha_tracker_update_timeout" category:"advanced" doc:"description=Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp."`
+	HATrackerUpdateTimeout model.Duration `yaml:"ha_tracker_update_timeout" json:"ha_tracker_update_timeout" category:"advanced" doc:"description=Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. If zero, it defaults to the base HA tracker configuration."`
 	// See distributor.HATrackerTimeoutsConfig.UpdateTimeoutJitterMax
-	HATrackerUpdateTimeoutJitterMax *time.Duration `yaml:"ha_tracker_update_timeout_jitter_max" json:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"description=Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time."`
+	HATrackerUpdateTimeoutJitterMax model.Duration `yaml:"ha_tracker_update_timeout_jitter_max" json:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"description=Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. If zero, it defaults to the base HA tracker configuration."`
 	// See distributor.HATrackerTimeoutsConfig.FailoverTimeout
-	HATrackerFailoverTimeout                    *time.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
+	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout. If zero, it defaults to the base HA tracker configuration."`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
@@ -1095,9 +1095,9 @@ func (o *Overrides) MaxHAClusters(user string) int {
 }
 
 // See distributor.haTrackerLimits.SetHATrackerTimeouts
-func (o *Overrides) HATrackerTimeouts(user string) (update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration) {
+func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
 	uo := o.getOverridesForUser(user)
-	return uo.HATrackerUpdateTimeout, uo.HATrackerUpdateTimeoutJitterMax, uo.HATrackerFailoverTimeout
+	return time.Duration(uo.HATrackerUpdateTimeout), time.Duration(uo.HATrackerUpdateTimeoutJitterMax), time.Duration(uo.HATrackerFailoverTimeout)
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.

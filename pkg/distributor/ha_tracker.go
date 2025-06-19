@@ -41,9 +41,9 @@ type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
-	// HATrackerTimeouts returns timeouts that override the default. They may be nil, indicating there
+	// HATrackerTimeouts returns timeouts that override the default. They may be zero, indicating there
 	// are no overrides for the user.
-	HATrackerTimeouts(user string) (update *time.Duration, updateJitterMax *time.Duration, failover *time.Duration)
+	HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration)
 }
 
 type haTracker interface {
@@ -633,14 +633,14 @@ func (h *defaultHaTracker) forUser(userID string) defaultHaTrackerForUser {
 
 	// Override from tenant-specific limits, if provided and valid.
 	update, updateJitterMax, failover := h.limits.HATrackerTimeouts(userID)
-	if update != nil {
-		uh.cfg.UpdateTimeout = *update
+	if update > 0 {
+		uh.cfg.UpdateTimeout = update
 	}
-	if updateJitterMax != nil {
-		uh.cfg.UpdateTimeoutJitterMax = *updateJitterMax
+	if updateJitterMax > 0 {
+		uh.cfg.UpdateTimeoutJitterMax = updateJitterMax
 	}
-	if failover != nil {
-		uh.cfg.FailoverTimeout = *failover
+	if failover > 0 {
+		uh.cfg.FailoverTimeout = failover
 	}
 	if err := uh.cfg.Validate(); err != nil {
 		level.Warn(h.logger).Log("msg", "invalid HA tracker timeouts config for tenant; using defaults", "user", userID, "err", err)
