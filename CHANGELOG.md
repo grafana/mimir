@@ -106,6 +106,7 @@
 * [BUGFIX] Querier: Fix rare panic if a query is canceled while a request to ingesters or store-gateways has just begun. #11613
 * [BUGFIX] Ruler: Fix QueryOffset and AlignEvaluationTimeOnInterval being ignored when either recording or alerting rule evaluation is disabled. #11647
 * [BUGFIX] Ingester: Fix issue where ingesters could leave read-only mode during forced compactions, resulting in write errors. #11664
+* [BUGFIX] Ruler: Fix rare panic when the ruler is shutting down. #11781
 
 ### Mixin
 

@@ -50,6 +50,10 @@ var (
 	// fails only if bigger than the upper limit.
 	ErrWriteRequestDataItemTooLarge = errors.New(globalerror.DistributorMaxWriteRequestDataItemSize.Message(
 		fmt.Sprintf("the write request contains a timeseries or metadata item which is larger that the maximum allowed size of %d bytes", maxProducerRecordDataBytesLimit)))
+
+	// ErrWriterNotRunning is the error returned if someone tries to use Writer but the service is not
+	// in the running state.
+	ErrWriterNotRunning = errors.New("the Kafka writer client is not in the running state")
 )
 
 // Writer is responsible to write incoming data to the ingest storage.
@@ -199,6 +203,12 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 
 	w.writersMx.Lock()
 	defer w.writersMx.Unlock()
+
+	// Ensure the service is in the Running state. We want to avoid the case where someone tries to
+	// re-create a client after the service has been stopped.
+	if w.Service.State() != services.Running {
+		return nil, ErrWriterNotRunning
+	}
 
 	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
 	writer = w.writers[clientID]
