@@ -287,18 +287,18 @@ limits:
   ha_tracker_failover_timeout: 26s
   `,
 	}, {
-		name: "prefers values in limit",
+		name: "prefers values in distributor.ha_tracker",
 		yamlConfig: `
+limits:
+  ha_tracker_update_timeout: 1s
+  ha_tracker_update_timeout_jitter_max: 1s
+  ha_tracker_failover_timeout: 3s
+
 distributor:
   ha_tracker:
-    ha_tracker_update_timeout: 1s
-    ha_tracker_update_timeout_jitter_max: 1s
-    ha_tracker_failover_timeout: 3s
-
-limits:
-  ha_tracker_update_timeout: 13s
-  ha_tracker_update_timeout_jitter_max: 3s
-  ha_tracker_failover_timeout: 26s
+    ha_tracker_update_timeout: 13s
+    ha_tracker_update_timeout_jitter_max: 3s
+    ha_tracker_failover_timeout: 26s
   `,
 	}} {
 		t.Run(testCase.name, func(t *testing.T) {

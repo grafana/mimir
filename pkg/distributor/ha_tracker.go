@@ -152,16 +152,6 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableHATracker, "distributor.ha-tracker.enable", false, "Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).")
 	f.BoolVar(&cfg.EnableElectedReplicaMetric, "distributor.ha-tracker.enable-elected-replica-metric", false, "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.")
 
-	// Even though those are deprecated in favor of Limits, we need to keep the flags
-	// here for backwards-compatibility. Otherwise, the flag's default values would always
-	// overrride the HATrackerConfig values, even though they're not explicitly set.
-	//
-	// This is all transparent anyway because those deprecated values are copied to Limits
-	// if they are unset in Limits.
-	f.DurationVar(&cfg.DeprecatedUpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
-	f.DurationVar(&cfg.DeprecatedUpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
-	f.DurationVar(&cfg.DeprecatedFailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
-
 	// We want the ability to use different instances for the ring and
 	// for HA cluster tracking. We also customize the default keys prefix, in
 	// order to not clash with the ring key if they both share the same KVStore

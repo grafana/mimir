@@ -509,8 +509,6 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(flagext.LimitsMap[int]{})
 	case "list of durations":
 		return reflect.TypeOf(tsdb.DurationList{})
-	case "optional duration":
-		return reflect.TypeOf((*time.Duration)(nil))
 	default:
 		panic("unknown field type " + typ)
 	}
@@ -519,14 +517,6 @@ func ReflectType(typ string) reflect.Type {
 func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*flag.Flag, error) {
 	if isAbsentInCLI(field) {
 		return nil, nil
-	}
-	if flagName := getDocTagValue(field, "flag"); flagName != "" {
-		for _, flag := range flags {
-			if flag.Name == flagName {
-				return flag, nil
-			}
-		}
-		return nil, fmt.Errorf("field %s references CLI flag %s but it doesn't exist", field.Name, flagName)
 	}
 	fieldPtr := fieldValue.Addr().Pointer()
 	fieldFlag, ok := flags[fieldPtr]
