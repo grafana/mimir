@@ -318,7 +318,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		if shouldStream {
 			err = sp.streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
 		} else {
-			// Response is empty and uninteresting.
+			// The return value from QueryResult is empty and therefore uninteresting.
 			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
 				QueryID:      queryID,
 				HttpResponse: response,
