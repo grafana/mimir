@@ -1096,8 +1096,8 @@ func (l trackerLimits) HATrackerTimeouts(userID string) (update time.Duration, u
 	return l.updateTimeout, l.updateTimeoutJitterMax, l.failoverTimeout
 }
 
-func (l trackerLimits) DefaultHATrackerTimeouts() (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
-	return l.updateTimeout, l.updateTimeoutJitterMax, l.failoverTimeout
+func (l trackerLimits) DefaultHATrackerUpdateTimeout() time.Duration {
+	return l.updateTimeout
 }
 
 func TestHATracker_MetricsCleanup(t *testing.T) {

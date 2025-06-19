@@ -37,7 +37,7 @@ type haTrackerLimits interface {
 	MaxHAClusters(user string) int
 	// HATrackerTimeouts returns timeouts that may be specific for the user.
 	HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration)
-	DefaultHATrackerTimeouts() (update time.Duration, updateJitterMax time.Duration, failover time.Duration)
+	DefaultHATrackerUpdateTimeout() time.Duration
 }
 
 type haTracker interface {
@@ -421,7 +421,7 @@ const (
 func (h *defaultHaTracker) updateKVLoop(ctx context.Context) {
 	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer cleanupTick.Stop()
-	updateTimeout, _, _ := h.limits.DefaultHATrackerTimeouts()
+	updateTimeout := h.limits.DefaultHATrackerUpdateTimeout()
 	tick := time.NewTicker(updateTimeout)
 	defer tick.Stop()
 

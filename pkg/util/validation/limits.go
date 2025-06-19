@@ -1140,8 +1140,8 @@ func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, update
 	return update, updateJitterMax, failover
 }
 
-func (o *Overrides) DefaultHATrackerTimeouts() (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
-	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout), time.Duration(o.defaultLimits.HATrackerUpdateTimeoutJitterMax), time.Duration(o.defaultLimits.HATrackerFailoverTimeout)
+func (o *Overrides) DefaultHATrackerUpdateTimeout() time.Duration {
+	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
 }
 
 // S3SSEType returns the per-tenant S3 SSE type.
