@@ -151,12 +151,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
-	if s.cacheSamplesProcessedStats && isCacheEnabled {
-		// Force queier to track PerStepStats, so they could be cached and SamplesProcessedStats in cache could be counted correctly when re-sizing extents.
-		req, err = req.WithStats("all")
-		if err != nil {
-			return nil, err
-		}
+	// Force queier to track PerStepStats, so they could be cached.
+	req, err = req.WithStats("all")
+	if err != nil {
+		return nil, err
 	}
 
 	// Split the input requests by the configured interval (eg. day).
@@ -165,7 +163,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	if err != nil {
 		return nil, err
 	}
-
+	var cachedStepStats [][]StepStat
 	// Lookup the results cache.
 	if isCacheEnabled {
 		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
@@ -200,14 +198,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, samplesProcessed, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			requests, responses, extentStepStats, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
+			if len(extentStepStats) > 0 {
+				cachedStepStats = append(cachedStepStats, extentStepStats)
+			}
 			if err != nil {
 				return nil, err
-			}
-
-			// Track samples processed from cache in metrics
-			if details := QueryDetailsFromContext(ctx); details != nil {
-				details.SamplesProcessedFromCache += samplesProcessed
 			}
 
 			if len(requests) == 0 {
@@ -313,6 +309,30 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			// Put back into the cache the filtered ones.
 			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
+	}
+
+	// Update query stats by merging the cached per-step stats with the current query stats.
+	samplesProcessed := queryStats.LoadSamplesProcessedPerStep()
+	// Convert stats.StepStat to querymiddleware.StepStat
+	// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
+	convertedSamplesProcessed := make([]StepStat, len(samplesProcessed))
+	for i, stat := range samplesProcessed {
+		convertedSamplesProcessed[i] = StepStat{
+			Timestamp: stat.Timestamp,
+			Value:     stat.Value,
+		}
+	}
+
+	cachedStepStats = append(cachedStepStats, convertedSamplesProcessed)
+	total := mergeManySamplesProcessedPerStep(cachedStepStats...)
+
+	// Track samples processed from cache in metrics
+	if details := QueryDetailsFromContext(ctx); details != nil {
+		var totalSamplesProcessed uint64 = 0
+		for _, stepStat := range total {
+			totalSamplesProcessed += uint64(stepStat.Value)
+		}
+		details.SamplesProcessedCacheAdjusted += totalSamplesProcessed
 	}
 
 	// We can finally build the response, which is the merge of all downstream responses and the responses

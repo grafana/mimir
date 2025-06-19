@@ -496,11 +496,11 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, uint64, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []StepStat, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
-	var cachedPerStepStat []StepStat
+	var perStepStats [][]StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -522,19 +522,22 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, nil, nil, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, nil, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-		// Extract the per step stats for the overlap.
-		cachedPerStepStat = mergeSamplesProcessedPerStep(cachedPerStepStat, extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End)))
+		// Extract the per step stats for the overlap and collect them for efficient merging.
+		extentStepStats := extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End))
+		if len(extentStepStats) > 0 {
+			perStepStats = append(perStepStats, extentStepStats)
+		}
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -556,7 +559,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, nil, err
 		}
 
 		requests = append(requests, r)
@@ -568,13 +571,10 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	// Track samples processed from cache
-	var cachedSamplesProcessed uint64 = 0
-	for _, stepStat := range cachedPerStepStat {
-		cachedSamplesProcessed += uint64(stepStat.Value)
-	}
+	// Efficiently merge all collected step stats arrays at once
+	cachedPerStepStat := mergeManySamplesProcessedPerStep(perStepStats...)
 
-	return requests, cachedResponses, cachedSamplesProcessed, nil
+	return requests, cachedResponses, cachedPerStepStat, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -745,4 +745,114 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 	}
 
 	return merged
+}
+
+// heapItem represents an item in the min-heap for merging step stats
+type heapItem struct {
+	value    StepStat
+	arrayIdx int
+	itemIdx  int
+}
+
+// mergeManySamplesProcessedPerStep efficiently merges multiple sorted arrays of StepStat
+// using a min-heap approach. This is more efficient than repeatedly calling mergeSamplesProcessedPerStep
+// for multiple arrays (O(NM log N) vs O(N²M) where N is number of arrays and M is average array size).
+func mergeManySamplesProcessedPerStep(arrays ...[]StepStat) []StepStat {
+	// Filter out empty arrays
+	nonEmptyArrays := make([][]StepStat, 0, len(arrays))
+	totalSize := 0
+	for _, arr := range arrays {
+		if len(arr) > 0 {
+			nonEmptyArrays = append(nonEmptyArrays, arr)
+			totalSize += len(arr)
+		}
+	}
+
+	// Handle edge cases
+	if len(nonEmptyArrays) == 0 {
+		return nil
+	}
+	if len(nonEmptyArrays) == 1 {
+		return nonEmptyArrays[0]
+	}
+	if len(nonEmptyArrays) == 2 {
+		return mergeSamplesProcessedPerStep(nonEmptyArrays[0], nonEmptyArrays[1])
+	}
+
+	// Initialize heap with first element from each array
+	heap := make([]heapItem, len(nonEmptyArrays))
+	for i, arr := range nonEmptyArrays {
+		heap[i] = heapItem{
+			value:    arr[0],
+			arrayIdx: i,
+			itemIdx:  0,
+		}
+	}
+
+	// Build min-heap
+	buildMinHeap(heap)
+
+	merged := make([]StepStat, 0, totalSize)
+
+	for len(heap) > 0 {
+		// Extract minimum element
+		minItem := heap[0]
+
+		// For same timestamp, take the later value (last array wins)
+		if len(merged) > 0 && merged[len(merged)-1].Timestamp == minItem.value.Timestamp {
+			merged[len(merged)-1] = minItem.value
+		} else {
+			merged = append(merged, minItem.value)
+		}
+
+		// Move to next element in the same array
+		nextIdx := minItem.itemIdx + 1
+		if nextIdx < len(nonEmptyArrays[minItem.arrayIdx]) {
+			heap[0] = heapItem{
+				value:    nonEmptyArrays[minItem.arrayIdx][nextIdx],
+				arrayIdx: minItem.arrayIdx,
+				itemIdx:  nextIdx,
+			}
+			heapifyDown(heap, 0)
+		} else {
+			// Remove this array from heap by replacing with last element
+			heap[0] = heap[len(heap)-1]
+			heap = heap[:len(heap)-1]
+			if len(heap) > 0 {
+				heapifyDown(heap, 0)
+			}
+		}
+	}
+
+	return merged
+}
+
+// buildMinHeap builds a min-heap in-place
+func buildMinHeap(heap []heapItem) {
+	for i := len(heap)/2 - 1; i >= 0; i-- {
+		heapifyDown(heap, i)
+	}
+}
+
+// heapifyDown maintains min-heap property by moving element down
+func heapifyDown(heap []heapItem, idx int) {
+	for {
+		smallest := idx
+		left := 2*idx + 1
+		right := 2*idx + 2
+
+		if left < len(heap) && heap[left].value.Timestamp < heap[smallest].value.Timestamp {
+			smallest = left
+		}
+		if right < len(heap) && heap[right].value.Timestamp < heap[smallest].value.Timestamp {
+			smallest = right
+		}
+
+		if smallest == idx {
+			break
+		}
+
+		heap[idx], heap[smallest] = heap[smallest], heap[idx]
+		idx = smallest
+	}
 }

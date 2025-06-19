@@ -330,10 +330,10 @@ func (f *Handler) reportQueryStats(
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 	var stats *querier_stats.QueryStats
-	var samplesProcessedFromCache uint64
+	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
-		samplesProcessedFromCache = details.SamplesProcessedFromCache
+		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
@@ -342,7 +342,6 @@ func (f *Handler) reportQueryStats(
 	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
-	samplesProcessedCacheAdjusted := samplesProcessed + samplesProcessedFromCache
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())

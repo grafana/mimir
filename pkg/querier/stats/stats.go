@@ -45,7 +45,7 @@ func IsEnabled(ctx context.Context) bool {
 
 type QueryStats struct {
 	Stats
-	perStepStatsMx sync.Mutex
+	mx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
@@ -241,8 +241,8 @@ func (s *QueryStats) LoadSpunOffSubqueries() uint32 {
 }
 
 func (s *QueryStats) AddSamplesProcessedPerStep(points []StepStat) {
-	s.perStepStatsMx.Lock()
-	defer s.perStepStatsMx.Unlock()
+	s.mx.Lock()
+	defer s.mx.Unlock()
 
 	if s == nil {
 		return
@@ -252,11 +252,11 @@ func (s *QueryStats) AddSamplesProcessedPerStep(points []StepStat) {
 }
 
 func (s *QueryStats) LoadSamplesProcessedPerStep() []StepStat {
-	s.perStepStatsMx.Lock()
-	defer s.perStepStatsMx.Unlock()
 	if s == nil {
 		return nil
 	}
+	s.mx.Lock()
+	defer s.mx.Unlock()
 	return s.SamplesProcessedPerStep
 }
 
@@ -285,8 +285,8 @@ func (s *QueryStats) mergeSamplesProcessedPerStep(other []StepStat) {
 		return
 	}
 	// Hold the lock for the entire merge operation to make it atomic
-	s.perStepStatsMx.Lock()
-	defer s.perStepStatsMx.Unlock()
+	s.mx.Lock()
+	defer s.mx.Unlock()
 
 	this := s.SamplesProcessedPerStep // Access directly since we hold the lock
 

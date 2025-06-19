@@ -2231,9 +2231,9 @@ func TestSplitAndCacheMiddleware_SamplesProcessedFromCacheAccumulation(t *testin
 
 	// We expect 2880 samples to be processed from cache, because we have 24 hours of 1 minute steps with 1 sample per step in each extent
 	expectedSamplesFromCache := uint64(2880)
-	assert.Equal(t, expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache,
-		"SamplesProcessedFromCache not correctly accumulated: expected %d, got %d",
-		expectedSamplesFromCache, queryDetails.SamplesProcessedFromCache)
+	assert.Equal(t, expectedSamplesFromCache, queryDetails.SamplesProcessedCacheAdjusted,
+		"SamplesProcessedCacheAdjusted not correctly accumulated: expected %d, got %d",
+		expectedSamplesFromCache, queryDetails.SamplesProcessedCacheAdjusted)
 }
 
 func TestSplitAndCacheMiddleware_CacheSamplesProcessedStats(t *testing.T) {
