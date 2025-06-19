@@ -213,12 +213,18 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 		}
 
 		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, rightMetadata[nextRightSeriesToRead])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if there are any remaining series on the left side.
 	if nextLeftSeriesToRead < len(leftMetadata) {
 		seriesCount := len(leftMetadata) - nextLeftSeriesToRead
-		series = append(series, leftMetadata[nextLeftSeriesToRead:]...)
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, leftMetadata[nextLeftSeriesToRead:]...)
+		if err != nil {
+			return nil, err
+		}
 
 		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
