@@ -1533,9 +1533,11 @@ func TestHATracker_UserSpecificTimeouts(t *testing.T) {
 	// First request should succeed (establishes the replica as elected)
 	err = userTracker.updateKVStore(context.Background(), cluster, replica, now, now.UnixMilli())
 	assert.NoError(t, err)
+	tracker.electedLock.Lock()
 	assert.Equal(t, replica, tracker.clusters[userID][cluster].elected.Replica)
 	firstReceivedAt := now.UnixMilli()
 	assert.Equal(t, firstReceivedAt, tracker.clusters[userID][cluster].elected.ReceivedAt)
+	tracker.electedLock.Unlock()
 
 	// Second request within user-specific timeout should not update KV store
 	now = now.Add(2 * time.Second)
