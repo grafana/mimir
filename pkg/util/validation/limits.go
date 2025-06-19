@@ -562,9 +562,11 @@ func (l *Limits) validate() error {
 		return errNegativeUpdateTimeoutJitterMax
 	}
 
-	minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
-	if l.HATrackerFailoverTimeout < minFailureTimeout {
-		return fmt.Errorf(errInvalidFailoverTimeout, l.HATrackerFailoverTimeout, minFailureTimeout)
+	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
+		minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
+		if l.HATrackerFailoverTimeout < minFailureTimeout {
+			return fmt.Errorf(errInvalidFailoverTimeout, l.HATrackerFailoverTimeout, minFailureTimeout)
+		}
 	}
 
 	return nil
