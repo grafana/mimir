@@ -1873,35 +1873,6 @@ func TestQuerySharding_Annotations(t *testing.T) {
 	const step = 20 * time.Second
 	const splitInterval = 15 * time.Second
 
-	reg := prometheus.NewPedanticRegistry()
-	engine := newEngine()
-	shardingware := newQueryShardingMiddleware(
-		log.NewNopLogger(),
-		engine,
-		mockLimits{totalShards: numShards},
-		0,
-		reg,
-	)
-	splitware := newSplitAndCacheMiddleware(
-		true,
-		false, // Cache disabled.
-		false, // Since cache is disabled, we don't need to cache queryable samples stats.
-		splitInterval,
-		mockLimits{},
-		newTestPrometheusCodec(),
-		nil,
-		nil,
-		nil,
-		nil,
-		log.NewNopLogger(),
-		reg,
-	)
-	downstream := &downstreamHandler{
-		engine:                                  engine,
-		queryable:                               queryable,
-		includePositionInformationInAnnotations: true,
-	}
-
 	type template struct {
 		query     string
 		isWarning bool
@@ -1940,6 +1911,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 				splitware := newSplitAndCacheMiddleware(
 					true,
 					false, // Cache disabled.
+					false, // Since cache is disabled, we don't need to cache queryable samples stats.
 					splitInterval,
 					mockLimits{},
 					newTestPrometheusCodec(),
