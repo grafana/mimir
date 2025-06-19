@@ -24,45 +24,85 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
-func TestNewKafkaWriterClient(t *testing.T) {
-	t.Run("should support SASL plain authentication", func(t *testing.T) {
-		const (
-			topicName     = "test"
-			numPartitions = 1
-			username      = "mimir"
-			password      = "supersecret"
-		)
+func TestNewKafkaWriterClient_ShouldSupportSASLPlainAuthentication(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+		username      = "mimir"
+		password      = "supersecret"
+	)
 
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithSASLPlain(username, password))
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, testkafka.WithSASLPlain(username, password))
 
-		t.Run("should fail if the provided auth is wrong", func(t *testing.T) {
-			t.Parallel()
+	t.Run("should fail if the provided auth is wrong", func(t *testing.T) {
+		t.Parallel()
 
-			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			require.NoError(t, cfg.SASLPassword.Set("wrong"))
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.SASLUsername = username
+		require.NoError(t, cfg.SASLPassword.Set("wrong"))
 
-			client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-			require.NoError(t, err)
-			t.Cleanup(client.Close)
+		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
 
-			require.Error(t, client.Ping(context.Background()))
-		})
-
-		t.Run("should succeed if the provided auth is good", func(t *testing.T) {
-			t.Parallel()
-
-			cfg := createTestKafkaConfig(clusterAddr, topicName)
-			cfg.SASLUsername = username
-			require.NoError(t, cfg.SASLPassword.Set(password))
-
-			client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
-			require.NoError(t, err)
-			t.Cleanup(client.Close)
-
-			require.NoError(t, client.Ping(context.Background()))
-		})
+		require.Error(t, client.Ping(context.Background()))
 	})
+
+	t.Run("should succeed if the provided auth is good", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+		cfg.SASLUsername = username
+		require.NoError(t, cfg.SASLPassword.Set(password))
+
+		client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		t.Cleanup(client.Close)
+
+		require.NoError(t, client.Ping(context.Background()))
+	})
+}
+
+func TestNewKafkaWriterClient_ShouldTrackExtendedKafkaClientMetrics(t *testing.T) {
+	const (
+		topicName     = "test"
+		numPartitions = 1
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+
+	cfg := createTestKafkaConfig(clusterAddr, topicName)
+	reg := prometheus.NewPedanticRegistry()
+	prefixedReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix, reg)
+
+	client, err := NewKafkaWriterClient(cfg, 1, log.NewNopLogger(), prefixedReg)
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	res := client.ProduceSync(context.Background(), &kgo.Record{Key: []byte("test"), Value: []byte("message 1")})
+	require.NoError(t, res.FirstErr())
+
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+
+	expectedHistograms := []string{
+		"cortex_ingest_storage_writer_kafka_write_wait_seconds",
+		"cortex_ingest_storage_writer_kafka_write_time_seconds",
+		"cortex_ingest_storage_writer_kafka_read_wait_seconds",
+		"cortex_ingest_storage_writer_kafka_read_time_seconds",
+		"cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds",
+	}
+
+	for _, expectedHistogram := range expectedHistograms {
+		t.Run(expectedHistogram, func(t *testing.T) {
+			actualHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, expectedHistogram)
+			require.NoError(t, err)
+
+			// Metrics are tracked for each Kafka message. Even if we produced only 1 record,
+			// the Kafka client actually issues other messages too (e.g. Metadata).
+			require.GreaterOrEqual(t, *actualHistogram.SampleCount, uint64(1))
+		})
+	}
 }
 
 func TestKafkaProducer_ShouldExposeBufferedBytesLimit(t *testing.T) {

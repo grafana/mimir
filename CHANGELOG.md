@@ -21,9 +21,10 @@
   * Renamed `cortex_ingest_storage_writer_produce_failures_total` to `cortex_ingest_storage_writer_produce_records_failed_total`
 * [FEATURE] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: Created timestamp is ignored, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192 #11143
 * [FEATURE] Query-frontend: expand `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` configuration options to cache non-transient response failures for instant queries. #11120
-* [FEATURE] Query-frontend: Allow use of Mimir Query Engine (MQE) via the experimental CLI flags `-query-frontend.query-engine` or `-query-frontend.enable-query-engine-fallback` or corresponding YAML. #11417
+* [FEATURE] Query-frontend: Allow use of Mimir Query Engine (MQE) via the experimental CLI flags `-query-frontend.query-engine` or `-query-frontend.enable-query-engine-fallback` or corresponding YAML. #11417 #11775
 * [FEATURE] Querier, query-frontend, ruler: Enable experimental support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification. #11344
 * [FEATURE] You can configure Mimir to export traces in OTLP exposition format through the standard `OTEL_` environment variables. #11618
+* [FEATURE] distributor: Allow configuring tenant-specific HA tracker failover timeouts. #11774
 * [ENHANCEMENT] Querier: Make the maximum series limit for cardinality API requests configurable on a per-tenant basis with the `cardinality_analysis_max_results` option. #11456
 * [ENHANCEMENT] Dashboards: Add "Queries / sec by read path" to Queries Dashboard. #11640
 * [ENHANCEMENT] Dashboards: Add "Added Latency" row to Writes Dashboard. #11579
@@ -73,9 +74,16 @@
 * [ENHANCEMENT] Tracing: Add HTTP headers as span attributes when `-server.trace-request-headers` is enabled. You can configure which headers to exclude using the `-server.trace-request-headers-exclude-list` flag. #11655
 * [ENHANCEMENT] Ruler: Add new per-tenant limit on minimum rule evaluation interval. #11665
 * [ENHANCEMENT] store-gateway: download sparse headers on startup when lazy loading is enabled. #11686
-* [ENHANCEMENT] Distributor: added more metrics to troubleshoot Kafka records production latency when experimental ingest storage is enabled. #11766
-  * Added `cortex_ingest_storage_writer_produce_remaining_deadline_seconds` metric, to measure the remaining deadline (in seconds) when records are requested to be produced.
-  * Added `cortex_ingest_storage_writer_produce_records_enqueue_duration_seconds` metric, to measure how long it takes to enqueue produced Kafka records in the client.
+* [ENHANCEMENT] Distributor: added more metrics to troubleshoot Kafka records production latency when experimental ingest storage is enabled: #11766 #11771
+  * `cortex_ingest_storage_writer_produce_remaining_deadline_seconds`: measures the remaining deadline (in seconds) when records are requested to be produced.
+  * `cortex_ingest_storage_writer_produce_records_enqueue_duration_seconds`: measures how long it takes to enqueue produced Kafka records in the client.
+  * `cortex_ingest_storage_writer_kafka_write_wait_seconds`: measures the time spent waiting to write to Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_write_time_seconds`: measures the time spent writing to Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_read_wait_seconds`: measures the time spent waiting to read from Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_read_time_seconds`: measures the time spent reading from Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_request_duration_e2e_seconds`: measures the time from the start of when a Kafka request is written to the end of when the response for that request was fully read from the Kafka backend.
+  * `cortex_ingest_storage_writer_kafka_request_throttled_seconds`: measures how long Kafka requests have been throttled by the Kafka client.
+* [ENHANCEMENT] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to wall clock. #11573
 * [ENHANCEMENT] Distributor: added circuit breaker to not produce Kafka records at all if the context is already canceled / expired. This applied only when experimental ingest storage is enabled. #11768
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
@@ -99,7 +107,7 @@
 * [BUGFIX] Querier: Fix rare panic if a query is canceled while a request to ingesters or store-gateways has just begun. #11613
 * [BUGFIX] Ruler: Fix QueryOffset and AlignEvaluationTimeOnInterval being ignored when either recording or alerting rule evaluation is disabled. #11647
 * [BUGFIX] Ingester: Fix issue where ingesters could leave read-only mode during forced compactions, resulting in write errors. #11664
-* [FEATURE] distributor: Allow configuring tenant-specific HA tracker failover timeouts. #11774
+* [BUGFIX] Ruler: Fix rare panic when the ruler is shutting down. #11781
 
 ### Mixin
 

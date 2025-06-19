@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -22,7 +23,7 @@ const (
 func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptionTracker {
 	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
-		return NewMemoryConsumptionTracker(0, nil, "")
+		return NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	}
 
 	return tracker
@@ -118,18 +119,21 @@ type MemoryConsumptionTracker struct {
 	haveRecordedRejection bool
 	queryDescription      string
 
+	ctx context.Context // Used to retrieve trace ID to include in panic messages.
+
 	// mtx protects all mutable state of the memory consumption tracker. We use a mutex
 	// rather than atomics because we only want to adjust the memory used after checking
 	// that it would not exceed the limit.
 	mtx sync.Mutex
 }
 
-func NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
+func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
 	return &MemoryConsumptionTracker{
 		maxEstimatedMemoryConsumptionBytes: maxEstimatedMemoryConsumptionBytes,
 
 		rejectionCount:   rejectionCount,
 		queryDescription: queryDescription,
+		ctx:              ctx,
 	}
 }
 
@@ -162,7 +166,14 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
-		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v", source, l.queryDescription))
+		traceID, ok := tracing.ExtractTraceID(l.ctx)
+		traceDescription := ""
+
+		if ok {
+			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
+		}
+
+		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v", source, l.queryDescription, traceDescription))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b

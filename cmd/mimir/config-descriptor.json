@@ -2279,20 +2279,9 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "use_query_planning",
-              "required": false,
-              "desc": "Use query planner when evaluating queries.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "querier.mimir-query-engine.use-query-planning",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_common_subexpression_elimination",
               "required": false,
-              "desc": "Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled.",
+              "desc": "Enable common subexpression elimination when evaluating queries.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",

@@ -44,10 +44,10 @@ func TestInstantVectorOperatorBuffer_BufferingSubsetOfInputSeries(t *testing.T) 
 	}
 
 	seriesUsed := []bool{true, false, true, true, true}
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6, limiter.FPointSlices)) // We have 6 FPoints from the inner series.
 	buffer := NewInstantVectorOperatorBuffer(inner, seriesUsed, 4, memoryConsumptionTracker)
-	ctx := context.Background()
 
 	// Read first series.
 	series, err := buffer.GetSeries(ctx, []int{0})
@@ -114,10 +114,10 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 		},
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*6, limiter.FPointSlices)) // We have 6 FPoints from the inner series.
 	buffer := NewInstantVectorOperatorBuffer(inner, nil, 6, memoryConsumptionTracker)
-	ctx := context.Background()
 
 	// Read first series.
 	series, err := buffer.GetSeries(ctx, []int{0})
@@ -162,7 +162,8 @@ func TestInstantVectorOperatorBuffer_BufferingAllInputSeries(t *testing.T) {
 }
 
 func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T) {
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 	createTestData := func(val float64) types.InstantVectorSeriesData {
 		floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
@@ -186,7 +187,6 @@ func TestInstantVectorOperatorBuffer_ReleasesBufferWhenClosedEarly(t *testing.T)
 	}
 
 	buffer := NewInstantVectorOperatorBuffer(inner, nil, 1, memoryConsumptionTracker)
-	ctx := context.Background()
 
 	// Read the second series, causing the first to be buffered.
 	series, err := buffer.GetSeries(ctx, []int{1})
