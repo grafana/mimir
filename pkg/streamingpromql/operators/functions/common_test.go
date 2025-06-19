@@ -28,7 +28,8 @@ func TestDropSeriesName(t *testing.T) {
 
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 	for _, metadata := range seriesMetadata {
-		tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
+		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
+		require.NoError(t, err)
 	}
 	modifiedMetadata, err := DropSeriesName.Func(seriesMetadata, tracker)
 	require.NoError(t, err)
