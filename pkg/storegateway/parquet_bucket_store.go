@@ -7,7 +7,9 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sync"
 	"time"
@@ -21,11 +23,13 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -42,11 +46,15 @@ type ParquetBucketStore struct {
 
 	logger log.Logger
 
-	userID   string
-	localDir string
-	metrics  *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
-	bkt      objstore.InstrumentedBucketReader
-	fetcher  block.MetadataFetcher
+	userID string
+
+	bkt        objstore.InstrumentedBucketReader
+	fetcher    block.MetadataFetcher
+	localDir   string
+	readerPool *parquetBlock.ReaderPool
+
+	// Metrics specific to bkt store operations
+	metrics *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
 
 	// Set of blocks that have the same labels
 	blockSet *parquetBlockSet
@@ -86,6 +94,7 @@ func NewParquetBucketStore(
 	seriesLimiterFactory SeriesLimiterFactory,
 	metrics *BucketStoreMetrics,
 	logger log.Logger,
+	reg prometheus.Registerer,
 ) (*ParquetBucketStore, error) {
 	s := &ParquetBucketStore{
 		logger: logger,
@@ -108,6 +117,13 @@ func NewParquetBucketStore(
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
 	}
 
+	s.readerPool = parquetBlock.NewReaderPool(
+		bucketStoreConfig.IndexHeader,
+		s.lazyLoadingGate,
+		logger,
+		reg,
+	)
+
 	if err := os.MkdirAll(localDir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create local localDir")
 	}
@@ -118,7 +134,7 @@ func NewParquetBucketStore(
 
 func (s *ParquetBucketStore) start(_ context.Context) error {
 	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
-	return services.StartAndAwaitRunning(context.Background(), nil)
+	return services.StartAndAwaitRunning(context.Background(), s.readerPool)
 }
 
 func (s *ParquetBucketStore) stop(err error) error {
@@ -356,6 +372,38 @@ func (s *ParquetBucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesSer
 	panic("TODO: implement sendStats")
 }
 
+// Stats returns statistics about the BucketStore instance.
+func (s *ParquetBucketStore) Stats() BucketStoreStats {
+	return BucketStoreStats{
+		BlocksLoadedTotal: s.blockSet.len(),
+	}
+}
+
+// InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
+// present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
+func (s *ParquetBucketStore) InitialSync(ctx context.Context) error {
+	// Read the snapshot before running the sync. After we run a sync we'll start persisting the snapshots again,
+	// so we need to read the pre-shutdown snapshot before the sync.
+
+	// TODO implement aspects that rely on the indexheader for parquet blocks
+
+	//previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
+
+	if err := s.syncBlocks(ctx); err != nil {
+		return errors.Wrap(err, "sync block")
+	}
+	//if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+	//	s.loadBlocks(ctx, previouslyLoadedBlocks)
+	//}
+
+	err := s.cleanUpUnownedBlocks()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *ParquetBucketStore) SyncBlocks(ctx context.Context) error {
 	return s.syncBlocks(ctx)
 }
@@ -438,33 +486,32 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 	s.metrics.blockLoads.Inc()
 
 	// TODO get shard reader from pool
-	//indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
-	//	ctx,
-	//	s.logger,
-	//	s.bkt,
-	//	s.localDir,
-	//	meta.ULID,
-	//	s.postingOffsetsInMemSampling,
-	//	s.indexHeaderCfg,
-	//)
-	//if err != nil {
-	//	return errors.Wrap(err, "create index header reader")
-	//}
+	blockReader, err := s.readerPool.GetReader(
+		ctx,
+		meta.ULID,
+		s.bkt,
+		blockLocalDir,
+		s.logger,
+	)
 
-	//defer func() {
-	//	if err != nil {
-	//		runutil.CloseWithErrCapture(&err, indexHeaderReader, "index-header")
-	//	}
-	//}()
+	if err != nil {
+		return errors.Wrap(err, "create parquet block reader")
+	}
+
+	defer func() {
+		if err != nil {
+			runutil.CloseWithErrCapture(&err, blockReader, "parquet block reader")
+		}
+	}()
 
 	b := newParquetBucketBlock(
 		meta,
 		nil,
 		blockLocalDir,
 	)
-	//if err != nil {
-	//	return errors.Wrap(err, "new bucket block")
-	//}
+	if err != nil {
+		return errors.Wrap(err, "new parquet bucket block")
+	}
 	defer func() {
 		if err != nil {
 			runutil.CloseWithErrCapture(&err, b, "index-header")
@@ -475,6 +522,21 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 		return errors.Wrap(err, "add block to set")
 	}
 
+	return nil
+}
+func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
+	// TODO implement for parquet blocks
+	//previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.localDir)
+	//if err != nil {
+	//	level.Warn(s.logger).Log(
+	//		"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
+	//		"dir", s.localDir,
+	//		"err", err,
+	//	)
+	//	// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
+	//	// Lazy loading which is slower, but not worth failing startup for.
+	//}
+	//return previouslyLoadedBlocks
 	return nil
 }
 
@@ -503,6 +565,61 @@ func (s *ParquetBucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 	return nil
 }
 
+// RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
+func (s *ParquetBucketStore) RemoveBlocksAndClose() error {
+	errs := multierror.New()
+	if err := services.StopAndAwaitTerminated(context.Background(), s); err != nil {
+		errs.Add(fmt.Errorf("stopping subservices: %w", err))
+	}
+	// Remove the blocks even if the service didn't gracefully stop.
+	// We want to free up disk resources given these blocks will likely not be queried again.
+	if err := s.removeAllBlocks(); err != nil {
+		errs.Add(fmt.Errorf("remove all blocks: %w", err))
+	}
+
+	return errs.Err()
+}
+
+func (s *ParquetBucketStore) removeAllBlocks() error {
+	blockIDs := s.blockSet.allBlockULIDs()
+
+	errs := multierror.New()
+	for _, id := range blockIDs {
+		if err := s.removeBlock(id); err != nil {
+			errs.Add(errors.Wrap(err, fmt.Sprintf("block: %s", id.String())))
+		}
+	}
+
+	return errs.Err()
+}
+
 func (s *ParquetBucketStore) closeAllBlocks() error {
 	return s.blockSet.closeAll()
+}
+
+func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
+	fis, err := os.ReadDir(s.localDir)
+	if err != nil {
+		return errors.Wrap(err, "read dir")
+	}
+	names := make([]string, 0, len(fis))
+	for _, fi := range fis {
+		names = append(names, fi.Name())
+	}
+	for _, n := range names {
+		id, ok := block.IsBlockDir(n)
+		if !ok {
+			continue
+		}
+		if s.blockSet.contains(id) {
+			continue
+		}
+
+		// No such block loaded, remove the local dir.
+		if err := os.RemoveAll(path.Join(s.localDir, id.String())); err != nil {
+			level.Warn(s.logger).Log("msg", "failed to remove block which is not needed", "err", err)
+		}
+	}
+
+	return nil
 }

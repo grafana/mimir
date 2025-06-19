@@ -128,10 +128,9 @@ type LazyReaderLocalLabelsBucketChunks struct {
 func NewLazyReaderLocalLabelsBucketChunks(
 	ctx context.Context,
 	blockID ulid.ULID,
-	shardIdx int,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
-	shardOpts []storage.ShardOption,
+	//shardOpts []storage.ShardOption,
 	metrics *LazyParquetReaderMetrics,
 	onClosed func(*LazyReaderLocalLabelsBucketChunks),
 	lazyLoadingGate gate.Gate,
@@ -140,11 +139,9 @@ func NewLazyReaderLocalLabelsBucketChunks(
 	reader := &LazyReaderLocalLabelsBucketChunks{
 		ctx:      ctx,
 		blockID:  blockID,
-		shardIdx: shardIdx,
+		shardIdx: FirstShardIndex,
 		bkt:      bkt,
 		localDir: localDir,
-
-		shardOpts: shardOpts,
 
 		metrics:  metrics,
 		usedAt:   atomic.NewInt64(0),
@@ -313,6 +310,26 @@ func (r *LazyReaderLocalLabelsBucketChunks) loadReader() (Reader, error) {
 	r.metrics.loadDuration.Observe(elapsed.Seconds())
 
 	return reader, nil
+}
+
+// Close implements Reader.
+func (r *LazyReaderLocalLabelsBucketChunks) Close() error {
+	select {
+	case <-r.done:
+		return nil // already closed
+	default:
+	}
+	if r.onClosed != nil {
+		defer r.onClosed(r)
+	}
+
+	// Unload without checking if idle.
+	if err := r.unloadIfIdleSince(0); err != nil {
+		return fmt.Errorf("unload index-header: %w", err)
+	}
+
+	close(r.done)
+	return nil
 }
 
 func (r *LazyReaderLocalLabelsBucketChunks) waitAndCloseReader(req readerRequest) {

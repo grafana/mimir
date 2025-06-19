@@ -40,7 +40,6 @@ const FirstShardIndex = 0
 // Reader wraps access to a TSDB block's storage.ParquetShard interface.
 
 type Reader interface {
-	//BlockID() string
 	storage.ParquetShard
 	io.Closer
 }

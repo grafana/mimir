@@ -42,6 +42,7 @@ func newParquetBucketBlock(
 	localDir string,
 ) *parquetBucketBlock {
 	return &parquetBucketBlock{
+		meta: meta,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels:  labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 		ParquetShard: shard,
