@@ -7,21 +7,29 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path"
+	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -38,11 +46,15 @@ type ParquetBucketStore struct {
 
 	logger log.Logger
 
-	userID        string
-	localDir      string
-	bucketMetrics *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
-	bkt           objstore.InstrumentedBucketReader
-	fetcher       block.MetadataFetcher
+	userID string
+
+	bkt        objstore.InstrumentedBucketReader
+	fetcher    block.MetadataFetcher
+	localDir   string
+	readerPool *parquetBlock.ReaderPool
+
+	// Metrics specific to bkt store operations
+	metrics *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
 
 	// Set of blocks that have the same labels
 	blockSet *parquetBlockSet
@@ -82,6 +94,7 @@ func NewParquetBucketStore(
 	seriesLimiterFactory SeriesLimiterFactory,
 	metrics *BucketStoreMetrics,
 	logger log.Logger,
+	reg prometheus.Registerer,
 ) (*ParquetBucketStore, error) {
 	s := &ParquetBucketStore{
 		logger: logger,
@@ -89,9 +102,9 @@ func NewParquetBucketStore(
 		userID:   userID,
 		localDir: localDir,
 
-		bucketMetrics: metrics,
-		bkt:           bkt,
-		fetcher:       blockMetaFetcher,
+		metrics: metrics,
+		bkt:     bkt,
+		fetcher: blockMetaFetcher,
 
 		blockSet:             &parquetBlockSet{},
 		blockSyncConcurrency: bucketStoreConfig.BlockSyncConcurrency,
@@ -104,6 +117,13 @@ func NewParquetBucketStore(
 		maxSeriesPerBatch:    bucketStoreConfig.StreamingBatchSize,
 	}
 
+	s.readerPool = parquetBlock.NewReaderPool(
+		bucketStoreConfig.IndexHeader,
+		s.lazyLoadingGate,
+		logger,
+		reg,
+	)
+
 	if err := os.MkdirAll(localDir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create local localDir")
 	}
@@ -114,7 +134,7 @@ func NewParquetBucketStore(
 
 func (s *ParquetBucketStore) start(_ context.Context) error {
 	// Use context.Background() so that we stop the index reader pool ourselves and do it after closing all blocks.
-	return services.StartAndAwaitRunning(context.Background(), nil)
+	return services.StartAndAwaitRunning(context.Background(), s.readerPool)
 }
 
 func (s *ParquetBucketStore) stop(err error) error {
@@ -185,7 +205,7 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		resHints = &hintspb.SeriesResponseHints{}
 	)
 	for _, shard := range shards {
-		resHints.AddQueriedBlock(shard.BlockID)
+		resHints.AddQueriedBlock(shard.meta.ULID)
 		shard.MarkQueried()
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
@@ -197,8 +217,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		var (
 			seriesSet       storepb.SeriesSet
 			seriesLoadStart = time.Now()
-			chunksLimiter   = s.chunksLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("chunks"))
-			seriesLimiter   = s.seriesLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("series"))
+			chunksLimiter   = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 		)
 
 		// Placeholder: Create series set for streaming labels from parquet shards
@@ -225,8 +245,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 
 	// We create the limiter twice in the case of streaming so that we don't double count the series
 	// and hit the limit prematurely.
-	chunksLimiter := s.chunksLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("chunks"))
-	seriesLimiter := s.seriesLimiterFactory(s.bucketMetrics.queriesDropped.WithLabelValues("series"))
+	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	start := time.Now()
 	if req.StreamingChunksBatchSize > 0 {
@@ -275,7 +295,7 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 }
 
 // Placeholder methods for parquet-specific functionality
-func (s *ParquetBucketStore) openParquetShardsForReading(ctx context.Context, skipChunks bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBlockWithMeta {
+func (s *ParquetBucketStore) openParquetShardsForReading(ctx context.Context, skipChunks bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
 	// TODO: Implement parquet shard discovery and opening logic
 	// This should:
 	// 1. Discover parquet shards that intersect with the time range
@@ -296,7 +316,7 @@ func (s *ParquetBucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesSer
 	panic("TODO: implement sendHints")
 }
 
-func (s *ParquetBucketStore) createParquetSeriesSetForLabels(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBlockWithMeta, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
+func (s *ParquetBucketStore) createParquetSeriesSetForLabels(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
 	// TODO: Implement parquet series set creation for labels phase
 	// This should:
 	// 1. "Stream read" .labels.parquet files from shards using shard.LabelsFile()
@@ -317,7 +337,7 @@ func (s *ParquetBucketStore) sendStreamingChunks(req *storepb.SeriesRequest, srv
 	panic("TODO: implement sendStreamingChunks")
 }
 
-func (s *ParquetBucketStore) createParquetSeriesChunksSetIterator(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBlockWithMeta, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) iterator[seriesChunksSet] {
+func (s *ParquetBucketStore) createParquetSeriesChunksSetIterator(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) iterator[seriesChunksSet] {
 	// TODO: Implement parquet series chunks iterator creation
 	// This should:
 	// 1. Stream read .chunks.parquet files from shards using shard.ChunksFile()
@@ -331,7 +351,7 @@ func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv st
 	panic("TODO: implement sendSeriesChunks")
 }
 
-func (s *ParquetBucketStore) createParquetSeriesSetWithChunks(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBlockWithMeta, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
+func (s *ParquetBucketStore) createParquetSeriesSetWithChunks(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
 	// TODO: Implement parquet series set creation for non-streaming request
 	// I think this should create a series that includes the labels in one go and its typically called when skipchunks is true
 	panic("TODO: implement createParquetSeriesSetWithChunks")
@@ -352,6 +372,254 @@ func (s *ParquetBucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesSer
 	panic("TODO: implement sendStats")
 }
 
+// Stats returns statistics about the BucketStore instance.
+func (s *ParquetBucketStore) Stats() BucketStoreStats {
+	return BucketStoreStats{
+		BlocksLoadedTotal: s.blockSet.len(),
+	}
+}
+
+// InitialSync perform blocking sync with extra step at the end to delete locally saved blocks that are no longer
+// present in the bucket. The mismatch of these can only happen between restarts, so we can do that only once per startup.
+func (s *ParquetBucketStore) InitialSync(ctx context.Context) error {
+	// Read the snapshot before running the sync. After we run a sync we'll start persisting the snapshots again,
+	// so we need to read the pre-shutdown snapshot before the sync.
+
+	// TODO implement aspects that rely on the indexheader for parquet blocks
+
+	//previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
+
+	if err := s.syncBlocks(ctx); err != nil {
+		return errors.Wrap(err, "sync block")
+	}
+	//if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+	//	s.loadBlocks(ctx, previouslyLoadedBlocks)
+	//}
+
+	err := s.cleanUpUnownedBlocks()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *ParquetBucketStore) SyncBlocks(ctx context.Context) error {
+	return s.syncBlocks(ctx)
+}
+
+func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
+	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
+	// For partial view allow adding new blocks at least.
+	if metaFetchErr != nil && metas == nil {
+		return metaFetchErr
+	}
+
+	var wg sync.WaitGroup
+	blockc := make(chan *block.Meta)
+
+	for i := 0; i < s.blockSyncConcurrency; i++ {
+		wg.Add(1)
+		go func() {
+			for meta := range blockc {
+				if err := s.addBlock(ctx, meta); err != nil {
+					continue
+				}
+			}
+			wg.Done()
+		}()
+	}
+
+	for id, meta := range metas {
+		if s.blockSet.contains(id) {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+		case blockc <- meta:
+		}
+	}
+
+	close(blockc)
+	wg.Wait()
+
+	if metaFetchErr != nil {
+		return metaFetchErr
+	}
+
+	blockIDs := s.blockSet.openBlocksULIDs()
+	for _, id := range blockIDs {
+		if _, ok := metas[id]; ok {
+			continue
+		}
+		if err := s.removeBlock(id); err != nil {
+			level.Warn(s.logger).Log("msg", "drop of outdated block failed", "block", id, "err", err)
+		}
+		level.Info(s.logger).Log("msg", "dropped outdated block", "block", id)
+	}
+
+	// Start snapshotter in the end of the sync, but do that only once per BucketStore's lifetime.
+	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
+	// If it's already started this will return an error. We ignore that because syncBlocks can run multiple times
+	// We pass context.Background() because we want to stop it ourselves as opposed to stopping it as soon as the runtime context is cancelled..
+	//_ = s.snapshotter.StartAsync(context.Background())
+
+	return nil
+}
+
+func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+	blockLocalDir := filepath.Join(s.localDir, meta.ULID.String())
+	start := time.Now()
+
+	level.Debug(s.logger).Log("msg", "loading new block", "id", meta.ULID)
+	defer func() {
+		if err != nil {
+			s.metrics.blockLoadFailures.Inc()
+			if err2 := os.RemoveAll(blockLocalDir); err2 != nil {
+				level.Warn(s.logger).Log("msg", "failed to remove block we cannot load", "err", err2)
+			}
+			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
+		} else {
+			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
+		}
+	}()
+	s.metrics.blockLoads.Inc()
+
+	// TODO get shard reader from pool
+	blockReader, err := s.readerPool.GetReader(
+		ctx,
+		meta.ULID,
+		s.bkt,
+		blockLocalDir,
+		s.logger,
+	)
+
+	if err != nil {
+		return errors.Wrap(err, "create parquet block reader")
+	}
+
+	defer func() {
+		if err != nil {
+			runutil.CloseWithErrCapture(&err, blockReader, "parquet block reader")
+		}
+	}()
+
+	b := newParquetBucketBlock(
+		meta,
+		nil,
+		blockLocalDir,
+	)
+	if err != nil {
+		return errors.Wrap(err, "new parquet bucket block")
+	}
+	defer func() {
+		if err != nil {
+			runutil.CloseWithErrCapture(&err, b, "index-header")
+		}
+	}()
+
+	if err = s.blockSet.add(b); err != nil {
+		return errors.Wrap(err, "add block to set")
+	}
+
+	return nil
+}
+func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
+	// TODO implement for parquet blocks
+	//previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.localDir)
+	//if err != nil {
+	//	level.Warn(s.logger).Log(
+	//		"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
+	//		"dir", s.localDir,
+	//		"err", err,
+	//	)
+	//	// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
+	//	// Lazy loading which is slower, but not worth failing startup for.
+	//}
+	//return previouslyLoadedBlocks
+	return nil
+}
+
+func (s *ParquetBucketStore) removeBlock(id ulid.ULID) (returnErr error) {
+	defer func() {
+		if returnErr != nil {
+			s.metrics.blockDropFailures.Inc()
+		}
+	}()
+
+	b := s.blockSet.remove(id)
+	if b == nil {
+		return nil
+	}
+
+	// The block has already been removed from BucketStore, so we track it as removed
+	// even if releasing its resources could fail below.
+	s.metrics.blockDrops.Inc()
+
+	if err := b.Close(); err != nil {
+		return errors.Wrap(err, "close block")
+	}
+	if err := os.RemoveAll(b.localDir); err != nil {
+		return errors.Wrap(err, "delete block")
+	}
+	return nil
+}
+
+// RemoveBlocksAndClose remove all blocks from local disk and releases all resources associated with the BucketStore.
+func (s *ParquetBucketStore) RemoveBlocksAndClose() error {
+	errs := multierror.New()
+	if err := services.StopAndAwaitTerminated(context.Background(), s); err != nil {
+		errs.Add(fmt.Errorf("stopping subservices: %w", err))
+	}
+	// Remove the blocks even if the service didn't gracefully stop.
+	// We want to free up disk resources given these blocks will likely not be queried again.
+	if err := s.removeAllBlocks(); err != nil {
+		errs.Add(fmt.Errorf("remove all blocks: %w", err))
+	}
+
+	return errs.Err()
+}
+
+func (s *ParquetBucketStore) removeAllBlocks() error {
+	blockIDs := s.blockSet.allBlockULIDs()
+
+	errs := multierror.New()
+	for _, id := range blockIDs {
+		if err := s.removeBlock(id); err != nil {
+			errs.Add(errors.Wrap(err, fmt.Sprintf("block: %s", id.String())))
+		}
+	}
+
+	return errs.Err()
+}
+
 func (s *ParquetBucketStore) closeAllBlocks() error {
 	return s.blockSet.closeAll()
+}
+
+func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
+	fis, err := os.ReadDir(s.localDir)
+	if err != nil {
+		return errors.Wrap(err, "read dir")
+	}
+	names := make([]string, 0, len(fis))
+	for _, fi := range fis {
+		names = append(names, fi.Name())
+	}
+	for _, n := range names {
+		id, ok := block.IsBlockDir(n)
+		if !ok {
+			continue
+		}
+		if s.blockSet.contains(id) {
+			continue
+		}
+
+		// No such block loaded, remove the local dir.
+		if err := os.RemoveAll(path.Join(s.localDir, id.String())); err != nil {
+			level.Warn(s.logger).Log("msg", "failed to remove block which is not needed", "err", err)
+		}
+	}
+
+	return nil
 }
