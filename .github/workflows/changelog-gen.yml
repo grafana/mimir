@@ -1,0 +1,162 @@
+name: Changelog Generation
+on:
+  workflow_call:
+    inputs:
+      previous_version:
+        type: string
+        required: true
+        description: "The release version (semver, git tag, branch or commit) to use for comparison"
+      version:
+        type: string
+        required: true
+        description: "Target release version (semver, git tag, branch or commit)"
+      target:
+        required: true
+        default: "main"
+        type: string
+        description: "The base branch that these changes are being merged into"
+      work_branch:
+        required: false
+        type: string
+        description: "Specify new branch name for changelog"
+      dry_run:
+        required: false
+        default: false
+        type: boolean
+        description: "Run the workflow in dry-run mode, without pushing changes or creating PR"
+
+  workflow_dispatch:
+    inputs:
+      previous_version:
+        type: string
+        required: true
+        description: "The release version (semver, git tag, branch or commit) to use for comparison"
+      version:
+        type: string
+        required: true
+        description: "Target release version (semver, git tag, branch or commit)"
+      target:
+        required: true
+        default: "main"
+        type: string
+        description: "The base branch that these changes are being merged into"
+      work_branch:
+        required: false
+        type: string
+        description: "Specify new branch name for changelog"
+      dry_run:
+        required: false
+        default: false
+        type: boolean
+        description: "Run the workflow in dry-run mode, without pushing changes or creating PR"
+
+permissions: {}
+
+jobs:
+  main:
+    env:
+      RUN_ID: ${{ github.run_id }}
+      VERSION: ${{ inputs.version }}
+      TARGET: ${{ inputs.target }}
+      WORK_BRANCH: ${{ inputs.work_branch }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout Repository
+        uses: "actions/checkout@v4"
+        with:
+          ref: main
+          sparse-checkout: |
+            .github/actions
+            .github/workflows
+            CHANGELOG.md
+            .prettierignore
+            .nvmrc
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Setup nodejs environment
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: "Configure git user"
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local --add --bool push.autoSetupRemote true
+      - name: "Create branch"
+        run: |
+          if [[ "$WORK_BRANCH" == '' ]]; then
+            git switch -c "changelog/${RUN_ID}/${VERSION}"
+            exit 0
+          fi
+
+          # Checkout the changelog branch if exists, otherwise create a new one
+          if git show-ref --verify --quiet "refs/remotes/origin/$WORK_BRANCH"; then
+            git switch --track "origin/$WORK_BRANCH"
+          else
+            git switch -c "$WORK_BRANCH"
+          fi
+      - name: "Generate changelog"
+        id: changelog
+        uses: ./.github/actions/changelog
+        with:
+          previous: ${{ inputs.previous_version }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          target: ${{ inputs.version }}
+          output_file: changelog_items.md
+      - name: "Patch CHANGELOG.md"
+        run: |
+          # Modify the displayed version string
+          DISPLAY_VERSION=$(echo "${VERSION}" | sed -r 's/^mimir\-//')
+
+          # Remove "# Changelog" header from the start of CHANGELOG.md
+          sed -i '1{/^# Changelog$/d;}' CHANGELOG.md
+
+          # Prepend CHANGELOG.part to the main changelog file
+          (
+            echo "# Changelog"
+            echo
+            echo "## ${DISPLAY_VERSION}"
+            echo
+            cat changelog_items.md
+            echo
+            cat CHANGELOG.md
+          ) > CHANGELOG.tmp
+          mv CHANGELOG.tmp CHANGELOG.md
+
+          git diff CHANGELOG.md
+
+      - name: "Prettify CHANGELOG.md"
+        run: npx prettier --write CHANGELOG.md
+      - name: "Commit changelog changes"
+        run: git add CHANGELOG.md && git commit --allow-empty -m "Update changelog" CHANGELOG.md
+      - name: "git push"
+        if: inputs.dry_run != true
+        run: git push
+      - name: "Create changelog PR"
+        run: |
+          if gh pr view &>/dev/null; then
+            echo "Changelog pr has already been created"
+          else
+
+            gh pr create \
+              --dry-run="${DRY_RUN}" \
+              --label "changelog-not-needed" \
+              -B "${TARGET}" \
+              --title "Release: update changelog for ${TARGET}" \
+              --body "Changelog changes for release versions:"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Add release version to PR description"
+        if: inputs.dry_run != true
+        run: |
+          gh pr view --json body --jq .body > pr_body.md
+          echo " -  ${VERSION}" >> pr_body.md
+          gh pr edit --body-file pr_body.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

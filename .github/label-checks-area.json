@@ -1,0 +1,30 @@
+[
+  {
+    "type": "check-label",
+    "title": "Label Check - Area",
+    "labels": {
+      "exists": "Area label exists for changelog",
+      "notExists": "Need to add area/.+ label for changelog",
+      "matches": [
+        "area/mimir",
+        "area/mixin",
+        "area/jsonnet",
+        "area/mimirtool",
+        "area/continuous-test",
+        "area/query-tee",
+        "area/docs",
+        "area/tools"
+      ]
+    },
+    "skip": {
+      "message": "Area label check skipped",
+      "matches": [
+        "changelog-not-needed",
+        "dependency-update",
+        "vendored-mimir-prometheus-update",
+        "helm-weekly-release"
+      ]
+    },
+    "targetUrl": "https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog"
+  }
+]
