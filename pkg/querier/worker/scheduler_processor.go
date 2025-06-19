@@ -322,10 +322,10 @@ func (sp *schedulerProcessor) sendResponse(ctx context.Context, logger log.Logge
 		MaxRetries: maxNotifyFrontendRetries,
 	})
 
-	var c client.PoolClient
 	var err error
 
 	for bof.Ongoing() {
+		var c client.PoolClient
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
 			break
@@ -456,4 +456,7 @@ type frontendClient struct {
 
 func (fc *frontendClient) Close() error {
 	return fc.conn.Close()
+}
+
+type responseWriter struct {
 }
