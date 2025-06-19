@@ -383,6 +383,11 @@ func streamResponse(
 		return fmt.Errorf("error creating stream to frontend: %w", err)
 	}
 
+	defer func() {
+		// Ignore error here because there's nothing we can do about it.
+		_, _ = sc.CloseAndRecv()
+	}()
+
 	// Send metadata
 	err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
 		QueryID: queryID,
@@ -399,13 +404,12 @@ func streamResponse(
 	// The response metadata has been sent successfully. After this point we can no longer
 	// return an error from this function as that would cause the response metadata to be sent
 	// again. This would be rejected by the frontend and the retry could never succeed.
-sendBody:
 	// Send body chunks.
 	for offset := 0; offset < len(response.Body); {
 		select {
 		case <-reqCtx.Done():
 			level.Warn(logger).Log("msg", "response stream aborted", "cause", context.Cause(reqCtx))
-			break sendBody
+			return nil
 		default:
 			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
 				QueryID: queryID,
@@ -415,14 +419,11 @@ sendBody:
 			})
 			if err != nil {
 				level.Warn(logger).Log("msg", "error streaming response body to frontend, aborting response stream", "err", err)
-				break sendBody
+				return nil
 			}
 			offset += responseStreamingBodyChunkSizeBytes
 		}
 	}
-
-	// Ignore error here because there's nothing we can do about it.
-	_, _ = sc.CloseAndRecv()
 
 	return nil
 }
