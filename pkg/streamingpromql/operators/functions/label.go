@@ -59,7 +59,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 }
 
 func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
-	return func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 		if err != nil {
@@ -75,6 +75,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 		lb := labels.NewBuilder(labels.EmptyLabels())
 
 		for i := range seriesMetadata {
+			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			srcVal := seriesMetadata[i].Labels.Get(src)
 			indexes := regex.FindStringSubmatchIndex(srcVal)
 			if indexes != nil { // Only replace when regexp matches.
@@ -82,6 +83,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 				lb.Reset(seriesMetadata[i].Labels)
 				lb.Set(dst, string(res))
 				seriesMetadata[i].Labels = lb.Labels()
+				tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			}
 		}
 
