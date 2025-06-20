@@ -121,6 +121,10 @@ spec:
           envFrom:
               {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with $.ctx.Values.memcached.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
           volumeMounts:

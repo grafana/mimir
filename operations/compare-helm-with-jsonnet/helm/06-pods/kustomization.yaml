@@ -17,7 +17,7 @@ patches:
 
   # TODO(logiraptor): Helm adds a grpc port to the overrides exporter, Jsonnet does not.
   - target:
-      name: mimir-overrides-exporter 
+      name: mimir-overrides-exporter
       kind: Deployment
     patch: |-
       - op: remove
@@ -83,3 +83,20 @@ patches:
     patch: |-
       - op: remove
         path: /spec/template/metadata/namespace
+
+
+  # Helm sets readiness probe with tcp socket and few other fields, Jsonnet does only http get withouth successThreshold, timeoutSeconds, periodSeconds and failureThreshold
+  - target:
+      kind: 'StatefulSet'
+      name: 'mimir-.+-cache'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe/tcpSocket
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe/successThreshold
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe/timeoutSeconds
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe/periodSeconds
+      - op: remove
+        path: /spec/template/spec/containers/0/readinessProbe/failureThreshold
