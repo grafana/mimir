@@ -443,25 +443,8 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 }
 
 // ApplyConfig applies a new configuration to an Alertmanager.
-func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, staticHeaders map[string]string, usingGrafanaConfig bool) error {
+func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, tmpls []alertingTemplates.TemplateDefinition, rawCfg string, tmplExternalURL *url.URL, emailCfg alertingReceivers.EmailSenderConfig, usingGrafanaConfig bool) error {
 	cfg := definition.GrafanaToUpstreamConfig(conf)
-
-	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(cfg.Global.SMTPAuthPassword),
-		AuthUser:      cfg.Global.SMTPAuthUsername,
-		CertFile:      cfg.Global.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  cfg.Global.SMTPHello,
-		ExternalURL:   tmplExternalURL.String(),
-		FromAddress:   cfg.Global.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          cfg.Global.SMTPSmarthost.String(),
-		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !cfg.Global.SMTPRequireTLS,
-		StaticHeaders: staticHeaders,
-		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
-	}
-
 	integrationsMap, err := am.buildIntegrationsMap(emailCfg, conf.Receivers, tmpls, tmplExternalURL, usingGrafanaConfig)
 	if err != nil {
 		return err
