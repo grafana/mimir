@@ -2567,6 +2567,23 @@ memcachedExporter:
   #   memcached.tls.server-name: memcached
   extraArgs: {}
 
+  # -- Base config file for memcached_exporter as per https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md
+  # To modify the resulting configuration, either copy and alter 'memcachedExporter.config' as a whole or use the 'memcachedExporter.structuredConfig' to add and modify certain YAML elements.
+  config: |
+    {{- include "memcachedExporter.serverTlsConfig" . | nindent 2 }}
+  
+  # -- Additional structured values on top of the text based 'memcachedExporter.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'memcachedExporter.config'.
+  structuredConfig: {}
+
+  # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
+  useExternalConfig: false
+
+  # -- Defines what kind of object stores the configuration, a ConfigMap or a Secret.
+  configStorageType: ConfigMap
+
+  # -- Name of the Secret or ConfigMap that contains the configuration (used for naming even if config is internal).
+  externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "memcached-exporter-config") }}'
+
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
@@ -4984,7 +5001,7 @@ tls:
       # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
       min_version: ""
   memcached:
-    # -- Enable connecting to Memcached with TLS
+    # -- Enable TLS for all Memcached components
     enabled: false
     client:
       # -- Path to the client certificate, which will be used for authenticating with the server
@@ -5001,3 +5018,8 @@ tls:
       cipher_suits: ""
       # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
       min_version: ""
+    server:
+      # -- Path to the server certificate file
+      cert_path: "/etc/mimir/certificates/server.crt"
+      # -- Path to the server key file
+      key_path: "/etc/mimir/certificates/server.key"
