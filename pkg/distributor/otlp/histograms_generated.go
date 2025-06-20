@@ -39,8 +39,8 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
-	temporality pmetric.AggregationTemporality,
+	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
+	scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -59,6 +59,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
@@ -255,8 +256,8 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
-	temporality pmetric.AggregationTemporality,
+	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
+	scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -276,6 +277,7 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,

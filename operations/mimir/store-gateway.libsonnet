@@ -71,7 +71,7 @@
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +

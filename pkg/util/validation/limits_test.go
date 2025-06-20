@@ -1479,6 +1479,57 @@ func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 	}
 }
 
+func TestLimits_validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg         Limits
+		expectedErr error
+	}{
+		"should fail if max update timeout jitter is negative": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerUpdateTimeoutJitterMax = -1
+
+				return cfg
+			}(),
+			expectedErr: errNegativeUpdateTimeoutJitterMax,
+		},
+		"should fail if failover timeout is < update timeout + jitter + 1 sec": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerFailoverTimeout = model.Duration(5 * time.Second)
+				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
+				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(errInvalidFailoverTimeout, 5*time.Second, 7*time.Second),
+		},
+		"should pass if failover timeout is >= update timeout + jitter + 1 sec": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerFailoverTimeout = model.Duration(7 * time.Second)
+				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
+				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, testData.expectedErr, testData.cfg.validate())
+		})
+	}
+}
+
 type structExtension struct {
 	Foo int `yaml:"foo" json:"foo"`
 }
@@ -1767,10 +1818,10 @@ user1:
     - path: /api/v1/query
       method: POST
       query_params:
-        foo: 
+        foo:
           value: bar
     - query_params:
-        first: 
+        first:
           value: bar.*
           is_regexp: true
         other:

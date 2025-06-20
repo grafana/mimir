@@ -31,6 +31,7 @@ const (
 	envJaegerTags                      = "JAEGER_TAGS"
 	envJaegerSamplerManagerHostPort    = "JAEGER_SAMPLER_MANAGER_HOST_PORT"
 	envJaegerSamplerParam              = "JAEGER_SAMPLER_PARAM"
+	envJaegerSamplerNotParentBased     = "JAEGER_SAMPLER_NOT_PARENT_BASED"
 	envJaegerEndpoint                  = "JAEGER_ENDPOINT"
 	envJaegerAgentPort                 = "JAEGER_AGENT_PORT"
 	envJaegerSamplerType               = "JAEGER_SAMPLER_TYPE"
@@ -119,15 +120,16 @@ func parseJaegerTags(sTags string) ([]attribute.KeyValue, error) {
 }
 
 type otelJaegerConfig struct {
-	agentHost            string
-	jaegerEndpoint       string
-	agentPort            string
-	samplerType          string
-	samplingServerURL    string
-	samplerParam         float64
-	jaegerTags           []attribute.KeyValue
-	agentHostPort        string
-	reporterMaxQueueSize int
+	agentHost             string
+	jaegerEndpoint        string
+	agentPort             string
+	samplerType           string
+	samplingServerURL     string
+	samplerParam          float64
+	samplerNotParentBased bool
+	jaegerTags            []attribute.KeyValue
+	agentHostPort         string
+	reporterMaxQueueSize  int
 }
 
 // parseOTelJaegerConfig facilitates initialization that is compatible with Jaeger's InitGlobalTracer method.
@@ -204,6 +206,15 @@ func parseOTelJaegerConfig() (otelJaegerConfig, error) {
 			return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerReporterMaxQueueSize, e)
 		}
 	}
+
+	if e := os.Getenv(envJaegerSamplerNotParentBased); e != "" {
+		if value, err := strconv.ParseBool(e); err == nil {
+			cfg.samplerNotParentBased = value
+		} else {
+			return cfg, errors.Wrapf(err, "cannot parse env var %s=%s", envJaegerSamplerNotParentBased, e)
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -252,6 +263,11 @@ func (cfg otelJaegerConfig) initJaegerTracerProvider(serviceName string, logger 
 		attribute.String("samplingServerURL", cfg.samplingServerURL),
 	)
 	customAttrs = append(customAttrs, otelCfg.resourceAttributes...)
+	if !cfg.samplerNotParentBased {
+		sampler = tracesdk.ParentBased(sampler)
+	} else {
+		customAttrs = append(customAttrs, attribute.Bool("samplerNotParentBased", true))
+	}
 
 	res, err := NewResource(serviceName, customAttrs)
 	if err != nil {
