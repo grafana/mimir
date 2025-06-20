@@ -5,6 +5,7 @@ package mimir_test
 import (
 	"flag"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/clusterutil"
@@ -42,7 +43,7 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 common:
   storage:
     backend: s3
-  client_cluster_validation: 
+  client_cluster_validation:
     label: client-cluster
 `
 
@@ -260,6 +261,65 @@ custom_client_cluster_validation:
 	// Value should be properly set.
 	require.Equal(t, "s3", cfg.CustomStorage.Backend)
 	require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
+}
+
+func TestMigrateHATrackerTimeouts(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name       string
+		yamlConfig string
+	}{{
+		name: "migrates deprecated parameters to limit",
+		yamlConfig: `
+distributor:
+  ha_tracker:
+    ha_tracker_update_timeout: 13s
+    ha_tracker_update_timeout_jitter_max: 3s
+    ha_tracker_failover_timeout: 26s
+  `,
+	}, {
+		name: "keeps values in limit",
+		yamlConfig: `
+limits:
+  ha_tracker_update_timeout: 13s
+  ha_tracker_update_timeout_jitter_max: 3s
+  ha_tracker_failover_timeout: 26s
+  `,
+	}, {
+		name: "prefers values in distributor.ha_tracker",
+		yamlConfig: `
+limits:
+  ha_tracker_update_timeout: 1s
+  ha_tracker_update_timeout_jitter_max: 1s
+  ha_tracker_failover_timeout: 3s
+
+distributor:
+  ha_tracker:
+    ha_tracker_update_timeout: 13s
+    ha_tracker_update_timeout_jitter_max: 3s
+    ha_tracker_failover_timeout: 26s
+  `,
+	}} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var cfg mimir.Config
+			fs := flag.NewFlagSet("test", flag.PanicOnError)
+			cfg.RegisterFlags(fs, log.NewNopLogger())
+
+			err := yaml.Unmarshal([]byte(testCase.yamlConfig), &cfg)
+			require.NoError(t, err)
+
+			err = cfg.Validate(log.NewNopLogger())
+			require.NoError(t, err)
+
+			require.Equal(t, 13*time.Second, time.Duration(cfg.LimitsConfig.HATrackerUpdateTimeout))
+			require.Equal(t, 3*time.Second, time.Duration(cfg.LimitsConfig.HATrackerUpdateTimeoutJitterMax))
+			require.Equal(t, 26*time.Second, time.Duration(cfg.LimitsConfig.HATrackerFailoverTimeout))
+
+		})
+	}
 }
 
 func checkAllClusterValidationLabels(t *testing.T, cfg customExtendedConfig, expectedValue string) {

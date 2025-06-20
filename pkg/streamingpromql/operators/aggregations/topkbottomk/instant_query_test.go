@@ -363,7 +363,7 @@ func TestTopKBottomKInstantQuery_GroupingAndSorting(t *testing.T) {
 			require.ElementsMatch(t, allExpectedOutputSeries, testCase.inputSeries, "invalid test case: list of input series and all output series do not match")
 
 			timeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 
 			data := make([]types.InstantVectorSeriesData, 0, len(testCase.inputSeries))
 			for idx := range testCase.inputSeries {

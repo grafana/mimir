@@ -291,7 +291,8 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, MemoryConsumptionTracker: memoryConsumptionTracker}
 
@@ -304,7 +305,7 @@ func TestOrBinaryOperationSorting(t *testing.T) {
 				posrange.PositionRange{},
 			)
 
-			actualSeriesMetadata, err := op.SeriesMetadata(context.Background())
+			actualSeriesMetadata, err := op.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			expectedSeriesMetadata := testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder)
@@ -529,14 +530,14 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
+			ctx := context.Background()
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
-			ctx := context.Background()
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
@@ -674,14 +675,14 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o := NewOrBinaryOperation(left, right, vectorMatching, memoryConsumptionTracker, timeRange, posrange.PositionRange{})
 
-			ctx := context.Background()
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)

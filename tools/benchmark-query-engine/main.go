@@ -279,7 +279,6 @@ func (a *app) allBenchmarks() []benchmark {
 
 	for _, c := range cases {
 		names = append(names, benchmark{caseName: c.Name(), engine: "Mimir"})
-		names = append(names, benchmark{caseName: c.Name(), engine: "MimirWithQueryPlanner"})
 		names = append(names, benchmark{caseName: c.Name(), engine: "Prometheus"})
 	}
 

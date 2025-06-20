@@ -1368,7 +1368,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.etcd.username string
     	Etcd username.
   -distributor.ha-tracker.failover-timeout duration
-    	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
+    	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout. (default 30s)
   -distributor.ha-tracker.max-clusters int
     	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
   -distributor.ha-tracker.multi.mirror-enabled
@@ -2206,9 +2206,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-series-query-limit int
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
-    	[experimental] Enable common subexpression elimination when evaluating queries. Only applies if query planner is enabled. (default true)
-  -querier.mimir-query-engine.use-query-planning
-    	[experimental] Use query planner when evaluating queries.
+    	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -2337,6 +2335,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Optionally define the cluster validation label.
   -query-frontend.downstream-url string
     	URL of downstream Prometheus.
+  -query-frontend.enable-query-engine-fallback
+    	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	[experimental] Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
   -query-frontend.grpc-client-config.backoff-max-period duration
@@ -2419,6 +2419,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.
   -query-frontend.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -query-frontend.query-engine string
+    	[experimental] Query engine to use, either 'prometheus' or 'mimir' (default "prometheus")
   -query-frontend.query-result-response-format string
     	Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "protobuf")
   -query-frontend.query-sharding-max-regexp-size-bytes int

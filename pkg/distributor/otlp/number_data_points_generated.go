@@ -33,7 +33,7 @@ import (
 )
 
 func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, settings Settings, name string,
+	resource pcommon.Resource, settings Settings, name string, scope scope,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -44,6 +44,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 		labels := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
@@ -70,7 +71,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger *slog.Logger,
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, scope scope, logger *slog.Logger,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -83,6 +84,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
