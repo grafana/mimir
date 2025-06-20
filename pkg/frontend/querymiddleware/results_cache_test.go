@@ -122,27 +122,27 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 		End:                     end,
 		Response:                marshalled,
 		QueryTimestampMs:        queryTime,
-		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 1),
+		SamplesProcessedPerStep: mkEvenlyDistributedExtentPerStepStats(start, end, step, 1),
 	}
 }
 
 // mkExtentWithEvenPerStepSamplesProcessed creates an extent with an even distribution of samplesPerStep.
 func mkExtentWithEvenPerStepSamplesProcessed(start, end int64, step int64, samplesPerStep int64) Extent {
 	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
-	ext.SamplesProcessedPerStep = mxEvenlyDistributedExtentPerStepStats(start, end, step, samplesPerStep)
+	ext.SamplesProcessedPerStep = mkEvenlyDistributedExtentPerStepStats(start, end, step, samplesPerStep)
 	return ext
 }
 
-func mxEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []StepStat {
+func mkEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []StepStat {
 	numSteps := int((end-start)/step) + 1
-	s := make([]StepStat, numSteps)
+	stats := make([]StepStat, numSteps)
 	for i := 0; i < numSteps; i++ {
-		s[i] = StepStat{
+		stats[i] = StepStat{
 			Timestamp: start + int64(i)*step,
 			Value:     samplesPerStep,
 		}
 	}
-	return s
+	return stats
 }
 
 func TestIsRequestCachable(t *testing.T) {
@@ -943,9 +943,9 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 1000, 10),
 			},
 			shouldTruncate: []bool{false, true},
-			// First extent - 1 hour with 1000ms step is a 3601 data points - 36010 samples - not truncated
-			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples.
-			// Truncated to 54010 samples.
+			// First extent: 1 hour with 1000ms step = 3601 data points × 10 samples/step = 36010 samples (not truncated)
+			// Second extent: 2 hours with 1000ms step = 7201 data points × 10 samples/step = 72010 samples
+			// Truncate last 30 minutes – remaining duration is 1.5 hours. 1.5 hours with 1000ms step is a 5401 datapoints X 10 samples per step 54010 samples.
 			expectedSamples: []uint64{36010, 54010},
 		},
 	}
