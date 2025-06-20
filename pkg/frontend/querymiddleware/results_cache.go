@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"container/heap"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -746,12 +747,41 @@ type heapItem struct {
 	itemIdx  int
 }
 
+// stepStatHeap implements heap.Interface for merging step stats
+type stepStatHeap struct {
+	items []heapItem
+}
+
+func (h *stepStatHeap) Len() int {
+	return len(h.items)
+}
+
+func (h *stepStatHeap) Less(i, j int) bool {
+	return h.items[i].value.Timestamp < h.items[j].value.Timestamp
+}
+
+func (h *stepStatHeap) Swap(i, j int) {
+	h.items[i], h.items[j] = h.items[j], h.items[i]
+}
+
+func (h *stepStatHeap) Push(x any) {
+	h.items = append(h.items, x.(heapItem))
+}
+
+func (h *stepStatHeap) Pop() any {
+	old := h.items
+	n := len(old)
+	item := old[n-1]
+	h.items = old[0 : n-1]
+	return item
+}
+
 // mergeManySamplesProcessedPerStep merges multiple sorted arrays of StepStat using a min-heap.
-func mergeManySamplesProcessedPerStep(arrays ...[]StepStat) []StepStat {
+func mergeManySamplesProcessedPerStep(stats ...[]StepStat) []StepStat {
 	// Filter out empty arrays
-	nonEmptyArrays := make([][]StepStat, 0, len(arrays))
+	nonEmptyArrays := make([][]StepStat, 0, len(stats))
 	totalSize := 0
-	for _, arr := range arrays {
+	for _, arr := range stats {
 		if len(arr) > 0 {
 			nonEmptyArrays = append(nonEmptyArrays, arr)
 			totalSize += len(arr)
@@ -770,9 +800,11 @@ func mergeManySamplesProcessedPerStep(arrays ...[]StepStat) []StepStat {
 	}
 
 	// Initialize heap with first element from each array
-	heap := make([]heapItem, len(nonEmptyArrays))
+	h := &stepStatHeap{
+		items: make([]heapItem, len(nonEmptyArrays)),
+	}
 	for i, arr := range nonEmptyArrays {
-		heap[i] = heapItem{
+		h.items[i] = heapItem{
 			value:    arr[0],
 			arrayIdx: i,
 			itemIdx:  0,
@@ -780,13 +812,13 @@ func mergeManySamplesProcessedPerStep(arrays ...[]StepStat) []StepStat {
 	}
 
 	// Build min-heap
-	buildMinHeap(heap)
+	heap.Init(h)
 
 	merged := make([]StepStat, 0, totalSize)
 
-	for len(heap) > 0 {
+	for h.Len() > 0 {
 		// Extract minimum element
-		minItem := heap[0]
+		minItem := heap.Pop(h).(heapItem)
 
 		// For same timestamp, take the later value (last array wins)
 		if len(merged) > 0 && merged[len(merged)-1].Timestamp == minItem.value.Timestamp {
@@ -798,51 +830,13 @@ func mergeManySamplesProcessedPerStep(arrays ...[]StepStat) []StepStat {
 		// Move to next element in the same array
 		nextIdx := minItem.itemIdx + 1
 		if nextIdx < len(nonEmptyArrays[minItem.arrayIdx]) {
-			heap[0] = heapItem{
+			heap.Push(h, heapItem{
 				value:    nonEmptyArrays[minItem.arrayIdx][nextIdx],
 				arrayIdx: minItem.arrayIdx,
 				itemIdx:  nextIdx,
-			}
-			heapifyDown(heap, 0)
-		} else {
-			// Remove this array from heap by replacing with last element
-			heap[0] = heap[len(heap)-1]
-			heap = heap[:len(heap)-1]
-			if len(heap) > 0 {
-				heapifyDown(heap, 0)
-			}
+			})
 		}
 	}
 
 	return merged
-}
-
-// buildMinHeap builds a min-heap in-place
-func buildMinHeap(heap []heapItem) {
-	for i := len(heap)/2 - 1; i >= 0; i-- {
-		heapifyDown(heap, i)
-	}
-}
-
-// heapifyDown maintains min-heap property by moving element down
-func heapifyDown(heap []heapItem, idx int) {
-	for {
-		smallest := idx
-		left := 2*idx + 1
-		right := 2*idx + 2
-
-		if left < len(heap) && heap[left].value.Timestamp < heap[smallest].value.Timestamp {
-			smallest = left
-		}
-		if right < len(heap) && heap[right].value.Timestamp < heap[smallest].value.Timestamp {
-			smallest = right
-		}
-
-		if smallest == idx {
-			break
-		}
-
-		heap[idx], heap[smallest] = heap[smallest], heap[idx]
-		idx = smallest
-	}
 }
