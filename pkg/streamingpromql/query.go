@@ -441,7 +441,7 @@ func (q *Query) Close() {
 
 	if q.engine.pedantic && q.result.Err == nil {
 		if bytesUsed := q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(); bytesUsed > 0 {
-			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool.", bytesUsed, q.originalExpression))
+			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool. Tracker state: %s", bytesUsed, q.originalExpression, q.memoryConsumptionTracker.String()))
 		}
 	}
 }

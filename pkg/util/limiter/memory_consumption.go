@@ -5,6 +5,8 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/grafana/dskit/tracing"
@@ -194,4 +196,38 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	defer l.mtx.Unlock()
 
 	return l.currentEstimatedMemoryConsumptionBytes
+}
+
+func (l *MemoryConsumptionTracker) String() string {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	b := &strings.Builder{}
+	b.WriteString("Current memory consumption: ")
+	b.WriteString(strconv.FormatUint(l.currentEstimatedMemoryConsumptionBytes, 10))
+	b.WriteString(" B")
+
+	if l.currentEstimatedMemoryConsumptionBytes > 0 {
+		b.WriteString(". By source: ")
+		writtenAny := false
+
+		for src, estimate := range l.currentEstimatedMemoryConsumptionBySource {
+			if estimate == 0 {
+				continue
+			}
+
+			if writtenAny {
+				b.WriteString(", ")
+			}
+
+			writtenAny = true
+
+			b.WriteString(MemoryConsumptionSource(src).String())
+			b.WriteString(": ")
+			b.WriteString(strconv.FormatUint(estimate, 10))
+			b.WriteString(" B")
+		}
+	}
+
+	return b.String()
 }
