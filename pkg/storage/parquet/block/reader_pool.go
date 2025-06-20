@@ -1,9 +1,9 @@
-package block
-
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/block/indexheader/reader_pool.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
+
+package block
 
 import (
 	"context"
@@ -14,24 +14,25 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
 	lazyReader *LazyParquetReaderMetrics
-	//streamReader *StreamBinaryReaderMetrics
+	// streamReader *StreamBinaryReaderMetrics
 }
 
 // NewReaderPoolMetrics makes new ReaderPoolMetrics.
 func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 	return &ReaderPoolMetrics{
 		lazyReader: NewLazyParquetReaderMetrics(reg),
-		//streamReader: NewStreamBinaryReaderMetrics(reg),
+		// streamReader: NewStreamBinaryReaderMetrics(reg),
 	}
 }
 
@@ -65,7 +66,7 @@ func NewReaderPool(
 	p := newReaderPool(indexHeaderConfig, lazyLoadingGate, logger, reg)
 	if !p.lazyReaderEnabled || p.lazyReaderIdleTimeout <= 0 {
 		panic("not implemented: parquet block reader pool without lazy loading")
-		//p.Service = services.NewIdleService(nil, nil)
+		// p.Service = services.NewIdleService(nil, nil)
 	} else {
 		p.Service = services.NewTimerService(p.lazyReaderIdleTimeout/10, nil, p.unloadIdleReaders, nil)
 	}
