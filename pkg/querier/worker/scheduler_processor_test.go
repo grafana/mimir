@@ -804,7 +804,7 @@ type mockFrontendResponseStreamer struct {
 
 func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
 	_ context.Context, _ context.Context, _ client.PoolClient,
-	_ uint64, _ *httpgrpc.HTTPResponse, _ *querier_stats.Stats, _ log.Logger,
+	_ uint64, _ *httpgrpc.HTTPResponse, _ *querier_stats.SafeStats, _ log.Logger,
 ) error {
 	m.totalCalls++
 	if m.totalCalls <= m.initialFailures {

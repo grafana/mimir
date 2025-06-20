@@ -151,7 +151,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		}, []string{"user"})
 		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_samples_processed_cache_adjusted_total",
-			Help: "Number of samples processed to execute a query taking in account the original number of samples processed for parts of the query results looked up from the cache. Note, that this number is approximate.",
+			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
+				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
 		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
@@ -329,20 +330,19 @@ func (f *Handler) reportQueryStats(
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
-	var stats *querier_stats.Stats
-	var samplesProcessedFromCache uint64
+	var stats *querier_stats.SafeStats
+	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
-		samplesProcessedFromCache = details.SamplesProcessedFromCache
+		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
 	numIndexBytes := stats.LoadFetchedIndexBytes()
-	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
+	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
 	samplesProcessed := stats.LoadSamplesProcessed()
-	samplesProcessedCacheAdjusted := samplesProcessed + samplesProcessedFromCache
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -374,7 +374,7 @@ func (f *Handler) reportQueryStats(
 		shardedQueries, stats.LoadShardedQueries(),
 		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		estimatedSeriesCount, stats.GetEstimatedSeriesCount(),
+		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		"samples_processed", samplesProcessed,

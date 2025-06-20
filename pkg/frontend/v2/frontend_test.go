@@ -120,7 +120,7 @@ func sendResponseWithDelay(f *Frontend, delay time.Duration, userID string, quer
 	_, _ = f.QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 		QueryID:      queryID,
 		HttpResponse: resp,
-		Stats:        &stats.Stats{},
+		Stats:        &stats.SafeStats{},
 	})
 }
 
@@ -565,7 +565,7 @@ func metadataRequest(msg *schedulerpb.FrontendToScheduler, statusCode int, heade
 		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
 			Code:    int32(statusCode),
 			Headers: headers,
-			Stats:   &stats.Stats{},
+			Stats:   &stats.SafeStats{},
 		}},
 	}
 }

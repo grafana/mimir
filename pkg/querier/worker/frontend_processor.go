@@ -119,7 +119,7 @@ func (fp *frontendProcessor) process(execCtx context.Context, c frontendv1pb.Fro
 			// and cancel the query.  We don't actually handle queries in parallel
 			// here, as we're running in lock step with the server - each Recv is
 			// paired with a Send.
-			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, time.Duration(request.QueueTimeNanos), func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
+			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, time.Duration(request.QueueTimeNanos), func(response *httpgrpc.HTTPResponse, stats *querier_stats.SafeStats) error {
 				defer inflightQuery.Store(false)
 
 				// Ensure responses that are too big are not retried.
@@ -154,7 +154,7 @@ func (fp *frontendProcessor) process(execCtx context.Context, c frontendv1pb.Fro
 	return ctx.Err()
 }
 
-func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, queueTime time.Duration, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error) {
+func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, queueTime time.Duration, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.SafeStats) error) {
 	// Create a per-request context and cancel it once we're done processing the request.
 	// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
 	// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
@@ -163,7 +163,7 @@ func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.H
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errQueryEvaluationFinished)
 
-	var stats *querier_stats.Stats
+	var stats *querier_stats.SafeStats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
 		stats.AddQueueTime(queueTime)

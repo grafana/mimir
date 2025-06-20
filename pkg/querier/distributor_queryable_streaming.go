@@ -17,7 +17,7 @@ import (
 
 type streamingChunkSeriesContext struct {
 	queryMetrics *stats.QueryMetrics
-	queryStats   *stats.Stats
+	queryStats   *stats.SafeStats
 }
 
 // streamingChunkSeries is a storage.Series that reads chunks from sources in a streaming way. The chunks are read from
