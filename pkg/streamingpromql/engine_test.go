@@ -1397,13 +1397,14 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
-			// and we have five series and each of the series has SeriesMetadata. Five labelstring are also added at the end.
+			// and we have five series and each of the series has SeriesMetadata.
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
 			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to eight (the nearest power of two).
-			// Five labelstring are also added at the end.
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
 			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        0,
 		},
@@ -1412,13 +1413,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			// Five labelstring are also added at the end.
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
 			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			// Five labelstring are also added at the end.
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
 			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
