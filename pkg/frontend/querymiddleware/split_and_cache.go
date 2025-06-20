@@ -313,27 +313,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 		}
 	}
 
-	samplesProcessed := queryStats.LoadSamplesProcessedPerStep()
-	if len(samplesProcessed) > 0 {
-		// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
-		convertedSamplesProcessed := make([]StepStat, len(samplesProcessed))
-		for i, stat := range samplesProcessed {
-			convertedSamplesProcessed[i] = StepStat{
-				Timestamp: stat.Timestamp,
-				Value:     stat.Value,
-			}
-		}
-		perStepStats = append(perStepStats, convertedSamplesProcessed)
-	}
-
-	if details := QueryDetailsFromContext(ctx); details != nil {
-		total := mergeManySamplesProcessedPerStep(perStepStats...)
-		var totalSamplesProcessed uint64 = 0
-		for _, stepStat := range total {
-			totalSamplesProcessed += uint64(stepStat.Value)
-		}
-		details.SamplesProcessedCacheAdjusted += totalSamplesProcessed
-	}
+	reportSamplesProcessed(ctx, queryStats.LoadSamplesProcessedPerStep(), perStepStats)
 
 	// We can finally build the response, which is the merge of all downstream responses and the responses
 	// we've got from the cache (if any).
@@ -765,4 +745,15 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
+}
+
+func reportSamplesProcessed(ctx context.Context, processed []stats.StepStat, perStepStats [][]StepStat) {
+	if convertedStats := convertStatsStepStat(processed); len(convertedStats) > 0 {
+		perStepStats = append(perStepStats, convertedStats)
+	}
+
+	if details := QueryDetailsFromContext(ctx); details != nil {
+		totalSamplesProcessed := sumSamplesProcessedPerStep(perStepStats...)
+		details.SamplesProcessedCacheAdjusted += uint64(totalSamplesProcessed)
+	}
 }

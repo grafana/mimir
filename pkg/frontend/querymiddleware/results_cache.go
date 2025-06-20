@@ -6,7 +6,6 @@
 package querymiddleware
 
 import (
-	"container/heap"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -740,103 +739,48 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 	return merged
 }
 
-// heapItem represents an item in the min-heap for merging step stats
-type heapItem struct {
-	value    StepStat
-	arrayIdx int
-	itemIdx  int
-}
+// sumSamplesProcessedPerStep sums values from multiple arrays of StepStat.
+// For duplicate timestamps, later arrays win (last array wins behavior), then values are summed.
+func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
+	if len(stats) == 0 {
+		return 0
+	}
 
-// stepStatHeap implements heap.Interface for merging step stats
-type stepStatHeap struct {
-	items []heapItem
-}
+	// Fast path: single array - no duplicates possible, just sum directly
+	if len(stats) == 1 {
+		var total int64
+		for _, step := range stats[0] {
+			total += step.Value
+		}
+		return total
+	}
 
-func (h *stepStatHeap) Len() int {
-	return len(h.items)
-}
-
-func (h *stepStatHeap) Less(i, j int) bool {
-	return h.items[i].value.Timestamp < h.items[j].value.Timestamp
-}
-
-func (h *stepStatHeap) Swap(i, j int) {
-	h.items[i], h.items[j] = h.items[j], h.items[i]
-}
-
-func (h *stepStatHeap) Push(x any) {
-	h.items = append(h.items, x.(heapItem))
-}
-
-func (h *stepStatHeap) Pop() any {
-	old := h.items
-	n := len(old)
-	item := old[n-1]
-	h.items = old[0 : n-1]
-	return item
-}
-
-// mergeManySamplesProcessedPerStep merges multiple sorted arrays of StepStat using a min-heap.
-func mergeManySamplesProcessedPerStep(stats ...[]StepStat) []StepStat {
-	// Filter out empty arrays
-	nonEmptyArrays := make([][]StepStat, 0, len(stats))
-	totalSize := 0
+	// Multiple arrays: handle duplicates with map (last array wins)
+	m := make(map[int64]int64)
 	for _, arr := range stats {
-		if len(arr) > 0 {
-			nonEmptyArrays = append(nonEmptyArrays, arr)
-			totalSize += len(arr)
+		for _, step := range arr {
+			m[step.Timestamp] = step.Value
 		}
 	}
 
-	// Handle edge cases
-	if len(nonEmptyArrays) == 0 {
+	var total int64
+	for _, value := range m {
+		total += value
+	}
+
+	return total
+}
+
+// convertStatsStepStat converts []stats.StepStat to []StepStat using type casting.
+// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
+func convertStatsStepStat(processed []stats.StepStat) []StepStat {
+	if len(processed) == 0 {
 		return nil
 	}
-	if len(nonEmptyArrays) == 1 {
-		return nonEmptyArrays[0]
+
+	converted := make([]StepStat, len(processed))
+	for i, stat := range processed {
+		converted[i] = StepStat(stat)
 	}
-	if len(nonEmptyArrays) == 2 {
-		return mergeSamplesProcessedPerStep(nonEmptyArrays[0], nonEmptyArrays[1])
-	}
-
-	// Initialize heap with first element from each array
-	h := &stepStatHeap{
-		items: make([]heapItem, len(nonEmptyArrays)),
-	}
-	for i, arr := range nonEmptyArrays {
-		h.items[i] = heapItem{
-			value:    arr[0],
-			arrayIdx: i,
-			itemIdx:  0,
-		}
-	}
-
-	// Build min-heap
-	heap.Init(h)
-
-	merged := make([]StepStat, 0, totalSize)
-
-	for h.Len() > 0 {
-		// Extract minimum element
-		minItem := heap.Pop(h).(heapItem)
-
-		// For same timestamp, take the later value (last array wins)
-		if len(merged) > 0 && merged[len(merged)-1].Timestamp == minItem.value.Timestamp {
-			merged[len(merged)-1] = minItem.value
-		} else {
-			merged = append(merged, minItem.value)
-		}
-
-		// Move to next element in the same array
-		nextIdx := minItem.itemIdx + 1
-		if nextIdx < len(nonEmptyArrays[minItem.arrayIdx]) {
-			heap.Push(h, heapItem{
-				value:    nonEmptyArrays[minItem.arrayIdx][nextIdx],
-				arrayIdx: minItem.arrayIdx,
-				itemIdx:  nextIdx,
-			})
-		}
-	}
-
-	return merged
+	return converted
 }
