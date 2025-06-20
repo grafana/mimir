@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type contextKey int
@@ -56,8 +57,9 @@ const (
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
+	Labels
 
-	memoryConsumptionSourceCount = TopKBottomKRangeQuerySeriesSlices + 1
+	memoryConsumptionSourceCount = Labels + 1
 )
 
 const (
@@ -100,6 +102,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.instantQuerySeries"
 	case TopKBottomKRangeQuerySeriesSlices:
 		return "[]topkbottom.rangeQuerySeries"
+	case Labels:
+		return "labels.Labels"
 	default:
 		return unknownMemorySource
 	}
@@ -194,4 +198,17 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	defer l.mtx.Unlock()
 
 	return l.currentEstimatedMemoryConsumptionBytes
+}
+
+// IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
+	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
+	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
 }

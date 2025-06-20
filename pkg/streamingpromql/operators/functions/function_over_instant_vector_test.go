@@ -67,6 +67,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	ctx := context.Background()
+	tracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
@@ -76,7 +77,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+		MemoryConsumptionTracker: tracker,
 	}
 
 	scalarOperator1 := &testScalarOperator{
@@ -100,7 +101,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
 		ScalarArgs:               []types.ScalarOperator{scalarOperator1, scalarOperator2},
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
+		MemoryConsumptionTracker: tracker,
 		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc:         mustBeCalledSeriesData,
 			SeriesMetadataFunction: DropSeriesName,

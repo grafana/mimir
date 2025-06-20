@@ -187,7 +187,12 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			seriesCount := rightGroup.lastLeftSeriesIndex - nextLeftSeriesToRead + 1
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
-			series = append(series, leftMetadata[nextLeftSeriesToRead:rightGroup.lastLeftSeriesIndex+1]...)
+			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
+			series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, seriesToAppend...)
+			if err != nil {
+				return nil, err
+			}
+
 			nextLeftSeriesToRead += seriesCount
 
 			if nextRightSeriesToRead == 0 {
@@ -207,13 +212,19 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			o.rightSeriesCount[len(o.rightSeriesCount)-1]++
 		}
 
-		series = append(series, rightMetadata[nextRightSeriesToRead])
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, rightMetadata[nextRightSeriesToRead])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if there are any remaining series on the left side.
 	if nextLeftSeriesToRead < len(leftMetadata) {
 		seriesCount := len(leftMetadata) - nextLeftSeriesToRead
-		series = append(series, leftMetadata[nextLeftSeriesToRead:]...)
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, leftMetadata[nextLeftSeriesToRead:]...)
+		if err != nil {
+			return nil, err
+		}
 
 		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
