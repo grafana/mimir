@@ -296,10 +296,18 @@ func (s *ParquetBucketStore) openParquetShardsForReading(_ context.Context, _ bo
 	return blocks
 }
 
-func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (func(), error) {
-	// TODO: Can potentially reuse BucketStore.limitConcurrentQueries
-	// or implement parquet-specific version if needed
-	panic("TODO: implement limitConcurrentQueries")
+func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
+	waitStart := time.Now()
+	err = s.queryGate.Start(ctx)
+	waited := time.Since(waitStart)
+
+	stats.update(func(stats *queryStats) { stats.streamingSeriesConcurrencyLimitWaitDuration = waited })
+	level.Debug(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn on query concurrency gate", "duration", waited)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to wait for turn")
+	}
+	return s.queryGate.Done, nil
 }
 
 func (s *ParquetBucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
