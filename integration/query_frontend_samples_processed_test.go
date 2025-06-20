@@ -25,7 +25,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 
 	testCases := []struct {
 		name                   string
-		splitQueriesByInterval string
+		splitQueriesByInterval time.Duration
 		query                  string
 		queryStart             time.Time
 		queryEnd               time.Time
@@ -33,7 +33,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 	}{
 		{
 			name:                   "basic query",
-			splitQueriesByInterval: "24h",
+			splitQueriesByInterval: 24 * time.Hour,
 			query:                  "test_series{}",
 			queryStart:             now.Add(-30 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -43,7 +43,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "sharded query",
-			splitQueriesByInterval: "24h",
+			splitQueriesByInterval: 24 * time.Hour,
 			query:                  "sum(test_series{})",
 			queryStart:             now.Add(-30 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -53,7 +53,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "split query",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series{}",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -63,7 +63,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "split and sharded query",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "sum(test_series{})",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -73,7 +73,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "series with gap in front of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -83,7 +83,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "series with gap behind of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -93,7 +93,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "series with gap inside of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-20 * time.Minute),
@@ -104,7 +104,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:                   "series with gap gap in front, behind and inside of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-10 * time.Minute),
@@ -171,7 +171,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 
 	testCases := []struct {
 		name                   string
-		splitQueriesByInterval string
+		splitQueriesByInterval time.Duration
 		query                  string
 		setupSeries            func(t *testing.T, writeClient *e2emimir.Client)
 		queryStart             time.Time
@@ -179,7 +179,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 	}{
 		{
 			name:                   "basic query",
-			splitQueriesByInterval: "24h",
+			splitQueriesByInterval: 24 * time.Hour,
 			query:                  "test_series{}",
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
 				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
@@ -189,7 +189,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "sharded query",
-			splitQueriesByInterval: "24h",
+			splitQueriesByInterval: 24 * time.Hour,
 			query:                  "sum(test_series{})",
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
 				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
@@ -199,7 +199,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "split query",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series{}",
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
 				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
@@ -209,7 +209,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "split and sharded query",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "sum(test_series{})",
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
 				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
@@ -219,7 +219,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "series with gap in front of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now,
@@ -229,7 +229,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "series with gap behind of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now,
@@ -239,7 +239,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "series with gap inside of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now,
@@ -250,7 +250,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:                   "series with gap in front, behind and inside of a query range",
-			splitQueriesByInterval: "10m",
+			splitQueriesByInterval: 10 * time.Minute,
 			query:                  "test_series",
 			queryStart:             now.Add(-60 * time.Minute),
 			queryEnd:               now.Add(-5 * time.Minute),
@@ -312,7 +312,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomInQueryRange(t *t
 	now := time.Now().Round(time.Second)
 
 	queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
-		splitQueriesByInterval: "24h",
+		splitQueriesByInterval: 24 * time.Hour,
 	})
 
 	// Setup series for this test case.
@@ -363,7 +363,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomOutQueryRange(t *
 	now := time.Now().Round(time.Second)
 
 	queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
-		splitQueriesByInterval: "24h",
+		splitQueriesByInterval: 24 * time.Hour,
 	})
 
 	// Setup series for this test case.
@@ -450,7 +450,7 @@ func pushSeries(t *testing.T, writeClient *e2emimir.Client, seriesTime, seriesEn
 }
 
 type queryFrontendCacheTestConfig struct {
-	splitQueriesByInterval string
+	splitQueriesByInterval time.Duration
 }
 
 func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheTestConfig) (*e2emimir.MimirService, *e2emimir.Client, *e2emimir.Client) {
@@ -476,7 +476,7 @@ func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheT
 		"-query-frontend.results-cache.backend":             "memcached",
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.parallelize-shardable-queries":     "true",
-		"-query-frontend.split-queries-by-interval":         config.splitQueriesByInterval,
+		"-query-frontend.split-queries-by-interval":         config.splitQueriesByInterval.String(),
 		"-query-frontend.max-cache-freshness":               "10m",
 		"-query-frontend.align-queries-with-step":           "true", // to make sure we hit the cache.
 		"-query-frontend.cache-samples-processed-stats":     "true", // to collect and cache per-step stats.
