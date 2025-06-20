@@ -4143,6 +4143,12 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-convert-histograms-to-nhcb
 [otel_convert_histograms_to_nhcb: <boolean> | default = false]
 
+# (experimental) Whether to convert OTel scope metadata (scope name, version,
+# schema URL, attributes) to corresponding metric labels, prefixed with
+# otel_scope_.
+# CLI flag: -distributor.otel-convert-scope-metadata
+[otel_convert_scope_metadata: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency

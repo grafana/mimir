@@ -59,6 +59,7 @@ type OTLPHandlerLimits interface {
 	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 	OTelConvertHistogramsToNHCB(id string) bool
+	OTelConvertScopeMetadata(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -277,11 +278,24 @@ func newOTLPParser(
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
+		convertScopeMetadata := limits.OTelConvertScopeMetadata(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, metricsDropped, err := otelMetricsToTimeseries(ctx, otlpConverter, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, convertHistogramsToNHCB, otlpReq.Metrics(), spanLogger)
+		metrics, metricsDropped, err := otelMetricsToTimeseries(
+			ctx,
+			otlpConverter,
+			addSuffixes,
+			enableCTZeroIngestion,
+			enableStartTimeQuietZero,
+			keepIdentifyingResourceAttributes,
+			convertHistogramsToNHCB,
+			convertScopeMetadata,
+			promoteResourceAttributes,
+			otlpReq.Metrics(),
+			spanLogger,
+		)
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -511,10 +525,13 @@ func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric
 func otelMetricsToTimeseries(
 	ctx context.Context,
 	converter *otlpMimirConverter,
-	addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero bool,
+	addSuffixes,
+	enableCTZeroIngestion,
+	enableStartTimeQuietZero,
+	keepIdentifyingResourceAttributes,
+	convertHistogramsToNHCB,
+	convertScopeMetadata bool,
 	promoteResourceAttributes []string,
-	keepIdentifyingResourceAttributes bool,
-	convertHistogramsToNHCB bool,
 	md pmetric.Metrics,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
@@ -525,6 +542,7 @@ func otelMetricsToTimeseries(
 		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
+		ConvertScopeMetadata:                convertScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 
