@@ -19,8 +19,8 @@ type contextKey int
 var ctxKey = contextKey(0)
 
 // ContextWithEmptyStats returns a context with empty stats.
-func ContextWithEmptyStats(ctx context.Context) (*QueryStats, context.Context) {
-	stats := &QueryStats{}
+func ContextWithEmptyStats(ctx context.Context) (*SafeStats, context.Context) {
+	stats := &SafeStats{}
 	ctx = context.WithValue(ctx, ctxKey, stats)
 	return stats, ctx
 }
@@ -28,12 +28,12 @@ func ContextWithEmptyStats(ctx context.Context) (*QueryStats, context.Context) {
 // FromContext gets the Stats out of the Context. Returns nil if stats have not
 // been initialised in the context. Note that Stats methods are safe to call with
 // a nil receiver.
-func FromContext(ctx context.Context) *QueryStats {
+func FromContext(ctx context.Context) *SafeStats {
 	o := ctx.Value(ctxKey)
 	if o == nil {
 		return nil
 	}
-	return o.(*QueryStats)
+	return o.(*SafeStats)
 }
 
 // IsEnabled returns whether stats tracking is enabled in the context.
@@ -43,13 +43,14 @@ func IsEnabled(ctx context.Context) bool {
 	return FromContext(ctx) != nil
 }
 
-type QueryStats struct {
+// SafeStats is a concurrent safe wrapper around the Stats struct.
+type SafeStats struct {
 	Stats
 	mx sync.Mutex
 }
 
 // AddWallTime adds some time to the counter.
-func (s *QueryStats) AddWallTime(t time.Duration) {
+func (s *SafeStats) AddWallTime(t time.Duration) {
 	if s == nil {
 		return
 	}
@@ -58,7 +59,7 @@ func (s *QueryStats) AddWallTime(t time.Duration) {
 }
 
 // LoadWallTime returns current wall time.
-func (s *QueryStats) LoadWallTime() time.Duration {
+func (s *SafeStats) LoadWallTime() time.Duration {
 	if s == nil {
 		return 0
 	}
@@ -66,7 +67,7 @@ func (s *QueryStats) LoadWallTime() time.Duration {
 	return time.Duration(atomic.LoadInt64((*int64)(&s.WallTime)))
 }
 
-func (s *QueryStats) AddFetchedSeries(series uint64) {
+func (s *SafeStats) AddFetchedSeries(series uint64) {
 	if s == nil {
 		return
 	}
@@ -74,7 +75,7 @@ func (s *QueryStats) AddFetchedSeries(series uint64) {
 	atomic.AddUint64(&s.FetchedSeriesCount, series)
 }
 
-func (s *QueryStats) LoadFetchedSeries() uint64 {
+func (s *SafeStats) LoadFetchedSeries() uint64 {
 	if s == nil {
 		return 0
 	}
@@ -82,7 +83,7 @@ func (s *QueryStats) LoadFetchedSeries() uint64 {
 	return atomic.LoadUint64(&s.FetchedSeriesCount)
 }
 
-func (s *QueryStats) AddFetchedChunkBytes(bytes uint64) {
+func (s *SafeStats) AddFetchedChunkBytes(bytes uint64) {
 	if s == nil {
 		return
 	}
@@ -90,7 +91,7 @@ func (s *QueryStats) AddFetchedChunkBytes(bytes uint64) {
 	atomic.AddUint64(&s.FetchedChunkBytes, bytes)
 }
 
-func (s *QueryStats) LoadFetchedChunkBytes() uint64 {
+func (s *SafeStats) LoadFetchedChunkBytes() uint64 {
 	if s == nil {
 		return 0
 	}
@@ -98,7 +99,7 @@ func (s *QueryStats) LoadFetchedChunkBytes() uint64 {
 	return atomic.LoadUint64(&s.FetchedChunkBytes)
 }
 
-func (s *QueryStats) AddFetchedChunks(chunks uint64) {
+func (s *SafeStats) AddFetchedChunks(chunks uint64) {
 	if s == nil {
 		return
 	}
@@ -106,7 +107,7 @@ func (s *QueryStats) AddFetchedChunks(chunks uint64) {
 	atomic.AddUint64(&s.FetchedChunksCount, chunks)
 }
 
-func (s *QueryStats) LoadFetchedChunks() uint64 {
+func (s *SafeStats) LoadFetchedChunks() uint64 {
 	if s == nil {
 		return 0
 	}
@@ -114,7 +115,7 @@ func (s *QueryStats) LoadFetchedChunks() uint64 {
 	return atomic.LoadUint64(&s.FetchedChunksCount)
 }
 
-func (s *QueryStats) AddFetchedIndexBytes(indexBytes uint64) {
+func (s *SafeStats) AddFetchedIndexBytes(indexBytes uint64) {
 	if s == nil {
 		return
 	}
@@ -122,7 +123,7 @@ func (s *QueryStats) AddFetchedIndexBytes(indexBytes uint64) {
 	atomic.AddUint64(&s.FetchedIndexBytes, indexBytes)
 }
 
-func (s *QueryStats) LoadFetchedIndexBytes() uint64 {
+func (s *SafeStats) LoadFetchedIndexBytes() uint64 {
 	if s == nil {
 		return 0
 	}
@@ -130,7 +131,7 @@ func (s *QueryStats) LoadFetchedIndexBytes() uint64 {
 	return atomic.LoadUint64(&s.FetchedIndexBytes)
 }
 
-func (s *QueryStats) AddShardedQueries(num uint32) {
+func (s *SafeStats) AddShardedQueries(num uint32) {
 	if s == nil {
 		return
 	}
@@ -138,7 +139,7 @@ func (s *QueryStats) AddShardedQueries(num uint32) {
 	atomic.AddUint32(&s.ShardedQueries, num)
 }
 
-func (s *QueryStats) LoadShardedQueries() uint32 {
+func (s *SafeStats) LoadShardedQueries() uint32 {
 	if s == nil {
 		return 0
 	}
@@ -146,7 +147,7 @@ func (s *QueryStats) LoadShardedQueries() uint32 {
 	return atomic.LoadUint32(&s.ShardedQueries)
 }
 
-func (s *QueryStats) AddSplitQueries(num uint32) {
+func (s *SafeStats) AddSplitQueries(num uint32) {
 	if s == nil {
 		return
 	}
@@ -154,7 +155,7 @@ func (s *QueryStats) AddSplitQueries(num uint32) {
 	atomic.AddUint32(&s.SplitQueries, num)
 }
 
-func (s *QueryStats) LoadSplitQueries() uint32 {
+func (s *SafeStats) LoadSplitQueries() uint32 {
 	if s == nil {
 		return 0
 	}
@@ -162,7 +163,7 @@ func (s *QueryStats) LoadSplitQueries() uint32 {
 	return atomic.LoadUint32(&s.SplitQueries)
 }
 
-func (s *QueryStats) AddEstimatedSeriesCount(c uint64) {
+func (s *SafeStats) AddEstimatedSeriesCount(c uint64) {
 	if s == nil {
 		return
 	}
@@ -170,7 +171,7 @@ func (s *QueryStats) AddEstimatedSeriesCount(c uint64) {
 	atomic.AddUint64(&s.EstimatedSeriesCount, c)
 }
 
-func (s *QueryStats) LoadEstimatedSeriesCount() uint64 {
+func (s *SafeStats) LoadEstimatedSeriesCount() uint64 {
 	if s == nil {
 		return 0
 	}
@@ -178,7 +179,7 @@ func (s *QueryStats) LoadEstimatedSeriesCount() uint64 {
 	return atomic.LoadUint64(&s.EstimatedSeriesCount)
 }
 
-func (s *QueryStats) AddQueueTime(t time.Duration) {
+func (s *SafeStats) AddQueueTime(t time.Duration) {
 	if s == nil {
 		return
 	}
@@ -186,7 +187,7 @@ func (s *QueryStats) AddQueueTime(t time.Duration) {
 	atomic.AddInt64((*int64)(&s.QueueTime), int64(t))
 }
 
-func (s *QueryStats) LoadQueueTime() time.Duration {
+func (s *SafeStats) LoadQueueTime() time.Duration {
 	if s == nil {
 		return 0
 	}
@@ -194,7 +195,7 @@ func (s *QueryStats) LoadQueueTime() time.Duration {
 	return time.Duration(atomic.LoadInt64((*int64)(&s.QueueTime)))
 }
 
-func (s *QueryStats) AddEncodeTime(t time.Duration) {
+func (s *SafeStats) AddEncodeTime(t time.Duration) {
 	if s == nil {
 		return
 	}
@@ -202,7 +203,7 @@ func (s *QueryStats) AddEncodeTime(t time.Duration) {
 	atomic.AddInt64((*int64)(&s.EncodeTime), int64(t))
 }
 
-func (s *QueryStats) LoadEncodeTime() time.Duration {
+func (s *SafeStats) LoadEncodeTime() time.Duration {
 	if s == nil {
 		return 0
 	}
@@ -210,7 +211,7 @@ func (s *QueryStats) LoadEncodeTime() time.Duration {
 	return time.Duration(atomic.LoadInt64((*int64)(&s.EncodeTime)))
 }
 
-func (s *QueryStats) AddSamplesProcessed(c uint64) {
+func (s *SafeStats) AddSamplesProcessed(c uint64) {
 	if s == nil {
 		return
 	}
@@ -218,7 +219,7 @@ func (s *QueryStats) AddSamplesProcessed(c uint64) {
 	atomic.AddUint64(&s.SamplesProcessed, c)
 }
 
-func (s *QueryStats) LoadSamplesProcessed() uint64 {
+func (s *SafeStats) LoadSamplesProcessed() uint64 {
 	if s == nil {
 		return 0
 	}
@@ -226,32 +227,26 @@ func (s *QueryStats) LoadSamplesProcessed() uint64 {
 	return atomic.LoadUint64(&s.SamplesProcessed)
 }
 
-func (s *QueryStats) AddSpunOffSubqueries(num uint32) {
+func (s *SafeStats) AddSpunOffSubqueries(num uint32) {
 	if s == nil {
 		return
 	}
 	atomic.AddUint32(&s.SpunOffSubqueries, num)
 }
 
-func (s *QueryStats) LoadSpunOffSubqueries() uint32 {
+func (s *SafeStats) LoadSpunOffSubqueries() uint32 {
 	if s == nil {
 		return 0
 	}
 	return atomic.LoadUint32(&s.SpunOffSubqueries)
 }
 
-func (s *QueryStats) AddSamplesProcessedPerStep(points []StepStat) {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-
-	if s == nil {
-		return
-	}
-
-	s.SamplesProcessedPerStep = points
+func (s *SafeStats) AddSamplesProcessedPerStep(points []StepStat) {
+	// merge is concurrent safe
+	s.mergeSamplesProcessedPerStep(points)
 }
 
-func (s *QueryStats) LoadSamplesProcessedPerStep() []StepStat {
+func (s *SafeStats) LoadSamplesProcessedPerStep() []StepStat {
 	if s == nil {
 		return nil
 	}
@@ -261,7 +256,7 @@ func (s *QueryStats) LoadSamplesProcessedPerStep() []StepStat {
 }
 
 // Merge the provided Stats into this one.
-func (s *QueryStats) Merge(other *QueryStats) {
+func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
 		return
 	}
@@ -280,7 +275,7 @@ func (s *QueryStats) Merge(other *QueryStats) {
 	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
 }
 
-func (s *QueryStats) mergeSamplesProcessedPerStep(other []StepStat) {
+func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
 	if s == nil {
 		return
 	}
@@ -336,11 +331,11 @@ func (s *QueryStats) mergeSamplesProcessedPerStep(other []StepStat) {
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment
 // to make sure atomic modifications are observed.
-func (s *QueryStats) Copy() *QueryStats {
+func (s *SafeStats) Copy() *SafeStats {
 	if s == nil {
 		return nil
 	}
-	c := &QueryStats{}
+	c := &SafeStats{}
 	c.Merge(s)
 	return c
 }

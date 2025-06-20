@@ -526,7 +526,7 @@ type splitRequest struct {
 	downstreamRequests  []MetricsQueryRequest
 	downstreamResponses []Response
 	// Query statistics for each downstream request, stored at the same index too.
-	downstreamStatistics []*stats.QueryStats
+	downstreamStatistics []*stats.SafeStats
 }
 
 // splitRequests holds a list of splitRequest.
@@ -593,7 +593,7 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 
 		execReqs = append(execReqs, splitReq.downstreamRequests...)
 		splitReq.downstreamResponses = make([]Response, len(splitReq.downstreamRequests))
-		splitReq.downstreamStatistics = make([]*stats.QueryStats, len(splitReq.downstreamRequests))
+		splitReq.downstreamStatistics = make([]*stats.SafeStats, len(splitReq.downstreamRequests))
 	}
 
 	return execReqs, nil
@@ -604,7 +604,7 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 // that any downstream request got its response associated.
 func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
-	execStatsByID := make(map[int64]*stats.QueryStats, len(responses))
+	execStatsByID := make(map[int64]*stats.SafeStats, len(responses))
 
 	// Map responses by (unique) request IDs.
 	for _, resp := range responses {
@@ -651,7 +651,7 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 type requestResponse struct {
 	Request  MetricsQueryRequest
 	Response Response
-	Stats    *stats.QueryStats
+	Stats    *stats.SafeStats
 }
 
 // doRequests executes a list of requests in parallel.

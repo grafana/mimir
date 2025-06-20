@@ -22,7 +22,6 @@ func StatsRenderer(ctx context.Context, s *promql_stats.Statistics, param string
 
 // It's a copy of promql_stats.QuerySamples.totalSamplesPerStepPoints, returning a slice of querier querier/stats.StepStat
 // instead of promql_stats.stepStat.
-// TODO: ikonstantinov - expose promql_stats.QuerySamplesStartTimestamp and Interval to make it work.
 func totalSamplesPerStepPoints(qs *promql_stats.QuerySamples) []stats.StepStat {
 	if !qs.EnablePerStepStats {
 		return nil

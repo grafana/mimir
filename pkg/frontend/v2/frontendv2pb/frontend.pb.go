@@ -7,6 +7,12 @@ import (
 	bytes "bytes"
 	context "context"
 	fmt "fmt"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strings "strings"
+
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
@@ -15,11 +21,6 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-	reflect "reflect"
-	strings "strings"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -34,9 +35,9 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type QueryResultRequest struct {
-	QueryID      uint64                                                 `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
-	HttpResponse *httpgrpc.HTTPResponse                                 `protobuf:"bytes,2,opt,name=httpResponse,proto3" json:"httpResponse,omitempty"`
-	Stats        *github_com_grafana_mimir_pkg_querier_stats.QueryStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.QueryStats" json:"stats,omitempty"`
+	QueryID      uint64                                                `protobuf:"varint,1,opt,name=queryID,proto3" json:"queryID,omitempty"`
+	HttpResponse *httpgrpc.HTTPResponse                                `protobuf:"bytes,2,opt,name=httpResponse,proto3" json:"httpResponse,omitempty"`
+	Stats        *github_com_grafana_mimir_pkg_querier_stats.SafeStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.QueryStats" json:"stats,omitempty"`
 }
 
 func (m *QueryResultRequest) Reset()      { *m = QueryResultRequest{} }
@@ -179,9 +180,9 @@ func (*QueryResultStreamRequest) XXX_OneofWrappers() []interface{} {
 }
 
 type QueryResultMetadata struct {
-	Code    int32                                                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
-	Headers []*httpgrpc.Header                                     `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty"`
-	Stats   *github_com_grafana_mimir_pkg_querier_stats.QueryStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.QueryStats" json:"stats,omitempty"`
+	Code    int32                                                 `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
+	Headers []*httpgrpc.Header                                    `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty"`
+	Stats   *github_com_grafana_mimir_pkg_querier_stats.SafeStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.QueryStats" json:"stats,omitempty"`
 }
 
 func (m *QueryResultMetadata) Reset()      { *m = QueryResultMetadata{} }
@@ -1348,7 +1349,7 @@ func (m *QueryResultRequest) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.Stats == nil {
-				m.Stats = &github_com_grafana_mimir_pkg_querier_stats.QueryStats{}
+				m.Stats = &github_com_grafana_mimir_pkg_querier_stats.SafeStats{}
 			}
 			if err := m.Stats.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
@@ -1626,7 +1627,7 @@ func (m *QueryResultMetadata) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.Stats == nil {
-				m.Stats = &github_com_grafana_mimir_pkg_querier_stats.QueryStats{}
+				m.Stats = &github_com_grafana_mimir_pkg_querier_stats.SafeStats{}
 			}
 			if err := m.Stats.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err

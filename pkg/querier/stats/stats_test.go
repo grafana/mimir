@@ -24,7 +24,7 @@ func TestStats_WallTime(t *testing.T) {
 	})
 
 	t.Run("add and load wall time nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddWallTime(time.Second)
 
 		assert.Equal(t, time.Duration(0), stats.LoadWallTime())
@@ -41,7 +41,7 @@ func TestStats_AddFetchedSeries(t *testing.T) {
 	})
 
 	t.Run("add and load series nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddFetchedSeries(50)
 
 		assert.Equal(t, uint64(0), stats.LoadFetchedSeries())
@@ -58,7 +58,7 @@ func TestStats_AddFetchedChunkBytes(t *testing.T) {
 	})
 
 	t.Run("add and load bytes nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddFetchedChunkBytes(1024)
 
 		assert.Equal(t, uint64(0), stats.LoadFetchedChunkBytes())
@@ -75,7 +75,7 @@ func TestStats_AddFetchedChunks(t *testing.T) {
 	})
 
 	t.Run("add and load chunks nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddFetchedChunks(3)
 
 		assert.Equal(t, uint64(0), stats.LoadFetchedChunks())
@@ -92,7 +92,7 @@ func TestStats_AddShardedQueries(t *testing.T) {
 	})
 
 	t.Run("add and load sharded queries nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddShardedQueries(3)
 
 		assert.Equal(t, uint32(0), stats.LoadShardedQueries())
@@ -109,7 +109,7 @@ func TestStats_AddSplitQueries(t *testing.T) {
 	})
 
 	t.Run("add and load split queries nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddSplitQueries(1)
 
 		assert.Equal(t, uint32(0), stats.LoadSplitQueries())
@@ -126,7 +126,7 @@ func TestStats_QueueTime(t *testing.T) {
 	})
 
 	t.Run("add and load queue time nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddQueueTime(time.Second)
 
 		assert.Equal(t, time.Duration(0), stats.LoadQueueTime())
@@ -143,7 +143,7 @@ func TestStats_SamplesProcessed(t *testing.T) {
 	})
 
 	t.Run("add and load samples processed nil receiver", func(t *testing.T) {
-		var stats *QueryStats
+		var stats *SafeStats
 		stats.AddSamplesProcessed(10)
 
 		assert.Equal(t, uint64(0), stats.LoadSamplesProcessed())
@@ -152,7 +152,7 @@ func TestStats_SamplesProcessed(t *testing.T) {
 
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
-		stats1 := &QueryStats{}
+		stats1 := &SafeStats{}
 		stats1.AddWallTime(time.Millisecond)
 		stats1.AddFetchedSeries(50)
 		stats1.AddFetchedChunkBytes(42)
@@ -166,7 +166,7 @@ func TestStats_Merge(t *testing.T) {
 			{Timestamp: 2, Value: 20},
 		})
 
-		stats2 := &QueryStats{}
+		stats2 := &SafeStats{}
 		stats2.AddWallTime(time.Second)
 		stats2.AddFetchedSeries(60)
 		stats2.AddFetchedChunkBytes(100)
@@ -197,8 +197,8 @@ func TestStats_Merge(t *testing.T) {
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
-		var stats1 *QueryStats
-		var stats2 *QueryStats
+		var stats1 *SafeStats
+		var stats2 *SafeStats
 
 		stats1.Merge(stats2)
 
@@ -214,7 +214,7 @@ func TestStats_Merge(t *testing.T) {
 }
 
 func TestStats_Copy(t *testing.T) {
-	s1 := &QueryStats{
+	s1 := &SafeStats{
 		Stats: Stats{
 			WallTime:             1,
 			FetchedSeriesCount:   2,
@@ -236,12 +236,12 @@ func TestStats_Copy(t *testing.T) {
 	assert.NotSame(t, s1, s2)
 	assert.EqualValues(t, s1, s2)
 
-	assert.Nil(t, (*QueryStats)(nil).Copy())
+	assert.Nil(t, (*SafeStats)(nil).Copy())
 }
 
 func TestStats_ConcurrentMerge(t *testing.T) {
 	// Create parent stats object (initially empty)
-	parentStats := &QueryStats{}
+	parentStats := &SafeStats{}
 
 	// Verify parent is initially empty
 	assert.Equal(t, time.Duration(0), parentStats.LoadWallTime())
@@ -250,10 +250,10 @@ func TestStats_ConcurrentMerge(t *testing.T) {
 
 	// Create 10 child stats objects with known values
 	const numChildren = 10
-	childStats := make([]*QueryStats, numChildren)
+	childStats := make([]*SafeStats, numChildren)
 
 	for i := 0; i < numChildren; i++ {
-		child := &QueryStats{}
+		child := &SafeStats{}
 
 		child.AddWallTime(100 * time.Millisecond)
 		child.AddFetchedSeries(uint64(50))
