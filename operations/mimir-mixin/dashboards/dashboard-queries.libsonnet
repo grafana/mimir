@@ -112,7 +112,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     request_added_latency_metric: 'cortex_request_added_latency_seconds',
     write_prom_http_routes_regex: 'api_(v1|prom)_push',
     write_otlp_http_routes_regex: 'otlp_v1_metrics',
-    write_influx_http_routes_regex: 'api_v1_influx_push_write',
+    write_influx_http_routes_regex: 'api_v1_push_influx_write',
     write_http_routes_regex: self.write_prom_http_routes_regex + '|' + self.write_otlp_http_routes_regex + '|' + self.write_influx_http_routes_regex,
     write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
     write_grpc_ingester_route: '/cortex.Ingester/Push',
