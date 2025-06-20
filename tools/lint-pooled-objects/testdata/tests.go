@@ -3,6 +3,8 @@
 package testdata
 
 import (
+	"context"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -10,7 +12,7 @@ import (
 
 func poolFromTypesPackage() {
 	b := []bool{}
-	tracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 
 	types.BoolSlicePool.Put(b, tracker) // want `return value from 'Put' not used`
 	_ = types.BoolSlicePool.Put(b, tracker)
@@ -22,7 +24,7 @@ func poolFromTypesPackage() {
 
 func localPool() {
 	i := []int{}
-	tracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(),0, nil, "")
 	otherPool := types.NewLimitingBucketedPool(
 		pool.NewBucketedPool(10, func(size int) []int {
 			return make([]int, 0, size)
