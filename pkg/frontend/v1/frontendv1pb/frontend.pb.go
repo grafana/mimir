@@ -9,13 +9,6 @@ package frontendv1pb
 import (
 	context "context"
 	fmt "fmt"
-	io "io"
-	math "math"
-	math_bits "math/bits"
-	reflect "reflect"
-	strconv "strconv"
-	strings "strings"
-
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
@@ -24,6 +17,12 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+	reflect "reflect"
+	strconv "strconv"
+	strings "strings"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -129,9 +128,9 @@ func (m *FrontendToClient) GetQueueTimeNanos() int64 {
 }
 
 type ClientToFrontend struct {
-	HttpResponse *httpgrpc.HTTPResponse                                `protobuf:"bytes,1,opt,name=httpResponse,proto3" json:"httpResponse,omitempty"`
-	ClientID     string                                                `protobuf:"bytes,2,opt,name=clientID,proto3" json:"clientID,omitempty"`
-	Stats        *github_com_grafana_mimir_pkg_querier_stats.SafeStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.QueryStats" json:"stats,omitempty"`
+	HttpResponse *httpgrpc.HTTPResponse                                 `protobuf:"bytes,1,opt,name=httpResponse,proto3" json:"httpResponse,omitempty"`
+	ClientID     string                                                 `protobuf:"bytes,2,opt,name=clientID,proto3" json:"clientID,omitempty"`
+	Stats        *github_com_grafana_mimir_pkg_querier_stats.QueryStats `protobuf:"bytes,3,opt,name=stats,proto3,customtype=github.com/grafana/mimir/pkg/querier/stats.QueryStats" json:"stats,omitempty"`
 }
 
 func (m *ClientToFrontend) Reset()      { *m = ClientToFrontend{} }
@@ -1203,7 +1202,7 @@ func (m *ClientToFrontend) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			if m.Stats == nil {
-				m.Stats = &github_com_grafana_mimir_pkg_querier_stats.SafeStats{}
+				m.Stats = &github_com_grafana_mimir_pkg_querier_stats.QueryStats{}
 			}
 			if err := m.Stats.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
