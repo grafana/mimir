@@ -151,6 +151,11 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 		}
 	}
 
+	// Clear up labels that we don't need anymore.
+	for i := nextOutputSeriesIndex; i < len(leftMetadata); i++ {
+		leftMetadata[i].Labels = nil
+	}
+
 	return leftMetadata[:nextOutputSeriesIndex]
 }
 
