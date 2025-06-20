@@ -27,7 +27,7 @@
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   flusher_job_func(jobName, pvcName)::
     job.new() +
