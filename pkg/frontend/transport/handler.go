@@ -151,8 +151,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		}, []string{"user"})
 		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_samples_processed_cache_adjusted_total",
-			Help: "Number of samples processed to execute a query taking in account the original number of samples processed for parts of the query results looked up from the cache. " +
-				"Note, that it will be reported proprely only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it will be 0.",
+			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
+				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
 		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
