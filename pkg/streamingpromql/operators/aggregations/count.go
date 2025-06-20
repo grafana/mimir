@@ -56,7 +56,7 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 		g.accumulatePoint(timeRange.PointIndex(p.T))
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	data.Put(memoryConsumptionTracker)
 	return nil
 }
 
@@ -87,6 +87,5 @@ func (g *CountGroupAggregationGroup) ComputeOutputSeries(_ types.ScalarData, tim
 }
 
 func (g *CountGroupAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
-	g.values = nil
+	g.values = types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
 }

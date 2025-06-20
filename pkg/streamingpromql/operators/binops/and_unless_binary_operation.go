@@ -75,7 +75,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 
 	if len(leftMetadata) == 0 {
 		// We can't produce any series, we are done.
-		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
+		_ = types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -84,11 +84,11 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(rightMetadata, a.MemoryConsumptionTracker)
+	defer func() { rightMetadata = types.SeriesMetadataSlicePool.Put(rightMetadata, a.MemoryConsumptionTracker) }()
 
 	if len(rightMetadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
-		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
+		_ = types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -199,7 +199,7 @@ func (a *AndUnlessBinaryOperation) NextSeries(ctx context.Context) (types.Instan
 			}
 
 			// If this is an 'and' operation, we should discard it and move on to the next series, as this series can't contribute to the result.
-			types.PutInstantVectorSeriesData(d, a.MemoryConsumptionTracker)
+			d.Put(a.MemoryConsumptionTracker)
 			continue
 		}
 
@@ -248,7 +248,7 @@ func (a *AndUnlessBinaryOperation) readRightSideUntilGroupComplete(ctx context.C
 			}
 		}
 
-		types.PutInstantVectorSeriesData(data, a.MemoryConsumptionTracker)
+		data.Put(a.MemoryConsumptionTracker)
 		a.nextRightSeriesIndex++
 	}
 
@@ -327,6 +327,5 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 }
 
 func (g *andGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
-	g.rightSamplePresence = nil
+	g.rightSamplePresence = types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
 }

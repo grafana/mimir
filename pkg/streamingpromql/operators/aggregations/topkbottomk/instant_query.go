@@ -62,7 +62,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(innerSeries, t.MemoryConsumptionTracker)
+	defer func() { innerSeries = types.SeriesMetadataSlicePool.Put(innerSeries, t.MemoryConsumptionTracker) }()
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
@@ -102,7 +102,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		if len(data.Floats) == 0 {
 			// No float values, nothing to do.
 			g.seriesCount-- // Avoid allocating space for this series if we can.
-			types.PutInstantVectorSeriesData(data, t.MemoryConsumptionTracker)
+			data.Put(t.MemoryConsumptionTracker)
 			continue
 		}
 
@@ -112,7 +112,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			outputSeriesCount++
 		}
 
-		types.PutInstantVectorSeriesData(data, t.MemoryConsumptionTracker)
+		data.Put(t.MemoryConsumptionTracker)
 	}
 
 	outputSeries, err := types.SeriesMetadataSlicePool.Get(outputSeriesCount, t.MemoryConsumptionTracker)
@@ -154,7 +154,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			}
 		}
 
-		instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+		g.series = instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 	}
 
 	return outputSeries, nil
@@ -166,7 +166,9 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer func() {
+		paramValues.Samples = types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	}()
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
 
@@ -296,9 +298,7 @@ func (t *InstantQuery) Prepare(ctx context.Context, params *types.PrepareParams)
 func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
-
-	types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
-	t.values = nil
+	t.values = types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
 }
 
 type instantQueryGroup struct {

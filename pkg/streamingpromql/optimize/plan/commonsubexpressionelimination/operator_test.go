@@ -44,51 +44,51 @@ func TestOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedData[0], d)
 	require.Equal(t, 1, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[1], d)
 	require.Equal(t, 2, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	// Read the same data from the second consumer, and then keep reading data beyond what has already been buffered.
 	d, err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[0], d)
 	require.Equal(t, 1, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[1], d)
 	require.Equal(t, 0, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[2], d)
 	require.Equal(t, 1, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[3], d)
 	require.Equal(t, 2, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer2.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[4], d)
 	require.Equal(t, 3, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	// Read the buffered data in the first consumer.
 	d, err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[2], d)
 	require.Equal(t, 2, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	// Close the first consumer, check that the data that was being buffered for it is released.
 	consumer1.Close()
@@ -99,7 +99,7 @@ func TestOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedData[5], d)
 	require.Equal(t, 0, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	// Close the second consumer, and check that the inner operator was closed.
 	consumer2.Close()
@@ -135,19 +135,19 @@ func TestOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedData[0], d)
 	require.Equal(t, 1, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[1], d)
 	require.Equal(t, 2, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	d, err = consumer1.NextSeries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedData[2], d)
 	require.Equal(t, 3, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	// Close the first consumer, and check the data remains buffered for the second consumer.
 	consumer1.Close()
@@ -158,7 +158,7 @@ func TestOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedData[0], d)
 	require.Equal(t, 2, buffer.buffer.Size())
-	types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	d.Put(memoryConsumptionTracker)
 
 	// Close the second consumer, and check that the inner operator was closed and all buffered data was released.
 	consumer2.Close()

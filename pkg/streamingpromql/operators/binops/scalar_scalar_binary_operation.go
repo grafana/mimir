@@ -96,7 +96,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 		leftValues.Samples[i].F = f
 	}
 
-	types.FPointSlicePool.Put(rightValues.Samples, s.MemoryConsumptionTracker)
+	rightValues.Samples = types.FPointSlicePool.Put(rightValues.Samples, s.MemoryConsumptionTracker)
 
 	return leftValues, nil
 }

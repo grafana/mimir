@@ -86,10 +86,7 @@ func (qs *QueryStats) Clear() {
 }
 
 func (qs *QueryStats) Close() {
-	if qs.TotalSamplesPerStep != nil {
-		Int64SlicePool.Put(qs.TotalSamplesPerStep, qs.memoryConsumptionTracker)
-		qs.TotalSamplesPerStep = nil
-	}
+	qs.TotalSamplesPerStep = Int64SlicePool.Put(qs.TotalSamplesPerStep, qs.memoryConsumptionTracker)
 }
 
 const timestampFieldSize = int64(unsafe.Sizeof(int64(0)))

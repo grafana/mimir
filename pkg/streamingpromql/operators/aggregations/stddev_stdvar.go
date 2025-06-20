@@ -79,7 +79,7 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 		g.floats[idx] += delta * (p.F - g.floatMeans[idx])
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	data.Put(memoryConsumptionTracker)
 	return nil
 }
 
@@ -119,12 +119,7 @@ func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, t
 }
 
 func (g *StddevStdvarAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
-	g.floats = nil
-
-	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
-	g.floatMeans = nil
-
-	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-	g.groupSeriesCounts = nil
+	g.floats = types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
+	g.floatMeans = types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
+	g.groupSeriesCounts = types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
 }

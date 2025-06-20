@@ -469,6 +469,8 @@ lint: check-makefiles
 		-path ./integration \
 		-include '*.go'
 
+	go run ./tools/lint-pooled-objects -test=false ./pkg/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;

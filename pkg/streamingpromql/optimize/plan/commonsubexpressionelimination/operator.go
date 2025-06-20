@@ -166,7 +166,7 @@ func (b *DuplicationBuffer) CloseConsumer(consumerIndex int) {
 		// Only try to remove the buffered series if it was actually buffered (we might not have stored it if an error occurred reading the series).
 		if b.buffer.IsPresent(seriesIdx) {
 			d := b.buffer.Remove(seriesIdx)
-			types.PutInstantVectorSeriesData(d, b.MemoryConsumptionTracker)
+			d.Put(b.MemoryConsumptionTracker)
 		}
 
 		b.nextSeriesIndex[consumerIndex]++
@@ -187,11 +187,11 @@ func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PreparePa
 }
 
 func (b *DuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(b.seriesMetadata, b.MemoryConsumptionTracker)
-	b.seriesMetadata = nil
+	b.seriesMetadata = types.SeriesMetadataSlicePool.Put(b.seriesMetadata, b.MemoryConsumptionTracker)
 
 	for b.buffer.Size() > 0 {
-		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)
+		d := b.buffer.RemoveFirst()
+		d.Put(b.MemoryConsumptionTracker)
 	}
 
 	b.buffer = nil

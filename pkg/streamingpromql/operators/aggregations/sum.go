@@ -25,7 +25,7 @@ type SumAggregationGroup struct {
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
-	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
+	defer data.Put(memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
@@ -205,15 +205,8 @@ func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange 
 }
 
 func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.Float64SlicePool.Put(g.floatSums, memoryConsumptionTracker)
-	g.floatSums = nil
-
-	types.Float64SlicePool.Put(g.floatCompensatingValues, memoryConsumptionTracker)
-	g.floatCompensatingValues = nil
-
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-	g.floatPresent = nil
-
-	types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
-	g.histogramSums = nil
+	g.floatSums = types.Float64SlicePool.Put(g.floatSums, memoryConsumptionTracker)
+	g.floatCompensatingValues = types.Float64SlicePool.Put(g.floatCompensatingValues, memoryConsumptionTracker)
+	g.floatPresent = types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
+	g.histogramSums = types.HistogramSlicePool.Put(g.histogramSums, memoryConsumptionTracker)
 }

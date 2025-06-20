@@ -656,7 +656,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			for range testCase.seriesToRead {
 				d, err := o.NextSeries(ctx)
 				require.NoError(t, err)
-				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+				d.Put(memoryConsumptionTracker)
 			}
 
 			// Return any unread data to the pool and update the current memory consumption estimate to match.

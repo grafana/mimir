@@ -84,12 +84,12 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 							if readSeries {
 								seriesData, err := o.NextSeries(ctx)
 								require.NoError(t, err)
-								types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+								seriesData.Put(memoryConsumptionTracker)
 							}
 
 							// TestOperator does not release any unread data on Close(), so do that now.
 							for _, d := range inner.Data {
-								types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+								d.Put(memoryConsumptionTracker)
 							}
 
 							// Close the operator and confirm all memory has been released.

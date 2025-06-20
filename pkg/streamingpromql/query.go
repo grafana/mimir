@@ -193,7 +193,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
+		defer func() { series = types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker) }()
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -206,7 +206,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
+		defer func() { series = types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker) }()
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
@@ -273,7 +273,7 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 		}
 
 		if len(d.Floats)+len(d.Histograms) > 1 {
-			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+			d.Put(q.memoryConsumptionTracker)
 			return nil, fmt.Errorf("expected exactly one sample for series %s, but got %v floats, %v histograms", s.Labels.String(), len(d.Floats), len(d.Histograms))
 		}
 
@@ -297,7 +297,7 @@ func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o t
 			d.Histograms[0].H = nil
 		}
 
-		types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+		d.Put(q.memoryConsumptionTracker)
 	}
 
 	return v, nil
@@ -317,7 +317,7 @@ func (q *Query) populateMatrixFromInstantVectorOperator(ctx context.Context, o t
 		}
 
 		if len(d.Floats) == 0 && len(d.Histograms) == 0 {
-			types.PutInstantVectorSeriesData(d, q.memoryConsumptionTracker)
+			d.Put(q.memoryConsumptionTracker)
 			continue
 		}
 
@@ -368,8 +368,8 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 		}
 
 		if len(floats) == 0 && len(histograms) == 0 {
-			types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
+			_ = types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
+			_ = types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
 			continue
 		}
 
@@ -397,7 +397,7 @@ func (q *Query) populateMatrixFromScalarOperator(d types.ScalarData) promql.Matr
 }
 
 func (q *Query) populateScalarFromScalarOperator(d types.ScalarData) promql.Scalar {
-	defer types.FPointSlicePool.Put(d.Samples, q.memoryConsumptionTracker)
+	defer func() { d.Samples = types.FPointSlicePool.Put(d.Samples, q.memoryConsumptionTracker) }()
 
 	p := d.Samples[0]
 
@@ -420,13 +420,13 @@ func (q *Query) Close() {
 	switch v := q.result.Value.(type) {
 	case promql.Matrix:
 		for _, s := range v {
-			types.FPointSlicePool.Put(s.Floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(s.Histograms, q.memoryConsumptionTracker)
+			_ = types.FPointSlicePool.Put(s.Floats, q.memoryConsumptionTracker)
+			_ = types.HPointSlicePool.Put(s.Histograms, q.memoryConsumptionTracker)
 		}
 
 		types.PutMatrix(v)
 	case promql.Vector:
-		types.VectorPool.Put(v, q.memoryConsumptionTracker)
+		q.result.Value = types.VectorPool.Put(v, q.memoryConsumptionTracker)
 	case promql.Scalar:
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	case promql.String:
@@ -441,7 +441,7 @@ func (q *Query) Close() {
 
 	if q.engine.pedantic && q.result.Err == nil {
 		if bytesUsed := q.memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(); bytesUsed > 0 {
-			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool.", bytesUsed, q.originalExpression))
+			panic(fmt.Sprintf("Memory consumption tracker still estimates %d bytes used for %q. This indicates something has not been returned to a pool. Tracker state: %s", bytesUsed, q.originalExpression, q.memoryConsumptionTracker.String()))
 		}
 	}
 }

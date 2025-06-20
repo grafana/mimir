@@ -56,7 +56,7 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 
 func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	for _, d := range t.Data {
-		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+		d.Put(memoryConsumptionTracker)
 	}
 
 	t.Data = nil
