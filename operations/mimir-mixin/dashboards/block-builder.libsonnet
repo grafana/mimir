@@ -142,21 +142,6 @@ local filename = 'mimir-block-builder.json';
         )
       )
       .addPanel(
-        $.timeseriesPanel('Lag records') +
-        $.panelDescription(
-          'Per partition records lag',
-          |||
-            **Deprecated**. This panel is only relevant in the stand-alone mode.
-
-            Number of records in the backlog of a partition, as seen when starting a consumption cycle.
-          |||
-        ) +
-        $.queryPanel(
-          'max by (partition) (cortex_blockbuilder_consumer_lag_records{%(job)s}) > 0' % [$.jobMatcher($._config.job_names.block_builder)],
-          '{{partition}}',
-        )
-      )
-      .addPanel(
         $.timeseriesPanel('Partition processing duration') +
         $.panelDescription(
           'Partition processing duration',
