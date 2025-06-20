@@ -29,6 +29,10 @@
       'server.grpc.keepalive.max-connection-age': '%ds' % max_connection_age_seconds,
     } + $.mimirRuntimeConfigFile,
 
+  // CLI flags that are applied only to query-frontends, and not ruler-query-frontends.
+  // Values take precedence over query_frontend_args.
+  query_frontend_only_args:: {},
+
   query_frontend_ports:: $.util.defaultPorts,
 
   newQueryFrontendContainer(name, args, envmap={})::
@@ -46,7 +50,7 @@
   query_frontend_node_affinity_matchers:: [],
 
   query_frontend_container::
-    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args, $.query_frontend_env_map),
+    self.newQueryFrontendContainer('query-frontend', $.query_frontend_args + $.query_frontend_only_args, $.query_frontend_env_map),
 
   local deployment = $.apps.v1.deployment,
 
