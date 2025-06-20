@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/parquet-common/queryable"
 	"github.com/prometheus-community/parquet-common/schema"
 	parquetstorage "github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -43,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -278,8 +281,116 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 }
 
 func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	// TODO implement me
-	panic("implement me")
+	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+	}
+
+	var (
+		stats    = newSafeQueryStats()
+		resHints = &hintspb.LabelNamesResponseHints{}
+	)
+
+	defer s.recordLabelNamesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
+
+	var reqBlockMatchers []*labels.Matcher
+	if req.Hints != nil {
+		reqHints := &hintspb.LabelNamesRequestHints{}
+		err := types.UnmarshalAny(req.Hints, reqHints)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label names request hints").Error())
+		}
+
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	var setsMtx sync.Mutex
+	var sets [][]string
+	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
+
+	var blocks []*parquetBucketBlock
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
+		blocks = append(blocks, b)
+	})
+
+	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+		var parquetShards []parquetstorage.ParquetShard
+		for _, shard := range blocks {
+			parquetShards = append(parquetShards, shard)
+		}
+		return parquetShards, nil
+	}
+
+	for _, b := range blocks {
+		g.Go(func() error {
+			// We need to keep the block open until we finish iterating over it.
+			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+
+			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet queryable")
+			}
+			q, err := parquetQueryable.Querier(req.Start, req.End)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet querier")
+			}
+			// TODO we already have the blockLabels, ideally we could use them to avoid querying the block again.
+			result, _, err := q.LabelNames(gctx, nil, reqSeriesMatchers...)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				return errors.Wrap(err, "error querying label names")
+			}
+
+			if len(result) > 0 {
+				setsMtx.Lock()
+				sets = append(sets, result)
+				setsMtx.Unlock()
+			}
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(sets)
+		for sl, count := range blocksQueriedByBlockMeta {
+			stats.blocksQueriedByBlockMeta[sl] = count
+		}
+	})
+
+	anyHints, err := types.MarshalAny(resHints)
+	if err != nil {
+		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
+	}
+
+	names := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(names) > int(req.Limit) {
+		names = names[:req.Limit]
+	}
+
+	return &storepb.LabelNamesResponse{
+		Names: names,
+		Hints: anyHints,
+	}, nil
 }
 
 func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
@@ -940,4 +1051,8 @@ func (a *concreteIterator[T]) At() T {
 // TimeRange returns the minimum and maximum timestamp of data available in the store.
 func (s *ParquetBucketStore) TimeRange() (mint, maxt int64) {
 	return s.blockSet.timerange()
+}
+
+func (s *ParquetBucketStore) recordLabelNamesCallResult(stats *safeQueryStats) {
+	// TODO implement for proper stats reporting
 }
