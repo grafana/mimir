@@ -716,7 +716,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(220, 230, 10, 10),
 			},
 			expectedSamplesProcessed: 0,
-			expectedStepStats:        []StepStat{},
+			expectedStepStats:        nil,
 		},
 		{
 			name: "Zero samples in extent",
