@@ -80,18 +80,18 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 		lb := labels.NewBuilder(labels.EmptyLabels())
 
 		for i := range seriesMetadata {
-			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			srcVal := seriesMetadata[i].Labels.Get(src)
 			indexes := regex.FindStringSubmatchIndex(srcVal)
 			if indexes != nil { // Only replace when regexp matches.
 				res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
 				lb.Reset(seriesMetadata[i].Labels)
 				lb.Set(dst, string(res))
+				tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 				seriesMetadata[i].Labels = lb.Labels()
-			}
-			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
-			if err != nil {
-				return nil, err
+				err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
