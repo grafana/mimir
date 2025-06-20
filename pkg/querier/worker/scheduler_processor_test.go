@@ -10,6 +10,8 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -617,6 +620,12 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 	}
 	sp.grpcConfig.MaxSendMsgSize = math.MaxInt
 
+	frontendForQuerierMock := newFrontendForQuerierMock(t)
+
+	return sp, loopClient, requestHandler, frontendForQuerierMock
+}
+
+func newFrontendForQuerierMock(t *testing.T) *frontendForQuerierMockServer {
 	frontendForQuerierMock := &frontendForQuerierMockServer{responses: make(map[uint64]*queryResult)}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -637,7 +646,7 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 		<-stopped // Wait for shutdown to complete.
 	})
 
-	return sp, loopClient, requestHandler, frontendForQuerierMock
+	return frontendForQuerierMock
 }
 
 type schedulerForQuerierClientMock struct {
@@ -722,8 +731,9 @@ func (m *httpRequestHandlerMock) ServeHTTP(w http.ResponseWriter, r *http.Reques
 }
 
 type frontendForQuerierMockServer struct {
-	addr             string
-	queryResultCalls atomic.Int64
+	addr                             string
+	queryResultCalls                 atomic.Int64
+	queryResultRemainingFailingCalls atomic.Int64
 
 	responseStreamStarted          chan struct{}
 	queryResultStreamErrorAfter    int
@@ -741,7 +751,19 @@ type queryResult struct {
 
 func (f *frontendForQuerierMockServer) QueryResult(_ context.Context, r *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.queryResultCalls.Inc()
-	f.responses[r.QueryID] = &queryResult{body: r.HttpResponse.Body}
+
+	if f.queryResultRemainingFailingCalls.Dec() >= 0 {
+		return nil, errors.New("something went wrong in QueryResult")
+	}
+
+	f.responses[r.QueryID] = &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    r.HttpResponse.Code,
+			Headers: r.HttpResponse.Headers,
+			Stats:   r.Stats,
+		},
+		body: r.HttpResponse.Body,
+	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
@@ -801,4 +823,292 @@ func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
 		return errors.New("sorry, we've an error")
 	}
 	return nil
+}
+
+func prepareResponseWriterTest(t *testing.T, ctx context.Context, maxMessageSize int) (*responseWriter, *frontendForQuerierMockServer, *querier_stats.Stats) {
+	logger := log.NewNopLogger()
+	frontend := newFrontendForQuerierMock(t)
+	poolConfig := client.PoolConfig{
+		CheckInterval:      5 * time.Second,
+		HealthCheckEnabled: true,
+		HealthCheckTimeout: 1 * time.Second,
+	}
+	pool := client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(func(addr string) (client.PoolClient, error) {
+		return newFrontendClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}), nil, logger)
+
+	stats := &querier_stats.Stats{}
+	stats.SamplesProcessed += 100
+
+	const queryID = uint64(1234)
+	w := newResponseWriter(ctx, logger, queryID, frontend.addr, stats, false, pool, maxMessageSize)
+
+	return w, frontend, stats
+}
+
+func TestResponseWriter_StreamingDisabled_HappyPath(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w.Header().Set("User-Agent", "foo")
+	w.WriteHeader(http.StatusTeapot)
+
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send result after WriteHeader call")
+
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send result after Write call")
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabledButResponseContainsStreamingHeader(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w.Header().Set("User-Agent", "foo")
+	w.Header().Set(ResponseStreamingEnabledHeader, "true")
+	w.Header().Set("Authorization", "root")
+	w.WriteHeader(http.StatusTeapot)
+
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+				{Key: "Authorization", Values: []string{"root"}},
+				// The 'streaming enabled' header should not be sent to the frontend.
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_PayloadTooLarge(t *testing.T) {
+	maxMessageSize := 8
+	w, frontend, _ := prepareResponseWriterTest(t, context.Background(), maxMessageSize)
+	w.Header().Set("User-Agent", "foo")
+	w.WriteHeader(http.StatusTeapot)
+	_, err := w.Write(bytes.Repeat([]byte{'a'}, maxMessageSize))
+	require.NoError(t, err)
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code:  http.StatusRequestEntityTooLarge,
+			Stats: nil,
+		},
+		body: []byte("response larger than the max message size (8 vs 8)"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_SendsResponseEvenIfContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	w, frontend, stats := prepareResponseWriterTest(t, ctx, math.MaxInt)
+	w.Header().Set("User-Agent", "foo")
+	w.WriteHeader(http.StatusTeapot)
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_IgnoresSubsequentWriteHeaderCalls(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+
+	w.Header().Set("User-Agent", "foo")
+	w.WriteHeader(http.StatusTeapot)
+	w.WriteHeader(http.StatusMultipleChoices)
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_WriteHeaderNotCalled(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+
+	w.Header().Set("User-Agent", "foo")
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_WriteNotCalled(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+
+	w.Header().Set("User-Agent", "foo")
+	w.WriteHeader(http.StatusTeapot)
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: nil,
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_WriteAndWriteHeaderNotCalled(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w.Header().Set("User-Agent", "foo")
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: nil,
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_WriteCalledBeforeWriteHeader(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+
+	w.Header().Set("User-Agent", "foo")
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+	w.WriteHeader(http.StatusTeapot)
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingDisabled_Retries(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	const expectedFailingCalls = 4
+	frontend.queryResultRemainingFailingCalls.Store(expectedFailingCalls)
+
+	w.Header().Set("User-Agent", "foo")
+	w.WriteHeader(http.StatusTeapot)
+	_, err := w.Write([]byte("the body"))
+	require.NoError(t, err)
+	w.WriteHeader(http.StatusTeapot)
+	w.Close()
+
+	require.Equal(t, int64(expectedFailingCalls+1), frontend.queryResultCalls.Load(), "should have succeeded on 5th call")
+	require.Contains(t, frontend.responses, w.queryID, "should have sent successfully sent result")
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+			},
+			Stats: stats,
+		},
+		body: []byte("the body"),
+	}
+
+	requireEqualResponses(t, expected, frontend.responses[w.queryID])
+
+	require.Zero(t, frontend.queryResultStreamMetadataCalls.Load(), "should not send streaming result")
+	require.Zero(t, frontend.queryResultStreamBodyCalls.Load(), "should not send streaming result")
+}
+
+func requireSingleNonStreamingResponse(t *testing.T, w *responseWriter, frontend *frontendForQuerierMockServer, expected *queryResult) {
+	require.Equal(t, int64(1), frontend.queryResultCalls.Load(), "should have sent result after Close")
+	require.Contains(t, frontend.responses, w.queryID, "should have sent result after Close call")
+
+	requireEqualResponses(t, expected, frontend.responses[w.queryID])
+
+	require.Zero(t, frontend.queryResultStreamMetadataCalls.Load(), "should not send streaming result")
+	require.Zero(t, frontend.queryResultStreamBodyCalls.Load(), "should not send streaming result")
+}
+
+func requireEqualResponses(t *testing.T, expected, actual *queryResult) {
+	// There's no guarantee headers are in any particular order, and we don't care what order they're in, so sort to make comparison easier.
+	slices.SortFunc(expected.metadata.Headers, sortHeaders)
+	slices.SortFunc(actual.metadata.Headers, sortHeaders)
+	require.Equal(t, expected, actual)
+}
+
+func sortHeaders(a, b *httpgrpc.Header) int {
+	return strings.Compare(a.Key, b.Key)
 }

@@ -6,10 +6,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -60,7 +60,6 @@ func newSchedulerProcessor(cfg Config, handler http.Handler, log log.Logger, reg
 	p := &schedulerProcessor{
 		log:              log,
 		handler:          handler,
-		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
 		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
@@ -270,162 +269,17 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		stats.AddQueueTime(queueTime)
 	}
 
+	w := newResponseWriter(ctx, logger, queryID, frontendAddress, stats, sp.streamingEnabled, sp.frontendPool, sp.maxMessageSize)
+	defer w.Close() // Ensure we always respond to the frontend, even if we return an error, to prevent the request from hanging.
+
 	req, err := httpgrpc.ToHTTPRequest(ctx, request)
 	if err != nil {
-		sp.sendError(ctx, logger, queryID, frontendAddress, http.StatusInternalServerError, err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(err.Error())) // Ignore error: there's not much we can do about it at this point.
 		return
 	}
 
-	w := httptest.NewRecorder()
 	sp.handler.ServeHTTP(w, req)
-	responseBodyLength := w.Body.Len()
-
-	// Ensure responses that are too big are not retried.
-	if responseBodyLength >= sp.maxMessageSize {
-		level.Error(logger).Log("msg", "response larger than max message size", "size", responseBodyLength, "maxMessageSize", sp.maxMessageSize)
-		sp.sendError(ctx, logger, queryID, frontendAddress, http.StatusRequestEntityTooLarge, fmt.Sprintf("response larger than the max message size (%d vs %d)", responseBodyLength, sp.maxMessageSize))
-		return
-	}
-
-	response := &httpgrpc.HTTPResponse{
-		Code:    int32(w.Code),
-		Headers: httpgrpc.FromHeader(w.Header()),
-		Body:    w.Body.Bytes(),
-	}
-
-	var hasStreamHeader bool
-	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
-	shouldStream := hasStreamHeader && sp.streamingEnabled && responseBodyLength > responseStreamingBodyChunkSizeBytes
-
-	// Protect against not-yet-exited querier handler goroutines that could
-	// still be incrementing stats when sent for marshaling below.
-	stats = stats.Copy()
-	sp.sendResponse(ctx, logger, queryID, frontendAddress, shouldStream, response, stats)
-}
-
-func (sp *schedulerProcessor) sendError(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, code int32, err string) {
-	response := &httpgrpc.HTTPResponse{
-		Code: code,
-		Body: []byte(err),
-	}
-
-	sp.sendResponse(ctx, logger, queryID, frontendAddress, false, response, nil)
-}
-
-func (sp *schedulerProcessor) sendResponse(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, shouldStream bool, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) {
-	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
-	frontendCtx := context.WithoutCancel(ctx)
-
-	bof := backoff.New(frontendCtx, backoff.Config{
-		MinBackoff: 5 * time.Millisecond,
-		MaxBackoff: 100 * time.Millisecond,
-		MaxRetries: maxNotifyFrontendRetries,
-	})
-
-	var err error
-
-	for bof.Ongoing() {
-		var c client.PoolClient
-		c, err = sp.frontendPool.GetClientFor(frontendAddress)
-		if err != nil {
-			break
-		}
-
-		if shouldStream {
-			err = sp.streamResponse(frontendCtx, ctx, c, queryID, response, stats, sp.log)
-		} else {
-			// The return value from QueryResult is empty and therefore uninteresting.
-			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
-				QueryID:      queryID,
-				HttpResponse: response,
-				Stats:        stats,
-			})
-		}
-		if err == nil {
-			break
-		}
-
-		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
-		sp.frontendPool.RemoveClient(c, frontendAddress)
-		bof.Wait()
-	}
-
-	if err != nil {
-		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
-	}
-}
-
-func removeStreamingHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
-	streamEnabledViaHeader := false
-	for i, header := range headers {
-		if header.Key == ResponseStreamingEnabledHeader {
-			if header.Values[0] == "true" {
-				streamEnabledViaHeader = true
-			}
-			headers = append(headers[:i], headers[i+1:]...)
-			break
-		}
-	}
-	return headers, streamEnabledViaHeader
-}
-
-func streamResponse(
-	ctx context.Context,
-	reqCtx context.Context,
-	c client.PoolClient,
-	queryID uint64,
-	response *httpgrpc.HTTPResponse,
-	stats *querier_stats.Stats,
-	logger log.Logger,
-) error {
-	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
-	if err != nil {
-		return fmt.Errorf("error creating stream to frontend: %w", err)
-	}
-
-	defer func() {
-		// Ignore error here because there's nothing we can do about it.
-		_, _ = sc.CloseAndRecv()
-	}()
-
-	// Send metadata
-	err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
-		QueryID: queryID,
-		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
-			Code:    response.Code,
-			Headers: response.Headers,
-			Stats:   stats,
-		}},
-	})
-	if err != nil {
-		return fmt.Errorf("error sending initial response to frontend: %w", err)
-	}
-
-	// The response metadata has been sent successfully. After this point we can no longer
-	// return an error from this function as that would cause the response metadata to be sent
-	// again. This would be rejected by the frontend and the retry could never succeed.
-	// Send body chunks.
-	for offset := 0; offset < len(response.Body); {
-		select {
-		case <-reqCtx.Done():
-			level.Warn(logger).Log("msg", "response stream aborted", "cause", context.Cause(reqCtx))
-			return nil
-		default:
-			err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
-				QueryID: queryID,
-				Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{
-					Chunk: response.Body[offset:min(offset+responseStreamingBodyChunkSizeBytes, len(response.Body))],
-				}},
-			})
-			if err != nil {
-				level.Warn(logger).Log("msg", "error streaming response body to frontend, aborting response stream", "err", err)
-				return nil
-			}
-			offset += responseStreamingBodyChunkSizeBytes
-		}
-	}
-
-	return nil
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
@@ -436,6 +290,10 @@ func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClie
 	}
 	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
+	return newFrontendClient(addr, opts...)
+}
+
+func newFrontendClient(addr string, opts ...grpc.DialOption) (client.PoolClient, error) {
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(addr, opts...)
 	if err != nil {
@@ -460,4 +318,137 @@ func (fc *frontendClient) Close() error {
 }
 
 type responseWriter struct {
+	ctx              context.Context
+	logger           log.Logger
+	queryID          uint64
+	frontendAddress  string
+	stats            *querier_stats.Stats
+	streamingEnabled bool
+	frontendPool     *client.Pool
+	maxMessageSize   int
+
+	header     http.Header
+	statusCode int
+	body       *bytes.Buffer
+}
+
+func newResponseWriter(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, stats *querier_stats.Stats, streamingEnabled bool, frontendPool *client.Pool, maxMessageSize int) *responseWriter {
+	return &responseWriter{
+		ctx:              ctx,
+		logger:           logger,
+		queryID:          queryID,
+		frontendAddress:  frontendAddress,
+		stats:            stats,
+		streamingEnabled: streamingEnabled,
+		frontendPool:     frontendPool,
+		maxMessageSize:   maxMessageSize,
+
+		header: make(http.Header),
+		body:   new(bytes.Buffer),
+	}
+}
+
+func (w *responseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *responseWriter) WriteHeader(statusCode int) {
+	if w.statusCode != 0 {
+		// WriteHeader already called before, do nothing.
+		return
+	}
+
+	// Check for streaming header and remove
+	//streamEnabledViaHeader := headers.Get(ResponseStreamingEnabledHeader) == "true"
+	w.header.Del(ResponseStreamingEnabledHeader)
+
+	// If streaming, have content length and content length less than threshold: switch back to non-streaming
+	// If streaming, otherwise: send headers and stats, with retries, and retain stream for later use
+
+	// If content / buffer length known, allocate buffer now
+
+	w.statusCode = statusCode
+}
+
+func (w *responseWriter) Write(bytes []byte) (int, error) {
+	w.WriteHeader(http.StatusOK) // Ensure WriteHeader has been called at least once, default to HTTP 200 OK
+
+	// If streaming:
+	// - Append to buffer if buffer not full enough, otherwise send as much as possible and buffer remainder
+
+	return w.body.Write(bytes)
+}
+
+func (w *responseWriter) Close() {
+	w.WriteHeader(http.StatusOK) // Ensure WriteHeader has been called at least once, default to HTTP 200 OK
+
+	// If streaming: send any remaining buffered bytes, close stream
+
+	w.sendNonStreamingResponse()
+}
+
+func (w *responseWriter) sendNonStreamingResponse() {
+	responseBodyLength := w.body.Len()
+	if responseBodyLength >= w.maxMessageSize {
+		level.Error(w.logger).Log("msg", "response larger than max message size", "size", responseBodyLength, "maxMessageSize", w.maxMessageSize)
+
+		// Clear the existing response and replace it with an error.
+		w.statusCode = http.StatusRequestEntityTooLarge
+		w.header = make(http.Header)
+		w.body.Reset()
+		w.stats = nil
+		w.body.WriteString(fmt.Sprintf("response larger than the max message size (%d vs %d)", responseBodyLength, w.maxMessageSize))
+	}
+
+	// Protect against not-yet-exited querier handler goroutines that could
+	// still be incrementing stats when sent for marshaling below.
+	stats := w.stats.Copy()
+
+	w.withRetries(func(frontendCtx context.Context, c frontendv2pb.FrontendForQuerierClient) error {
+		// The return value from QueryResult is empty and therefore uninteresting.
+		_, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
+			QueryID: w.queryID,
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code:    int32(w.statusCode),
+				Headers: httpgrpc.FromHeader(w.header),
+				Body:    w.body.Bytes(),
+			},
+			Stats: stats,
+		})
+
+		return err
+	})
+}
+
+func (w *responseWriter) withRetries(f func(frontendCtx context.Context, c frontendv2pb.FrontendForQuerierClient) error) {
+	frontendCtx := context.WithoutCancel(w.ctx)
+
+	bof := backoff.New(frontendCtx, backoff.Config{
+		MinBackoff: 5 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: maxNotifyFrontendRetries,
+	})
+
+	var err error
+
+	for bof.Ongoing() {
+		var c client.PoolClient
+		c, err = w.frontendPool.GetClientFor(w.frontendAddress)
+		if err != nil {
+			break
+		}
+
+		err := f(frontendCtx, c.(frontendv2pb.FrontendForQuerierClient))
+		if err == nil {
+			break
+		}
+
+		level.Warn(w.logger).Log("msg", "retrying to notify frontend about query", "err", err, "frontend", w.frontendAddress, "retries", bof.NumRetries(), "query_id", w.queryID)
+		w.frontendPool.RemoveClient(c, w.frontendAddress)
+		bof.Wait()
+	}
+
+	if err != nil {
+		level.Error(w.logger).Log("msg", "error notifying frontend about query", "err", err, "frontend", w.frontendAddress, "query_id", w.queryID)
+	}
 }
