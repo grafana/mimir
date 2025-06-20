@@ -5746,6 +5746,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_convert_scope_metadata",
+          "required": false,
+          "desc": "Whether to convert OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-convert-scope-metadata",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",

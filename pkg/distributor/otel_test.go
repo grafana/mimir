@@ -284,9 +284,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				true,
 				false,
 				false,
-				tc.promoteResourceAttributes,
 				tc.keepIdentifyingResourceAttributes,
 				false,
+				false,
+				tc.promoteResourceAttributes,
 				md,
 				log.NewNopLogger(),
 			)
@@ -359,9 +360,10 @@ func TestConvertOTelHistograms(t *testing.T) {
 			true,
 			false,
 			false,
-			[]string{},
 			false,
 			convertHistogramsToNHCB,
+			false,
+			[]string{},
 			md,
 			log.NewNopLogger(),
 		)
