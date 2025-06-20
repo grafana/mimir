@@ -14,12 +14,11 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
