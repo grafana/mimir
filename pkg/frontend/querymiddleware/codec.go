@@ -160,13 +160,11 @@ type MetricsQueryRequest interface {
 	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(span trace.Span)
-	// WithStats clones the current request with a a provided value for the stats parameter.
-	// stats parameter controls prometheus query stats collection in the querier.
-	// Note, that these are not returned in the PrometheusResponse, but collected and used for querier.Stats.
-	// Possible values are:
-	// - any non-empty string: stats are collected
-	// - "all": stats including perStepStats are collected
-	// - "": no stats are collected.
+	// WithStats returns a copy of the current request with the provided value for the "stats" parameter.
+	//
+	// This value is passed to the querier to enable per-step statistics collection,
+	// which are exposed via querier.Stats. Currently, only the value "all" has an effect in Mimir.
+	// Note: unlike Prometheus, Mimir does not return query stats in the response body if stats is set.
 	WithStats(string) (MetricsQueryRequest, error)
 }
 
