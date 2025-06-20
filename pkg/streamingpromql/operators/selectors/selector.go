@@ -134,15 +134,15 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 		return nil, types.EOS
 	}
 
-	s.seriesIdx++
-
 	// Only check for cancellation every 128 series. This avoids a (relatively) expensive check on every iteration, but aborts
-	// queries quickly enough when cancelled.
+	// queries quickly enough when cancelled. Note that we purposefully check for cancellation before incrementing the series
+	// index so that we check for cancellation at least once for all selectors.
 	// See https://github.com/prometheus/prometheus/pull/14118 for more explanation of why we use 128 (rather than say 100).
 	if s.seriesIdx%128 == 0 && ctx.Err() != nil {
 		return nil, context.Cause(ctx)
 	}
 
+	s.seriesIdx++
 	return s.series.Pop().Iterator(existing), nil
 }
 

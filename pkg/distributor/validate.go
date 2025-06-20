@@ -283,12 +283,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 	}
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
-		var bucketCount int
-		if s.IsFloatHistogram() {
-			bucketCount = len(s.GetNegativeCounts()) + len(s.GetPositiveCounts())
-		} else {
-			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
-		}
+		bucketCount := s.BucketCount()
 		if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
 			// Custom buckets cannot be scaled down.
 			cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())

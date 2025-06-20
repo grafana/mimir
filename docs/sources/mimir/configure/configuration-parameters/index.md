@@ -1637,12 +1637,8 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
-  # (experimental) Use query planner when evaluating queries.
-  # CLI flag: -querier.mimir-query-engine.use-query-planning
-  [use_query_planning: <boolean> | default = false]
-
   # (experimental) Enable common subexpression elimination when evaluating
-  # queries. Only applies if query planner is enabled.
+  # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
 ```
@@ -1816,6 +1812,16 @@ client_cluster_validation:
   # (experimental) Optionally define the cluster validation label.
   # CLI flag: -query-frontend.client-cluster-validation.label
   [label: <string> | default = ""]
+
+# (experimental) Query engine to use, either 'prometheus' or 'mimir'
+# CLI flag: -query-frontend.query-engine
+[query_engine: <string> | default = "prometheus"]
+
+# (experimental) If set to true and the Mimir query engine is in use, fall back
+# to using the Prometheus query engine for any queries not supported by the
+# Mimir query engine.
+# CLI flag: -query-frontend.enable-query-engine-fallback
+[enable_query_engine_fallback: <boolean> | default = true]
 ```
 
 ### query_scheduler
@@ -2419,15 +2425,9 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
-# (experimental) Skip starting the Alertmanager for tenants matching this suffix
-# unless they have a promoted, non-default Grafana Alertmanager configuration or
-# they are receiving requests.
-# CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
-[grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
-
-# (experimental) Duration to wait before shutting down an idle Alertmanager for
-# a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix
-# and is using an unpromoted or default configuration.
+# (experimental) Duration to wait before shutting down an idle Alertmanager
+# using an unpromoted or default configuration when strict initialization is
+# enabled.
 # CLI flag: -alertmanager.grafana-alertmanager-grace-period
 [grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
 

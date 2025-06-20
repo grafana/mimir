@@ -105,4 +105,6 @@ By default, `-ingester.stream-chunks-when-using-blocks` is `true` which enables 
 In runtime configuration, the parameter `ingester_stream_chunks_when_using_blocks` overrides the CLI flag `-ingester.stream-chunks-when-using-blocks`.
 
 It's strongly recommended that you keep the transfer of encoded chunks enabled, except in rare cases where you observe rules evaluation slowing down.
+
+Both the parameter and CLI flag are deprecated and will be removed in a future release.
 {{< /admonition >}}

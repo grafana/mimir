@@ -194,7 +194,7 @@ type Config struct {
 	TSDBConfigUpdatePeriod time.Duration `yaml:"tsdb_config_update_period" category:"experimental"`
 
 	BlocksStorageConfig         mimir_tsdb.BlocksStorageConfig `yaml:"-"`
-	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"advanced"`
+	StreamChunksWhenUsingBlocks bool                           `yaml:"-" category:"deprecated"`
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
 
@@ -1633,13 +1633,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				lastNativeHistogram := ts.Histograms[numNativeHistograms-1]
 				numFloats := len(ts.Samples)
 				if numFloats == 0 || ts.Samples[numFloats-1].TimestampMs < lastNativeHistogram.Timestamp {
-					numNativeHistogramBuckets = 0
-					for _, span := range lastNativeHistogram.PositiveSpans {
-						numNativeHistogramBuckets += int(span.Length)
-					}
-					for _, span := range lastNativeHistogram.NegativeSpans {
-						numNativeHistogramBuckets += int(span.Length)
-					}
+					numNativeHistogramBuckets = lastNativeHistogram.BucketCount()
 				}
 			}
 		}
@@ -2205,8 +2199,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	ctx := stream.Context()
 	spanlog := spanlogger.FromContext(ctx, i.logger)
-	defer spanlog.Finish()
-
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
