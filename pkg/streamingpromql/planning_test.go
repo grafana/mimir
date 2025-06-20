@@ -1054,7 +1054,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
-	opts.UseQueryPlanning = true
 	tracker := &testQueryTracker{}
 	opts.CommonOpts.ActiveQueryTracker = tracker
 	planner := NewQueryPlanner(opts)

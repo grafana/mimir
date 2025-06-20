@@ -33,7 +33,7 @@
       {
         // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
         "matchDatasources": ["docker", "golang-version", "github-releases"],
-        "matchPackageNames": ["go", "golang"],
+        "matchPackageNames": ["go", "golang", "actions/go-versions"],
         "groupName": "Go"
       },
       // Keep deps for the dashboard screenshotting tool up to date
