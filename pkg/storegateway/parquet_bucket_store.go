@@ -311,8 +311,17 @@ func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *
 }
 
 func (s *ParquetBucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
-	// TODO: Implement hints sending for parquet stores
-	panic("TODO: implement sendHints")
+	var anyHints *types.Any
+	var err error
+	if anyHints, err = types.MarshalAny(resHints); err != nil {
+		return status.Error(codes.Internal, errors.Wrap(err, "marshal series response hints").Error())
+	}
+
+	if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
+	}
+
+	return nil
 }
 
 // createLabelsAndChunksIterators creates iterators for labels and chunks from
@@ -567,13 +576,13 @@ func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv st
 }
 
 func (s *ParquetBucketStore) recordSeriesCallResult(stats *safeQueryStats) {
-	// TODO: Implement series call result recording for parquet stores
-	panic("TODO: implement recordSeriesCallResult")
+	// TODO Implement stats reporting here
 }
 
 func (s *ParquetBucketStore) recordRequestAmbientTime(stats *safeQueryStats, startTime time.Time) {
-	// TODO: Implement request ambient time recording for parquet stores
-	panic("TODO: implement recordRequestAmbientTime")
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesAmbientTime += time.Since(startTime)
+	})
 }
 
 func (s *ParquetBucketStore) sendMessage(typ string, srv storegatewaypb.StoreGateway_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
@@ -597,8 +606,16 @@ func (s *ParquetBucketStore) sendMessage(typ string, srv storegatewaypb.StoreGat
 }
 
 func (s *ParquetBucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats) error {
-	// TODO: Implement stats sending for parquet stores
-	panic("TODO: implement sendStats")
+	var encodeDuration, sendDuration time.Duration
+	defer stats.update(func(stats *queryStats) {
+		stats.streamingSeriesSendResponseDuration += sendDuration
+		stats.streamingSeriesEncodeResponseDuration += encodeDuration
+	})
+	unsafeStats := stats.export()
+	if err := s.sendMessage("series response stats", srv, storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum+unsafeStats.seriesProcessedSizeSum), &encodeDuration, &sendDuration); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Stats returns statistics about the BucketStore instance.
