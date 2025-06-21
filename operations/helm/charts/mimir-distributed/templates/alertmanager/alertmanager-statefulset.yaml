@@ -68,7 +68,6 @@ spec:
           matchLabels:
             {{- toYaml . | nindent 12 }}
         {{- end }}
-        selector:
         resources:
           requests:
             storage: "{{ .size }}"

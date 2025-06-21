@@ -3,13 +3,11 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-ruler-dedicated-query-path-values-mimir-alertmanager
+  name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager
   labels:
-    app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
-    app.kubernetes.io/component: alertmanager
-    app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/managed-by: Helm
+    app: enterprise-metrics-alertmanager
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
   annotations:
     {}
   namespace: "citestns"
@@ -17,12 +15,11 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
-      app.kubernetes.io/component: alertmanager
+      app: enterprise-metrics-alertmanager
+      release: test-enterprise-legacy-label-values
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-ruler-dedicated-query-path-values-mimir-alertmanager
+  serviceName: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager
   volumeClaimTemplates:
     - apiVersion: v1
       kind: PersistentVolumeClaim
@@ -37,15 +34,15 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
-        app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
-        app.kubernetes.io/part-of: memberlist
+        app: enterprise-metrics-alertmanager
+        name: alertmanager
+        gossip_ring_member: "true"
+        target: alertmanager
+        release: test-enterprise-legacy-label-values
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-ruler-dedicated-query-path-values-mimir
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -59,27 +56,26 @@ spec:
         whenUnsatisfiable: ScheduleAnyway
         labelSelector:
           matchLabels:
-            app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
-            app.kubernetes.io/component: alertmanager
+            app: enterprise-metrics-alertmanager
+            release: test-enterprise-legacy-label-values
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
-          configMap:
-            name: test-ruler-dedicated-query-path-values-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
         - name: runtime-config
           configMap:
-            name: test-ruler-dedicated-query-path-values-mimir-runtime
+            name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
         - name: tmp
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
         - name: alertmanager-fallback-config
           configMap:
-            name: test-ruler-dedicated-query-path-values-mimir-alertmanager-fallback-config
+            name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -94,8 +90,10 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
             - name: runtime-config
-              mountPath: /var/mimir
+              mountPath: /var/enterprise-metrics
             - name: storage
               mountPath: "/data"
             - name: alertmanager-fallback-config
@@ -131,5 +129,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []

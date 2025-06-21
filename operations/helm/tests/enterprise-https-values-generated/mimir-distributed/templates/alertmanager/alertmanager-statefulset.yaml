@@ -3,10 +3,10 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-ruler-dedicated-query-path-values-mimir-alertmanager
+  name: enterprise-https-values-mimir-alertmanager
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+    app.kubernetes.io/instance: enterprise-https-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
@@ -18,11 +18,11 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+      app.kubernetes.io/instance: enterprise-https-values
       app.kubernetes.io/component: alertmanager
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-ruler-dedicated-query-path-values-mimir-alertmanager
+  serviceName: enterprise-https-values-mimir-alertmanager
   volumeClaimTemplates:
     - apiVersion: v1
       kind: PersistentVolumeClaim
@@ -38,14 +38,14 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+        app.kubernetes.io/instance: enterprise-https-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-ruler-dedicated-query-path-values-mimir
+      serviceAccountName: enterprise-https-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -60,26 +60,33 @@ spec:
         labelSelector:
           matchLabels:
             app.kubernetes.io/name: mimir
-            app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+            app.kubernetes.io/instance: enterprise-https-values
             app.kubernetes.io/component: alertmanager
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
-            name: test-ruler-dedicated-query-path-values-mimir-config
+            name: enterprise-https-values-mimir-config
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
+        - name: license
+          secret:
+            secretName: gem-license
         - name: runtime-config
           configMap:
-            name: test-ruler-dedicated-query-path-values-mimir-runtime
+            name: enterprise-https-values-mimir-runtime
         - name: tmp
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
         - name: alertmanager-fallback-config
           configMap:
-            name: test-ruler-dedicated-query-path-values-mimir-alertmanager-fallback-config
+            name: enterprise-https-values-mimir-alertmanager-fallback-config
+        
+        - name: tls-certs
+          secret:
+            secretName: tls-certs
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -92,8 +99,14 @@ spec:
             # needs to be higher to avoid connections being closed abruptly.
             - "-server.http-idle-timeout=6m"
           volumeMounts:
+            
+            - mountPath: /certs
+              name: tls-certs
+              readOnly: true
             - name: config
               mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
             - name: storage
@@ -120,6 +133,7 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: HTTPS
             initialDelaySeconds: 45
           resources:
             requests:
@@ -131,5 +145,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-            []
