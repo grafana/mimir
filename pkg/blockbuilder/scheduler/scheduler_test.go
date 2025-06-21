@@ -808,19 +808,27 @@ func TestLimitNPolicy(t *testing.T) {
 }
 
 func TestPartitionState(t *testing.T) {
-	pt := &partitionState{}
+	pt := &partitionState{
+		topic:     "topic",
+		partition: 0,
+	}
 	sz := 1 * time.Hour
 
 	z := time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC)
 
-	var job *offsetRange
+	var job *schedulerpb.JobSpec
 	var err error
 
 	job, err = pt.updateEndOffset(100, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	require.Nil(t, job)
 	require.Nil(t, err)
 	job, err = pt.updateEndOffset(200, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
-	require.Equal(t, &offsetRange{start: 100, end: 200}, job)
+	require.Equal(t, &schedulerpb.JobSpec{
+		Topic:       "topic",
+		Partition:   0,
+		StartOffset: 100,
+		EndOffset:   200,
+	}, job)
 	require.Nil(t, err)
 
 	job, err = pt.updateEndOffset(201, time.Date(2025, 3, 1, 11, 1, 10, 0, time.UTC), sz)
@@ -834,7 +842,12 @@ func TestPartitionState(t *testing.T) {
 	require.Nil(t, err)
 
 	job, err = pt.updateEndOffset(300, z.Add(2*time.Hour), sz)
-	require.Equal(t, &offsetRange{start: 200, end: 300}, job)
+	require.Equal(t, &schedulerpb.JobSpec{
+		Topic:       "topic",
+		Partition:   0,
+		StartOffset: 200,
+		EndOffset:   300,
+	}, job)
 	require.NoError(t, err)
 
 	// And, if the time goes backwards, we return an error.
@@ -844,7 +857,10 @@ func TestPartitionState(t *testing.T) {
 }
 
 func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
-	pt := &partitionState{}
+	pt := &partitionState{
+		topic:     "topic",
+		partition: 0,
+	}
 	sz := 1 * time.Hour
 	z := time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC)
 
@@ -857,11 +873,14 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 }
 
 func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
-	pt := &partitionState{}
+	pt := &partitionState{
+		topic:     "topic",
+		partition: 0,
+	}
 	sz := 1 * time.Hour
 
 	// A bunch of data observed:
-	var j *offsetRange
+	var j *schedulerpb.JobSpec
 	var err error
 	j, err = pt.updateEndOffset(10, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), sz)
 	assert.Nil(t, j)
@@ -879,7 +898,12 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 
 	// as we cross into the next bucket, there's still no new data.
 	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 1, 0, 0, time.UTC), sz)
-	assert.Equal(t, &offsetRange{start: 10, end: 12}, j)
+	assert.Equal(t, &schedulerpb.JobSpec{
+		Topic:       "topic",
+		Partition:   0,
+		StartOffset: 10,
+		EndOffset:   12,
+	}, j)
 	assert.NoError(t, err)
 	// and we keep getting the same offset.
 	j, err = pt.updateEndOffset(12, time.Date(2025, 3, 1, 11, 2, 0, 0, time.UTC), sz)
@@ -906,9 +930,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState(part)
 
-	pt.addPendingJob(&offsetRange{start: 10, end: 20})
-	pt.addPendingJob(&offsetRange{start: 20, end: 30})
-	pt.addPendingJob(&offsetRange{start: 30, end: 40})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 10,
+		EndOffset:   20,
+	})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 20,
+		EndOffset:   30,
+	})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 30,
+		EndOffset:   40,
+	})
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 
@@ -946,9 +985,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState(part)
 
-	pt.addPendingJob(&offsetRange{start: 10, end: 20})
-	pt.addPendingJob(&offsetRange{start: 20, end: 30})
-	pt.addPendingJob(&offsetRange{start: 30, end: 40})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 10,
+		EndOffset:   20,
+	})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 20,
+		EndOffset:   30,
+	})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 30,
+		EndOffset:   40,
+	})
 
 	assert.Equal(t, 3, pt.pendingJobs.Len())
 	sched.enqueuePendingJobs()
@@ -962,7 +1016,12 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 
 	part := int32(1)
 	pt := sched.getPartitionState(part)
-	pt.addPendingJob(&offsetRange{start: 10, end: 20})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 10,
+		EndOffset:   20,
+	})
 
 	sched.advanceCommittedOffset("ingest", part, 20)
 
@@ -981,7 +1040,12 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	part := int32(1)
 	pt := sched.getPartitionState(part)
 	// Assume at startup we compute this job offset range:
-	pt.addPendingJob(&offsetRange{start: 10, end: 30})
+	pt.addPendingJob(&schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   part,
+		StartOffset: 10,
+		EndOffset:   30,
+	})
 
 	// But the job we imported from the existing workers now being completed may be (10, 20):
 	sched.advanceCommittedOffset("ingest", part, 20)
