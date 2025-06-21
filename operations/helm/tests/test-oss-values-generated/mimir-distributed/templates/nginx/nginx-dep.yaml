@@ -59,6 +59,7 @@ spec:
             httpGet:
               path: /
               port: http-metric
+              scheme: 'HTTP'
             initialDelaySeconds: 15
             timeoutSeconds: 1
           securityContext:

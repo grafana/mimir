@@ -1,0 +1,21 @@
+{{- if and (not .Values.memcachedExporter.useExternalConfig) (include "memcachedExporter.hasConfig" .) }}
+apiVersion: v1
+{{- if eq .Values.memcachedExporter.configStorageType "Secret" }}
+kind: Secret
+{{- else }}
+kind: ConfigMap
+{{- end }}
+metadata:
+  name: {{ tpl .Values.memcachedExporter.externalConfigSecretName . }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+{{- if eq .Values.memcachedExporter.configStorageType "Secret" }}
+data:
+  web-config.yaml: {{ include "memcachedExporter.calculatedConfig" . | b64enc }}
+{{- else }}
+data:
+  web-config.yaml: |
+    {{ include "memcachedExporter.calculatedConfig" . | nindent 4 }}
+{{- end -}}
+{{- end }}

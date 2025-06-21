@@ -80,9 +80,9 @@ spec:
               containerPort: {{ include "mimir.serverGrpcListenPort" . }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.graphite.write_proxy.livenessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.graphite.write_proxy.livenessProbe) . | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.graphite.write_proxy.readinessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.graphite.write_proxy.readinessProbe) . | nindent 12 }}
           resources:
             {{- toYaml .Values.graphite.write_proxy.resources | nindent 12 }}
           securityContext:

@@ -120,6 +120,7 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 45
           resources:
             limits: null
@@ -251,6 +252,7 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 45
           resources:
             limits: null
@@ -382,6 +384,7 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 45
           resources:
             limits: null
