@@ -91,3 +91,4 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          volumeMounts:

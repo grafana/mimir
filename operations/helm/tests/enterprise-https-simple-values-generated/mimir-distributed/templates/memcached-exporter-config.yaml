@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/memcached-exporter-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enterprise-https-simple-values-mimir-memcached-exporter-config
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: enterprise-https-simple-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  web-config.yaml: |
+    
+    tls_server_config:
+      cert_file: /certs/tls.crt
+      key_file: /certs/tls.key

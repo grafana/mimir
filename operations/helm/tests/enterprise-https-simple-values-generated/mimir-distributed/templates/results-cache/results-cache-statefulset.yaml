@@ -1,0 +1,117 @@
+---
+# Source: mimir-distributed/templates/results-cache/results-cache-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: enterprise-https-simple-values-mimir-results-cache
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: enterprise-https-simple-values
+    app.kubernetes.io/component: memcached
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: enterprise-https-simple-values
+      app.kubernetes.io/component: results-cache
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: enterprise-https-simple-values-mimir-results-cache
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: enterprise-https-simple-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: results-cache
+      annotations:
+
+    spec:
+      serviceAccountName: enterprise-https-simple-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: memcached-exporter-config
+          configMap:
+            name: enterprise-https-simple-values-mimir-memcached-exporter-config
+            items:
+              - key: "web-config.yaml"
+                path: "web-config.yaml"
+        - name: tls-certs
+          secret:
+            secretName: tls-certs
+      containers:
+        - name: memcached
+          image: memcached:1.6.38-alpine
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 614Mi
+            requests:
+              cpu: 500m
+              memory: 614Mi
+          ports:
+            - containerPort: 11211
+              name: client
+          args:
+            - -m 512
+            - --enable-ssl
+            - --extended=modern,ssl_chain_cert=/certs/tls.crt,ssl_key=/certs/tls.key
+            - -I 5m
+            - -c 16384
+            - -v
+            - -u 11211
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /certs
+              name: tls-certs
+              readOnly: true
+        - name: exporter
+          image: prom/memcached-exporter:v0.15.3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9150
+              name: http-metrics
+          args:
+            - "--memcached.address=localhost:11211"
+            - "--web.listen-address=0.0.0.0:9150"
+            - "--web.config.file=/etc/memcached-exporter/web-config.yaml"
+            - "--memcached.tls.enable"
+            - "--memcached.tls.cert-file=/certs/tls.crt"
+            - "--memcached.tls.key-file=/certs/tls.key"
+            - "--memcached.tls.ca-file=/etc/mimir/certificates/root.crt"
+            - "--memcached.tls.server-name=gem.grafana.com"
+          resources:
+            limits: {}
+            requests: {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: memcached-exporter-config
+              mountPath: /etc/memcached-exporter
+            - mountPath: /certs
+              name: tls-certs
+              readOnly: true
