@@ -125,8 +125,8 @@ mimir:
     activity_tracker:
       filepath: /active-query-tracker/activity.log
 
-    server:
     {{- if .Values.tls.mimir.enabled }}
+    server:
       tls_cipher_suites: {{ .Values.tls.mimir.server.tls_cipher_suites }}
       tls_min_version: {{ .Values.tls.mimir.server.tls_min_version }}
       http_tls_config:
