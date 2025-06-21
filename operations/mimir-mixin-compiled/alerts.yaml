@@ -944,7 +944,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
           expr: |
             sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",job=~".*/(store-gateway.*|cortex|mimir|mimir-backend.*)"}[5m])) > 0
-          for: 1h
+          for: 6h
           labels:
             severity: warning
     - name: mimir_compactor_alerts

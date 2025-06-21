@@ -606,7 +606,7 @@ How to **investigate**:
 
 ### MimirHighVolumeLevel1BlocksQueried
 
-This alert fires when the store-gateway is querying level 1 blocks for more than 1 hour, indicating that the compactor may not be keeping up with compaction work.
+This alert fires when the store-gateway is querying level 1 blocks for more than 6 hours, indicating that the compactor may not be keeping up with compaction work.
 
 How it **works**:
 

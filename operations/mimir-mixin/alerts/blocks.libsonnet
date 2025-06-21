@@ -239,7 +239,7 @@
           // Alert if there's sustained querying of level 1 blocks, which indicates the compactor
           // is not keeping up and the store-gateway is serving blocks that aren't well compacted.
           alert: $.alertName('HighVolumeLevel1BlocksQueried'),
-          'for': '1h',
+          'for': '6h',
           expr: |||
             sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",%s}[%s])) > 0
           ||| % [$.jobMatcher($._config.job_names.store_gateway), $.alertRangeInterval(5)],
