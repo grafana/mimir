@@ -604,6 +604,29 @@ How to **investigate**:
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
+### MimirHighVolumeLevel1BlocksQueried
+
+This alert fires when the store-gateway is querying level 1 blocks for more than 1 hour, indicating that the compactor may not be keeping up with compaction work.
+
+How it **works**:
+
+- Level 1 blocks are the result of the first compaction level and contain less optimized data compared to higher-level blocks
+- When the compactor falls behind, store-gateways must serve queries from these less efficient level 1 blocks instead of well-compacted higher-level blocks
+- This can lead to increased query latency and resource usage
+
+How to **investigate**:
+
+- Check the `Mimir / Compactor` dashboard to see if the compactor is healthy and processing blocks normally
+- Look for errors in the compactor logs that might indicate why compaction is falling behind
+- Monitor the `Mimir / Queries` dashboard to see the "Blocks queried / sec by compaction level" panel for the volume of level 1 block queries
+- Check if there's increased write load that the compactor cannot keep up with
+
+How to **fix**:
+
+- Scale up the compactor horizontally if it's CPU or memory constrained
+- Check and increase compactor resources if needed
+- If the issue persists, investigate for corrupted blocks that might be blocking compaction
+
 ### MimirCompactorHasNotSuccessfullyRunCompaction
 
 This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
