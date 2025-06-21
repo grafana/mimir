@@ -4972,19 +4972,6 @@ tls:
   mimir:
     # -- Enable TLS for all Mimir components
     enabled: false
-    server:
-      # -- Path to the server certificate file
-      cert_path: "/etc/mimir/certificates/server.crt"
-      # -- Path to the server key file
-      key_path: "/etc/mimir/certificates/server.key"
-      # -- Path to the CA certificate file
-      ca_path: "/etc/mimir/certificates/root.crt"
-      # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
-      client_auth_type: ""
-      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
-      cipher_suites: ""
-      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
-      min_version: ""
     client:
       # -- Path to the client certificate, which will be used for authenticating with the server
       cert_path: "/etc/mimir/certificates/client.crt"
@@ -4996,6 +4983,19 @@ tls:
       server_name: ""
       # -- Skip validating server certificate
       insecure_skip_verify: false
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suites: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      min_version: ""
+    server:
+      # -- Path to the server certificate file
+      cert_path: "/etc/mimir/certificates/server.crt"
+      # -- Path to the server key file
+      key_path: "/etc/mimir/certificates/server.key"
+      # -- Path to the CA certificate file
+      ca_path: "/etc/mimir/certificates/root.crt"
+      # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
+      client_auth_type: ""
       # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
       cipher_suites: ""
       # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
