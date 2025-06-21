@@ -224,7 +224,6 @@ data:
         secret_access_key: ${MINIO_ROOT_PASSWORD}
     runtime_config:
       file: /var/mimir/runtime.yaml
-    server: null
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m

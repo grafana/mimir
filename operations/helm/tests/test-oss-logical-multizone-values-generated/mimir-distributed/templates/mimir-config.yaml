@@ -122,7 +122,6 @@ data:
         secret_access_key: supersecret
     runtime_config:
       file: /var/mimir/runtime.yaml
-    server: null
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m

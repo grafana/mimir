@@ -138,7 +138,6 @@ data:
           tls_enabled: false
     runtime_config:
       file: /var/mimir/runtime.yaml
-    server: null
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m

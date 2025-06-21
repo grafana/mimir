@@ -149,7 +149,6 @@ data:
       rule_path: /data
       ruler_client:
         tls_enabled: false
-    server: null
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m
