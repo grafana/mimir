@@ -2571,7 +2571,7 @@ memcachedExporter:
   # To modify the resulting configuration, either copy and alter 'memcachedExporter.config' as a whole or use the 'memcachedExporter.structuredConfig' to add and modify certain YAML elements.
   config: |
     {{- include "memcachedExporter.serverTlsConfig" . | nindent 2 }}
-  
+
   # -- Additional structured values on top of the text based 'memcachedExporter.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'memcachedExporter.config'.
   structuredConfig: {}
 
