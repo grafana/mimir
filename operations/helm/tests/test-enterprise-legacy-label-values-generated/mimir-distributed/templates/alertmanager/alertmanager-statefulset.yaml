@@ -28,6 +28,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
+        selector:
         resources:
           requests:
             storage: "1Gi"
