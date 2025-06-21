@@ -852,23 +852,6 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable
   [enable_ha_tracker: <boolean> | default = false]
 
-  # (advanced) Update the timestamp in the KV store for a given cluster/replica
-  # only after this amount of time has passed since the current stored
-  # timestamp.
-  # CLI flag: -distributor.ha-tracker.update-timeout
-  [ha_tracker_update_timeout: <duration> | default = 15s]
-
-  # (advanced) Maximum jitter applied to the update timeout, in order to spread
-  # the HA heartbeats over time.
-  # CLI flag: -distributor.ha-tracker.update-timeout-jitter-max
-  [ha_tracker_update_timeout_jitter_max: <duration> | default = 5s]
-
-  # (advanced) If we don't receive any samples from the accepted replica for a
-  # cluster in this amount of time we will failover to the next replica we
-  # receive a sample from. This value must be greater than the update timeout
-  # CLI flag: -distributor.ha-tracker.failover-timeout
-  [ha_tracker_failover_timeout: <duration> | default = 30s]
-
   # Enable the elected_replica_status metric, which shows the current elected
   # replica. It is disabled by default due to the possible high cardinality of
   # the metric.
@@ -913,6 +896,15 @@ ha_tracker:
       # (advanced) Timeout for storing value to secondary store.
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
+
+  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout.
+  [ha_tracker_update_timeout: <duration> | default = ]
+
+  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.
+  [ha_tracker_update_timeout_jitter_max: <duration> | default = ]
+
+  # (advanced) Deprecated. Use limits.ha_tracker_failover_timeout.
+  [ha_tracker_failover_timeout: <duration> | default = ]
 
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
@@ -3338,6 +3330,22 @@ The `limits` block configures default and per-tenant limits imposed by component
 # tenant. 0 to disable the limit.
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 100]
+
+# (advanced) Update the timestamp in the KV store for a given cluster/replica
+# only after this amount of time has passed since the current stored timestamp.
+# CLI flag: -distributor.ha-tracker.update-timeout
+[ha_tracker_update_timeout: <duration> | default = 15s]
+
+# (advanced) Maximum jitter applied to the update timeout, in order to spread
+# the HA heartbeats over time.
+# CLI flag: -distributor.ha-tracker.update-timeout-jitter-max
+[ha_tracker_update_timeout_jitter_max: <duration> | default = 5s]
+
+# (advanced) If we don't receive any samples from the accepted replica for a
+# cluster in this amount of time we will failover to the next replica we receive
+# a sample from. This value must be greater than the update timeout.
+# CLI flag: -distributor.ha-tracker.failover-timeout
+[ha_tracker_failover_timeout: <duration> | default = 30s]
 
 # (advanced) This flag can be used to specify label names that to drop during
 # sample ingestion within the distributor and can be repeated in order to drop

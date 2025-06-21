@@ -779,6 +779,21 @@ func TestWriter_WriteSync(t *testing.T) {
 			"cortex_ingest_storage_writer_produce_records_enqueued_total",
 			"cortex_ingest_storage_writer_produce_records_failed_total"))
 	})
+
+	t.Run("should not panic if WriteSync() is called after the writer has been stopped", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		err := writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		require.NoError(t, err)
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
+
+		err = writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: multiSeries, Metadata: nil, Source: mimirpb.API})
+		require.Equal(t, err, ErrWriterNotRunning)
+	})
 }
 
 func TestWriter_WriteSync_HighConcurrencyOnKafkaClientBufferFull(t *testing.T) {

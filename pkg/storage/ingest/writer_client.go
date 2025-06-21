@@ -31,6 +31,11 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 
 	opts := append(
 		commonKafkaClientOptions(kafkaCfg, metrics, logger),
+
+		// Hook our custom Kafka client metrics for the writer client, in order to have a deeper observability
+		// when we produce records. We expect the input prometheus.Registered to be wrapped with a prefix.
+		kgo.WithHooks(NewKafkaClientExtendedMetrics(reg)),
+
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.DefaultProduceTopic(kafkaCfg.Topic),
 
