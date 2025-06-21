@@ -191,6 +191,16 @@ configMap:
 {{- end -}}
 
 {{/*
+Returns "true" if Memcached Exporter has meaningful config, empty otherwise
+*/}}
+{{- define "memcachedExporter.hasConfig" -}}
+{{- $config := include "memcachedExporter.calculatedConfig" . | trim -}}
+{{- if and $config (ne $config "{}") (ne $config "null") -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
 Internal servers http listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverHttpListenPort" -}}

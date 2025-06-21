@@ -1,4 +1,4 @@
-{{- if not .Values.memcachedExporter.useExternalConfig }}
+{{- if and (not .Values.memcachedExporter.useExternalConfig) (include "memcachedExporter.hasConfig" .) }}
 apiVersion: v1
 {{- if eq .Values.memcachedExporter.configStorageType "Secret" }}
 kind: Secret
