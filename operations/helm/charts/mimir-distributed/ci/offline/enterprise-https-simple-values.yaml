@@ -1,0 +1,104 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+enterprise:
+  enabled: true
+
+mimir:
+  structuredConfig:
+    common:
+      storage:
+        s3:
+          endpoint: s3.dualstack.us-east-2.amazonaws.com
+
+    alertmanager_storage:
+      backend: s3
+      s3:
+        bucket_name: alertmanager
+
+    ruler:
+      tenant_federation:
+        enabled: true
+
+    tenant_federation:
+      enabled: true
+
+    ingester:
+      ring:
+        kvstore:
+          store: memberlist
+        tokens_file_path: /data/tokens
+
+    # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
+    blocks_storage:
+      backend: s3
+      s3:
+        bucket_name: blocks
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+
+    ruler_storage:
+      backend: s3
+      s3:
+        bucket_name: ruler
+
+    admin_client:
+      storage:
+        type: s3
+        s3:
+          bucket_name: admin-api
+
+    cluster_name: gem
+
+chunks-cache:
+  enabled: true
+
+results-cache:
+  enabled: true
+
+index-cache:
+  enabled: true
+
+metadata-cache:
+  enabled: true
+
+minio:
+  enabled: false
+
+license:
+  external: true
+  secretName: gem-license
+
+tokengenJob:
+  enable: false
+
+global:
+  extraVolumes:
+    - name: tls-certs
+      secret:
+        secretName: tls-certs
+  extraVolumeMounts:
+    - mountPath: /certs
+      name: tls-certs
+      readOnly: true
+
+tls:
+  mimir:
+    enabled: true
+    server:
+      cert_path: /certs/tls.crt
+      key_path: /certs/tls.key
+      client_auth_type: VerifyClientCertIfGiven
+    client:
+      cert_path: /certs/tls.crt
+      key_path: /certs/tls.key
+      server_name: gem.grafana.com
+  memcached:
+    enabled: true
+    server:
+      cert_path: /certs/tls.crt
+      key_path: /certs/tls.key
+    client:
+      cert_path: /certs/tls.crt
+      key_path: /certs/tls.key
+      server_name: gem.grafana.com
