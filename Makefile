@@ -252,7 +252,8 @@ LATEST_BUILD_IMAGE_TAG ?= pr11747-73ebde0521
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
 # in any custom cloudbuild.yaml files
-TTY := --tty
+# Auto-detect TTY availability: use --tty if stdin is a TTY, otherwise empty
+TTY := $(shell test -t 0 && echo --tty || echo)
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
