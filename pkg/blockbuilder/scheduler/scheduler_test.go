@@ -184,8 +184,10 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 
 	require.Equal(t, 3, sched.jobs.count())
 
-	sched.advanceCommittedOffset("ingest", 1, 256)
-	sched.advanceCommittedOffset("ingest", 2, 500)
+	p1 := sched.getPartitionState("ingest", 1)
+	p1.initCommit(256)
+	p2 := sched.getPartitionState("ingest", 2)
+	p2.initCommit(500)
 
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 3, sched.jobs.count())
@@ -223,7 +225,8 @@ func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
 	require.Equal(t, 1, sched.jobs.count())
 
 	// Simulate a completion of a job that was created by a prior scheduler.
-	sched.advanceCommittedOffset("ingest", 1, 5000)
+	p1 := sched.getPartitionState("ingest", 1)
+	p1.initCommit(5000)
 	// Advancing offsets doesn't actually remove any jobs.
 	require.Equal(t, 1, sched.jobs.count())
 
@@ -248,35 +251,11 @@ func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	// Initially we're in observation mode. We have Kafka's start offsets, but no client jobs.
 
-	sched.committed = kadm.Offsets{
-		"ingest": {
-			1: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 1,
-				At:        5000,
-			},
-			2: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 2,
-				At:        800,
-			},
-			3: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 3,
-				At:        974,
-			},
-			4: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 4,
-				At:        500,
-			},
-			5: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 5,
-				At:        12000,
-			},
-		},
-	}
+	sched.getPartitionState("ingest", 1).initCommit(5000)
+	sched.getPartitionState("ingest", 2).initCommit(800)
+	sched.getPartitionState("ingest", 3).initCommit(974)
+	sched.getPartitionState("ingest", 4).initCommit(500)
+	sched.getPartitionState("ingest", 5).initCommit(12000)
 
 	{
 		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
@@ -298,7 +277,7 @@ func TestObservations(t *testing.T) {
 		inProgress = false
 	)
 	maybeBadEpoch := errors.New("maybe bad epoch")
-	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, commitRecTs time.Time, endOffset int64, expectErr error) {
+	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, startOffset, endOffset int64, expectErr error) {
 		clientData = append(clientData, observation{
 			key: jobKey{id: id, epoch: epoch},
 			spec: schedulerpb.JobSpec{
@@ -315,36 +294,36 @@ func TestObservations(t *testing.T) {
 	// Rig up a bunch of data that clients are collectively sending.
 
 	// Partition 1: one job in progress.
-	mkJob(inProgress, "w0", 1, "ingest/1/5524", 10, time.Unix(200, 0), 6000, nil)
+	mkJob(inProgress, "w0", 1, "ingest/1/5524", 10, 5524, 6000, nil)
 
 	// Partition 2: Many complete jobs, followed by an in-progress job.
-	mkJob(complete, "w0", 2, "ingest/2/1", 3, time.Unix(1, 0), 15, nil)
-	mkJob(complete, "w0", 2, "ingest/2/16", 4, time.Unix(2, 0), 31, nil)
-	mkJob(complete, "w0", 2, "ingest/2/32", 4, time.Unix(3, 0), 45, nil)
-	mkJob(complete, "w0", 2, "ingest/2/1000", 11, time.Unix(500, 0), 2000, nil)
-	mkJob(inProgress, "w0", 2, "ingest/2/2001", 12, time.Unix(600, 0), 2199, nil)
+	mkJob(complete, "w0", 2, "ingest/2/1", 3, 1, 15, nil)
+	mkJob(complete, "w0", 2, "ingest/2/16", 4, 16, 32, nil)
+	mkJob(complete, "w0", 2, "ingest/2/32", 5, 32, 45, nil)
+	mkJob(complete, "w0", 2, "ingest/2/1000", 11, 1000, 2000, nil)
+	mkJob(inProgress, "w0", 2, "ingest/2/2001", 12, 2001, 2199, nil)
 
 	// (Partition 3 has no updates.)
 
 	// Partition 4 has a series of completed jobs that are entirely after what was found in Kafka.
-	mkJob(complete, "w0", 4, "ingest/4/500", 15, time.Unix(500, 0), 599, nil)
-	mkJob(complete, "w1", 4, "ingest/4/600", 16, time.Unix(600, 0), 699, nil)
-	mkJob(complete, "w2", 4, "ingest/4/700", 17, time.Unix(700, 0), 799, nil)
-	mkJob(complete, "w3", 4, "ingest/4/800", 18, time.Unix(800, 0), 899, nil)
+	mkJob(complete, "w0", 4, "ingest/4/500", 15, 500, 599, nil)
+	mkJob(complete, "w1", 4, "ingest/4/600", 16, 600, 699, nil)
+	mkJob(complete, "w2", 4, "ingest/4/700", 17, 700, 799, nil)
+	mkJob(complete, "w3", 4, "ingest/4/800", 18, 800, 899, nil)
 	// Here's a conflicting completion report from a worker whose lease was revoked at one point. It should be effectively dropped.
-	mkJob(complete, "w99", 4, "ingest/4/600", 6, time.Unix(600, 0), 699, maybeBadEpoch)
+	mkJob(complete, "w99", 4, "ingest/4/600", 6, 600, 699, maybeBadEpoch)
 
 	// Partition 5 has a number of conflicting in-progress reports.
-	mkJob(inProgress, "w100", 5, "ingest/5/12000", 30, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w101", 5, "ingest/5/12000", 31, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w102", 5, "ingest/5/12000", 32, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, time.Unix(200, 0), 6000, nil)
+	mkJob(inProgress, "w100", 5, "ingest/5/1200", 30, 1200, 6000, maybeBadEpoch)
+	mkJob(inProgress, "w101", 5, "ingest/5/1200", 31, 1200, 6000, maybeBadEpoch)
+	mkJob(inProgress, "w102", 5, "ingest/5/1200", 32, 1200, 6000, maybeBadEpoch)
+	mkJob(inProgress, "w103", 5, "ingest/5/1200", 33, 1200, 6000, maybeBadEpoch)
+	mkJob(inProgress, "w104", 5, "ingest/5/1200", 34, 1200, 6000, nil)
 
 	// Partition 6 has a complete job, but wasn't among the offsets we learned from Kafka.
-	mkJob(complete, "w0", 6, "ingest/6/500", 48, time.Unix(500, 0), 599, nil)
+	mkJob(complete, "w0", 6, "ingest/6/500", 48, 500, 599, nil)
 	// Partition 7 has an in-progress job, but wasn't among the offsets we learned from Kafka.
-	mkJob(complete, "w1", 7, "ingest/7/92874", 52, time.Unix(1500, 0), 93874, nil)
+	mkJob(complete, "w1", 7, "ingest/7/92874", 52, 92874, 93874, nil)
 
 	rnd := rand.New(rand.NewSource(64_000))
 
@@ -367,12 +346,12 @@ func TestObservations(t *testing.T) {
 	sendUpdates()
 
 	sched.completeObservationMode(context.Background())
-	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
-	requireOffset(t, sched.committed, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
-	requireOffset(t, sched.committed, "ingest", 3, 974, "ingest/3 should be unchanged - no updates")
-	requireOffset(t, sched.committed, "ingest", 4, 899, "ingest/4 should be moved forward to account for the completed jobs")
-	requireOffset(t, sched.committed, "ingest", 5, 12000, "ingest/5 has nothing new completed")
-	requireOffset(t, sched.committed, "ingest", 6, 599, "ingest/6 should have been added to the offsets")
+	sched.requireOffset(t, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
+	sched.requireOffset(t, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
+	sched.requireOffset(t, "ingest", 3, 974, "ingest/3 should be unchanged - no updates")
+	sched.requireOffset(t, "ingest", 4, 899, "ingest/4 should be moved forward to account for the completed jobs")
+	sched.requireOffset(t, "ingest", 5, 12000, "ingest/5 has nothing new completed")
+	sched.requireOffset(t, "ingest", 6, 599, "ingest/6 should have been added to the offsets")
 
 	require.Len(t, sched.jobs.jobs, 3)
 	require.Equal(t, 35, int(sched.jobs.epoch))
@@ -382,25 +361,16 @@ func TestObservations(t *testing.T) {
 	sendUpdates()
 }
 
-func requireOffset(t *testing.T, offs kadm.Offsets, topic string, partition int32, expected int64, msgAndArgs ...interface{}) {
+func (s *BlockBuilderScheduler) requireOffset(t *testing.T, topic string, partition int32, expected int64, msgAndArgs ...interface{}) {
 	t.Helper()
-	o, ok := offs.Lookup(topic, partition)
-	require.True(t, ok, msgAndArgs...)
-	require.Equal(t, expected, o.At, msgAndArgs...)
+	ps := s.getPartitionState(topic, partition)
+	require.Equal(t, expected, ps.committed.offset(), msgAndArgs...)
 }
 
 func TestOffsetMovement(t *testing.T) {
 	sched, _ := mustScheduler(t)
-
-	sched.committed = kadm.Offsets{
-		"ingest": {
-			1: kadm.Offset{
-				Topic:     "ingest",
-				Partition: 1,
-				At:        5000,
-			},
-		},
-	}
+	ps := sched.getPartitionState("ingest", 1)
+	ps.initCommit(5000)
 	sched.completeObservationMode(context.Background())
 
 	spec := schedulerpb.JobSpec{
@@ -416,50 +386,62 @@ func TestOffsetMovement(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, sched.updateJob(key, "w0", false, spec))
-	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
+	sched.requireOffset(t, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
+	sched.requireOffset(t, "ingest", 1, 6000, "ingest/1 is in progress, so we should be advanced")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
-	sched.advanceCommittedOffset("ingest", 1, 2000)
-	requireOffset(t, sched.committed, "ingest", 1, 6000, "committed offsets cannot rewind")
+	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
-	sched.advanceCommittedOffset("ingest", 2, 6222)
-	requireOffset(t, sched.committed, "ingest", 2, 6222, "should create knowledge of partition 2")
+	sched.advanceCommittedOffset("ingest", 1, jobKey{"ancient_job", 29}, schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   1,
+		StartOffset: 1000,
+		EndOffset:   2000,
+	})
+	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
+
+	sched.advanceCommittedOffset("ingest", 2, jobKey{"ancient_job2", 30}, schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   2,
+		StartOffset: 6000,
+		EndOffset:   6222,
+	})
+	sched.requireOffset(t, "ingest", 2, 6222, "should create knowledge of partition 2")
 }
 
 func TestKafkaFlush(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	ctx := context.Background()
-	var err error
-	sched.committed, err = sched.fetchCommittedOffsets(ctx)
-	require.NoError(t, err)
-
 	sched.completeObservationMode(ctx)
 
 	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...interface{}) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
+
 		offs, err := sched.fetchCommittedOffsets(ctx)
 		require.NoError(t, err)
 		for partition, expected := range offsets {
-			requireOffset(t, offs, topic, partition, expected, args...)
+			o, ok := offs.Lookup(topic, partition)
+			require.True(t, ok, args...)
+			require.Equal(t, expected, o.At, args...)
 		}
 	}
 
 	flushAndRequireOffsets("ingest", map[int32]int64{}, "no group found -> no offsets")
 
-	sched.advanceCommittedOffset("ingest", 1, 2000)
+	p1 := sched.getPartitionState("ingest", 1)
+	p1.committed.set(2000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 	})
 
-	sched.advanceCommittedOffset("ingest", 4, 65535)
+	p4 := sched.getPartitionState("ingest", 4)
+	p4.committed.set(65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 2000,
 		4: 65535,
 	})
 
-	sched.advanceCommittedOffset("ingest", 1, 4000)
+	p1.committed.set(4000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		1: 4000,
 		4: 65535,
@@ -928,7 +910,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
 	sched.completeObservationMode(context.Background())
 
 	part := int32(1)
-	pt := sched.getPartitionState(part)
+	pt := sched.getPartitionState("ingest", part)
 
 	pt.addPendingJob(&schedulerpb.JobSpec{
 		Topic:       "ingest",
@@ -983,7 +965,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_Unlimited(t *testing.T) {
 	sched.completeObservationMode(context.Background())
 
 	part := int32(1)
-	pt := sched.getPartitionState(part)
+	pt := sched.getPartitionState("ingest", part)
 
 	pt.addPendingJob(&schedulerpb.JobSpec{
 		Topic:       "ingest",
@@ -1015,15 +997,14 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 	sched.completeObservationMode(context.Background())
 
 	part := int32(1)
-	pt := sched.getPartitionState(part)
+	pt := sched.getPartitionState("ingest", part)
+	pt.initCommit(20)
 	pt.addPendingJob(&schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   part,
 		StartOffset: 10,
 		EndOffset:   20,
 	})
-
-	sched.advanceCommittedOffset("ingest", part, 20)
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
@@ -1038,7 +1019,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	sched.completeObservationMode(context.Background())
 
 	part := int32(1)
-	pt := sched.getPartitionState(part)
+	pt := sched.getPartitionState("ingest", part)
 	// Assume at startup we compute this job offset range:
 	pt.addPendingJob(&schedulerpb.JobSpec{
 		Topic:       "ingest",
@@ -1048,7 +1029,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	})
 
 	// But the job we imported from the existing workers now being completed may be (10, 20):
-	sched.advanceCommittedOffset("ingest", part, 20)
+	pt.initCommit(20)
 
 	assert.Equal(t, 1, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count())
