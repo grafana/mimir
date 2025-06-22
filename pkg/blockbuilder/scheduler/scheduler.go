@@ -391,11 +391,13 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
 			name:    "planned",
+			off:     -1,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
 			name:    "committed",
+			off:     -1,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
@@ -894,16 +896,19 @@ type advancingOffset struct {
 // allow backwards movement. If a gap is detected, a warning is logged, a
 // metric is incremented and the offset is not advanced.
 func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
-	if o.beyondSpec(spec) {
-		level.Warn(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
-			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		return
-	}
-	if o.off < spec.StartOffset {
-		// Gap detected.
-		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
-			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		// TODO o.metrics.offsetGapDetected.Inc()
+	// Offsets are initialized to -1. We allow transitioning out of -1 without checks.
+	if o.off >= 0 {
+		if o.beyondSpec(spec) {
+			level.Warn(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
+			return
+		}
+		if o.off < spec.StartOffset {
+			// Gap detected.
+			level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
+			// TODO: increment metric.
+		}
 	}
 
 	o.off = spec.EndOffset
