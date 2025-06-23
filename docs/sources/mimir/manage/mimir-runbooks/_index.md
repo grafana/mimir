@@ -2661,6 +2661,20 @@ How to **fix** it:
 - If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 - Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
 
+### err-mimir-distributor-max-influx-request-size
+
+This error occurs when a distributor rejects an Influx write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming Influx write requests before and after decompression regardless of the compression type.
+- Configure this limit in the `-distributor.max-influx-request-size` setting.
+
+How to **fix** it:
+
+- If you use the `telegraf` agent, decrease the maximum batch size in the `metric_batch_size` setting. Refer to [Agent configuration](https://docs.influxdata.com/telegraf/v1/configuration/#agent-configuration) for details.
+- Increase the allowed limit in the `-distributor.max-influx-request-size` setting.
+
 ### err-mimir-distributor-max-write-request-data-item-size
 
 This error can only be returned when the experimental ingest storage is enabled and is caused by a write request containing a timeseries or metadata entry which is larger than the allowed limit.

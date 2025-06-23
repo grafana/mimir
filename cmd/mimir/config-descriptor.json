@@ -945,39 +945,6 @@
             },
             {
               "kind": "field",
-              "name": "ha_tracker_update_timeout",
-              "required": false,
-              "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
-              "fieldValue": null,
-              "fieldDefaultValue": 15000000000,
-              "fieldFlag": "distributor.ha-tracker.update-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout_jitter_max",
-              "required": false,
-              "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
-              "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
-              "fieldFlag": "distributor.ha-tracker.update-timeout-jitter-max",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_failover_timeout",
-              "required": false,
-              "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout",
-              "fieldValue": null,
-              "fieldDefaultValue": 30000000000,
-              "fieldFlag": "distributor.ha-tracker.failover-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "enable_elected_replica_metric",
               "required": false,
               "desc": "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.",
@@ -1306,6 +1273,36 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_update_timeout",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_update_timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_update_timeout_jitter_max",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_failover_timeout",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_failover_timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -4334,6 +4331,39 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "distributor.ha-tracker.max-clusters",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_update_timeout",
+          "required": false,
+          "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "distributor.ha-tracker.update-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_update_timeout_jitter_max",
+          "required": false,
+          "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000000000,
+          "fieldFlag": "distributor.ha-tracker.update-timeout-jitter-max",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_failover_timeout",
+          "required": false,
+          "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "distributor.ha-tracker.failover-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
