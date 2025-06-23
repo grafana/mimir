@@ -286,14 +286,16 @@ func newOTLPParser(
 		metrics, metricsDropped, err := otelMetricsToTimeseries(
 			ctx,
 			otlpConverter,
-			addSuffixes,
-			enableCTZeroIngestion,
-			enableStartTimeQuietZero,
-			keepIdentifyingResourceAttributes,
-			convertHistogramsToNHCB,
-			promoteScopeMetadata,
-			promoteResourceAttributes,
 			otlpReq.Metrics(),
+			conversionOptions{
+				addSuffixes:                       addSuffixes,
+				enableCTZeroIngestion:             enableCTZeroIngestion,
+				enableStartTimeQuietZero:          enableStartTimeQuietZero,
+				keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+				convertHistogramsToNHCB:           convertHistogramsToNHCB,
+				promoteScopeMetadata:              promoteScopeMetadata,
+				promoteResourceAttributes:         promoteResourceAttributes,
+			},
 			spanLogger,
 		)
 		if metricsDropped > 0 {
@@ -495,27 +497,31 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
+type conversionOptions struct {
+	addSuffixes                       bool
+	enableCTZeroIngestion             bool
+	enableStartTimeQuietZero          bool
+	keepIdentifyingResourceAttributes bool
+	convertHistogramsToNHCB           bool
+	promoteScopeMetadata              bool
+	promoteResourceAttributes         []string
+}
+
 func otelMetricsToTimeseries(
 	ctx context.Context,
 	converter *otlpMimirConverter,
-	addSuffixes,
-	enableCTZeroIngestion,
-	enableStartTimeQuietZero,
-	keepIdentifyingResourceAttributes,
-	convertHistogramsToNHCB,
-	promoteScopeMetadata bool,
-	promoteResourceAttributes []string,
 	md pmetric.Metrics,
+	opts conversionOptions,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
 	settings := otlp.Settings{
-		AddMetricSuffixes:                   addSuffixes,
-		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
-		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
-		PromoteScopeMetadata:                promoteScopeMetadata,
+		AddMetricSuffixes:                   opts.addSuffixes,
+		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
+		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                opts.promoteScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 
