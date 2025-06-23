@@ -567,7 +567,7 @@ func TestBloomFilter_MeasureFalsePositivesProbability(t *testing.T) {
 			setA.add(ulid.MustNew(uint64(time.Now().Add(time.Duration(numEqualEntries+i)*time.Hour).UnixMilli()), rand.Reader))
 			setB.add(ulid.MustNew(uint64(time.Now().Add(time.Duration(numEqualEntries+i)*time.Hour).UnixMilli()), rand.Reader))
 
-			if setA.isIncludedIn(setB) {
+			if setA.isIncludedIn(setB) || setB.isIncludedIn(setA) {
 				falsePositivesByAdditionalEntries[i]++
 			}
 		}
