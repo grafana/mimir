@@ -33,3 +33,8 @@ func (c *MimirConverter) TimeSeries() []mimirpb.PreallocTimeseries {
 
 	return allTS
 }
+
+// Metadata returns a slice of the mimirpb.Metadata that were converted from OTel format.
+func (c *MimirConverter) Metadata() []*mimirpb.MetricMetadata {
+	return c.metadata
+}

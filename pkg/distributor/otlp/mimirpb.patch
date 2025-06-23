@@ -16,6 +16,18 @@ var x expression
 
 @@
 @@
+-[]prompb.MetricMetadata
++[]*mimirpb.MetricMetadata
+
+@@
+@@
+-prompb.MetricMetadata{
++&mimirpb.MetricMetadata{
+...,
+}
+
+@@
+@@
 -prompb.MetricMetadata_GAUGE
 +mimirpb.GAUGE
 

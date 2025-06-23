@@ -76,7 +76,7 @@ type MimirConverter struct {
 	unique    map[uint64]*mimirpb.TimeSeries
 	conflicts map[uint64][]*mimirpb.TimeSeries
 	everyN    everyNTimes
-	metadata  []mimirpb.MetricMetadata
+	metadata  []*mimirpb.MetricMetadata
 }
 
 func NewMimirConverter() *MimirConverter {
@@ -145,7 +145,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
 		}
 	}
-	c.metadata = make([]mimirpb.MetricMetadata, 0, numMetrics)
+	c.metadata = make([]*mimirpb.MetricMetadata, 0, numMetrics)
 
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
@@ -185,7 +185,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 				}
 
 				promName := namer.Build(TranslatorMetricFromOtelMetric(metric))
-				c.metadata = append(c.metadata, mimirpb.MetricMetadata{
+				c.metadata = append(c.metadata, &mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,
 					Help:             metric.Description(),
