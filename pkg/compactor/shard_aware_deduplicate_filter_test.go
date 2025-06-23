@@ -481,3 +481,53 @@ func TestNewBlockWithSuccessors(t *testing.T) {
 		}, b.sourcesSortedList)
 	})
 }
+
+func TestBloomFilter(t *testing.T) {
+	ulid1 := ulid.MustNew(10, nil)
+	ulid2 := ulid.MustNew(30, nil)
+	ulid3 := ulid.MustNew(20, nil)
+
+	t.Run("empty is included in empty", func(t *testing.T) {
+		require.True(t, (&bloomFilter{}).isIncludedIn(&bloomFilter{}))
+	})
+
+	t.Run("empty is included in non-empty", func(t *testing.T) {
+		empty := bloomFilter{}
+		nonEmpty := bloomFilter{}
+		nonEmpty.add(ulid1)
+
+		require.True(t, empty.isIncludedIn(&nonEmpty))
+	})
+
+	t.Run("non empty is not included in empty", func(t *testing.T) {
+		empty := bloomFilter{}
+		nonEmpty := bloomFilter{}
+		nonEmpty.add(ulid1)
+		
+		require.False(t, nonEmpty.isIncludedIn(&empty))
+	})
+
+	t.Run("included", func(t *testing.T) {
+		oneTwo := bloomFilter{}
+		oneTwo.add(ulid1)
+		oneTwo.add(ulid2)
+		oneTwoThree := bloomFilter{}
+		oneTwoThree.add(ulid1)
+		oneTwoThree.add(ulid2)
+		oneTwoThree.add(ulid3)
+
+		require.True(t, oneTwo.isIncludedIn(&oneTwoThree))
+	})
+
+	t.Run("not included", func(t *testing.T) {
+		oneTwo := bloomFilter{}
+		oneTwo.add(ulid1)
+		oneTwo.add(ulid2)
+		oneTwoThree := bloomFilter{}
+		oneTwoThree.add(ulid1)
+		oneTwoThree.add(ulid2)
+		oneTwoThree.add(ulid3)
+
+		require.False(t, oneTwoThree.isIncludedIn(&oneTwo))
+	})
+}

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -168,8 +169,9 @@ type blockWithSuccessors struct {
 	// to use the most performant data structure based on the actual need.
 	//
 	// The list is sorted by the ULID's timestamp.
-	sourcesMap        map[ulid.ULID]struct{}
-	sourcesSortedList []ulid.ULID
+	sourcesMap         map[ulid.ULID]struct{}
+	sourcesSortedList  []ulid.ULID
+	sourcesBloomFilter bloomFilter
 
 	successors map[ulid.ULID]*blockWithSuccessors
 }
@@ -187,6 +189,7 @@ func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 			if _, ok := b.sourcesMap[bid]; !ok {
 				b.sourcesMap[bid] = struct{}{}
 				b.sourcesSortedList = append(b.sourcesSortedList, bid)
+				b.sourcesBloomFilter.add(bid)
 			}
 		}
 
@@ -216,6 +219,12 @@ func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
 	// Optimization: if the other block has less sources than this block, then it's not possible
 	// that all sources of this block are in the other block.
 	if len(other.sourcesSortedList) < len(b.sourcesSortedList) {
+		return false
+	}
+
+	// Optimization: If the bloom filter of this block is not included in the other block's bloom filter,
+	// then it's not possible that all sources of this block are in the other block.
+	if !b.sourcesBloomFilter.isIncludedIn(&other.sourcesBloomFilter) {
 		return false
 	}
 
@@ -319,4 +328,28 @@ func (b *blockWithSuccessors) getDuplicateBlocks(output map[ulid.ULID]struct{}) 
 	for _, s := range b.successors {
 		s.getDuplicateBlocks(output)
 	}
+}
+
+const bloomFilterSizeBits = 8
+const bloomFilterSizeMask = (1 << bloomFilterSizeBits) - 1
+const bloomFilterBits = 6 // log2(64)
+const bloomFilterMask = (1 << bloomFilterBits) - 1
+
+type bloomFilter [1 << bloomFilterSizeBits]uint64
+
+func (b *bloomFilter) add(bid ulid.ULID) {
+	h := xxhash.Sum64(bid[:])
+	bucket := (h >> bloomFilterBits) & bloomFilterSizeMask
+	b[bucket] |= 1 << (h & bloomFilterMask)
+}
+
+func (b *bloomFilter) isIncludedIn(other *bloomFilter) bool {
+	// Check that all bits of b are set in other.
+	for i := range b {
+		// If we have some of the bits that are missing in other, then we're not included in other.
+		if (b[i] & ^other[i]) > 0 {
+			return false
+		}
+	}
+	return true
 }
