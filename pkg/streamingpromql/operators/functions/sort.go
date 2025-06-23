@@ -10,14 +10,14 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type Sort struct {
 	Inner                    types.InstantVectorOperator
 	Descending               bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 
@@ -30,7 +30,7 @@ var _ types.InstantVectorOperator = &Sort{}
 func NewSort(
 	inner types.InstantVectorOperator,
 	descending bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *Sort {
 	return &Sort{
@@ -157,6 +157,10 @@ func (s *Sort) NextSeries(_ context.Context) (types.InstantVectorSeriesData, err
 
 func (s *Sort) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *Sort) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return s.Inner.Prepare(ctx, params)
 }
 
 func (s *Sort) Close() {

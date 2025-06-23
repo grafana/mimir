@@ -6,10 +6,10 @@ metadata:
   name: test-enterprise-legacy-label-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.26.1
+    helm.sh/chart: rollout-operator-0.30.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-enterprise-legacy-label-values
-    app.kubernetes.io/version: "v0.25.0"
+    app.kubernetes.io/version: "v0.28.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -45,7 +45,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: "grafana/rollout-operator:v0.25.0"
+          image: "grafana/rollout-operator:v0.28.0"
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns

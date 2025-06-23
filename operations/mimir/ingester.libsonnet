@@ -55,8 +55,6 @@
   local name = 'ingester',
 
   ingester_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
-
     local requests = $.util.parseCPU($.ingester_container.resources.requests.cpu),
     local requestsWithHeadroom = std.ceil(
       // double the requests, but with headroom of at least 3 and at most 6 CPU
@@ -82,7 +80,7 @@
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.

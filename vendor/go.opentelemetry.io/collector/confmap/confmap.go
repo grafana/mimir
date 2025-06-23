@@ -140,11 +140,12 @@ func sanitizeExpanded(a any, useOriginal bool) any {
 		}
 		return c
 	case []any:
+		// If the value is nil, return nil.
 		var newSlice []any
 		if m == nil {
 			return newSlice
 		}
-		newSlice = []any{}
+		newSlice = make([]any, 0, len(m))
 		for _, e := range m {
 			newSlice = append(newSlice, sanitizeExpanded(e, useOriginal))
 		}
@@ -240,6 +241,7 @@ func decodeConfig(m *Conf, result any, errorUnused bool, skipTopLevelUnmarshaler
 			// after the main unmarshaler hook is called,
 			// we unmarshal the embedded structs if present to merge with the result:
 			unmarshalerEmbeddedStructsHookFunc(),
+			zeroSliceHookFunc(),
 		),
 	}
 	decoder, err := mapstructure.NewDecoder(dc)
@@ -532,6 +534,43 @@ type Marshaler interface {
 	// Marshal the config into a Conf in a custom way.
 	// The Conf will be empty and can be merged into.
 	Marshal(component *Conf) error
+}
+
+// This hook is used to solve the issue: https://github.com/open-telemetry/opentelemetry-collector/issues/4001
+// We adopt the suggestion provided in this issue: https://github.com/mitchellh/mapstructure/issues/74#issuecomment-279886492
+// We should empty every slice before unmarshalling unless user provided slice is nil.
+// Assume that we had a struct with a field of type slice called `keys`, which has default values of ["a", "b"]
+//
+//	type Config struct {
+//	  Keys []string `mapstructure:"keys"`
+//	}
+//
+// The configuration provided by users may have following cases
+// 1. configuration have `keys` field and have a non-nil values for this key, the output should be overridden
+//   - for example, input is {"keys", ["c"]}, then output is Config{ Keys: ["c"]}
+//
+// 2. configuration have `keys` field and have an empty slice for this key, the output should be overridden by empty slices
+//   - for example, input is {"keys", []}, then output is Config{ Keys: []}
+//
+// 3. configuration have `keys` field and have nil value for this key, the output should be default config
+//   - for example, input is {"keys": nil}, then output is Config{ Keys: ["a", "b"]}
+//
+// 4. configuration have no `keys` field specified, the output should be default config
+//   - for example, input is {}, then output is Config{ Keys: ["a", "b"]}
+func zeroSliceHookFunc() mapstructure.DecodeHookFuncValue {
+	return func(from reflect.Value, to reflect.Value) (any, error) {
+		if to.CanSet() && to.Kind() == reflect.Slice && from.Kind() == reflect.Slice {
+			if from.IsNil() {
+				// input slice is nil, set output slice to nil.
+				to.Set(reflect.Zero(to.Type()))
+			} else {
+				// input slice is not nil, set the output slice to a new slice of the same type.
+				to.Set(reflect.MakeSlice(to.Type(), from.Len(), from.Cap()))
+			}
+		}
+
+		return from.Interface(), nil
+	}
 }
 
 type moduleFactory[T any, S any] interface {

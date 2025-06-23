@@ -761,10 +761,10 @@ type successResult struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.RuleGroup, string, error) {
+func (c *Client) GetPrometheusRules(maxGroups int, token string) (*http.Response, []*promv1.RuleGroup, string, error) {
 	url, err := url.Parse(fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress))
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if token != "" {
 		q := url.Query()
@@ -781,7 +781,7 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 	// Create HTTP request
 	req, err := http.NewRequest("GET", url.String(), nil)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -789,15 +789,15 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
-	defer res.Body.Close()
+	defer resp.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 
 	// Decode the response.
@@ -811,14 +811,14 @@ func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.Rule
 
 	decoded := response{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, "", err
+		return resp, nil, "", err
 	}
 
 	if decoded.Status != "success" {
-		return nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
+		return resp, nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
 	}
 
-	return decoded.Data.RuleGroups, decoded.Data.NextToken, nil
+	return resp, decoded.Data.RuleGroups, decoded.Data.NextToken, nil
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.

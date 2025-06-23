@@ -25,8 +25,12 @@ func newMaxQueryExpressionSizeBytesError(actualSizeBytes, maxQuerySizeBytes int)
 	))
 }
 
-func newQueryBlockedError() error {
-	return apierror.New(apierror.TypeBadData, globalerror.QueryBlocked.Message("the request has been blocked by the cluster administrator"))
+func newQueryBlockedError(administratorReason string) error {
+	var reason string
+	if administratorReason != "" {
+		reason = fmt.Sprintf(" %s", administratorReason)
+	}
+	return apierror.New(apierror.TypeBadData, globalerror.QueryBlocked.Message(fmt.Sprintf("the request has been blocked by the cluster administrator%s", reason)))
 }
 
 func newQueryLimitedError(allowedFrequency time.Duration, tenantID string) error {

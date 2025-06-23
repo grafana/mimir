@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
 func TestMain(m *testing.M) {
@@ -1128,6 +1130,166 @@ user1:
 	}
 }
 
+func TestRulerMinRuleEvaluationIntervalPerTenantOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML                         string
+		overrides                         string
+		expectedMinRuleEvaluationInterval time.Duration
+	}{
+		"no user specific minimum": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 15s
+`,
+			expectedMinRuleEvaluationInterval: 15 * time.Second,
+		},
+		"default limit if user not specified": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 5s
+`,
+			overrides: `
+randomuser:
+  ruler_min_rule_evaluation_interval: 5m
+`,
+			expectedMinRuleEvaluationInterval: 5 * time.Second,
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_min_rule_evaluation_interval: 5s
+`,
+			overrides: `
+user1:
+  ruler_min_rule_evaluation_interval: 10m
+`,
+			expectedMinRuleEvaluationInterval: 10 * time.Minute,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(LimitsYAML, tl)
+
+			require.Equal(t, tt.expectedMinRuleEvaluationInterval, ov.RulerMinRuleEvaluationInterval("user1"))
+		})
+	}
+}
+
+func TestRulerAlertmanagerClientConfig(t *testing.T) {
+	tc := map[string]struct {
+		baseYAML       string
+		overrides      string
+		expectedConfig notifier.AlertmanagerClientConfig
+	}{
+		"no override provided": {
+			baseYAML:       ``,
+			expectedConfig: notifier.DefaultAlertmanagerClientConfig,
+		},
+		"no user specific client config": {
+			baseYAML: `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://custom-url:8080
+  proxy_url: http://some-proxy:1234
+  oauth2:
+    client_id: myclient
+    client_secret: mysecret
+    token_url: http://token-url
+    scopes: abc,def
+    endpoint_params:
+      key1: value1
+`,
+			expectedConfig: notifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://custom-url:8080",
+				NotifierConfig: notifier.Config{
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
+					OAuth2: notifier.OAuth2Config{
+						ClientID:     "myclient",
+						ClientSecret: flagext.SecretWithValue("mysecret"),
+						TokenURL:     "http://token-url",
+						Scopes:       []string{"abc", "def"},
+						EndpointParams: flagext.NewLimitsMapWithData(map[string]string{
+							"key1": "value1",
+						}, nil),
+					},
+				},
+			},
+		},
+		"overridden config for specific user": {
+			baseYAML: `
+ruler_alertmanager_client_config:
+  alertmanager_url: http://some-base-url:8080
+`,
+			overrides: `
+user1:
+  ruler_alertmanager_client_config:
+    alertmanager_url: http://custom-url-for-this-tenant:8080
+    proxy_url: http://some-proxy:1234
+    oauth2:
+      client_id: myclient
+      client_secret: mysecret
+      token_url: http://token-url
+      scopes: abc,def
+      endpoint_params:
+        key1: value1
+`,
+			expectedConfig: notifier.AlertmanagerClientConfig{
+				AlertmanagerURL: "http://custom-url-for-this-tenant:8080",
+				NotifierConfig: notifier.Config{
+					ProxyURL:   "http://some-proxy:1234",
+					TLSEnabled: true,
+					OAuth2: notifier.OAuth2Config{
+						ClientID:     "myclient",
+						ClientSecret: flagext.SecretWithValue("mysecret"),
+						TokenURL:     "http://token-url",
+						Scopes:       []string{"abc", "def"},
+						EndpointParams: flagext.NewLimitsMapWithData(map[string]string{
+							"key1": "value1",
+						}, nil),
+					},
+				},
+			},
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
+
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+			var limitsYAML Limits
+			limitsYAML.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
+			err := yaml.Unmarshal([]byte(tt.baseYAML), &limitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov := NewOverrides(limitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedConfig, ov.RulerAlertmanagerClientConfig("user1"))
+			require.True(t, tt.expectedConfig.Equal(ov.RulerAlertmanagerClientConfig("user1")))
+		})
+	}
+}
+
 func TestActiveSeriesCustomTrackersConfig(t *testing.T) {
 	tests := map[string]struct {
 		cfg                      string
@@ -1313,6 +1475,57 @@ func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestLimits_validate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg         Limits
+		expectedErr error
+	}{
+		"should fail if max update timeout jitter is negative": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerUpdateTimeoutJitterMax = -1
+
+				return cfg
+			}(),
+			expectedErr: errNegativeUpdateTimeoutJitterMax,
+		},
+		"should fail if failover timeout is < update timeout + jitter + 1 sec": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerFailoverTimeout = model.Duration(5 * time.Second)
+				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
+				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: fmt.Errorf(errInvalidFailoverTimeout, 5*time.Second, 7*time.Second),
+		},
+		"should pass if failover timeout is >= update timeout + jitter + 1 sec": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.HATrackerFailoverTimeout = model.Duration(7 * time.Second)
+				cfg.HATrackerUpdateTimeout = model.Duration(4 * time.Second)
+				cfg.HATrackerUpdateTimeoutJitterMax = model.Duration(2 * time.Second)
+
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, testData.expectedErr, testData.cfg.validate())
 		})
 	}
 }
@@ -1605,10 +1818,10 @@ user1:
     - path: /api/v1/query
       method: POST
       query_params:
-        foo: 
+        foo:
           value: bar
     - query_params:
-        first: 
+        first:
           value: bar.*
           is_regexp: true
         other:

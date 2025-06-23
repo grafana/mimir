@@ -12,11 +12,11 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
@@ -300,10 +300,11 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
 			o := New(
-				&operators.TestOperator{Series: testCase.inputSeries},
+				&operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
 				&scalars.ScalarConstant{Value: 2, TimeRange: timeRange, MemoryConsumptionTracker: memoryConsumptionTracker},
 				timeRange,
 				testCase.grouping,
@@ -314,7 +315,7 @@ func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 				posrange.PositionRange{Start: 0, End: 10},
 			)
 
-			outputSeries, err := o.SeriesMetadata(context.Background())
+			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})

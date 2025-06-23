@@ -152,7 +152,8 @@ func TestStartup(t *testing.T) {
 	require.Equal(t, "ingest/65/256", a1key.id)
 }
 
-// Verify that we skip jobs that are before the committed offset due to extraneous bug situations.
+// Verify that we skip jobs that are before the committed offset due to either extraneous bug situations
+// or ongoing job completions.
 func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	sched.cfg.MaxJobsPerPartition = 0
@@ -206,6 +207,43 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	)
 }
 
+func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+	// Add some jobs, then move the committed offsets past some of them.
+	s1 := schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   1,
+		StartOffset: 256,
+		EndOffset:   9111,
+	}
+
+	require.NoError(t, sched.jobs.add("ingest/1/256", s1))
+	require.Equal(t, 1, sched.jobs.count())
+
+	// Simulate a completion of a job that was created by a prior scheduler.
+	sched.advanceCommittedOffset("ingest", 1, 5000)
+	// Advancing offsets doesn't actually remove any jobs.
+	require.Equal(t, 1, sched.jobs.count())
+
+	var assignedJobs []*schedulerpb.JobSpec
+
+	for {
+		_, s, err := sched.assignJob("big-time-worker-64")
+		if errors.Is(err, errNoJobAvailable) {
+			break
+		}
+		require.NoError(t, err)
+		assignedJobs = append(assignedJobs, &s)
+	}
+
+	require.ElementsMatch(t,
+		[]*schedulerpb.JobSpec{&s1}, assignedJobs,
+		"s1 should not have been skipped",
+	)
+}
+
 func TestObservations(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	// Initially we're in observation mode. We have Kafka's start offsets, but no client jobs.
@@ -241,7 +279,7 @@ func TestObservations(t *testing.T) {
 	}
 
 	{
-		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t), noOpJobCreationPolicy[schedulerpb.JobSpec]{})
+		nq := newJobQueue(988*time.Hour, noOpJobCreationPolicy[schedulerpb.JobSpec]{}, 2, sched.metrics, test.NewTestingLogger(t))
 		sched.jobs = nq
 		sched.finalizeObservations()
 		require.Len(t, nq.jobs, 0, "No observations, no jobs")
@@ -858,7 +896,7 @@ func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
 }
 
 func TestBlockBuilderScheduler_EnqueuePendingJobs(t *testing.T) {
-	// Test that job detection and enqueueiing work as expected w/r/t the
+	// Test that job detection and enqueueing work as expected w/r/t the
 	// job creation policy.
 
 	sched, _ := mustScheduler(t)
@@ -933,4 +971,24 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_CommitRace(t *testing.T) {
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 0, sched.jobs.count(), "the job should have been ignored because it's behind the committed offset")
+}
+
+func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+
+	part := int32(1)
+	pt := sched.getPartitionState(part)
+	// Assume at startup we compute this job offset range:
+	pt.addPendingJob(&offsetRange{start: 10, end: 30})
+
+	// But the job we imported from the existing workers now being completed may be (10, 20):
+	sched.advanceCommittedOffset("ingest", part, 20)
+
+	assert.Equal(t, 1, pt.pendingJobs.Len())
+	assert.Equal(t, 0, sched.jobs.count())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
 }

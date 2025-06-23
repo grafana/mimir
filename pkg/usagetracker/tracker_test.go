@@ -290,8 +290,7 @@ func newTestUsageTracker(t *testing.T, index int, zone string, ikv, pkv kv.Clien
 	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
 	startServiceAndStopOnCleanup(t, partitionRingWatcher)
 
-	overrides, err := validation.NewOverrides(validation.Limits{}, nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(validation.Limits{}, nil)
 
 	ut, err := NewUsageTracker(cfg, instanceRing, partitionRing, overrides, logger, reg)
 	require.NoError(t, err)

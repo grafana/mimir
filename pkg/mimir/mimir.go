@@ -31,15 +31,13 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/spanprofiler"
 	"github.com/okzk/sdnotify"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
@@ -82,7 +80,6 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -343,6 +340,19 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout; use limits.ha_tracker_update_timeout instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeoutJitterMax = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout_jitter_max; use limits.ha_tracker_update_timeout_jitter_max instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout > 0 {
+		c.LimitsConfig.HATrackerFailoverTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
 	}
 	// validate the default limits
 	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
@@ -852,16 +862,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
-	mimir.setupObjstoreTracing()
-
-	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
-	// Note, for performance reasons, span profiler only labels root spans.
-	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
-	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
-	// gets converged into the latter.
-	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
-
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
 	if err := mimir.setupModuleManager(); err != nil {
@@ -895,13 +895,6 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	reg.MustRegister(collectors.NewGoCollector(
 		collectors.WithGoCollectorRuntimeMetrics(rules...),
 	))
-}
-
-// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
-func (t *Mimir) setupObjstoreTracing() {
-	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
-	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
 // Run starts Mimir running, and blocks until a Mimir stops.

@@ -19,8 +19,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	gokitlog "github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
@@ -35,6 +33,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // AlertmanagerCommand configures and executes rule related mimir api operations
@@ -128,7 +127,7 @@ func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
 	// warning to stdout. It is possible to disable to fallback, and use just the UTF-8
 	// parser, with the -utf8-strict-mode flag. This will help operators ensure their
 	// configurations are compatible with the new parser going forward.
-	l := level.NewFilter(gokitlog.NewLogfmtLogger(os.Stdout), level.AllowInfo())
+	l := util_log.MakeLeveledLogger(os.Stdout, "info")
 	features := ""
 	if a.UTF8StrictMode {
 		features = featurecontrol.FeatureUTF8StrictMode

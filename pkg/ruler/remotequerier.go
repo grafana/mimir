@@ -24,14 +24,13 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -101,7 +100,6 @@ func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logge
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
 	opts, err := cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
-			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 			middleware.ClientUserHeaderInterceptor,
 		},
 		nil,
@@ -111,6 +109,7 @@ func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logge
 		return nil, err
 	}
 	opts = append(opts, grpc.WithDefaultServiceConfig(serviceConfig))
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(cfg.Address, opts...)
@@ -166,7 +165,7 @@ func NewRemoteQuerier(
 // Read satisfies Prometheus remote.ReadClient.
 // See: https://github.com/prometheus/prometheus/blob/28a830ed9f331e71549c24c2ac3b441033201e8f/storage/remote/client.go#L342
 func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
+	log, ctx := spanlogger.New(ctx, q.logger, tracer, "ruler.RemoteQuerier.Read")
 	defer log.Finish()
 
 	rdReq := &prompb.ReadRequest{
@@ -245,7 +244,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-	logger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Query")
+	logger, ctx := spanlogger.New(ctx, q.logger, tracer, "ruler.RemoteQuerier.Query")
 	defer logger.Finish()
 
 	return q.query(ctx, qs, t, logger)

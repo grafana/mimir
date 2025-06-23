@@ -11,9 +11,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/go-kit/log/level"
@@ -22,7 +23,6 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -181,19 +181,22 @@ func main() {
 
 	var ballast = ballast.Allocate(mainFlags.ballastBytes)
 
-	// In testing mode skip JAEGER setup to avoid panic due to
+	// In testing mode skip Tracing setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
 	if !testMode {
-		name := os.Getenv("JAEGER_SERVICE_NAME")
-		if name == "" {
+		var name string
+		if otelEnvName := os.Getenv("OTEL_SERVICE_NAME"); otelEnvName != "" {
+			name = otelEnvName
+		} else if jaegerEnvName := os.Getenv("JAEGER_SERVICE_NAME"); jaegerEnvName != "" {
+			name = jaegerEnvName
+		} else {
 			name = "mimir"
 			if len(cfg.Target) == 1 {
 				name += "-" + cfg.Target[0]
 			}
 		}
 
-		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3)); err != nil {
+		if trace, err := tracing.NewOTelOrJaegerFromEnv(name, util_log.Logger); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
 			defer trace.Close()
@@ -204,21 +207,26 @@ func main() {
 	util_log.CheckFatal("initializing application", err)
 
 	if mainFlags.printModules {
-		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
-
+		dependentsByModule := map[string]map[string]struct{}{}
 		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
-			ix := sort.SearchStrings(allDeps, m)
-			included := ix < len(allDeps) && allDeps[ix] == m
-
-			if included {
-				fmt.Fprintln(os.Stdout, m, "*")
-			} else {
-				fmt.Fprintln(os.Stdout, m)
+			for _, mdep := range t.ModuleManager.DependenciesForModule(m) {
+				dependents, ok := dependentsByModule[mdep]
+				if !ok {
+					dependents = map[string]struct{}{}
+					dependentsByModule[mdep] = dependents
+				}
+				dependents[m] = struct{}{}
 			}
 		}
 
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout, "Modules marked with * are included in target All.")
+		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
+			fmt.Print(m)
+			if dependents, ok := dependentsByModule[m]; ok {
+				fmt.Print(" (in: ", strings.Join(slices.Sorted(maps.Keys(dependents)), ", "), ")")
+			}
+			fmt.Println()
+		}
+
 		return
 	}
 

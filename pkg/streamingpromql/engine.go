@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -27,14 +28,11 @@ func init() {
 	promqlext.ExtendPromQL()
 }
 
+var tracer = otel.Tracer("pkg/streamingpromql")
+
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, logger log.Logger) (*Engine, error) {
-	lookbackDelta := opts.CommonOpts.LookbackDelta
-	if lookbackDelta == 0 {
-		lookbackDelta = defaultLookbackDelta
-	}
-
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -43,16 +41,12 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
 	}
 
-	if opts.CommonOpts.EnablePerStepStats {
-		return nil, errors.New("enabling per-step stats not supported by Mimir query engine")
-	}
-
 	if opts.CommonOpts.EnableDelayedNameRemoval {
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
-	if opts.UseQueryPlanning && planner == nil {
-		return nil, errors.New("query planning enabled but no planner provided")
+	if planner == nil {
+		return nil, errors.New("no query planner provided")
 	}
 
 	activeQueryTracker := opts.CommonOpts.ActiveQueryTracker
@@ -61,11 +55,12 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	}
 
 	return &Engine{
-		lookbackDelta:            lookbackDelta,
+		lookbackDelta:            DetermineLookbackDelta(opts.CommonOpts),
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -75,10 +70,19 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:         opts.Pedantic,
-		useQueryPlanning: opts.UseQueryPlanning,
-		planner:          planner,
+		pedantic:           opts.Pedantic,
+		eagerLoadSelectors: opts.EagerLoadSelectors,
+		planner:            planner,
 	}, nil
+}
+
+func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
+	lookbackDelta := opts.LookbackDelta
+	if lookbackDelta == 0 {
+		lookbackDelta = defaultLookbackDelta
+	}
+
+	return lookbackDelta
 }
 
 type Engine struct {
@@ -86,6 +90,7 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker promql.QueryTracker
+	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -100,16 +105,13 @@ type Engine struct {
 	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
 
-	useQueryPlanning bool
-	planner          *QueryPlanner
+	eagerLoadSelectors bool
+
+	planner *QueryPlanner
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	if e.useQueryPlanning {
-		return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
-	}
-
-	return e.newQueryFromExpression(ctx, q, opts, qs, ts, ts, 0)
+	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewInstantQueryTimeRange(ts))
 }
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
@@ -121,11 +123,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 		return nil, fmt.Errorf("range query time range is invalid: end time %v is before start time %v", end.Format(time.RFC3339), start.Format(time.RFC3339))
 	}
 
-	if e.useQueryPlanning {
-		return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))
-	}
-
-	return e.newQueryFromExpression(ctx, q, opts, qs, start, end, interval)
+	return e.newQueryFromPlanner(ctx, q, opts, qs, types.NewRangeQueryTimeRange(start, end, interval))
 }
 
 func (e *Engine) newQueryFromPlanner(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {

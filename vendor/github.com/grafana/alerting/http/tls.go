@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
@@ -8,24 +9,26 @@ import (
 )
 
 // NewTLSClient creates a new HTTP client with the provided TLS configuration or with default settings.
-func NewTLSClient(tlsConfig *tls.Config) *http.Client {
-	nc := func(tlsConfig *tls.Config) *http.Client {
-		return &http.Client{
-			Timeout: time.Second * 30,
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-				Proxy:           http.ProxyFromEnvironment,
-				Dial: (&net.Dialer{
-					Timeout: 30 * time.Second,
-				}).Dial,
-				TLSHandshakeTimeout: 5 * time.Second,
-			},
+func NewTLSClient(tlsConfig *tls.Config, dialContextfunc func(context.Context, string, string) (net.Conn, error)) *http.Client {
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{
+			Renegotiation: tls.RenegotiateFreelyAsClient,
 		}
 	}
 
-	if tlsConfig == nil {
-		return nc(&tls.Config{Renegotiation: tls.RenegotiateFreelyAsClient})
+	if dialContextfunc == nil {
+		dialContextfunc = (&net.Dialer{
+			Timeout: 30 * time.Second,
+		}).DialContext
 	}
 
-	return nc(tlsConfig)
+	return &http.Client{
+		Timeout: time.Second * 30,
+		Transport: &http.Transport{
+			TLSClientConfig:     tlsConfig,
+			Proxy:               http.ProxyFromEnvironment,
+			DialContext:         dialContextfunc,
+			TLSHandshakeTimeout: 5 * time.Second,
+		},
+	}
 }

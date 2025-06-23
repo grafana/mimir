@@ -39,7 +39,8 @@ const defaultZeroThreshold = 1e-128
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, dataPoints pmetric.ExponentialHistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
+	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
+	scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 	for x := 0; x < dataPoints.Len(); x++ {
@@ -49,7 +50,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 
 		pt := dataPoints.At(x)
 
-		histogram, ws, err := exponentialToNativeHistogram(pt)
+		histogram, ws, err := exponentialToNativeHistogram(pt, temporality)
 		annots.Merge(ws)
 		if err != nil {
 			return annots, err
@@ -58,6 +59,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
@@ -79,7 +81,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 
 // exponentialToNativeHistogram translates an OTel Exponential Histogram data point
 // to a Prometheus Native Histogram.
-func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (mimirpb.Histogram, annotations.Annotations, error) {
+func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (mimirpb.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 	scale := p.Scale()
 	if scale < -4 {
@@ -97,17 +99,27 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint) (mimi
 	pSpans, pDeltas := convertBucketsLayout(p.Positive().BucketCounts().AsRaw(), p.Positive().Offset(), scaleDown, true)
 	nSpans, nDeltas := convertBucketsLayout(p.Negative().BucketCounts().AsRaw(), p.Negative().Offset(), scaleDown, true)
 
+	// The counter reset detection must be compatible with Prometheus to
+	// safely set ResetHint to NO. This is not ensured currently.
+	// Sending a sample that triggers counter reset but with ResetHint==NO
+	// would lead to Prometheus panic as it does not double check the hint.
+	// Thus we're explicitly saying UNKNOWN here, which is always safe.
+	// TODO: using created time stamp should be accurate, but we
+	// need to know here if it was used for the detection.
+	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
+	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
+	resetHint := mimirpb.Histogram_UNKNOWN
+
+	if temporality == pmetric.AggregationTemporalityDelta {
+		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
+		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
+		// summed over time.
+		resetHint = mimirpb.Histogram_GAUGE
+	}
+
 	h := mimirpb.Histogram{
-		// The counter reset detection must be compatible with Prometheus to
-		// safely set ResetHint to NO. This is not ensured currently.
-		// Sending a sample that triggers counter reset but with ResetHint==NO
-		// would lead to Prometheus panic as it does not double check the hint.
-		// Thus we're explicitly saying UNKNOWN here, which is always safe.
-		// TODO: using created time stamp should be accurate, but we
-		// need to know here if it was used for the detection.
-		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
-		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-		ResetHint: mimirpb.Histogram_UNKNOWN,
+		ResetHint: resetHint,
 		Schema:    scale,
 
 		ZeroCount: &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: p.ZeroCount()},
@@ -244,7 +256,8 @@ func convertBucketsLayout(bucketCounts []uint64, offset, scaleDown int32, adjust
 }
 
 func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, promName string,
+	resource pcommon.Resource, settings Settings, promName string, temporality pmetric.AggregationTemporality,
+	scope scope,
 ) (annotations.Annotations, error) {
 	var annots annotations.Annotations
 
@@ -255,7 +268,7 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 
 		pt := dataPoints.At(x)
 
-		histogram, ws, err := explicitHistogramToCustomBucketsHistogram(pt)
+		histogram, ws, err := explicitHistogramToCustomBucketsHistogram(pt, temporality)
 		annots.Merge(ws)
 		if err != nil {
 			return annots, err
@@ -264,6 +277,7 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
+			scope,
 			settings,
 			nil,
 			true,
@@ -284,7 +298,7 @@ func (c *MimirConverter) addCustomBucketsHistogramDataPoints(ctx context.Context
 	return annots, nil
 }
 
-func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (mimirpb.Histogram, annotations.Annotations, error) {
+func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint, temporality pmetric.AggregationTemporality) (mimirpb.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 
 	buckets := p.BucketCounts().AsRaw()
@@ -292,18 +306,28 @@ func explicitHistogramToCustomBucketsHistogram(p pmetric.HistogramDataPoint) (mi
 	bucketCounts := buckets[offset:]
 	positiveSpans, positiveDeltas := convertBucketsLayout(bucketCounts, int32(offset), 0, false)
 
+	// The counter reset detection must be compatible with Prometheus to
+	// safely set ResetHint to NO. This is not ensured currently.
+	// Sending a sample that triggers counter reset but with ResetHint==NO
+	// would lead to Prometheus panic as it does not double check the hint.
+	// Thus we're explicitly saying UNKNOWN here, which is always safe.
+	// TODO: using created time stamp should be accurate, but we
+	// need to know here if it was used for the detection.
+	// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
+	// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
+	resetHint := mimirpb.Histogram_UNKNOWN
+
+	if temporality == pmetric.AggregationTemporalityDelta {
+		// If the histogram has delta temporality, set the reset hint to gauge to avoid unnecessary chunk cutting.
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/).
+		// This might be changed to a different hint name as gauge type might be misleading for samples that should be
+		// summed over time.
+		resetHint = mimirpb.Histogram_GAUGE
+	}
+
 	// TODO(carrieedwards): Add setting to limit maximum bucket count
 	h := mimirpb.Histogram{
-		// The counter reset detection must be compatible with Prometheus to
-		// safely set ResetHint to NO. This is not ensured currently.
-		// Sending a sample that triggers counter reset but with ResetHint==NO
-		// would lead to Prometheus panic as it does not double check the hint.
-		// Thus we're explicitly saying UNKNOWN here, which is always safe.
-		// TODO: using created time stamp should be accurate, but we
-		// need to know here if it was used for the detection.
-		// Ref: https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/28663#issuecomment-1810577303
-		// Counter reset detection in Prometheus: https://github.com/prometheus/prometheus/blob/f997c72f294c0f18ca13fa06d51889af04135195/tsdb/chunkenc/histogram.go#L232
-		ResetHint: mimirpb.Histogram_UNKNOWN,
+		ResetHint: resetHint,
 		Schema:    histogram.CustomBucketsSchema,
 
 		PositiveSpans:  positiveSpans,

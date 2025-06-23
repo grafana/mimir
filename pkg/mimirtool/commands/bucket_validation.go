@@ -65,8 +65,8 @@ func (c *retryingBucketClient) withRetries(f func() error) error {
 	}
 }
 
-func (c *retryingBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
-	return c.withRetries(func() error { return c.Bucket.Upload(ctx, name, r) })
+func (c *retryingBucketClient) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	return c.withRetries(func() error { return c.Bucket.Upload(ctx, name, r, opts...) })
 }
 
 func (c *retryingBucketClient) Exists(ctx context.Context, name string) (bool, error) {

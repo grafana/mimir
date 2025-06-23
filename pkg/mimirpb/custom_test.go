@@ -11,6 +11,11 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/encoding/proto"
+	"google.golang.org/grpc/mem"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestWriteRequest_MinTimestamp(t *testing.T) {
@@ -156,6 +161,60 @@ func TestIsFloatHistogram(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			res := testData.histogram.IsFloatHistogram()
 			require.Equal(t, testData.expected, res)
+		})
+	}
+}
+
+func TestCodecV2_Unmarshal(t *testing.T) {
+	c := codecV2{codec: fakeCodecV2{}}
+
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+
+	var req WriteRequest
+	require.NoError(t, c.Unmarshal(data, &req))
+
+	require.True(t, origReq.Equal(req))
+
+	require.NotNil(t, req.buffer)
+	req.FreeBuffer()
+}
+
+type fakeCodecV2 struct {
+	encoding.CodecV2
+}
+
+func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
+	return encoding.GetCodecV2(proto.Name).Marshal(v)
+}
+
+func TestHistogram_BucketsCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		histogram Histogram
+		expected  int
+	}{
+		{
+			name:      "empty histogram",
+			histogram: Histogram{},
+			expected:  0,
+		},
+		{
+			name:      "int histogram",
+			histogram: FromHistogramToHistogramProto(0, test.GenerateTestHistogram(0)),
+			expected:  8,
+		},
+		{
+			name:      "float histogram",
+			histogram: FromFloatHistogramToHistogramProto(0, test.GenerateTestFloatHistogram(0)),
+			expected:  8,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.histogram.BucketCount())
 		})
 	}
 }

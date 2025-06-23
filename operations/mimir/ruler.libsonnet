@@ -33,11 +33,13 @@
 
       // Increased from 2s to 10s in order to accommodate writing large rule results ot he ingester.
       'distributor.remote-timeout': '10s',
-    },
+    } + if $._config.ingest_storage_enabled then {
+      // Set the max buffered bytes in the Kafka client used by the ruler based on the expected max rule evaluation response size,
+      // clamping it between 1 GB (default) and 4 GB.
+      'ingest-storage.kafka.producer-max-buffered-bytes': std.clamp(10 * $._config.ruler_remote_evaluation_max_query_response_size_bytes, 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024),
+    } else {},
 
-  ruler_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
-  },
+  ruler_env_map:: {},
 
   ruler_node_affinity_matchers:: [],
 
@@ -50,7 +52,7 @@
       $.util.resourcesRequests('1', '6Gi') +
       $.util.resourcesLimits('16', '16Gi') +
       $.util.readinessProbe +
-      $.jaeger_mixin
+      $.tracing_env_mixin
     else {},
 
   local deployment = $.apps.v1.deployment,

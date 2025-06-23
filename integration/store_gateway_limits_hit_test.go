@@ -23,7 +23,8 @@ import (
 
 func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 	const (
-		blockRangePeriod = 500 * time.Millisecond
+		blockRangePeriod  = 500 * time.Millisecond
+		numSeriesPerBlock = 5
 	)
 
 	scenario, err := e2e.NewScenario(networkName)
@@ -33,10 +34,12 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
 		map[string]string{
-			"-ingester.ring.replication-factor": "1",
+			"-log.level":                        "debug",
+			"-ingester.ring.replication-factor": "3",
 
 			// Frequently compact and ship blocks to storage so we can query them through the store gateway.
 			"-blocks-storage.bucket-store.sync-interval":        "1s",
+			"-store-gateway.sharding-ring.replication-factor":   "2",
 			"-blocks-storage.tsdb.block-ranges-period":          blockRangePeriod.String(),
 			"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
 			"-blocks-storage.tsdb.retention-period":             blockRangePeriod.String(), // We want blocks to be immediately deleted from ingesters.
@@ -52,11 +55,13 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 	// Start Mimir write path components.
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, scenario.StartAndWaitReady(distributor, ingester))
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, scenario.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 	// Wait until distributor has discovered the ingester via the ring.
-	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
@@ -69,13 +74,15 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "test")
 
 	for i, ts := range []time.Time{timeStamp1, timeStamp2, timeStamp3} {
-		seriesID := i + 1
-		series, _, _ := generateAlternatingSeries(i)(fmt.Sprintf("series_%d", seriesID), ts)
-		pushTimeSeries(t, client, series)
+		for j := 0; j < numSeriesPerBlock; j++ {
+			series, _, _ := generateAlternatingSeries(i)(fmt.Sprintf("series_%d", j), ts)
+			pushTimeSeries(t, client, series)
+		}
 
 		// Wait until the TSDB head is shipped to storage and removed from the ingester.
-		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(float64(seriesID)), "cortex_ingester_shipper_uploads_total"))
-		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
+		// We assume that the other two ingesters are doing the same in lockstep.
+		require.NoError(t, ingester1.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ingester_shipper_uploads_total"))
+		require.NoError(t, ingester1.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
 	}
 
 	tests := map[string]struct {
@@ -84,20 +91,50 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		expectedErrorKey            string
 	}{
 		"when store-gateway hits max_fetched_series_per_query, 'err-mimir-max-series-per-query' is returned": {
-			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-series-per-query": "1"},
+			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-series-per-query": "3"},
 			expectedErrorKey:            string(globalerror.MaxSeriesPerQuery),
 		},
 		"when querier hits max_fetched_series_per_query, 'err-mimir-max-series-per-query' is returned": {
-			additionalQuerierFlags: map[string]string{"-querier.max-fetched-series-per-query": "1"},
+			additionalQuerierFlags: map[string]string{"-querier.max-fetched-series-per-query": "3"},
 			expectedErrorKey:       string(globalerror.MaxSeriesPerQuery),
 		},
+		"when querier hits max_fetched_series_per_query querying only the store-gateway, 'err-mimir-max-series-per-query' is returned": {
+			additionalQuerierFlags: map[string]string{
+				"-querier.query-ingesters-within":       "1ms",
+				"-querier.max-fetched-series-per-query": "3",
+			},
+			expectedErrorKey: string(globalerror.MaxSeriesPerQuery),
+		},
+		"when querier hits max_fetched_series_per_query querying only the ingester, 'err-mimir-max-series-per-query' is returned": {
+			additionalQuerierFlags: map[string]string{
+				"-querier.query-store-after":            "24h",
+				"-querier.query-ingesters-within":       "25h",
+				"-querier.max-fetched-series-per-query": "3",
+			},
+			expectedErrorKey: string(globalerror.MaxSeriesPerQuery),
+		},
 		"when store-gateway hits max_fetched_chunks_per_query, 'err-mimir-max-chunks-per-query' is returned": {
-			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "1"},
+			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "3"},
 			expectedErrorKey:            string(globalerror.MaxChunksPerQuery),
 		},
 		"when querier hits max_fetched_chunks_per_query, 'err-mimir-max-chunks-per-query' is returned": {
-			additionalQuerierFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "1"},
+			additionalQuerierFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "3"},
 			expectedErrorKey:       string(globalerror.MaxChunksPerQuery),
+		},
+		"when querier hits max_fetched_chunks_per_query querying only the store-gateway, 'err-mimir-max-chunks-per-query' is returned": {
+			additionalQuerierFlags: map[string]string{
+				"-querier.query-ingesters-within":       "1ms",
+				"-querier.max-fetched-chunks-per-query": "3",
+			},
+			expectedErrorKey: string(globalerror.MaxChunksPerQuery),
+		},
+		"when querier hits max_fetched_chunks_per_query querying only the ingester, 'err-mimir-max-chunks-per-query' is returned": {
+			additionalQuerierFlags: map[string]string{
+				"-querier.query-store-after":            "24h",
+				"-querier.query-ingesters-within":       "25h",
+				"-querier.max-fetched-chunks-per-query": "3",
+			},
+			expectedErrorKey: string(globalerror.MaxChunksPerQuery),
 		},
 	}
 
@@ -110,22 +147,18 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 			// The querier and store-gateway will be ready after they discovered the blocks in the storage.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
-			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
-			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway))
+			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
+			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
+			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway1, storeGateway2))
 			t.Cleanup(func() {
-				require.NoError(t, scenario.Stop(querier, storeGateway, compactor))
+				require.NoError(t, scenario.Stop(querier, storeGateway1, storeGateway2, compactor))
 			})
 
-			client, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "test")
+			client, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "test")
 			require.NoError(t, err)
 
-			// Verify we can successfully query timeseries between timeStamp1 and timeStamp2 (excluded)
-			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode, string(rangeResultBody))
-
-			// Verify we cannot successfully query timeseries between timeSeries1 and timeSeries2 (included) because the limit is hit, and the status code 422 is returned
-			rangeResultResponse, rangeResultBody, err = client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(time.Second), time.Second)
+			// Verify we cannot successfully query timeseries because of the series/chunks limit.
+			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1.Add(-time.Second), timeStamp3.Add(time.Second), time.Second)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode, string(rangeResultBody))
 			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey), string(rangeResultBody))

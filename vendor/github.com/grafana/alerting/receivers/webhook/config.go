@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 
+	alertingHttp "github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -40,6 +41,8 @@ type Config struct {
 	HMACConfig *receivers.HMACConfig
 
 	Payload CustomPayload
+
+	HTTPConfig *alertingHttp.HTTPClientConfig
 }
 
 func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
@@ -59,6 +62,8 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		ExtraHeaders             map[string]string        `json:"headers,omitempty" yaml:"headers,omitempty"`
 
 		Payload *CustomPayload `json:"payload,omitempty" yaml:"payload,omitempty"`
+
+		HTTPConfig *alertingHttp.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
 	}{}
 
 	err := json.Unmarshal(jsonData, &rawSettings)
@@ -119,6 +124,14 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 			Header:          hmacConfig.Header,
 			TimestampHeader: hmacConfig.TimestampHeader,
 		}
+	}
+
+	if rawSettings.HTTPConfig != nil {
+		rawSettings.HTTPConfig.Decrypt(decryptFn)
+		if err := alertingHttp.ValidateHTTPClientConfig(rawSettings.HTTPConfig); err != nil {
+			return settings, fmt.Errorf("invalid HTTP client configuration: %w", err)
+		}
+		settings.HTTPConfig = rawSettings.HTTPConfig
 	}
 
 	if rawSettings.ExtraHeaders != nil {

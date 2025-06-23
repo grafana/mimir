@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -18,18 +20,16 @@ import (
 type Notifier struct {
 	*receivers.Base
 	ns       receivers.WebhookSender
-	log      logging.Logger
 	images   images.Provider
 	tmpl     *templates.Template
 	orgID    int64
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, orgID int64) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, orgID int64) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		orgID:    orgID,
-		log:      logger,
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -46,16 +46,17 @@ type webexMessage struct {
 
 // Notify implements the Notifier interface.
 func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := wn.GetLogger(ctx)
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, wn.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, l, &tmplErr)
 
 	message, truncated := receivers.TruncateInBytes(tmpl(wn.settings.Message), 4096)
 	if truncated {
-		wn.log.Warn("Webex message too long, truncating message", "OriginalMessage", wn.settings.Message)
+		level.Warn(l).Log("msg", "Webex message too long, truncating message", "originalMessage", wn.settings.Message)
 	}
 
 	if tmplErr != nil {
-		wn.log.Warn("Failed to template webex message", "Error", tmplErr.Error())
+		level.Warn(l).Log("msg", "Failed to template webex message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
@@ -66,7 +67,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	// Augment our Alert data with ImageURLs if available.
-	_ = images.WithStoredImages(ctx, wn.log, wn.images, func(index int, image images.Image) error {
+	_ = images.WithStoredImages(ctx, l, wn.images, func(index int, image images.Image) error {
 		// Cisco Webex only supports a single image per request: https://developer.webex.com/docs/basics#message-attachments
 		if image.HasURL() {
 			data.Alerts[index].ImageURL = image.URL
@@ -99,7 +100,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		cmd.HTTPHeader = headers
 	}
 
-	if err := wn.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := wn.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, err
 	}
 

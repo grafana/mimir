@@ -7,14 +7,14 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type ScalarConstant struct {
 	Value                    float64
 	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	expressionPosition posrange.PositionRange
 }
@@ -24,7 +24,7 @@ var _ types.ScalarOperator = &ScalarConstant{}
 func NewScalarConstant(
 	value float64,
 	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *ScalarConstant {
 	return &ScalarConstant{
@@ -54,6 +54,11 @@ func (s *ScalarConstant) GetValues(_ context.Context) (types.ScalarData, error) 
 
 func (s *ScalarConstant) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
+}
+
+func (s *ScalarConstant) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *ScalarConstant) Close() {

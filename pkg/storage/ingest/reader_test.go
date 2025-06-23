@@ -739,12 +739,18 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return nil
 				})
 
-				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 					listOffsetsRequestsCount.Inc()
 
 					if listOffsetsShouldFail.Load() {
-						return nil, errors.New("mocked error"), true
+						req := kreq.(*kmsg.ListOffsetsRequest)
+						res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+						res.Default()
+						res.Topics = []kmsg.ListOffsetsResponseTopic{
+							{Topic: topicName, Partitions: []kmsg.ListOffsetsResponseTopicPartition{{ErrorCode: kerr.NotLeaderForPartition.Code}}},
+						}
+						return res, nil, true
 					}
 
 					return nil, nil, false
@@ -778,7 +784,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Since the mocked Kafka cluster is configured to fail any ListOffsets request we expect the reader hasn't
 				// catched up yet, and it's still in Starting state.
-				assert.Equal(t, services.Starting, reader.State())
+				assert.Equal(t, services.Starting.String(), reader.State().String())
 				assert.Equal(t, int64(0), consumedRecordsCount.Load())
 
 				// Unblock the ListOffsets requests. Now they will succeed.
@@ -1501,14 +1507,30 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
 					consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
 					listOffsetsRequestsCount = atomic.NewInt64(0)
+					contextCancelled         = atomic.NewBool(false)
 				)
 
 				// Mock Kafka to always fail the ListOffsets request.
-				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 					cluster.KeepControl()
 
 					listOffsetsRequestsCount.Inc()
-					return nil, errors.New("mocked error"), true
+
+					// If context has been cancelled, we want to make sure we return an error
+					// that will allow the client to detect the cancellation faster.
+					if contextCancelled.Load() {
+						return nil, context.Canceled, true
+					}
+
+					// Return a proper Kafka error response instead of a raw error
+					// to ensure franz-go will retry this error
+					req := kreq.(*kmsg.ListOffsetsRequest)
+					res := req.ResponseKind().(*kmsg.ListOffsetsResponse)
+					res.Default()
+					res.Topics = []kmsg.ListOffsetsResponseTopic{
+						{Topic: topicName, Partitions: []kmsg.ListOffsetsResponseTopicPartition{{ErrorCode: kerr.NotLeaderForPartition.Code}}},
+					}
+					return res, nil, true
 				})
 
 				// Create and start the reader.
@@ -1525,13 +1547,17 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
 				})
 
-				// Wait until the Kafka cluster received at least 1 ListOffsets request.
+				// Wait until the Kafka cluster received at least 2 ListOffsets requests.
+				// This ensures the reader is actively trying to fetch offsets and retrying.
 				test.Poll(t, 5*time.Second, true, func() interface{} {
-					return listOffsetsRequestsCount.Load() > 0
+					return listOffsetsRequestsCount.Load() > 1
 				})
 
 				// Cancelling the context should cause the service to switch to a terminal state.
 				assert.Equal(t, services.Starting, reader.State())
+
+				// Mark that context is being cancelled so subsequent requests fail faster
+				contextCancelled.Store(true)
 				cancelReaderCtx()
 
 				// franz-go has internal retries that can last up to 10s
@@ -1870,6 +1896,10 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 				if blocked.Load() {
 					blockedTicker := time.NewTicker(100 * time.Millisecond)
 					defer blockedTicker.Stop()
+
+					timeoutTimer := time.NewTimer(3 * time.Second)
+					defer timeoutTimer.Stop()
+
 				outer:
 					for {
 						select {
@@ -1877,7 +1907,7 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 							if !blocked.Load() {
 								break outer
 							}
-						case <-time.After(3 * time.Second):
+						case <-timeoutTimer.C:
 							// This is basically a test failure as we never finish the test in time.
 							t.Log("failed to finish unblocking the consumer in time")
 							return nil
@@ -3006,7 +3036,7 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 		require.Equal(t, 1, len(res.Topics[0].Partitions))
 
 		// Parse the response, just to check how many records we got.
-		parseOptions := kgo.ProcessFetchPartitionOptions{
+		parseOptions := kgo.ProcessFetchPartitionOpts{
 			KeepControlRecords: false,
 			Offset:             offset,
 			IsolationLevel:     kgo.ReadUncommitted(),
@@ -3015,7 +3045,7 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 		}
 
 		rawPartitionResp := res.Topics[0].Partitions[0]
-		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(_ kgo.FetchBatchMetrics) {})
+		partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor(), func(_ kgo.FetchBatchMetrics) {})
 
 		// Ensure we got a low number of records, otherwise the premise of this test is wrong
 		// because we want a single fetchWatch to be fulfilled in many Fetch requests.

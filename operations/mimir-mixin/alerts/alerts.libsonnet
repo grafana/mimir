@@ -406,9 +406,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if servers are receiving requests with invalid cluster validation labels (i.e. meant for other clusters).
           alert: $.alertName('ServerInvalidClusterValidationLabelRequests'),
           expr: |||
-            (sum by (%(alert_aggregation_labels)s) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_server_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
+            and on (%(alert_aggregation_labels)s) (mimir_build_info > 0)
           ||| % $._config {
             range_interval: $.alertRangeInterval(5),
           },
@@ -423,9 +423,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
           // Alert if clients' requests are rejected due to invalid cluster validation labels (i.e. there's a mismatch between clients' and servers' cluster validation labels).
           alert: $.alertName('ClientInvalidClusterValidationLabelRequests'),
           expr: |||
-            (sum by (%(alert_aggregation_labels)s) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
+            (sum by (%(alert_aggregation_labels)s, protocol) (rate(cortex_client_invalid_cluster_validation_label_requests_total{}[%(range_interval)s]))) > 0
             # Alert only for namespaces with Mimir clusters.
-            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
+            and on (%(alert_aggregation_labels)s) (mimir_build_info > 0)
           ||| % $._config {
             range_interval: $.alertRangeInterval(5),
           },

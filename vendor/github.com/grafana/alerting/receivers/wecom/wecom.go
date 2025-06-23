@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -19,7 +20,6 @@ import (
 type Notifier struct {
 	*receivers.Base
 	tmpl        *templates.Template
-	log         logging.Logger
 	ns          receivers.WebhookSender
 	settings    Config
 	tok         *accessToken
@@ -27,11 +27,10 @@ type Notifier struct {
 	group       singleflight.Group
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		tmpl:     template,
-		log:      logger,
 		ns:       sender,
 		settings: cfg,
 	}
@@ -39,10 +38,11 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify send an alert notification to WeCom.
 func (w *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	w.log.Info("executing WeCom notification", "notification", w.Name)
+	l := w.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending notification")
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, w.tmpl, as, w.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, w.tmpl, as, l, &tmplErr)
 
 	bodyMsg := map[string]interface{}{
 		"msgtype": w.settings.MsgType,
@@ -80,7 +80,7 @@ func (w *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	}
 
 	if tmplErr != nil {
-		w.log.Warn("failed to template WeCom message", "error", tmplErr.Error())
+		level.Warn(l).Log("failed to template WeCom message", "err", tmplErr.Error())
 	}
 
 	cmd := &receivers.SendWebhookSettings{
@@ -88,8 +88,8 @@ func (w *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		Body: string(body),
 	}
 
-	if err = w.ns.SendWebhook(ctx, cmd); err != nil {
-		w.log.Error("failed to send WeCom webhook", "error", err, "notification", w.Name)
+	if err = w.ns.SendWebhook(ctx, l, cmd); err != nil {
+		level.Error(l).Log("failed to send WeCom webhook", "err", err)
 		return false, err
 	}
 

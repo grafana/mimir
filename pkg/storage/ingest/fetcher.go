@@ -16,13 +16,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/instrument"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kotel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -141,7 +141,7 @@ type fetchResult struct {
 	ctx          context.Context
 	fetchedBytes int
 
-	waitingToBePickedUpFromOrderedFetchesSpan opentracing.Span
+	waitingToBePickedUpFromOrderedFetchesSpan trace.Span
 }
 
 func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
@@ -186,14 +186,14 @@ func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) 
 }
 
 func (fr *fetchResult) startWaitingForConsumption() {
-	fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.waitingForConsumption")
+	fr.ctx, fr.waitingToBePickedUpFromOrderedFetchesSpan = tracer.Start(fr.ctx, "fetchResult.waitingForConsumption")
 }
 
 func (fr *fetchResult) finishWaitingForConsumption() {
 	if fr.waitingToBePickedUpFromOrderedFetchesSpan == nil {
-		fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.noWaitingForConsumption")
+		fr.ctx, fr.waitingToBePickedUpFromOrderedFetchesSpan = tracer.Start(fr.ctx, "fetchResult.noWaitingForConsumption")
 	}
-	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
+	fr.waitingToBePickedUpFromOrderedFetchesSpan.End()
 }
 
 // Merge merges older with into fr. Merge keeps most of the fields of fr and assumes they
@@ -618,7 +618,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
-	parseOptions := kgo.ProcessFetchPartitionOptions{
+	parseOptions := kgo.ProcessFetchPartitionOpts{
 		KeepControlRecords: false,
 		Offset:             startOffset,
 		IsolationLevel:     kgo.ReadUncommitted(), // we don't produce in transactions, but leaving this here so it's explicit.
@@ -631,7 +631,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
-	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor( /* TODO: use pool? */ ), observeMetrics)
 	if partition.Err != nil {
 		// This should never happen because we already check the ErrorCode above, but we keep this double check
 		// in case Err will be set because of other reasons by kgo.ProcessRespPartition() in the future.
@@ -669,7 +669,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
-		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
+		wantSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
@@ -679,7 +679,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 		var bufferedResult fetchResult
 
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch.attempt")
+			attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
 			// Run a single Fetch request.

@@ -10,6 +10,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
+type PrepareParams struct {
+	QueryStats *QueryStats
+}
+
 // Operator represents all operators.
 type Operator interface {
 	// ExpressionPosition returns the position of the PromQL expression that this operator represents.
@@ -20,6 +24,10 @@ type Operator interface {
 	// It must be safe to call Close at any time, including if SeriesMetadata or NextSeries have returned an error.
 	// It must be safe to call Close multiple times.
 	Close()
+
+	// Prepare prepares the operator for execution. It must be called before calling methods like `SeriesMetadata` or `NextSeries`.
+	// It must only be called once.
+	Prepare(ctx context.Context, params *PrepareParams) error
 }
 
 // SeriesOperator represents all operators that return one or more series.

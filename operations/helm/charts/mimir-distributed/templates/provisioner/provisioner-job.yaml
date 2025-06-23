@@ -41,21 +41,24 @@ spec:
       {{- end }}
       {{- end }}
       initContainers:
-        {{- range $index, $tenant := .Values.provisioner.additionalTenants }}
-        - name: provisioner-{{ $tenant.name }}
+        - name: provisioner
           image: "{{ $.Values.provisioner.image.registry }}/{{ $.Values.provisioner.image.repository }}:{{ $.Values.provisioner.image.tag }}"
           imagePullPolicy: {{ $.Values.provisioner.image.pullPolicy }}
           command:
-            - /usr/bin/provisioner
-          args:
-            - -bootstrap-path=/bootstrap
-            - -cluster-name={{ include "mimir.clusterName" $ }}
-            - -api-url={{ tpl $.Values.provisioner.apiUrl $ }}
-            - -tenant={{ $tenant.name }}
-            - -access-policy=write-{{ $tenant.name }}:{{ $tenant.name }}:metrics:write
-            - -access-policy=read-{{ $tenant.name }}:{{ $tenant.name }}:metrics:read
-            - -token=write-{{ $tenant.name }}
-            - -token=read-{{ $tenant.name }}
+            - /bin/sh
+            - -euc
+            - |
+              {{- range $tenant := .Values.provisioner.additionalTenants }}
+              /usr/bin/provisioner \
+                -bootstrap-path=/bootstrap \
+                -cluster-name={{ include "mimir.clusterName" $ }} \
+                -api-url={{ tpl $.Values.provisioner.apiUrl $ }} \
+                -tenant={{ $tenant.name }} \
+                -access-policy=write-{{ $tenant.name }}:{{ $tenant.name }}:metrics:write \
+                -access-policy=read-{{ $tenant.name }}:{{ $tenant.name }}:metrics:read \
+                -token=write-{{ $tenant.name }} \
+                -token=read-{{ $tenant.name }}
+              {{- end }}
           volumeMounts:
             {{- if $.Values.provisioner.extraVolumeMounts }}
               {{ toYaml $.Values.provisioner.extraVolumeMounts | nindent 12 }}
@@ -72,7 +75,6 @@ spec:
           env:
             {{ toYaml . | nindent 12 }}
           {{- end }}
-        {{- end }}
       containers:
         - name: create-secret
           image: {{ include "mimir.kubectlImage" . }}
@@ -115,4 +117,10 @@ spec:
             secretName: {{ .Values.tokengenJob.adminTokenSecret }}
         - name: bootstrap
           emptyDir: {}
-{{- end -}} 
+        {{- if .Values.provisioner.extraVolumes }}
+        {{- toYaml .Values.provisioner.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{- toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- end }}
+{{- end -}}

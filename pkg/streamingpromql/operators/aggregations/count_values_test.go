@@ -12,10 +12,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestCountValues_GroupLabelling(t *testing.T) {
@@ -208,7 +208,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			floats, err := types.FPointSlicePool.Get(1, memoryConsumptionTracker)
 			require.NoError(t, err)
 			floats = append(floats, promql.FPoint{T: 0, F: 123})
@@ -218,6 +218,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 				Data: []types.InstantVectorSeriesData{
 					{Floats: floats},
 				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			labelName := operators.NewStringLiteral("value", posrange.PositionRange{})

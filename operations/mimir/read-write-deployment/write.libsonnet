@@ -54,10 +54,7 @@
     $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('mimir-write-data', '/data'),
     ]) +
-    $.jaeger_mixin +
-    container.withEnvMixin([
-      envVar.new('JAEGER_REPORTER_MAX_QUEUE_SIZE', '1000'),
-    ]),
+    $.tracing_env_mixin,
 
   local mimir_write_data_pvc =
     pvc.new() +

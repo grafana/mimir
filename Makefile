@@ -247,7 +247,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr11118-33a7e5a266
+LATEST_BUILD_IMAGE_TAG ?= pr11747-73ebde0521
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -454,6 +454,11 @@ lint: check-makefiles
 	# As a result the topic can be created with the wrong number of partitions.
 	faillint -paths \
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# We don't use opentracing anymore.
+	faillint -paths \
+		"github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure lines are sorted after lint:sorted directives.

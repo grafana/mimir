@@ -149,6 +149,30 @@ local filename = 'mimir-writes.json';
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_otlp_http_routes_regex)])
       )
     )
+    .addRowIf(
+      $._config.gateway_enabled,
+      $.row('Gateway - Influx write requests')
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.influxWriteRequestsPerSecondSelector)
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_influx_http_routes_regex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_influx_http_routes_regex)])
+      )
+    )
+    .addRowIf(
+      $._config.gateway_enabled,
+      $.row('Added latency')
+      .addPanel(
+        $.timeseriesPanel('Request added latency') +
+        $.requestAddedLatencyPanelNativeHistogram($.queries.request_added_latency_metric, $.jobMatcher($._config.job_names.gateway))
+      )
+    )
     .addRow(
       $.row('Distributor')
       .addPanel(

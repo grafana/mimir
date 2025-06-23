@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -31,10 +30,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -251,7 +252,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		reg,
 	)
 
-	expectedResponse := &PrometheusResponse{
+	expectedPrometheusResponse := &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
@@ -295,7 +296,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	downstreamReqs := 0
 	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
-		return expectedResponse, nil
+		return expectedPrometheusResponse, nil
 	}))
 
 	step := int64(120 * 1000)
@@ -311,9 +312,11 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
 
 	require.Equal(t, 1, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
@@ -325,8 +328,10 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	// Doing same request again shouldn't change anything.
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
 	require.Equal(t, 1, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
 	queryStats = stats.FromContext(ctx)
@@ -388,7 +393,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 		reg,
 	)
 
-	expectedResponse := &PrometheusResponse{
+	expectedPrometheusResponse := &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
@@ -432,7 +437,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	downstreamReqs := 0
 	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
-		return expectedResponse, nil
+		return expectedPrometheusResponse, nil
 	}))
 
 	step := int64(120 * 1000)
@@ -449,9 +454,11 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
 
 	require.Equal(t, 1, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 	assert.Equal(t, 0, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
@@ -463,8 +470,11 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 	// Doing same request again shouldn't change anything.
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
+
 	require.Equal(t, 2, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 	assert.Equal(t, 0, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
 	queryStats = stats.FromContext(ctx)
@@ -514,7 +524,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		reg,
 	)
 
-	expectedResponse := &PrometheusResponse{
+	expectedPrometheusResponse := &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
@@ -558,7 +568,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	downstreamReqs := 0
 	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
-		return expectedResponse, nil
+		return expectedPrometheusResponse, nil
 	}))
 
 	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
@@ -573,9 +583,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
 
 	require.Equal(t, 1, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 
 	// Should not touch the cache at all.
 	assert.Equal(t, 0, cacheBackend.CountFetchCalls())
@@ -630,7 +642,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		prometheus.NewPedanticRegistry(),
 	)
 
-	expectedResponse := &PrometheusResponse{
+	expectedPrometheusResponse := &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
@@ -651,7 +663,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	downstreamReqs := 0
 	rc := mw.Wrap(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		downstreamReqs++
-		return expectedResponse, nil
+		return expectedPrometheusResponse, nil
 	}))
 
 	req := MetricsQueryRequest(&PrometheusRangeQueryRequest{
@@ -666,9 +678,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
-
+	prometheusResponse, ok := resp.GetPrometheusResponse()
+	require.True(t, ok)
 	require.Equal(t, 1, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 
 	// Since we're caching unaligned requests, we should see that.
 	assert.Equal(t, 1, cacheBackend.CountFetchCalls())
@@ -680,8 +693,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	// Doing the same request reuses cached result.
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
 	require.Equal(t, 1, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 	assert.Equal(t, 2, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
 	// Assert query stats from context
@@ -694,8 +709,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 
 	resp, err = rc.Do(ctx, req)
 	require.NoError(t, err)
+	prometheusResponse, ok = resp.GetPrometheusResponse()
+	require.True(t, ok)
 	require.Equal(t, 2, downstreamReqs)
-	require.Equal(t, expectedResponse, resp)
+	require.Equal(t, expectedPrometheusResponse, prometheusResponse)
 
 	assert.Equal(t, 3, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 2, cacheBackend.CountStoreCalls())
@@ -819,14 +836,18 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			// MetricsQueryRequest should result in a query.
 			resp, err := rc.Do(ctx, req)
 			require.NoError(t, err)
+			prometheusResponse, ok := resp.GetPrometheusResponse()
+			require.True(t, ok)
 			require.Equal(t, 1, calls)
-			require.Equal(t, testData.downstreamResponse, resp)
+			require.Equal(t, testData.downstreamResponse, prometheusResponse)
 
 			// Doing same request again should result in another query to fetch most recent data.
 			resp, err = rc.Do(ctx, req)
 			require.NoError(t, err)
+			prometheusResponse, ok = resp.GetPrometheusResponse()
+			require.True(t, ok)
 			require.Equal(t, 2, calls)
-			require.Equal(t, testData.downstreamResponse, resp)
+			require.Equal(t, testData.downstreamResponse, prometheusResponse)
 
 			// Check if the response was cached.
 			cacheKey := cacheHashKey(keyGenerator.QueryRequest(ctx, userID, req))
@@ -938,10 +959,11 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	// Create a queryable on the fixtures.
 	queryable := storageSeriesQueryable(series)
+	_, engine := newEngineForTesting(t, querier.MimirEngine)
 
 	// Create a downstream handler serving range queries based on the provided queryable.
 	downstream := &downstreamHandler{
-		engine:    newEngine(),
+		engine:    engine,
 		queryable: queryable,
 	}
 
@@ -1004,7 +1026,17 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 				require.NoError(t, concurrency.ForEachJob(ctx, len(reqs), maxConcurrency, func(ctx context.Context, idx int) error {
 					actual, err := mw.Do(ctx, reqs[idx])
 					require.NoError(t, err)
-					require.Equal(t, expectedRes[reqs[idx].GetID()], actual)
+
+					// Get the Prometheus response from the actual result
+					actualProm, actualOk := actual.GetPrometheusResponse()
+					require.True(t, actualOk)
+
+					// Get the Prometheus response from the expected result
+					expectedProm, expectedOk := expectedRes[reqs[idx].GetID()].GetPrometheusResponse()
+					require.True(t, expectedOk)
+
+					// Compare the Prometheus responses instead of the wrapper types
+					require.Equal(t, expectedProm, actualProm)
 
 					return nil
 				}))
@@ -1304,7 +1336,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			require.NoError(t, err)
 
 			expectedResponse := mkAPIResponse(testData.req.GetStart(), testData.req.GetEnd(), testData.req.GetStep())
-			assert.Equal(t, expectedResponse, actualRes)
+			requireEqualPrometheusResponse(t, expectedResponse, actualRes)
 
 			// Check the updated cached extents.
 			actualExtents := mw.fetchCacheExtents(ctx, time.UnixMilli(now), []string{userID}, []string{cacheKey})
@@ -1714,14 +1746,14 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.AddSpanTags(span)
-	}
+	request.AddSpanTags(trace.SpanFromContext(r.Context()))
 
 	response, err := q.handler.Do(r.Context(), request)
 	if err != nil {
 		return nil, err
 	}
+	// EncodeMetricsQueryResponse returns an http.Response with a prometheusReadCloser body for the consumer to close the query.
+	// So we do not need to close the response ourselves here.
 
 	return q.codec.EncodeMetricsQueryResponse(r.Context(), r, response)
 }
@@ -1993,7 +2025,7 @@ func Test_evaluateAtModifier(t *testing.T) {
 				[2m:])
 			[10m:])`, nil,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: bad number or duration syntax: ""`)},
+		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `invalid parameter "query": 1:19: parse error: unexpected character in duration expression: 'b'`)},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			t.Parallel()

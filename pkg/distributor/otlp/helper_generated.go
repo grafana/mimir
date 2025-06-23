@@ -119,28 +119,27 @@ var seps = []byte{'\xff'}
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
-func createAttributes(resource pcommon.Resource, attributes pcommon.Map, settings Settings,
+func createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, extras ...string,
 ) []mimirpb.LabelAdapter {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
-	promotedAttrs := make([]mimirpb.LabelAdapter, 0, len(settings.PromoteResourceAttributes))
-	for _, name := range settings.PromoteResourceAttributes {
-		if value, exists := resourceAttrs.Get(name); exists {
-			promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
-		}
-	}
-	sort.Stable(ByLabelName(promotedAttrs))
+	promotedAttrs := settings.PromoteResourceAttributes.promotedAttributes(resourceAttrs)
 
-	// Calculate the maximum possible number of labels we could return so we can preallocate l
-	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + len(extras)/2
+	convertScope := settings.ConvertScopeMetadata && scope.name != ""
+	scopeLabelCount := 0
+	if convertScope {
+		// Include name, version and schema URL.
+		scopeLabelCount = scope.attributes.Len() + 3
+	}
+	// Calculate the maximum possible number of labels we could return so we can preallocate l.
+	maxLabelCount := attributes.Len() + len(settings.ExternalLabels) + len(promotedAttrs) + scopeLabelCount + len(extras)/2
 
 	if haveServiceName {
 		maxLabelCount++
 	}
-
 	if haveInstanceID {
 		maxLabelCount++
 	}
@@ -181,8 +180,21 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 			l[normalized] = lbl.Value
 		}
 	}
+	if convertScope {
+		l["otel_scope_name"] = scope.name
+		l["otel_scope_version"] = scope.version
+		l["otel_scope_schema_url"] = scope.schemaURL
+		scope.attributes.Range(func(k string, v pcommon.Value) bool {
+			name := "otel_scope_" + k
+			if !settings.AllowUTF8 {
+				name = otlptranslator.NormalizeLabel(name)
+			}
+			l[name] = v.AsString()
+			return true
+		})
+	}
 
-	// Map service.name + service.namespace to job
+	// Map service.name + service.namespace to job.
 	if haveServiceName {
 		val := serviceName.AsString()
 		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
@@ -190,14 +202,14 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		}
 		l[model.JobLabel] = val
 	}
-	// Map service.instance.id to instance
+	// Map service.instance.id to instance.
 	if haveInstanceID {
 		l[model.InstanceLabel] = instance.AsString()
 	}
 	for key, value := range settings.ExternalLabels {
-		// External labels have already been sanitized
+		// External labels have already been sanitized.
 		if _, alreadyExists := l[key]; alreadyExists {
-			// Skip external labels if they are overridden by metric attributes
+			// Skip external labels if they are overridden by metric attributes.
 			continue
 		}
 		l[key] = value
@@ -213,8 +225,8 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 		if found && logOnOverwrite {
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
-		// internal labels should be maintained
-		if !settings.AllowUTF8 && !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
+		// internal labels should be maintained.
+		if !settings.AllowUTF8 && (len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__") {
 			name = otlptranslator.NormalizeLabel(name)
 		}
 		l[name] = extras[i+1]
@@ -228,21 +240,19 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	return labels
 }
 
-// isValidAggregationTemporality checks whether an OTel metric has a valid
-// aggregation temporality for conversion to a Prometheus metric.
-func isValidAggregationTemporality(metric pmetric.Metric) bool {
+func aggregationTemporality(metric pmetric.Metric) (pmetric.AggregationTemporality, bool, error) {
 	//exhaustive:enforce
 	switch metric.Type() {
 	case pmetric.MetricTypeGauge, pmetric.MetricTypeSummary:
-		return true
+		return 0, false, nil
 	case pmetric.MetricTypeSum:
-		return metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+		return metric.Sum().AggregationTemporality(), true, nil
 	case pmetric.MetricTypeHistogram:
-		return metric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+		return metric.Histogram().AggregationTemporality(), true, nil
 	case pmetric.MetricTypeExponentialHistogram:
-		return metric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+		return metric.ExponentialHistogram().AggregationTemporality(), true, nil
 	}
-	return false
+	return 0, false, fmt.Errorf("could not get aggregation temporality for %s as it has unsupported metric type %s", metric.Name(), metric.Type())
 }
 
 // addHistogramDataPoints adds OTel histogram data points to the corresponding Prometheus time series
@@ -253,7 +263,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string, logger *slog.Logger,
+	resource pcommon.Resource, settings Settings, baseName string, scope scope, logger *slog.Logger,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -264,7 +274,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampNs := pt.StartTimestamp()
 		startTimestampMs := convertTimeStamp(startTimestampNs)
-		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted
@@ -459,7 +469,7 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string, logger *slog.Logger,
+	settings Settings, baseName string, scope scope, logger *slog.Logger,
 ) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
@@ -469,7 +479,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 		pt := dataPoints.At(x)
 		timestamp := convertTimeStamp(pt.Timestamp())
 		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
-		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
+		baseLabels := createAttributes(resource, pt.Attributes(), scope, settings, nil, false)
 
 		// treat sum as a sample in an individual TimeSeries
 		sum := &mimirpb.Sample{
@@ -667,7 +677,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		// Do not pass identifying attributes as ignoreAttrs below.
 		identifyingAttrs = nil
 	}
-	labels := createAttributes(resource, attributes, settings, identifyingAttrs, false, model.MetricNameLabel, name)
+	labels := createAttributes(resource, attributes, scope{}, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {
 		if l.Name == model.JobLabel || l.Name == model.InstanceLabel {

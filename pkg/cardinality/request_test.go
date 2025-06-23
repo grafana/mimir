@@ -36,7 +36,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
 		require.NoError(t, err)
 
-		actual, err := DecodeLabelNamesRequest(req)
+		actual, err := DecodeLabelNamesRequest(req, 0)
 		require.NoError(t, err)
 
 		assert.Equal(t, expected, actual)
@@ -47,7 +47,7 @@ func TestDecodeLabelNamesRequest(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		actual, err := DecodeLabelNamesRequest(req)
+		actual, err := DecodeLabelNamesRequest(req, 0)
 		require.NoError(t, err)
 
 		assert.Equal(t, expected, actual)
@@ -98,7 +98,7 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 		req, err := http.NewRequest("GET", "http://localhost?"+params.Encode(), nil)
 		require.NoError(t, err)
 
-		actual, err := DecodeLabelValuesRequest(req)
+		actual, err := DecodeLabelValuesRequest(req, 0)
 		require.NoError(t, err)
 
 		assert.Equal(t, expected, actual)
@@ -109,7 +109,7 @@ func TestDecodeLabelValuesRequest(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		actual, err := DecodeLabelValuesRequest(req)
+		actual, err := DecodeLabelValuesRequest(req, 0)
 		require.NoError(t, err)
 
 		assert.Equal(t, expected, actual)

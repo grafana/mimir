@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 )
@@ -27,18 +28,10 @@ func TestQueryPruning(t *testing.T) {
 			<series name>{series="4"} 0+4x<num samples>
 			<series name>{series="5"} 0+5x<num samples>
 	`)
-	queryable := promqltest.LoadedStorage(t, data)
 
 	const step = 20 * time.Second
 
-	engine := newEngine()
-	pruningware := newPruneMiddleware(
-		log.NewNopLogger(),
-	)
-	downstream := &downstreamHandler{
-		engine:    engine,
-		queryable: queryable,
-	}
+	queryable := promqltest.LoadedStorage(t, data)
 
 	type template struct {
 		query   string
@@ -53,39 +46,51 @@ func TestQueryPruning(t *testing.T) {
 	}
 	for _, template := range templates {
 		t.Run(template.query, func(t *testing.T) {
-			query := fmt.Sprintf(template.query, seriesName)
-			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
-				start:     0,
-				end:       int64(numSamples) * time.Minute.Milliseconds(),
-				step:      step.Milliseconds(),
-				queryExpr: parseQuery(t, query),
-			}
+			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+				pruningware := newPruneMiddleware(log.NewNopLogger())
+				downstream := &downstreamHandler{
+					engine:    eng,
+					queryable: queryable,
+				}
 
-			injectedContext := user.InjectOrgID(context.Background(), "test")
+				query := fmt.Sprintf(template.query, seriesName)
+				req := &PrometheusRangeQueryRequest{
+					path:      "/query_range",
+					start:     0,
+					end:       int64(numSamples) * time.Minute.Milliseconds(),
+					step:      step.Milliseconds(),
+					queryExpr: parseQuery(t, query),
+				}
 
-			// Run the query without pruning.
-			expectedRes, err := downstream.Do(injectedContext, req)
-			require.Nil(t, err)
+				injectedContext := user.InjectOrgID(context.Background(), "test")
 
-			if !template.IsEmpty {
-				// Ensure the query produces some results.
-				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
-				requireValidSamples(t, expectedRes.(*PrometheusResponse).Data.Result)
-			}
+				// Run the query without pruning.
+				expectedRes, err := downstream.Do(injectedContext, req)
+				require.Nil(t, err)
+				expectedPrometheusResponse, ok := expectedRes.GetPrometheusResponse()
+				require.True(t, ok)
 
-			// Run the query with pruning.
-			prunedRes, err := pruningware.Wrap(downstream).Do(injectedContext, req)
-			require.Nil(t, err)
+				if !template.IsEmpty {
+					// Ensure the query produces some results.
+					require.NotEmpty(t, expectedPrometheusResponse.Data.Result)
+					requireValidSamples(t, expectedPrometheusResponse.Data.Result)
+				}
 
-			if !template.IsEmpty {
-				// Ensure the query produces some results.
-				require.NotEmpty(t, prunedRes.(*PrometheusResponse).Data.Result)
-				requireValidSamples(t, prunedRes.(*PrometheusResponse).Data.Result)
-			}
+				// Run the query with pruning.
+				prunedRes, err := pruningware.Wrap(downstream).Do(injectedContext, req)
+				require.Nil(t, err)
+				prunedPromethusResponse, ok := prunedRes.GetPrometheusResponse()
+				require.True(t, ok)
 
-			// Ensure the results are approximately equal.
-			approximatelyEqualsSamples(t, expectedRes.(*PrometheusResponse), prunedRes.(*PrometheusResponse))
+				if !template.IsEmpty {
+					// Ensure the query produces some results.
+					require.NotEmpty(t, prunedPromethusResponse.Data.Result)
+					requireValidSamples(t, prunedPromethusResponse.Data.Result)
+				}
+
+				// Ensure the results are approximately equal.
+				approximatelyEqualsSamples(t, expectedPrometheusResponse, prunedPromethusResponse)
+			})
 		})
 	}
 }

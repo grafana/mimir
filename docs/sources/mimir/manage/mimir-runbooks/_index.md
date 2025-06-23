@@ -1383,19 +1383,19 @@ How to **investigate**:
 
 ### MimirIngestedDataTooFarInTheFuture
 
-This alert fires when Mimir ingester accepts a sample with timestamp that is too far in the future.
+This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
 This is typically a result of processing of corrupted message, and it can cause rejection of other samples with timestamp close to "now" (real-world time).
 
 How it **works**:
 
-- The metric exported by ingester computes maximum timestamp from all TSDBs open in ingester.
-- Alert checks this exported metric and fires if maximum timestamp is more than 1h in the future.
+- The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
+- The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
 
 How to **investigate**
 
-- Find the tenant with bad sample on ingester's tenants list, where a warning "TSDB Head max timestamp too far in the future" is displayed.
-- Flush tenant's data to blocks storage.
-- Remove tenant's directory on disk and restart ingester.
+- Find the tenant with a bad sample on an affected ingester's tenants list (obtained via the `/ingester/tenants` endpoint), where a warning "TSDB Head max timestamp too far in the future" is displayed.
+- Flush the tenant's data to blocks storage.
+- Remove the tenant's directory on disk and the restart ingester.
 
 ### MimirStoreGatewayTooManyFailedOperations
 
@@ -2660,6 +2660,20 @@ How to **fix** it:
 
 - If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 - Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+
+### err-mimir-distributor-max-influx-request-size
+
+This error occurs when a distributor rejects an Influx write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming Influx write requests before and after decompression regardless of the compression type.
+- Configure this limit in the `-distributor.max-influx-request-size` setting.
+
+How to **fix** it:
+
+- If you use the `telegraf` agent, decrease the maximum batch size in the `metric_batch_size` setting. Refer to [Agent configuration](https://docs.influxdata.com/telegraf/v1/configuration/#agent-configuration) for details.
+- Increase the allowed limit in the `-distributor.max-influx-request-size` setting.
 
 ### err-mimir-distributor-max-write-request-data-item-size
 

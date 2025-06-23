@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
@@ -186,6 +186,8 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 			startTime := time.Unix(0, 0)
 			endTime := startTime.Add(time.Duration(testCase.stepCount-1) * time.Minute)
 
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -193,13 +195,13 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					Matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "my_metric"),
 					},
-					LookbackDelta: 5 * time.Minute,
+					LookbackDelta:            5 * time.Minute,
+					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
-				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 				Stats:                    &types.QueryStats{},
 			}
 
-			ctx := context.Background()
 			_, err := selector.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
@@ -230,6 +232,8 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 			startTime := timeZero.Add(time.Duration(startT) * time.Minute)
 			endTime := timeZero.Add(7 * time.Minute)
 
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			selector := &InstantVectorSelector{
 				Selector: &Selector{
 					Queryable: storage,
@@ -237,13 +241,13 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 					Matchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
 					},
-					LookbackDelta: 5 * time.Minute,
+					LookbackDelta:            5 * time.Minute,
+					MemoryConsumptionTracker: memoryConsumptionTracker,
 				},
-				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 				Stats:                    &types.QueryStats{},
 			}
 
-			ctx := context.Background()
 			series, err := selector.SeriesMetadata(ctx)
 			require.NoError(t, err)
 

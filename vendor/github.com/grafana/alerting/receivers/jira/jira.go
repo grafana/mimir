@@ -11,12 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 
-	"github.com/grafana/alerting/logging"
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -32,16 +34,14 @@ const (
 type Notifier struct {
 	*receivers.Base
 	tmpl    *templates.Template
-	log     logging.Logger
 	ns      receivers.WebhookSender
 	conf    Config
 	retrier *notify.Retrier
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:    receivers.NewBase(meta),
-		log:     logger,
+		Base:    receivers.NewBase(meta, logger),
 		ns:      sender,
 		tmpl:    template,
 		conf:    cfg,
@@ -55,14 +55,15 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		// This should not happen, but it's better to avoid panics.
 		return false, fmt.Errorf("missing JIRA URL")
 	}
+	l := n.GetLogger(ctx)
 
 	alerts := types.Alerts(as...)
 	key, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return false, err
 	}
-	logger := n.log.New("group_key", key.Hash())
-	logger.Debug("executing Jira notification")
+	logger := log.With(l, "group_key", key.Hash())
+	level.Debug(logger).Log("msg", "executing Jira notification")
 
 	existingIssue, shouldRetry, err := n.searchExistingIssue(ctx, logger, key.Hash(), alerts.HasFiring())
 	if err != nil {
@@ -76,16 +77,16 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		if alerts.Status() == model.AlertResolved {
 			return false, nil
 		}
-		logger.Debug("create new issue")
+		level.Debug(logger).Log("msg", "create new issue")
 	} else {
 		path = "issue/" + url.PathEscape(existingIssue.Key)
 		method = http.MethodPut
-		logger.Debug("updating existing issue", "issue_key", existingIssue.Key)
+		level.Debug(logger).Log("msg", "updating existing issue", "issue_key", existingIssue.Key)
 	}
 
 	requestBody := n.prepareIssueRequestBody(ctx, logger, key.Hash(), as...)
 
-	_, shouldRetry, err = n.doAPIRequest(ctx, method, path, requestBody)
+	_, shouldRetry, err = n.doAPIRequest(ctx, method, path, requestBody, l)
 	if err != nil {
 		return shouldRetry, fmt.Errorf("failed to %s request to %q: %w", method, path, err)
 	}
@@ -93,9 +94,9 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 	return n.transitionIssue(ctx, logger, existingIssue, alerts.HasFiring())
 }
 
-func (n *Notifier) prepareIssueRequestBody(ctx context.Context, logger logging.Logger, groupID string, as ...*types.Alert) issue {
+func (n *Notifier) prepareIssueRequestBody(ctx context.Context, logger log.Logger, groupID string, as ...*types.Alert) issue {
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, n.tmpl, as, n.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, n.tmpl, as, logger, &tmplErr)
 
 	renderOrDefault := func(fieldName, template, fallback string) string {
 		defer func() {
@@ -106,23 +107,23 @@ func (n *Notifier) prepareIssueRequestBody(ctx context.Context, logger logging.L
 			return result
 		}
 		if fallback == "" || fallback == template {
-			logger.Error("failed to render template", "error", tmplErr, "configField", fieldName, "template", template)
+			level.Error(logger).Log("msg", "failed to render template", "err", tmplErr, "configField", fieldName, "template", template)
 			return ""
 		}
-		logger.Error("failed to render template, use default template", "error", tmplErr, "configField", fieldName, "template", template)
+		level.Error(logger).Log("msg", "failed to render template, use default template", "err", tmplErr, "configField", fieldName, "template", template)
 		tmplErr = nil
 		result = tmpl(fallback)
 		if tmplErr == nil {
 			return result
 		}
-		logger.Error("failed to render default template", "error", tmplErr, "configField", fieldName, "template", fallback)
+		level.Error(logger).Log("msg", "failed to render default template", "err", tmplErr, "configField", fieldName, "template", fallback)
 		return ""
 	}
 
 	summary := renderOrDefault("summary", n.conf.Summary, DefaultSummary)
 	summary, truncated := notify.TruncateInRunes(summary, MaxSummaryLenRunes)
 	if truncated {
-		logger.Warn("Truncated summary", "max_runes", MaxSummaryLenRunes)
+		level.Warn(logger).Log("msg", "Truncated summary", "max_runes", MaxSummaryLenRunes)
 	}
 
 	fields := &issueFields{
@@ -170,7 +171,7 @@ func (n *Notifier) prepareIssueRequestBody(ctx context.Context, logger logging.L
 	return issue{Fields: fields}
 }
 
-func (n *Notifier) prepareDescription(desc string, logger logging.Logger) any {
+func (n *Notifier) prepareDescription(desc string, logger log.Logger) any {
 	if strings.HasSuffix(strings.TrimRight(n.conf.URL.Path, "/"), "/3") {
 		// V3 API supports structured description in ADF format.
 		// Check if the payload is a valid JSON and assign it in that case.
@@ -181,7 +182,7 @@ func (n *Notifier) prepareDescription(desc string, logger logging.Logger) any {
 			if err == nil {
 				return issueDescription
 			}
-			logger.Warn("Failed to parse description as JSON. Fallback to string mode", "error", err)
+			level.Warn(logger).Log("msg", "Failed to parse description as JSON. Fallback to string mode", "err", err)
 		}
 
 		// if it's just text, create a document.
@@ -189,24 +190,24 @@ func (n *Notifier) prepareDescription(desc string, logger logging.Logger) any {
 		maxLen := MaxDescriptionLenRunes - adfDocOverhead
 		truncatedDescr, truncated := notify.TruncateInRunes(desc, maxLen)
 		if truncated {
-			logger.Warn("Truncated description", "max_runes", maxLen, "length", len(desc))
+			level.Warn(logger).Log("msg", "Truncated description", "max_runes", maxLen, "length", len(desc))
 		}
 		return simpleAdfDocument(truncatedDescr)
 	}
 
 	truncatedDescr, truncated := notify.TruncateInRunes(desc, MaxDescriptionLenRunes)
 	if truncated {
-		logger.Warn("Truncated description", "max_runes", MaxDescriptionLenRunes, "length", len(desc))
+		level.Warn(logger).Log("msg", "Truncated description", "max_runes", MaxDescriptionLenRunes, "length", len(desc))
 	}
 	return truncatedDescr
 }
 
-func (n *Notifier) searchExistingIssue(ctx context.Context, logger logging.Logger, groupID string, firing bool) (*issue, bool, error) {
+func (n *Notifier) searchExistingIssue(ctx context.Context, logger log.Logger, groupID string, firing bool) (*issue, bool, error) {
 	requestBody := getSearchJql(n.conf, groupID, firing)
 
-	logger.Debug("search for recent issues", "jql", requestBody.JQL)
+	level.Debug(logger).Log("msg", "search for recent issues", "jql", requestBody.JQL)
 
-	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodPost, "search", requestBody)
+	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodPost, "search", requestBody, logger)
 	if err != nil {
 		return nil, shouldRetry, fmt.Errorf("HTTP request to JIRA API: %w", err)
 	}
@@ -218,12 +219,12 @@ func (n *Notifier) searchExistingIssue(ctx context.Context, logger logging.Logge
 	}
 
 	if issueSearchResult.Total == 0 {
-		logger.Debug("found no existing issue")
+		level.Debug(logger).Log("msg", "found no existing issue")
 		return nil, false, nil
 	}
 
 	if issueSearchResult.Total > 1 {
-		logger.Warn("more than one issue matched, selecting the most recently resolved", "selected_issue", issueSearchResult.Issues[0].Key)
+		level.Warn(logger).Log("msg", "more than one issue matched, selecting the most recently resolved", "selected_issue", issueSearchResult.Issues[0].Key)
 	}
 
 	return &issueSearchResult.Issues[0], false, nil
@@ -265,10 +266,10 @@ func getSearchJql(conf Config, groupID string, firing bool) issueSearch {
 	}
 }
 
-func (n *Notifier) getIssueTransitionByName(ctx context.Context, issueKey, transitionName string) (string, bool, error) {
+func (n *Notifier) getIssueTransitionByName(ctx context.Context, issueKey, transitionName string, logger log.Logger) (string, bool, error) {
 	path := fmt.Sprintf("issue/%s/transitions", url.PathEscape(issueKey))
 
-	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodGet, path, nil)
+	responseBody, shouldRetry, err := n.doAPIRequest(ctx, http.MethodGet, path, nil, logger)
 	if err != nil {
 		return "", shouldRetry, err
 	}
@@ -288,18 +289,18 @@ func (n *Notifier) getIssueTransitionByName(ctx context.Context, issueKey, trans
 	return "", false, fmt.Errorf("can't find transition %s for issue %s", transitionName, issueKey)
 }
 
-func (n *Notifier) transitionIssue(ctx context.Context, logger logging.Logger, i *issue, firing bool) (bool, error) {
+func (n *Notifier) transitionIssue(ctx context.Context, logger log.Logger, i *issue, firing bool) (bool, error) {
 	if i == nil || i.Key == "" || i.Fields == nil || i.Fields.Status == nil {
 		return false, nil
 	}
-	logger = logger.New("issue_key", i.Key, "firing", firing)
+	logger = log.With(logger, "issue_key", i.Key, "firing", firing)
 	var transition string
 	if firing {
 		if i.Fields.Status.StatusCategory.Key != "done" {
 			return false, nil
 		}
 		if n.conf.ReopenTransition == "" {
-			logger.Debug("no reopen transition is specified. Skipping reopen the issue.")
+			level.Debug(logger).Log("msg", "no reopen transition is specified. Skipping reopen the issue.")
 			return false, nil
 		}
 		transition = n.conf.ReopenTransition
@@ -308,13 +309,13 @@ func (n *Notifier) transitionIssue(ctx context.Context, logger logging.Logger, i
 			return false, nil
 		}
 		if n.conf.ResolveTransition == "" {
-			logger.Debug("no resolve transition is specified. Skipping transition to resolve")
+			level.Debug(logger).Log("msg", "no resolve transition is specified. Skipping transition to resolve")
 			return false, nil
 		}
 		transition = n.conf.ResolveTransition
 	}
 
-	transitionID, shouldRetry, err := n.getIssueTransitionByName(ctx, i.Key, transition)
+	transitionID, shouldRetry, err := n.getIssueTransitionByName(ctx, i.Key, transition, logger)
 	if err != nil {
 		return shouldRetry, err
 	}
@@ -327,13 +328,13 @@ func (n *Notifier) transitionIssue(ctx context.Context, logger logging.Logger, i
 
 	path := fmt.Sprintf("issue/%s/transitions", url.PathEscape(i.Key))
 
-	logger.Debug("transitions jira issue", "issue_key", i.Key, "transition", transition)
-	_, shouldRetry, err = n.doAPIRequest(ctx, http.MethodPost, path, requestBody)
+	level.Debug(logger).Log("msg", "transitions jira issue", "issue_key", i.Key, "transition", transition)
+	_, shouldRetry, err = n.doAPIRequest(ctx, http.MethodPost, path, requestBody, logger)
 
 	return shouldRetry, err
 }
 
-func (n *Notifier) doAPIRequest(ctx context.Context, method, path string, requestBody any) ([]byte, bool, error) {
+func (n *Notifier) doAPIRequest(ctx context.Context, method, path string, requestBody any, logger log.Logger) ([]byte, bool, error) {
 	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to marshal request body: %w", err)
@@ -348,7 +349,7 @@ func (n *Notifier) doAPIRequest(ctx context.Context, method, path string, reques
 
 	var shouldRetry bool
 	var responseBody []byte
-	err = n.ns.SendWebhook(ctx, &receivers.SendWebhookSettings{
+	err = n.ns.SendWebhook(ctx, logger, &receivers.SendWebhookSettings{
 		URL:         n.conf.URL.JoinPath(path).String(),
 		User:        n.conf.User,
 		Password:    n.conf.Password,

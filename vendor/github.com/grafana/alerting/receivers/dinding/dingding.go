@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/types"
 
-	"github.com/grafana/alerting/logging"
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -16,16 +18,14 @@ import (
 // Notifier is responsible for sending alert notifications to ding ding.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	tmpl     *templates.Template
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		tmpl:     template,
 		settings: cfg,
@@ -34,12 +34,13 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify sends the alert notification to dingding.
 func (dd *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	dd.log.Info("sending dingding")
+	l := dd.GetLogger(ctx)
+	level.Info(l).Log("msg", "sending dingding")
 
-	dingDingURL := buildDingDingURL(dd)
+	dingDingURL := buildDingDingURL(dd.tmpl.ExternalURL, l)
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, dd.tmpl, as, dd.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, dd.tmpl, as, l, &tmplErr)
 
 	message := tmpl(dd.settings.Message)
 	title := tmpl(dd.settings.Title)
@@ -51,19 +52,19 @@ func (dd *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	if tmplErr != nil {
-		dd.log.Warn("failed to template DingDing message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template DingDing message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
 	u := tmpl(dd.settings.URL)
 	if tmplErr != nil {
-		dd.log.Warn("failed to template DingDing URL", "error", tmplErr.Error(), "fallback", dd.settings.URL)
+		level.Warn(l).Log("msg", "failed to template DingDing URL", "err", tmplErr.Error(), "fallback", dd.settings.URL)
 		u = dd.settings.URL
 	}
 
 	cmd := &receivers.SendWebhookSettings{URL: u, Body: b}
 
-	if err := dd.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := dd.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, fmt.Errorf("send notification to dingding: %w", err)
 	}
 
@@ -74,10 +75,10 @@ func (dd *Notifier) SendResolved() bool {
 	return !dd.GetDisableResolveMessage()
 }
 
-func buildDingDingURL(dd *Notifier) string {
+func buildDingDingURL(externalURL *url.URL, l log.Logger) string {
 	q := url.Values{
 		"pc_slide": {"false"},
-		"url":      {receivers.JoinURLPath(dd.tmpl.ExternalURL.String(), "/alerting/list", dd.log)},
+		"url":      {receivers.JoinURLPath(externalURL.String(), "/alerting/list", l)},
 	}
 
 	// Use special link to auto open the message url outside Dingding

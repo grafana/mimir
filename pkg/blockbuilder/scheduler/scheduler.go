@@ -161,7 +161,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		policy = noOpJobCreationPolicy[schedulerpb.JobSpec]{}
 	}
 
-	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, policy)
+	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, policy, s.cfg.JobFailuresAllowed, s.metrics, s.logger)
 	s.finalizeObservations()
 	s.populateInitialJobs(ctx)
 	s.observations = nil
@@ -304,7 +304,9 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			// The job discovery process happens concurrently with ongoing job
 			// completions. Now that we have the lock, ignore this job if it's
 			// older than our committed offset.
-			if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok && or.start < c.At {
+			if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, partition); ok && or.end <= c.At {
+				level.Info(s.logger).Log("msg", "ignoring pending job as it's behind the committed offset (expected at startup)",
+					"partition", partition, "start", or.start, "end", or.end, "committed", c.At)
 				ps.pendingJobs.Remove(e)
 				continue
 			}
@@ -509,7 +511,8 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 				return nil, fmt.Errorf("partition %d not found in end offsets for topic %s", partition, t)
 			}
 
-			level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition, "start", startOffset.At, "end", end.Offset, "consumeOffset", consumeOffset)
+			level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition,
+				"start", startOffset.At, "end", end.Offset, "consumeOffset", consumeOffset)
 
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(end.Offset))
@@ -721,8 +724,11 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			return k, spec, err
 		}
 
-		if c, ok := s.committed.Lookup(spec.Topic, spec.Partition); ok && spec.StartOffset < c.At {
+		if c, ok := s.committed.Lookup(spec.Topic, spec.Partition); ok && spec.EndOffset <= c.At {
 			// Job is before the committed offset. Remove it.
+			level.Info(s.logger).Log(
+				"msg", "removing job as it's behind the committed offset", "job_id", k.id, "epoch", k.epoch,
+				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", c.At)
 			s.jobs.removeJob(k)
 			continue
 		}
