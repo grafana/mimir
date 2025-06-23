@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -390,7 +391,7 @@ func newTestFetcherMetrics() *block.FetcherMetrics {
 	}
 }
 
-func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
+func BenchmarkShardAwareDeduplicateFilter_Filter(b *testing.B) {
 	var (
 		reg   prometheus.Registerer
 		count uint64
@@ -457,4 +458,26 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestNewBlockWithSuccessors(t *testing.T) {
+	t.Run("source block IDs should be sorted by timestamp", func(t *testing.T) {
+		b := newBlockWithSuccessors(&block.Meta{
+			BlockMeta: tsdb.BlockMeta{
+				Compaction: tsdb.BlockMetaCompaction{
+					Sources: []ulid.ULID{
+						ulid.MustNew(10, nil),
+						ulid.MustNew(30, nil),
+						ulid.MustNew(20, nil),
+					},
+				},
+			},
+		})
+
+		assert.Equal(t, []ulid.ULID{
+			ulid.MustNew(10, nil),
+			ulid.MustNew(20, nil),
+			ulid.MustNew(30, nil),
+		}, b.sourcesSortedList)
+	})
 }
