@@ -244,12 +244,16 @@ func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
 // The successor is added in the correct place in the tree of successors of this block.
 // Returns true, if other block was added as successor (somewhere in the tree), false otherwise.
 func (b *blockWithSuccessors) addSuccessorIfPossible(other *blockWithSuccessors) bool {
-	if b == other || !b.isIncludedIn(other) {
+	if b == other {
 		return false
 	}
 
 	if _, ok := b.successors[other.meta.ULID]; ok {
 		return true
+	}
+
+	if !b.isIncludedIn(other) {
+		return false
 	}
 
 	// recursively add the other block as a successor of *all* direct or indirect successors of this block, if possible
