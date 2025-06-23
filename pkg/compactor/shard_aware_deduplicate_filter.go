@@ -330,7 +330,7 @@ func (b *blockWithSuccessors) getDuplicateBlocks(output map[ulid.ULID]struct{}) 
 	}
 }
 
-const bloomFilterSizeBits = 8
+const bloomFilterSizeBits = 4
 const bloomFilterSizeMask = (1 << bloomFilterSizeBits) - 1
 const bloomFilterBits = 6 // log2(64)
 const bloomFilterMask = (1 << bloomFilterBits) - 1
