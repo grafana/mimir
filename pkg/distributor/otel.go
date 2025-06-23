@@ -483,7 +483,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(translatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -493,33 +493,6 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	}
 
 	return metadata
-}
-
-// copied from https://github.com/prometheus/prometheus/blob/main/storage/remote/otlptranslator/prometheusremotewrite/metrics_to_prw.go
-// TODO(zenador): remove this after making that function public
-func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
-	m := otlptranslator.Metric{
-		Name: metric.Name(),
-		Unit: metric.Unit(),
-		Type: otlptranslator.MetricTypeUnknown,
-	}
-	switch metric.Type() {
-	case pmetric.MetricTypeGauge:
-		m.Type = otlptranslator.MetricTypeGauge
-	case pmetric.MetricTypeSum:
-		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
-			m.Type = otlptranslator.MetricTypeMonotonicCounter
-		} else {
-			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
-		}
-	case pmetric.MetricTypeSummary:
-		m.Type = otlptranslator.MetricTypeSummary
-	case pmetric.MetricTypeHistogram:
-		m.Type = otlptranslator.MetricTypeHistogram
-	case pmetric.MetricTypeExponentialHistogram:
-		m.Type = otlptranslator.MetricTypeExponentialHistogram
-	}
-	return m
 }
 
 func otelMetricsToTimeseries(
@@ -542,7 +515,7 @@ func otelMetricsToTimeseries(
 		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
-		ConvertScopeMetadata:                promoteScopeMetadata,
+		PromoteScopeMetadata:                promoteScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 

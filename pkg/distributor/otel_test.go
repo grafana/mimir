@@ -55,25 +55,11 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		"instance": "resource value",
 	}
 
-	md := pmetric.NewMetrics()
-	{
-		rm := md.ResourceMetrics().AppendEmpty()
-		for k, v := range resourceAttrs {
-			rm.Resource().Attributes().PutStr(k, v)
-		}
-		il := rm.ScopeMetrics().AppendEmpty()
-		m := il.Metrics().AppendEmpty()
-		m.SetName("test_metric")
-		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
-		dp.SetIntValue(123)
-		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-		dp.Attributes().PutStr("metric-attr", "metric value")
-	}
-
 	testCases := []struct {
 		name                              string
 		promoteResourceAttributes         []string
 		keepIdentifyingResourceAttributes bool
+		appendCustomMetric                func(pmetric.MetricSlice)
 		expectedLabels                    []mimirpb.LabelAdapter
 		expectedInfoLabels                []mimirpb.LabelAdapter
 	}{
@@ -274,9 +260,139 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                      "Successful conversion of cumulative non-monotonic sum",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                      "Successful conversion of cumulative monotonic sum",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(true)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric_total",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			md := pmetric.NewMetrics()
+			{
+				rm := md.ResourceMetrics().AppendEmpty()
+				for k, v := range resourceAttrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
+				scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+				metrics := scopeMetrics.Metrics()
+				if tc.appendCustomMetric == nil {
+					m := metrics.AppendEmpty()
+					m.SetName("test_metric")
+					dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+					dp.SetIntValue(123)
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+					dp.Attributes().PutStr("metric-attr", "metric value")
+				} else {
+					tc.appendCustomMetric(metrics)
+				}
+			}
+
 			converter := newOTLPMimirConverter()
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
