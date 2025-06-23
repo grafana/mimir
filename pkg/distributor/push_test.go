@@ -1541,7 +1541,7 @@ func (o otlpLimitsMock) OTelKeepIdentifyingResourceAttributes(string) bool {
 
 func (o otlpLimitsMock) OTelConvertHistogramsToNHCB(string) bool { return false }
 
-func (o otlpLimitsMock) OTelConvertScopeMetadata(string) bool {
+func (o otlpLimitsMock) OTelPromoteScopeMetadata(string) bool {
 	return false
 }
 

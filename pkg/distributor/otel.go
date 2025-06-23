@@ -59,7 +59,7 @@ type OTLPHandlerLimits interface {
 	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 	OTelConvertHistogramsToNHCB(id string) bool
-	OTelConvertScopeMetadata(id string) bool
+	OTelPromoteScopeMetadata(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -278,7 +278,7 @@ func newOTLPParser(
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
-		convertScopeMetadata := limits.OTelConvertScopeMetadata(tenantID)
+		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
@@ -291,7 +291,7 @@ func newOTLPParser(
 			enableStartTimeQuietZero,
 			keepIdentifyingResourceAttributes,
 			convertHistogramsToNHCB,
-			convertScopeMetadata,
+			promoteScopeMetadata,
 			promoteResourceAttributes,
 			otlpReq.Metrics(),
 			spanLogger,
@@ -530,7 +530,7 @@ func otelMetricsToTimeseries(
 	enableStartTimeQuietZero,
 	keepIdentifyingResourceAttributes,
 	convertHistogramsToNHCB,
-	convertScopeMetadata bool,
+	promoteScopeMetadata bool,
 	promoteResourceAttributes []string,
 	md pmetric.Metrics,
 	logger log.Logger,
@@ -542,7 +542,7 @@ func otelMetricsToTimeseries(
 		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
-		ConvertScopeMetadata:                convertScopeMetadata,
+		ConvertScopeMetadata:                promoteScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 

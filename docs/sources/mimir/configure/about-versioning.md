@@ -113,8 +113,8 @@ The following features are currently experimental:
     - `-distributor.otel-keep-identifying-resource-attributes`
   - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
     - `-distributor.otel-convert-histograms-to-nhcb`
-  - Enable conversion of OTel scope metadata to metric labels
-    - `-distributor.otel-convert-scope-metadata`
+  - Enable promotion of OTel scope metadata to metric labels
+    - `-distributor.otel-promote-scope-metadata`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
