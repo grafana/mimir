@@ -52,6 +52,7 @@ type Settings struct {
 	KeepIdentifyingResourceAttributes bool
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
+
 	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
 	PromoteScopeMetadata bool
 

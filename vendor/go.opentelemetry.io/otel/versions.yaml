@@ -9,7 +9,6 @@ module-sets:
       - go.opentelemetry.io/otel/bridge/opencensus
       - go.opentelemetry.io/otel/bridge/opencensus/test
       - go.opentelemetry.io/otel/bridge/opentracing
-      - go.opentelemetry.io/otel/bridge/opentracing/test
       - go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc
       - go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp
       - go.opentelemetry.io/otel/exporters/otlp/otlptrace
@@ -27,10 +26,12 @@ module-sets:
     modules:
       - go.opentelemetry.io/otel/exporters/prometheus
   experimental-logs:
-    version: v0.12.0
+    version: v0.12.2
     modules:
       - go.opentelemetry.io/otel/log
+      - go.opentelemetry.io/otel/log/logtest
       - go.opentelemetry.io/otel/sdk/log
+      - go.opentelemetry.io/otel/sdk/log/logtest
       - go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc
       - go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp
       - go.opentelemetry.io/otel/exporters/stdout/stdoutlog
@@ -40,6 +41,4 @@ module-sets:
       - go.opentelemetry.io/otel/schema
 excluded-modules:
   - go.opentelemetry.io/otel/internal/tools
-  - go.opentelemetry.io/otel/log/logtest
-  - go.opentelemetry.io/otel/sdk/log/logtest
   - go.opentelemetry.io/otel/trace/internal/telemetry/test
