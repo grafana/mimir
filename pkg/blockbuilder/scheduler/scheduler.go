@@ -391,13 +391,11 @@ func (s *BlockBuilderScheduler) getPartitionState(topic string, partition int32)
 		pendingJobs: list.New(),
 		planned: &advancingOffset{
 			name:    "planned",
-			off:     -1,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
 		committed: &advancingOffset{
 			name:    "committed",
-			off:     -1,
 			metrics: &s.metrics,
 			logger:  s.logger,
 		},
