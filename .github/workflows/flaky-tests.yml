@@ -5,8 +5,8 @@ on:
     - cron: "0 2 * * 1" # Run every Monday at 2 AM
   workflow_dispatch:
     inputs:
-      dry-run:
-        description: 'Run in dry-run mode (preview issues without creating them)'
+      skip-posting-issues:
+        description: 'Skip creating/updating GitHub issues (preview mode)'
         required: false
         default: 'true'
         type: boolean
@@ -51,6 +51,6 @@ jobs:
           repository: ${{ github.repository }}
           time-range: "7d"
           top-k: "3"
-          skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || 'false' }}
+          skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.skip-posting-issues || 'false' }}
         env:
           GITHUB_TOKEN: ${{ steps.github-token.outputs.token }}
