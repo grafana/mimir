@@ -83,9 +83,21 @@ func (f *FunctionCall) ChildrenLabels() []string {
 }
 
 func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	fnc, ok := functions.RegisteredFunctions[f.Function]
-	if !ok {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
+	instantVectorFactory, ok := functions.InstantVectorFunctionOperatorFactories[f.FunctionName]
+	if ok {
+		functionParams := functions.InstantVectorFunctionOperatorParams{
+			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+			Annotations:              params.Annotations,
+			NameValidationScheme:     params.NameValidationScheme,
+			ExpressionPosition:       f.ExpressionPosition.ToPrometheusType(),
+			TimeRange:                timeRange,
+		}
+		o, err := instantVectorFactory(children, functionParams)
+		if err != nil {
+			return nil, err
+		}
+
+		return planning.NewSingleUseOperatorFactory(o), nil
 	}
 
 	var absentLabels labels.Labels

@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -441,7 +442,7 @@ func findFunction(name string) (functions.Function, bool) {
 // Materialize converts a query plan into an executable query.
 func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+		opts = promql.NewPrometheusQueryOpts(false, 0, validation.UTF8NamingScheme)
 	}
 
 	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
@@ -467,6 +468,7 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		Annotations:              q.annotations,
 		LookbackDelta:            q.lookbackDelta,
 		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
+		NameValidationScheme:     q.nameValidationScheme,
 	}
 
 	q.statement = &parser.EvalStmt{

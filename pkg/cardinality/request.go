@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -262,10 +263,10 @@ func extractLabelNames(values url.Values) ([]model.LabelName, error) {
 
 	labelNames := make([]model.LabelName, 0, len(labelNamesParams))
 	for _, labelNameParam := range labelNamesParams {
-		labelName := model.LabelName(labelNameParam)
-		if !labelName.IsValid() {
+		if !validation.UTF8NamingScheme.IsValidLabelName(labelNameParam) {
 			return nil, fmt.Errorf("invalid 'label_names' param '%v'", labelNameParam)
 		}
+		labelName := model.LabelName(labelNameParam)
 		labelNames = append(labelNames, labelName)
 	}
 
