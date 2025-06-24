@@ -8271,6 +8271,35 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	pushSingleSampleWithMetadata(t, i)
 }
 
+func TestIngesterReadOnlyDuringIdleForcedCompaction(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push a sample, it should succeed.
+	pushSingleSampleWithMetadata(t, i)
+
+	test.Poll(t, 5*time.Second, true, func() interface{} {
+		return i.getTSDB(userID).isIdle(time.Now(), i.compactionIdleTimeout)
+	})
+
+	i.compactBlocks(context.Background(), false, math.MaxInt64, nil)
+
+	readOnly, _ := i.lifecycler.GetReadOnlyState()
+	require.True(t, readOnly)
+}
+
 func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil, registry)
