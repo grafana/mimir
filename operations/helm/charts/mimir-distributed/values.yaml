@@ -800,7 +800,7 @@ alertmanager:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -821,7 +821,7 @@ alertmanager:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -842,7 +842,7 @@ alertmanager:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
 
 distributor:
   # -- Whether to render the manifests related to the distributor component.
@@ -2338,7 +2338,7 @@ store_gateway:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -2359,7 +2359,7 @@ store_gateway:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -2380,7 +2380,7 @@ store_gateway:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
 
 compactor:
   # -- Whether to render the manifests related to the compactor component.
