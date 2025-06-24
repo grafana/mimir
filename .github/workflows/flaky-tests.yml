@@ -2,8 +2,14 @@ name: Flaky Tests Detection
 
 on:
   schedule:
-    - cron: "0 8 * * 1" # Run every Monday at 8 AM
+    - cron: "0 2 * * 1" # Run every Monday at 2 AM
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run in dry-run mode (preview issues without creating them)'
+        required: false
+        default: 'true'
+        type: boolean
 
 permissions:
   contents: read
@@ -45,5 +51,6 @@ jobs:
           repository: ${{ github.repository }}
           time-range: "7d"
           top-k: "3"
+          skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || 'false' }}
         env:
           GITHUB_TOKEN: ${{ steps.github-token.outputs.token }}
