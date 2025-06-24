@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/validation"
 )
 
 var (
@@ -100,6 +101,8 @@ type Config struct {
 	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty" json:"action,omitempty"`
+	// MetricNameValidationScheme to use when validating labels.
+	MetricNameValidationScheme validation.NamingScheme `yaml:"metric_name_validation_scheme,omitempty" json:"metricNameValidationScheme,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -112,10 +115,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
-	return c.Validate()
+	return nil
 }
 
-func (c *Config) Validate() error {
+func (c *Config) Validate(defaultNamingScheme validation.NamingScheme) error {
 	if c.Action == "" {
 		return errors.New("relabel action cannot be empty")
 	}
@@ -125,29 +128,30 @@ func (c *Config) Validate() error {
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid() {
+
+	c.MetricNameValidationScheme = c.MetricNameValidationScheme.WithDefault(defaultNamingScheme)
+	if err := c.MetricNameValidationScheme.Validate(); err != nil {
+		return err
+	}
+
+	namingScheme := c.MetricNameValidationScheme
+	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !namingScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
-	isValidLabelNameWithRegexVarFn := func(value string) bool {
-		// UTF-8 allows ${} characters, so standard validation allow $variables by default.
-		// TODO(bwplotka): Relabelling users cannot put $ and ${<...>} characters in metric names or values.
-		// Design escaping mechanism to allow that, once valid use case appears.
-		return model.LabelName(value).IsValid()
-	}
-	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !isValidLabelNameWithRegexVarFn(c.TargetLabel) {
+	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !namingScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !namingScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
+	if c.Action == LabelMap && !namingScheme.IsValidLabelName(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
-	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {
+	if c.Action == HashMod && !namingScheme.IsValidLabelName(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
@@ -318,16 +322,17 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 		if indexes == nil {
 			break
 		}
-		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
-		if !target.IsValid() {
+		target := string(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
+		namingScheme := cfg.MetricNameValidationScheme
+		if !namingScheme.IsValidLabelName(target) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
 		if len(res) == 0 {
-			lb.Del(string(target))
+			lb.Del(target)
 			break
 		}
-		lb.Set(string(target), string(res))
+		lb.Set(target, string(res))
 	case Lowercase:
 		lb.Set(cfg.TargetLabel, strings.ToLower(val))
 	case Uppercase:
