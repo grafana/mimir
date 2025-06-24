@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus-community/parquet-common/queryable"
 	"github.com/prometheus-community/parquet-common/schema"
 	parquetstorage "github.com/prometheus-community/parquet-common/storage"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -64,7 +63,7 @@ type ParquetBucketStore struct {
 	readerPool *parquetBlock.ReaderPool
 
 	// Metrics specific to bkt store operations
-	metrics *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
+	metrics *ParquetBucketStoreMetrics
 
 	// Set of blocks that have the same currLabels
 	blockSet *parquetBlockSet
@@ -102,9 +101,8 @@ func NewParquetBucketStore(
 	lazyLoadingGate gate.Gate,
 	chunksLimiterFactory ChunksLimiterFactory,
 	seriesLimiterFactory SeriesLimiterFactory,
-	metrics *BucketStoreMetrics,
+	metrics *ParquetBucketStoreMetrics,
 	logger log.Logger,
-	reg prometheus.Registerer,
 ) (*ParquetBucketStore, error) {
 	s := &ParquetBucketStore{
 		logger: logger,
@@ -131,7 +129,7 @@ func NewParquetBucketStore(
 		bucketStoreConfig.IndexHeader,
 		s.lazyLoadingGate,
 		logger,
-		reg,
+		s.metrics.indexHeaderReaderMetrics,
 	)
 
 	if err := os.MkdirAll(localDir, 0750); err != nil {
