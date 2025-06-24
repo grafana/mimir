@@ -1,10 +1,11 @@
 # Changelog
 
-## 2.16.1 / unreleased
+## 2.16.1
 
 ### Grafana Mimir
 
 * [BUGFIX] Update to Go v1.23.9 to address [CVE-2025-22871](https://nvd.nist.gov/vuln/detail/CVE-2025-22871). #11543
+* [BUGFIX] Update `golang.org/x/net` to v0.38.0 to address [CVE-2025-22872](https://nvd.nist.gov/vuln/detail/CVE-2025-22872). #11281
 * [BUGFIX] Query-frontend: Fix a panic in monolithic mode caused by a clash in labels of the `cortex_client_invalid_cluster_validation_label_requests_total` metric definition. #11455
 
 ## 2.16.0
