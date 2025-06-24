@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -3267,53 +3268,85 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 	return
 }
 
+func (i *Ingester) setForcedCompaction() {
+	i.metrics.forcedCompactionInProgress.Set(1)
+	i.forcedCompactionInProgress.Store(true)
+}
+
+func (i *Ingester) unsetForcedCompaction() {
+	i.metrics.forcedCompactionInProgress.Set(0)
+	i.forcedCompactionInProgress.Store(false)
+}
+
+type tsdbMeta struct {
+	userID string
+	isIdle bool
+}
+
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
-	// Expose a metric tracking whether there's a forced head compaction in progress.
-	// This metric can be used in alerts and when troubleshooting.
-	if force {
-		i.metrics.forcedCompactionInProgress.Set(1)
-		i.forcedCompactionInProgress.Store(true)
-		defer func() {
-			i.metrics.forcedCompactionInProgress.Set(0)
-			i.forcedCompactionInProgress.Store(false)
-		}()
-	}
 
-	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
+	var pending atomic.Int64
+	idleTimeoutSet := i.compactionIdleTimeout > 0
+	compactBlocksStart := time.Now()
+	var tsdbs = []tsdbMeta{}
+	for _, userID := range i.getTSDBUsers() {
 		if !allowed.IsAllowed(userID) {
-			return nil
+			continue
 		}
 
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
-			return nil
+			continue
 		}
 
-		// Don't do anything, if there is nothing to compact.
-		h := userDB.Head()
-		if h.NumSeries() == 0 {
-			return nil
+		if userDB.Head().NumSeries() == 0 {
+			continue
 		}
 
+		isIdle := userDB.isIdle(compactBlocksStart, i.compactionIdleTimeout)
+		if idleTimeoutSet && isIdle {
+			pending.Inc()
+		}
+		tsdbs = append(tsdbs, tsdbMeta{userID: userID, isIdle: idleTimeoutSet && isIdle})
+	}
+
+	// ordering tsdbs such that idle DBs appear first allows us to unset forcedCompactionInProgress while
+	sort.Slice(tsdbs, func(i, j int) bool {
+		return !tsdbs[i].isIdle && tsdbs[j].isIdle
+	})
+
+	// Expose a metric tracking whether there's a forced head compaction pending or in-progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.setForcedCompaction()
+		pending.Store(int64(len(tsdbs)))
+		defer i.unsetForcedCompaction()
+	} else if pending.Load() > 0 {
+		i.setForcedCompaction()
+		defer i.unsetForcedCompaction()
+	}
+
+	_ = concurrency.ForEachJob(ctx, len(tsdbs), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, idx int) error {
 		var err error
 
 		i.metrics.compactionsTriggered.Inc()
-
+		userDB := i.getTSDB(tsdbs[idx].userID)
 		minTimeBefore := userDB.Head().MinTime()
-
 		reason := ""
 		switch {
 		case force:
 			reason = "forced"
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			pending.Dec()
 
-		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
+		case i.compactionIdleTimeout > 0 && userDB.isIdle(compactBlocksStart, i.compactionIdleTimeout):
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
+			pending.Dec()
 
 		default:
 			reason = "regular"
@@ -3337,6 +3370,10 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 				r = recomputeOwnedSeriesReasonEarlyCompaction
 			}
 			userDB.triggerRecomputeOwnedSeries(r)
+		}
+
+		if pending.Load() <= 0 {
+			i.unsetForcedCompaction()
 		}
 
 		return nil
