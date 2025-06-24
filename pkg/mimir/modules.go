@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
+	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -91,6 +92,7 @@ const (
 	BlockBuilder                     string = "block-builder"
 	BlockBuilderScheduler            string = "block-builder-scheduler"
 	Compactor                        string = "compactor"
+	CompactorScheduler               string = "compactor-scheduler"
 	ContinuousTest                   string = "continuous-test"
 	CostAttributionService           string = "cost-attribution-service"
 	Distributor                      string = "distributor"
@@ -1252,6 +1254,16 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	return t.Compactor, nil
 }
 
+func (t *Mimir) initCompactorScheduler() (serv services.Service, err error) {
+
+	t.CompactorScheduler, err = compactorscheduler.NewCompactorScheduler(t.Cfg.Compactor, t.Cfg.CompactorScheduler, t.Cfg.BlocksStorage, util_log.Logger, t.Registerer)
+	if err != nil {
+		return
+	}
+
+	return t.CompactorScheduler, nil
+}
+
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.ActivityTracker)
@@ -1464,6 +1476,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
 	mm.RegisterModule(Compactor, t.initCompactor)
+	mm.RegisterModule(CompactorScheduler, t.initCompactorScheduler)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
 	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
