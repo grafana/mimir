@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/validation"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
@@ -1369,6 +1370,12 @@ func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 
 func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
+}
+
+// NameValidationScheme returns the validation scheme to use for a particular tenant.
+func (o *Overrides) NameValidationScheme(_ string) validation.NamingScheme {
+	// TODO(juliusmh): make this configurable by tenant
+	return validation.LegacyNamingScheme
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that
