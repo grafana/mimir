@@ -249,10 +249,10 @@ SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
 LATEST_BUILD_IMAGE_TAG ?= pr11118-33a7e5a266
 
-# TTY is parameterized to allow Google Cloud Builder to run builds,
-# as it currently disallows TTY devices. This value needs to be overridden
-# in any custom cloudbuild.yaml files
-TTY := --tty
+# TTY is parameterized to allow CI and scripts to run builds,
+# as it currently disallows TTY devices.
+# Auto-detect TTY availability: use --tty if stdin is a TTY, otherwise empty
+TTY := $(shell test -t 0 && echo --tty || echo)
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
