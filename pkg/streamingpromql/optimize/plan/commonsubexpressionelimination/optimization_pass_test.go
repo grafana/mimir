@@ -265,7 +265,7 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: ref#1 Duplicate
 						- FunctionCall: timestamp(...)
-							- VectorSelector: {__name__="foo"}
+							- VectorSelector: {__name__="foo"} (return sample timestamps)
 					- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes: 1,
