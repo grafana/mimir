@@ -276,6 +276,10 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `avg without(unique) (metric_counter)`,
 			expectedShardedQueries: 2, // avg() is parallelized as sum()/count().
 		},
+		"avg() != scalar": {
+			query:                  `avg(all_100) != 100`,
+			expectedShardedQueries: 2,
+		},
 		"sum(min_over_time())": {
 			query:                  `sum by (group_1, group_2) (min_over_time(metric_counter{const="fixed"}[2m]))`,
 			expectedShardedQueries: 1,
@@ -660,6 +664,18 @@ func TestQuerySharding_Correctness(t *testing.T) {
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
 		start.Add(5*time.Minute), end, step, factor(2)))
 	seriesID++
+
+	for i := 0; i < 100; i++ {
+		series = append(series,
+			newSeries(
+				labels.FromStrings(
+					labels.MetricName, "all_100",
+					"instance", strconv.Itoa(i),
+				),
+				start.Add(-lookbackDelta), end, step, constant(100),
+			),
+		)
+	}
 
 	// Add conventional histogram series.
 	for i := 0; i < numConvHistograms; i++ {
