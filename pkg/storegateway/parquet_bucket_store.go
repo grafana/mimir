@@ -23,12 +23,21 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
+	"github.com/prometheus-community/parquet-common/queryable"
+	"github.com/prometheus-community/parquet-common/schema"
+	parquetstorage "github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/parquet"
 	parquetBlock "github.com/grafana/mimir/pkg/storage/parquet/block"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -36,11 +45,12 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // ParquetBucketStore implements the store API backed by a bucket.
-// It loads all Parquet block labels files to local disk.
+// It loads all Parquet block currLabels files to local disk.
 type ParquetBucketStore struct {
 	services.Service
 
@@ -56,7 +66,7 @@ type ParquetBucketStore struct {
 	// Metrics specific to bkt store operations
 	metrics *BucketStoreMetrics // TODO: Create ParquetBucketStoreMetrics
 
-	// Set of blocks that have the same labels
+	// Set of blocks that have the same currLabels
 	blockSet *parquetBlockSet
 
 	// Number of goroutines to use when syncing blocks from object storage.
@@ -181,7 +191,7 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 
 		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
 		if err != nil {
-			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints currLabels matchers").Error())
 		}
 	}
 
@@ -212,25 +222,25 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		return err
 	}
 
-	streamingSeriesCount := 0
+	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
+	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+
+	start := time.Now()
+
+	labelsIt, chunksIt, err := s.createLabelsAndChunksIterators(ctx, req, shards, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	if err != nil {
+		return err
+	}
+
+	// Send the series back to the querier (same series set for both streaming and non-streaming)
 	if req.StreamingChunksBatchSize > 0 {
-		var (
-			seriesSet       storepb.SeriesSet
-			seriesLoadStart = time.Now()
-			chunksLimiter   = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-			seriesLimiter   = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-		)
-
-		// Placeholder: Create series set for streaming labels from parquet shards
-		seriesSet, err = s.createParquetSeriesSetForLabels(ctx, req, shards, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesLoadStart := time.Now()
+		var streamingSeriesCount int
+		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, labelsIt)
 		if err != nil {
 			return err
 		}
 
-		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
-		if err != nil {
-			return err
-		}
 		spanLogger.DebugLog(
 			"msg", "sent streaming series",
 			"num_series", streamingSeriesCount,
@@ -241,24 +251,10 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 			// There is no series to send chunks for.
 			return nil
 		}
-	}
-
-	// We create the limiter twice in the case of streaming so that we don't double count the series
-	// and hit the limit prematurely.
-	chunksLimiter := s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
-	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-
-	start := time.Now()
-	if req.StreamingChunksBatchSize > 0 {
-		seriesChunkIt := s.createParquetSeriesChunksSetIterator(ctx, req, shards, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
-		err = s.sendStreamingChunks(req, srv, seriesChunkIt, stats, streamingSeriesCount)
+		err = s.sendStreamingChunks(req, srv, chunksIt, stats, streamingSeriesCount)
 	} else {
-		var seriesSet storepb.SeriesSet
-		seriesSet, err = s.createParquetSeriesSetWithChunks(ctx, req, shards, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
-		if err != nil {
-			return err
-		}
-		err = s.sendSeriesChunks(req, srv, seriesSet, stats)
+		// Non-streaming mode, send all series and chunks in one go.
+		err = s.sendSeriesChunks(req, srv, labelsIt, chunksIt, stats)
 	}
 	if err != nil {
 		return
@@ -285,91 +281,557 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 }
 
 func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	// TODO implement me
-	panic("implement me")
+	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+	}
+
+	var (
+		stats    = newSafeQueryStats()
+		resHints = &hintspb.LabelNamesResponseHints{}
+	)
+
+	defer s.recordLabelNamesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
+
+	var reqBlockMatchers []*labels.Matcher
+	if req.Hints != nil {
+		reqHints := &hintspb.LabelNamesRequestHints{}
+		err := types.UnmarshalAny(req.Hints, reqHints)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label names request hints").Error())
+		}
+
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	var setsMtx sync.Mutex
+	var sets [][]string
+	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
+
+	var blocks []*parquetBucketBlock
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
+		blocks = append(blocks, b)
+	})
+
+	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+		var parquetShards []parquetstorage.ParquetShard
+		for _, shard := range blocks {
+			parquetShards = append(parquetShards, shard)
+		}
+		return parquetShards, nil
+	}
+
+	for _, b := range blocks {
+		g.Go(func() error {
+			// We need to keep the block open until we finish iterating over it.
+			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+
+			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet queryable")
+			}
+			q, err := parquetQueryable.Querier(req.Start, req.End)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet querier")
+			}
+			// TODO we already have the blockLabels, ideally we could use them to avoid querying the block again.
+			result, _, err := q.LabelNames(gctx, nil, reqSeriesMatchers...)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				return errors.Wrap(err, "error querying label names")
+			}
+
+			if len(result) > 0 {
+				setsMtx.Lock()
+				sets = append(sets, result)
+				setsMtx.Unlock()
+			}
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(sets)
+		for sl, count := range blocksQueriedByBlockMeta {
+			stats.blocksQueriedByBlockMeta[sl] = count
+		}
+	})
+
+	anyHints, err := types.MarshalAny(resHints)
+	if err != nil {
+		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
+	}
+
+	names := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(names) > int(req.Limit) {
+		names = names[:req.Limit]
+	}
+
+	return &storepb.LabelNamesResponse{
+		Names: names,
+		Hints: anyHints,
+	}, nil
 }
 
 func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	// TODO implement me
-	panic("implement me")
+	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+	}
+
+	var (
+		stats    = newSafeQueryStats()
+		resHints = &hintspb.LabelValuesResponseHints{}
+	)
+
+	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
+
+	var reqBlockMatchers []*labels.Matcher
+	if req.Hints != nil {
+		reqHints := &hintspb.LabelValuesRequestHints{}
+		err := types.UnmarshalAny(req.Hints, reqHints)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label values request hints").Error())
+		}
+
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	var setsMtx sync.Mutex
+	var sets [][]string
+	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
+
+	var blocks []*parquetBucketBlock
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
+		blocks = append(blocks, b)
+	})
+
+	for _, b := range blocks {
+		g.Go(func() error {
+			// We need to keep the block open until we finish iterating over it.
+			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+
+			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+				var parquetShards []parquetstorage.ParquetShard
+				parquetShards = append(parquetShards, b)
+				return parquetShards, nil
+			}
+
+			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet queryable")
+			}
+			q, err := parquetQueryable.Querier(req.Start, req.End)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet querier")
+			}
+			result, _, err := q.LabelValues(gctx, req.Label, nil, reqSeriesMatchers...)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				return errors.Wrap(err, "error querying label values")
+			}
+
+			if len(result) > 0 {
+				setsMtx.Lock()
+				sets = append(sets, result)
+				setsMtx.Unlock()
+			}
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(sets)
+		for sl, count := range blocksQueriedByBlockMeta {
+			stats.blocksQueriedByBlockMeta[sl] = count
+		}
+	})
+
+	anyHints, err := types.MarshalAny(resHints)
+	if err != nil {
+		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
+	}
+
+	values := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(values) > int(req.Limit) {
+		values = values[:req.Limit]
+	}
+
+	return &storepb.LabelValuesResponse{
+		Values: values,
+		Hints:  anyHints,
+	}, nil
 }
 
 // Placeholder methods for parquet-specific functionality
-func (s *ParquetBucketStore) openParquetShardsForReading(ctx context.Context, skipChunks bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
-	// TODO: Implement parquet shard discovery and opening logic
-	// This should:
-	// 1. Discover parquet shards that intersect with the time range
-	// 2. Use storage.ParquetShardOpener to open .labels.parquet and .chunks.parquet files
-	// 3. Read parquet schemas and metadata for efficient querying using shard.TSDBSchema()
-	// 4. Wrap opened ParquetShard with metadata (BlockID, queried status)
-	panic("TODO: implement openParquetShardsForReading")
+func (s *ParquetBucketStore) openParquetShardsForReading(_ context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
+	var blocks []*parquetBucketBlock
+	s.blockSet.filter(minTime, maxTime, reqBlockMatchers, func(b *parquetBucketBlock) {
+		blocks = append(blocks, b)
+	})
+	return blocks
 }
 
-func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (func(), error) {
-	// TODO: Can potentially reuse BucketStore.limitConcurrentQueries
-	// or implement parquet-specific version if needed
-	panic("TODO: implement limitConcurrentQueries")
+func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
+	waitStart := time.Now()
+	err = s.queryGate.Start(ctx)
+	waited := time.Since(waitStart)
+
+	stats.update(func(stats *queryStats) { stats.streamingSeriesConcurrencyLimitWaitDuration = waited })
+	level.Debug(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn on query concurrency gate", "duration", waited)
+
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to wait for turn")
+	}
+	return s.queryGate.Done, nil
 }
 
 func (s *ParquetBucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
-	// TODO: Implement hints sending for parquet stores
-	panic("TODO: implement sendHints")
+	var anyHints *types.Any
+	var err error
+	if anyHints, err = types.MarshalAny(resHints); err != nil {
+		return status.Error(codes.Internal, errors.Wrap(err, "marshal series response hints").Error())
+	}
+
+	if err := srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+		return status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
+	}
+
+	return nil
 }
 
-func (s *ParquetBucketStore) createParquetSeriesSetForLabels(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
-	// TODO: Implement parquet series set creation for labels phase
-	// This should:
-	// 1. "Stream read" .labels.parquet files from shards using shard.LabelsFile()
-	// 2. Create and return storepb.SeriesSet that iterates over series labels without chunks
-	// Please note that storepb.SeriesSet assumes series are ordered.
-	panic("TODO: implement createParquetSeriesSetForLabels")
+// createLabelsAndChunksIterators creates iterators for labels and chunks from
+// the parquet shards for the given query. If req.SkipChunks is true, it only
+// returns an iterator for labels. Otherwise, both iterators are guaranteed
+// to have equal length and order, modulo any errors that may occur during
+// iteration.
+func (s *ParquetBucketStore) createLabelsAndChunksIterators(
+	ctx context.Context,
+	req *storepb.SeriesRequest,
+	shards []*parquetBucketBlock,
+	shardSelector *sharding.ShardSelector,
+	matchers []*labels.Matcher,
+	chunksLimiter ChunksLimiter,
+	seriesLimiter SeriesLimiter,
+	stats *safeQueryStats,
+) (iterator[labels.Labels], iterator[[]storepb.AggrChunk], error) {
+	// TODO(jesusvazquez) This shardfinder function could be extracted to a variable and perhaps we dont need to filter mint and maxt
+	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+		var parquetShards []parquetstorage.ParquetShard
+		for _, shard := range shards {
+			if shard.overlapsClosedInterval(mint, maxt) {
+				parquetShards = append(parquetShards, shard)
+			}
+		}
+		return parquetShards, nil
+	}
+
+	decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+	q, err := parquet.NewParquetChunkQuerier(decoder, shardsFinder)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "error creating parquet queryable")
+	}
+	defer q.Close()
+
+	hints := &storage.SelectHints{
+		Start: req.MinTime,
+		End:   req.MaxTime,
+	}
+
+	// If we're skipping chunks, use the "series" function hint to only get currLabels
+	if req.SkipChunks {
+		hints.Func = "series"
+	}
+
+	chunkSeriesSet := q.Select(ctx, true, hints, matchers...)
+	// NOTE: we want to be able to iterate labels and chunks separately, so we
+	// load everything into slices and return iterators over those slices. This
+	// does defeat the purpose of streaming, but: currently, the querier does
+	// not support streaming results, the iterator we get from q.Select is
+	// already backed by a slice. So we are not losing as much as it may seem.
+	// We are planning to implement proper streaming.
+	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, req.SkipChunks)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
+	}
+
+	labelsIt := &concreteIterator[labels.Labels]{items: lbls}
+	if req.SkipChunks {
+		return labelsIt, nil, nil
+	}
+
+	return labelsIt, &concreteIterator[[]storepb.AggrChunk]{items: aggrChunks}, nil
 }
 
-func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats, seriesSet storepb.SeriesSet) (int, error) {
-	// TODO: Can potentially reuse BucketStore.sendStreamingSeriesLabelsAndStats
-	// or implement parquet-specific version if needed
-	panic("TODO: implement sendStreamingSeriesLabelsAndStats")
+func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats, labelsIt iterator[labels.Labels]) (numSeries int, err error) {
+	var (
+		encodeDuration = time.Duration(0)
+		sendDuration   = time.Duration(0)
+	)
+	defer stats.update(func(stats *queryStats) {
+		stats.streamingSeriesEncodeResponseDuration += encodeDuration
+		stats.streamingSeriesSendResponseDuration += sendDuration
+	})
+
+	seriesBuffer := make([]*storepb.StreamingSeries, req.StreamingChunksBatchSize)
+	for i := range seriesBuffer {
+		seriesBuffer[i] = &storepb.StreamingSeries{}
+	}
+	seriesBatch := &storepb.StreamingSeriesBatch{
+		Series: seriesBuffer[:0],
+	}
+	for labelsIt.Next() {
+		numSeries++
+		var lset labels.Labels
+		lset = labelsIt.At()
+
+		// We are re-using the slice for every batch this way.
+		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
+		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+
+		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
+			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
+			if err != nil {
+				return 0, err
+			}
+			seriesBatch.Series = seriesBatch.Series[:0]
+		}
+	}
+	if labelsIt.Err() != nil {
+		return 0, errors.Wrap(labelsIt.Err(), "expand series set")
+	}
+
+	// We need to send stats before sending IsEndOfSeriesStream=true.
+	if err := s.sendStats(srv, stats); err != nil {
+		return 0, err
+	}
+
+	// Send any remaining series and signal that there are no more series.
+	seriesBatch.IsEndOfSeriesStream = true
+	err = s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
+	return numSeries, err
 }
 
-func (s *ParquetBucketStore) sendStreamingChunks(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, seriesChunkIt iterator[seriesChunksSet], stats *safeQueryStats, streamingSeriesCount int) error {
-	// TODO: Can potentially reuse BucketStore.sendStreamingChunks
-	// or implement parquet-specific version if needed
-	panic("TODO: implement sendStreamingChunks")
+func (s *ParquetBucketStore) sendStreamingChunks(
+	req *storepb.SeriesRequest,
+	srv storegatewaypb.StoreGateway_SeriesServer,
+	chunksIt iterator[[]storepb.AggrChunk],
+	stats *safeQueryStats,
+	totalSeriesCount int,
+) error {
+	var (
+		encodeDuration           time.Duration
+		sendDuration             time.Duration
+		seriesCount, chunksCount int
+	)
+
+	defer stats.update(func(stats *queryStats) {
+		stats.mergedSeriesCount += seriesCount
+		stats.mergedChunksCount += chunksCount
+
+		stats.streamingSeriesEncodeResponseDuration += encodeDuration
+		stats.streamingSeriesSendResponseDuration += sendDuration
+	})
+
+	var (
+		batchSizeBytes int
+		chunksBuffer   = make([]*storepb.StreamingChunks, req.StreamingChunksBatchSize)
+	)
+	for i := range chunksBuffer {
+		chunksBuffer[i] = &storepb.StreamingChunks{}
+	}
+	haveSentEstimatedChunks := false
+	chunksBatch := &storepb.StreamingChunksBatch{Series: chunksBuffer[:0]}
+	for chunksIt.Next() {
+		chunks := chunksIt.At()
+
+		if !haveSentEstimatedChunks {
+			// TODO(npazosmendez): we don't have series batches for now, how should we adapt this?
+			seriesInBatch := 1
+			chunksInBatch := len(chunks)
+
+			estimate := uint64(totalSeriesCount * chunksInBatch / seriesInBatch)
+			err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(estimate), &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
+			}
+
+			haveSentEstimatedChunks = true
+		}
+
+		seriesCount++
+		chunksBatch.Series = chunksBatch.Series[:len(chunksBatch.Series)+1]
+		lastSeries := chunksBatch.Series[len(chunksBatch.Series)-1]
+		lastSeries.Chunks = chunks
+		lastSeries.SeriesIndex = uint64(seriesCount - 1)
+
+		batchSizeBytes += lastSeries.Size()
+
+		chunksCount += len(chunks)
+		s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chunks)))
+
+		// We are not strictly required to be under targetQueryStreamBatchMessageSize.
+		// The aim is to not hit gRPC and TCP limits, hence some overage is ok.
+		if batchSizeBytes > targetQueryStreamBatchMessageSize || len(chunksBatch.Series) >= int(req.StreamingChunksBatchSize) {
+			err := s.sendMessage("streaming chunks", srv, storepb.NewStreamingChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
+			}
+			chunksBatch.Series = chunksBatch.Series[:0]
+			batchSizeBytes = 0
+		}
+
+		if len(chunksBatch.Series) > 0 {
+			// Still some chunks left to send before we release the batch.
+			err := s.sendMessage("streaming chunks", srv, storepb.NewStreamingChunksResponse(chunksBatch), &encodeDuration, &sendDuration)
+			if err != nil {
+				return err
+			}
+			chunksBatch.Series = chunksBatch.Series[:0]
+			batchSizeBytes = 0
+		}
+
+	}
+
+	if chunksIt.Err() != nil {
+		return chunksIt.Err()
+	}
+
+	// If we never sent an estimate (because there were no batches, or no batch had any series), send it now.
+	if !haveSentEstimatedChunks {
+		err := s.sendMessage("streaming chunks estimate", srv, storepb.NewStreamingChunksEstimate(0), &encodeDuration, &sendDuration)
+		if err != nil {
+			return err
+		}
+	}
+
+	return chunksIt.Err()
 }
 
-func (s *ParquetBucketStore) createParquetSeriesChunksSetIterator(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) iterator[seriesChunksSet] {
-	// TODO: Implement parquet series chunks iterator creation
-	// This should:
-	// 1. Stream read .chunks.parquet files from shards using shard.ChunksFile()
-	// 2. Return iterator[seriesChunksSet] / or the new iterator Nico is workisng on in his PR that streams chunks for the series discovered in labels phase
-	panic("TODO: implement createParquetSeriesChunksSetIterator")
-}
+func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, labelsIt iterator[labels.Labels], chunksIt iterator[[]storepb.AggrChunk], stats *safeQueryStats) error {
+	var (
+		encodeDuration           time.Duration
+		sendDuration             time.Duration
+		seriesCount, chunksCount int
+	)
 
-func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, seriesSet storepb.SeriesSet, stats *safeQueryStats) error {
-	// TODO: Can potentially reuse BucketStore.sendSeriesChunks
-	// or implement parquet-specific version if needed
-	panic("TODO: implement sendSeriesChunks")
-}
+	defer stats.update(func(stats *queryStats) {
+		stats.mergedSeriesCount += seriesCount
+		stats.mergedChunksCount += chunksCount
 
-func (s *ParquetBucketStore) createParquetSeriesSetWithChunks(ctx context.Context, req *storepb.SeriesRequest, shards []*parquetBucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, error) {
-	// TODO: Implement parquet series set creation for non-streaming request
-	// I think this should create a series that includes the labels in one go and its typically called when skipchunks is true
-	panic("TODO: implement createParquetSeriesSetWithChunks")
+		stats.streamingSeriesEncodeResponseDuration += encodeDuration
+		stats.streamingSeriesSendResponseDuration += sendDuration
+	})
+
+	for labelsIt.Next() && chunksIt.Next() {
+		lset := labelsIt.At()
+		chks := chunksIt.At()
+		seriesCount++
+		series := storepb.Series{
+			Labels: mimirpb.FromLabelsToLabelAdapters(lset),
+		}
+		if !req.SkipChunks {
+			series.Chunks = chks
+			chunksCount += len(chks)
+			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
+		}
+
+		err := s.sendMessage("series", srv, storepb.NewSeriesResponse(&series), &encodeDuration, &sendDuration)
+		if err != nil {
+			return err
+		}
+	}
+	if labelsIt.Err() != nil {
+		return errors.Wrap(labelsIt.Err(), "error iterating labels")
+	}
+	if chunksIt.Err() != nil {
+		return errors.Wrap(chunksIt.Err(), "error iterating chunks")
+	}
+
+	return nil
 }
 
 func (s *ParquetBucketStore) recordSeriesCallResult(stats *safeQueryStats) {
-	// TODO: Implement series call result recording for parquet stores
-	panic("TODO: implement recordSeriesCallResult")
+	// TODO Implement stats reporting here
 }
 
 func (s *ParquetBucketStore) recordRequestAmbientTime(stats *safeQueryStats, startTime time.Time) {
-	// TODO: Implement request ambient time recording for parquet stores
-	panic("TODO: implement recordRequestAmbientTime")
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesAmbientTime += time.Since(startTime)
+	})
+}
+
+func (s *ParquetBucketStore) sendMessage(typ string, srv storegatewaypb.StoreGateway_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
+	// We encode it ourselves into a PreparedMsg in order to measure the time it takes.
+	encodeBegin := time.Now()
+	pmsg := &grpc.PreparedMsg{}
+	err := pmsg.Encode(srv, msg)
+	*encodeDuration += time.Since(encodeBegin)
+	if err != nil {
+		return status.Error(codes.Internal, errors.Wrapf(err, "encode %s response", typ).Error())
+	}
+
+	sendBegin := time.Now()
+	err = srv.SendMsg(pmsg)
+	*sendDuration += time.Since(sendBegin)
+	if err != nil {
+		return status.Error(codes.Unknown, errors.Wrapf(err, "send %s response", typ).Error())
+	}
+
+	return nil
 }
 
 func (s *ParquetBucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats) error {
-	// TODO: Implement stats sending for parquet stores
-	panic("TODO: implement sendStats")
+	var encodeDuration, sendDuration time.Duration
+	defer stats.update(func(stats *queryStats) {
+		stats.streamingSeriesSendResponseDuration += sendDuration
+		stats.streamingSeriesEncodeResponseDuration += encodeDuration
+	})
+	unsafeStats := stats.export()
+	if err := s.sendMessage("series response stats", srv, storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum+unsafeStats.seriesProcessedSizeSum), &encodeDuration, &sendDuration); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Stats returns statistics about the BucketStore instance.
@@ -387,14 +849,14 @@ func (s *ParquetBucketStore) InitialSync(ctx context.Context) error {
 
 	// TODO implement aspects that rely on the indexheader for parquet blocks
 
-	//previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
+	// previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
 
 	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
-	//if s.indexHeaderCfg.EagerLoadingStartupEnabled {
+	// if s.indexHeaderCfg.EagerLoadingStartupEnabled {
 	//	s.loadBlocks(ctx, previouslyLoadedBlocks)
-	//}
+	// }
 
 	err := s.cleanUpUnownedBlocks()
 	if err != nil {
@@ -462,7 +924,7 @@ func (s *ParquetBucketStore) syncBlocks(ctx context.Context) error {
 	// We do that here, so the snapshotter watched after blocks from both initial sync and those discovered later.
 	// If it's already started this will return an error. We ignore that because syncBlocks can run multiple times
 	// We pass context.Background() because we want to stop it ourselves as opposed to stopping it as soon as the runtime context is cancelled..
-	//_ = s.snapshotter.StartAsync(context.Background())
+	// _ = s.snapshotter.StartAsync(context.Background())
 
 	return nil
 }
@@ -524,10 +986,11 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 
 	return nil
 }
-func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
+
+func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} { // nolint:unused
 	// TODO implement for parquet blocks
-	//previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.localDir)
-	//if err != nil {
+	// previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.localDir)
+	// if err != nil {
 	//	level.Warn(s.logger).Log(
 	//		"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
 	//		"dir", s.localDir,
@@ -535,8 +998,8 @@ func (s *ParquetBucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} 
 	//	)
 	//	// Don't fail initialization. If eager loading doesn't happen, then we will load index-headers lazily.
 	//	// Lazy loading which is slower, but not worth failing startup for.
-	//}
-	//return previouslyLoadedBlocks
+	// }
+	// return previouslyLoadedBlocks
 	return nil
 }
 
@@ -622,4 +1085,83 @@ func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
 	}
 
 	return nil
+}
+
+// toLabelsAndAggChunksSlice pulls all labels and chunks from the
+// storage.ChunkSeriesSet and returns them as slices, converting the chunks to
+// storepb.AggrChunk format. If skipChunks is true, the chunks slice will be
+// empty.
+func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
+	var seriesLabels []labels.Labels
+	var aggrChunks [][]storepb.AggrChunk
+
+	for chunkSeriesSet.Next() {
+		chunkSeries := chunkSeriesSet.At()
+
+		seriesLabels = append(seriesLabels, chunkSeries.Labels())
+
+		if skipChunks {
+			continue
+		}
+
+		// Convert chunks to storepb.AggrChunk
+		var aggrChunkList []storepb.AggrChunk
+		it := chunkSeries.Iterator(nil)
+		for it.Next() {
+			meta := it.At()
+			aggrChunkList = append(aggrChunkList, storepb.AggrChunk{
+				MinTime: meta.MinTime,
+				MaxTime: meta.MaxTime,
+				Raw: storepb.Chunk{
+					Type: prometheusChunkEncodingToStorePBChunkType(meta.Chunk.Encoding()),
+					Data: meta.Chunk.Bytes(),
+				},
+			})
+		}
+		aggrChunks = append(aggrChunks, aggrChunkList)
+	}
+
+	return seriesLabels, aggrChunks, chunkSeriesSet.Err()
+}
+func prometheusChunkEncodingToStorePBChunkType(enc chunkenc.Encoding) storepb.Chunk_Encoding {
+	switch enc {
+	case chunkenc.EncXOR:
+		return storepb.Chunk_XOR
+	case chunkenc.EncHistogram:
+		return storepb.Chunk_Histogram
+	case chunkenc.EncFloatHistogram:
+		return storepb.Chunk_FloatHistogram
+	default:
+		panic("unknown encoding")
+	}
+}
+
+type concreteIterator[T any] struct {
+	items []T
+	curr  int
+}
+
+func (it *concreteIterator[T]) Next() bool {
+	return it.curr < len(it.items)
+}
+
+func (a *concreteIterator[T]) Err() error {
+	return nil
+}
+
+func (a *concreteIterator[T]) At() T {
+	return a.items[a.curr]
+}
+
+// TimeRange returns the minimum and maximum timestamp of data available in the store.
+func (s *ParquetBucketStore) TimeRange() (mint, maxt int64) {
+	return s.blockSet.timerange()
+}
+
+func (s *ParquetBucketStore) recordLabelNamesCallResult(stats *safeQueryStats) {
+	// TODO implement for proper stats reporting
+}
+
+func (s *ParquetBucketStore) recordLabelValuesCallResult(stats *safeQueryStats) {
+	// TODO implement for proper stats reporting
 }
