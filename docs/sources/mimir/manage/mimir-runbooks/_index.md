@@ -1835,7 +1835,6 @@ How to **investigate**:
   - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
   - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
 
-
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
