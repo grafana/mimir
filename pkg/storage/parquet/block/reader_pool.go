@@ -1,9 +1,9 @@
-package block
-
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/block/indexheader/reader_pool.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
+
+package block
 
 import (
 	"context"
@@ -25,14 +25,14 @@ import (
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
 	lazyReader *LazyParquetReaderMetrics
-	//streamReader *StreamBinaryReaderMetrics
+	// streamReader *StreamBinaryReaderMetrics
 }
 
 // NewReaderPoolMetrics makes new ReaderPoolMetrics.
 func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 	return &ReaderPoolMetrics{
 		lazyReader: NewLazyParquetReaderMetrics(reg),
-		//streamReader: NewStreamBinaryReaderMetrics(reg),
+		// streamReader: NewStreamBinaryReaderMetrics(reg),
 	}
 }
 
@@ -66,7 +66,7 @@ func NewReaderPool(
 	p := newReaderPool(indexHeaderConfig, lazyLoadingGate, logger, reg)
 	if !p.lazyReaderEnabled || p.lazyReaderIdleTimeout <= 0 {
 		panic("not implemented: parquet block reader pool without lazy loading")
-		//p.Service = services.NewIdleService(nil, nil)
+		// p.Service = services.NewIdleService(nil, nil)
 	} else {
 		p.Service = services.NewTimerService(p.lazyReaderIdleTimeout/10, nil, p.unloadIdleReaders, nil)
 	}
@@ -151,14 +151,6 @@ func (p *ReaderPool) getIdleReadersSince(ts int64) []*LazyReaderLocalLabelsBucke
 	}
 
 	return idle
-}
-
-func (p *ReaderPool) isTracking(r *LazyReaderLocalLabelsBucketChunks) bool {
-	p.lazyReadersMx.Lock()
-	defer p.lazyReadersMx.Unlock()
-
-	_, ok := p.lazyReaders[r]
-	return ok
 }
 
 func (p *ReaderPool) onLazyReaderClosed(r *LazyReaderLocalLabelsBucketChunks) {
