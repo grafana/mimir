@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/blockbuilder"
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
+	compactorscheduler "github.com/grafana/mimir/pkg/compactor/scheduler"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -128,6 +129,7 @@ type Config struct {
 	BlockBuilderScheduler          blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
 	BlocksStorage                  tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor                      compactor.Config                `yaml:"compactor"`
+  CompactorScheduler             compactorscheduler.Config       `yaml:"compactor_scheduler" doc:"hidden"`
 	StoreGateway                   storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation               tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker                activitytracker.Config          `yaml:"activity_tracker"`
@@ -198,6 +200,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
+	c.CompactorScheduler.RegisterFlags(f)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 	c.Ruler.RegisterFlags(f, logger)
@@ -319,6 +322,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Compactor.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid compactor config")
+	}
+	if err := c.CompactorScheduler.Validate(); err != nil {
+		return errors.Wrap(err, "invalid compactor-scheduler config")
 	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
@@ -877,6 +883,7 @@ type Mimir struct {
 	RulerStorage                     rulestore.RuleStore
 	Alertmanager                     *alertmanager.MultitenantAlertmanager
 	Compactor                        *compactor.MultitenantCompactor
+	CompactorScheduler               *compactorscheduler.Scheduler
 	StoreGateway                     *storegateway.StoreGateway
 	MemberlistKV                     *memberlist.KVInitService
 	ActivityTracker                  *activitytracker.ActivityTracker
