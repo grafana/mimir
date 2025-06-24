@@ -39,6 +39,8 @@ type CountValues struct {
 	labelsBuilder     *labels.Builder
 	labelsBytesBuffer []byte
 	valueBuffer       []byte
+
+	nameValidationScheme model.ValidationScheme
 }
 
 var _ types.InstantVectorOperator = &CountValues{}
@@ -51,6 +53,7 @@ func NewCountValues(
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
+	nameValidationScheme model.ValidationScheme,
 ) *CountValues {
 	if without {
 		grouping = append(grouping, labels.MetricName)
@@ -66,6 +69,7 @@ func NewCountValues(
 		Without:                  without,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
+		nameValidationScheme:     nameValidationScheme,
 	}
 }
 
@@ -154,7 +158,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !model.LabelName(c.resolvedLabelName).IsValid() {
+	if !model.LabelName(c.resolvedLabelName).IsValid(c.nameValidationScheme) {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 
