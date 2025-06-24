@@ -203,7 +203,7 @@ func (a *app) buildBinary() error {
 
 	a.binaryPath = filepath.Join(a.tempDir, "benchmark-binary")
 
-	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels", ".")
+	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels,localvalidationscheme", ".")
 	cmd.Dir = a.benchmarkPackageDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
