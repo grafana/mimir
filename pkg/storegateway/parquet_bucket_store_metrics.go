@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/grafana/mimir/pkg/storage/parquet/block"
 	parquetblock "github.com/grafana/mimir/pkg/storage/parquet/block"
 )
 
@@ -168,7 +167,7 @@ func NewParquetBucketStoreMetrics(reg prometheus.Registerer) *ParquetBucketStore
 		},
 	})
 
-	m.indexHeaderReaderMetrics = block.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+	m.indexHeaderReaderMetrics = parquetblock.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
 
 	m.streamingSeriesRequestDurationByStage = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_request_stage_duration_seconds",
