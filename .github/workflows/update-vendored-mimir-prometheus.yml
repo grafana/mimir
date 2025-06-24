@@ -144,7 +144,7 @@ jobs:
           echo "Dependencies updated successfully"
 
       - name: Regenerate OTLP files
-        run: go install github.com/uber-go/gopatch@v0.4.0 && make generate-otlp
+        run: go install golang.org/x/tools/cmd/goimports@v0.34.0 && go install github.com/uber-go/gopatch@v0.4.0 && make generate-otlp
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5.0.3
