@@ -7,7 +7,6 @@ package compactor
 
 import (
 	"context"
-	"slices"
 	"sort"
 
 	"github.com/cespare/xxhash/v2"
@@ -42,7 +41,7 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 	}
 
 	for res := range metasByResolution {
-		duplicateULIDs, err := findDuplicatedBlocks(ctx, metasByResolution[res])
+		duplicateULIDs, err := f.findDuplicates(ctx, metasByResolution[res])
 		if err != nil {
 			return err
 		}
@@ -59,7 +58,7 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 	return nil
 }
 
-// findDuplicatedBlocks finds all the blocks from the input slice of blocks that are fully included in other blocks within the
+// findDuplicates finds all the blocks from the input slice of blocks that are fully included in other blocks within the
 // same slice. The found blocks are returned as a map which keys are blocks' ULIDs.
 //
 // For example consider the following blocks ("four base blocks merged and split into 2 separate shards, plus another level" test):
@@ -113,7 +112,7 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 // There is a lot of repetition in this tree, but individual block nodes are shared (it would be difficult to draw that though).
 // So for example there is only one ULID(9) node, referenced from nodes 5, 6, 7, 8 (each of them also exists only once). See
 // blockWithSuccessors structure -- it uses maps to pointers to handle all this cross-referencing correctly.
-func findDuplicatedBlocks(ctx context.Context, input []*block.Meta) (map[ulid.ULID]struct{}, error) {
+func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input []*block.Meta) (map[ulid.ULID]struct{}, error) {
 	// We create a tree of blocks with successors (blockWithSuccessors) by
 	// 1) sorting the input blocks by number of sources, and
 	// 2) iterating through each input block, and adding it to the correct place in the tree of blocks with successors.
@@ -165,12 +164,8 @@ type blockWithSuccessors struct {
 	meta    *block.Meta // If meta is nil, then this is root node of the tree.
 	shardID string      // Shard ID label value extracted from meta. If not empty, all successors must have the same shardID.
 
-	// Sources extracted from meta for easier comparison. We keep them both as map and list
-	// to use the most performant data structure based on the actual need.
-	//
-	// The list is sorted by the ULID's timestamp.
-	sourcesMap         map[ulid.ULID]struct{}
-	sourcesSortedList  []ulid.ULID
+	// Sources extracted from meta for easier comparison.
+	sources            map[ulid.ULID]struct{}
 	sourcesBloomFilter bloomFilter
 
 	successors map[ulid.ULID]*blockWithSuccessors
@@ -180,22 +175,14 @@ func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 	b := &blockWithSuccessors{meta: m}
 	if m != nil {
 		b.shardID = m.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
-		b.sourcesMap = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
-		b.sourcesSortedList = make([]ulid.ULID, 0, len(m.Compaction.Sources))
+		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
 
 		for _, bid := range m.Compaction.Sources {
-			// Ensure no duplicates in the list. We don't expect duplicated block IDs in the block meta file,
-			// but we want to protect from any bug, because we expect our list of IDs to never contain duplicates.
-			if _, ok := b.sourcesMap[bid]; !ok {
-				b.sourcesMap[bid] = struct{}{}
-				b.sourcesSortedList = append(b.sourcesSortedList, bid)
+			if _, ok := b.sources[bid]; !ok {
+				b.sources[bid] = struct{}{}
 				b.sourcesBloomFilter.add(bid)
 			}
 		}
-
-		slices.SortFunc(b.sourcesSortedList, func(a, b ulid.ULID) int {
-			return a.Compare(b)
-		})
 	}
 	return b
 }
@@ -218,7 +205,7 @@ func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
 
 	// Optimization: if the other block has less sources than this block, then it's not possible
 	// that all sources of this block are in the other block.
-	if len(other.sourcesSortedList) < len(b.sourcesSortedList) {
+	if len(other.sources) < len(b.sources) {
 		return false
 	}
 
@@ -228,11 +215,8 @@ func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
 		return false
 	}
 
-	// Optimization: start iterating from the most recent blocks, because they're the most likely to not be
-	// included in other block.
-	for i := len(b.sourcesSortedList) - 1; i >= 0; i-- {
-		bid := b.sourcesSortedList[i]
-		if _, ok := other.sourcesMap[bid]; !ok {
+	for bid := range b.sources {
+		if _, ok := other.sources[bid]; !ok {
 			return false
 		}
 	}
