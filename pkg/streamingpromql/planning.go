@@ -431,7 +431,7 @@ func isKnownFunction(name string) bool {
 // Materialize converts a query plan into an executable query.
 func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+		opts = promql.NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
 
 	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
@@ -457,6 +457,7 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		Annotations:              q.annotations,
 		LookbackDelta:            q.lookbackDelta,
 		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
+		NameValidationScheme:     q.nameValidationScheme,
 	}
 
 	q.statement = &parser.EvalStmt{
