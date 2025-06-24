@@ -393,7 +393,7 @@ func newTestFetcherMetrics() *block.FetcherMetrics {
 	}
 }
 
-func BenchmarkShardAwareDeduplicateFilter_Filter(b *testing.B) {
+func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 	var (
 		reg   prometheus.Registerer
 		count uint64
