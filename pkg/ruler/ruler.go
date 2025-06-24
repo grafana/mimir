@@ -291,7 +291,7 @@ type MultiTenantManager interface {
 	Stop()
 
 	// ValidateRuleGroup validates a rulegroup
-	ValidateRuleGroup(rulefmt.RuleGroup, rulefmt.RuleGroupNode) []error
+	ValidateRuleGroup(userID string, ruleGroup rulefmt.RuleGroup, ruleGroupNode rulefmt.RuleGroupNode) []error
 
 	// Start evaluating rules.
 	Start()
