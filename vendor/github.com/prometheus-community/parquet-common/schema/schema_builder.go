@@ -135,13 +135,11 @@ type TSDBProjection struct {
 }
 
 func (s *TSDBSchema) DataColumIdx(t int64) int {
-	colIdx := 0
-
-	for i := s.MinTs + s.DataColDurationMs; i <= t; i += s.DataColDurationMs {
-		colIdx++
+	if t < s.MinTs {
+		return 0
 	}
 
-	return colIdx
+	return int((t - s.MinTs) / s.DataColDurationMs)
 }
 
 func (s *TSDBSchema) LabelsProjection() (*TSDBProjection, error) {
