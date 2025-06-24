@@ -392,7 +392,8 @@ func TestOffsetMovement(t *testing.T) {
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
 	sched.requireOffset(t, "ingest", 1, 6000, "re-completing the same job shouldn't change the commit")
 
-	sched.advanceCommittedOffset("ingest", 1, jobKey{"ancient_job", 29}, schedulerpb.JobSpec{
+	p1 := sched.getPartitionState("ingest", 1)
+	p1.committed.advance(jobKey{"ancient_job", 29}, schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   1,
 		StartOffset: 1000,
@@ -400,7 +401,8 @@ func TestOffsetMovement(t *testing.T) {
 	})
 	sched.requireOffset(t, "ingest", 1, 6000, "committed offsets cannot rewind")
 
-	sched.advanceCommittedOffset("ingest", 2, jobKey{"ancient_job2", 30}, schedulerpb.JobSpec{
+	p2 := sched.getPartitionState("ingest", 2)
+	p2.committed.advance(jobKey{"ancient_job2", 30}, schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   2,
 		StartOffset: 6000,

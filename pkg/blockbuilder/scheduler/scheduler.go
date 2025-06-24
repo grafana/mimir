@@ -694,11 +694,6 @@ func offsetsStr(offsets kadm.Offsets) string {
 	return offsetsStr
 }
 
-func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition int32, key jobKey, spec schedulerpb.JobSpec) {
-	ps := s.getPartitionState(topic, partition)
-	ps.committed.advance(key, spec)
-}
-
 // AssignJob assigns and returns a job, if one is available.
 func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
 	key, spec, err := s.assignJob(req.WorkerId)
@@ -775,6 +770,8 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 		return nil
 	}
 
+	ps := s.getPartitionState(j.Topic, j.Partition)
+
 	if complete {
 		if err := s.jobs.completeJob(key, workerID); err != nil {
 			// job not found is fine, as clients will be re-informing us.
@@ -783,12 +780,12 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
-		s.advanceCommittedOffset(j.Topic, j.Partition, key, j)
+		ps.committed.advance(key, j)
 		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 
-		if ps := s.getPartitionState(j.Topic, j.Partition); ps.committed.beyondSpec(j) {
+		if ps.committed.beyondSpec(j) {
 			// Update of a completed/committed job. Ignore.
 			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
@@ -835,7 +832,8 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.key, rj.spec)
+			ps := s.getPartitionState(rj.spec.Topic, rj.spec.Partition)
+			ps.committed.advance(rj.key, rj.spec)
 		} else {
 			// An in-progress job.
 			// These don't affect offsets, they just get added to the job queue.
