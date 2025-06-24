@@ -59,6 +59,7 @@ type OTLPHandlerLimits interface {
 	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 	OTelConvertHistogramsToNHCB(id string) bool
+	OTelPromoteScopeMetadata(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -277,11 +278,26 @@ func newOTLPParser(
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
+		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, metricsDropped, err := otelMetricsToTimeseries(ctx, otlpConverter, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, convertHistogramsToNHCB, otlpReq.Metrics(), spanLogger)
+		metrics, metricsDropped, err := otelMetricsToTimeseries(
+			ctx,
+			otlpConverter,
+			otlpReq.Metrics(),
+			conversionOptions{
+				addSuffixes:                       addSuffixes,
+				enableCTZeroIngestion:             enableCTZeroIngestion,
+				enableStartTimeQuietZero:          enableStartTimeQuietZero,
+				keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+				convertHistogramsToNHCB:           convertHistogramsToNHCB,
+				promoteScopeMetadata:              promoteScopeMetadata,
+				promoteResourceAttributes:         promoteResourceAttributes,
+			},
+			spanLogger,
+		)
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -481,23 +497,31 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
+type conversionOptions struct {
+	addSuffixes                       bool
+	enableCTZeroIngestion             bool
+	enableStartTimeQuietZero          bool
+	keepIdentifyingResourceAttributes bool
+	convertHistogramsToNHCB           bool
+	promoteScopeMetadata              bool
+	promoteResourceAttributes         []string
+}
+
 func otelMetricsToTimeseries(
 	ctx context.Context,
 	converter *otlpMimirConverter,
-	addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero bool,
-	promoteResourceAttributes []string,
-	keepIdentifyingResourceAttributes bool,
-	convertHistogramsToNHCB bool,
 	md pmetric.Metrics,
+	opts conversionOptions,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
 	settings := otlp.Settings{
-		AddMetricSuffixes:                   addSuffixes,
-		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
-		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
+		AddMetricSuffixes:                   opts.addSuffixes,
+		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
+		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                opts.promoteScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 

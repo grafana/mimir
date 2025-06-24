@@ -397,13 +397,12 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
 				converter,
-				true,
-				false,
-				false,
-				tc.promoteResourceAttributes,
-				tc.keepIdentifyingResourceAttributes,
-				false,
 				md,
+				conversionOptions{
+					addSuffixes:                       true,
+					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+					promoteResourceAttributes:         tc.promoteResourceAttributes,
+				},
 				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
@@ -472,13 +471,11 @@ func TestConvertOTelHistograms(t *testing.T) {
 		mimirTS, dropped, err := otelMetricsToTimeseries(
 			context.Background(),
 			converter,
-			true,
-			false,
-			false,
-			[]string{},
-			false,
-			convertHistogramsToNHCB,
 			md,
+			conversionOptions{
+				addSuffixes:             true,
+				convertHistogramsToNHCB: convertHistogramsToNHCB,
+			},
 			log.NewNopLogger(),
 		)
 		require.NoError(t, err)
