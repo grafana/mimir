@@ -61,9 +61,9 @@ func NewReaderPool(
 	indexHeaderConfig indexheader.Config,
 	lazyLoadingGate gate.Gate,
 	logger log.Logger,
-	reg prometheus.Registerer,
+	metrics *ReaderPoolMetrics,
 ) *ReaderPool {
-	p := newReaderPool(indexHeaderConfig, lazyLoadingGate, logger, reg)
+	p := newReaderPool(indexHeaderConfig, lazyLoadingGate, logger, metrics)
 	if !p.lazyReaderEnabled || p.lazyReaderIdleTimeout <= 0 {
 		panic("not implemented: parquet block reader pool without lazy loading")
 		// p.Service = services.NewIdleService(nil, nil)
@@ -78,11 +78,11 @@ func newReaderPool(
 	indexHeaderConfig indexheader.Config,
 	lazyLoadingGate gate.Gate,
 	logger log.Logger,
-	reg prometheus.Registerer,
+	metrics *ReaderPoolMetrics,
 ) *ReaderPool {
 	return &ReaderPool{
 		logger:                logger,
-		metrics:               NewReaderPoolMetrics(reg),
+		metrics:               metrics,
 		lazyReaderEnabled:     indexHeaderConfig.LazyLoadingEnabled,
 		lazyReaderIdleTimeout: indexHeaderConfig.LazyLoadingIdleTimeout,
 		lazyReaders:           make(map[*LazyReaderLocalLabelsBucketChunks]struct{}),
