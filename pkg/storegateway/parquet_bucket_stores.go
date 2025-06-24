@@ -47,7 +47,7 @@ type ParquetBucketStores struct {
 
 	bkt objstore.Bucket
 	// Metrics specific to bucket store operations
-	bucketStoreMetrics *BucketStoreMetrics     // nolint:unused    // TODO: Create ParquetBucketStoreMetrics
+	bucketStoreMetrics *ParquetBucketStoreMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics // nolint:unused
 
 	// Gate used to limit query concurrency across all tenants.
@@ -114,7 +114,7 @@ func NewParquetBucketStores(
 		bkt:    bkt,
 		stores: map[string]*ParquetBucketStore{},
 
-		bucketStoreMetrics: NewBucketStoreMetrics(reg),
+		bucketStoreMetrics: NewParquetBucketStoreMetrics(reg),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
@@ -468,7 +468,6 @@ func (ss *ParquetBucketStores) getOrCreateStore(ctx context.Context, userID stri
 		}),
 		ss.bucketStoreMetrics,
 		userLogger,
-		ss.reg,
 	)
 
 	if err != nil {
