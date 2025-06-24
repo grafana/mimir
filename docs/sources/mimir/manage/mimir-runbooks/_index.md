@@ -613,6 +613,7 @@ How it **works**:
 - Level 1 blocks are deduplicated 2-hour blocks and contain less optimized data compared to higher-level blocks
 - When the compactor falls behind, store-gateways must serve queries from these less efficient level 1 blocks instead of well-compacted higher-level blocks
 - This can lead to increased query latency and resource usage
+- Out-of-order blocks are excluded from this alert as they may be shipped for previous dates and queried before being compacted into bigger blocks
 
 How to **investigate**:
 
@@ -625,6 +626,8 @@ How to **fix**:
 
 - Scale up the compactor horizontally if it's CPU or memory constrained
 - Check and increase compactor resources if needed
+- Preventatively check store-gateway CPU/memory/disk usage and scale out if constrained
+- Verify store-gateway auto-scaling has sufficient headroom to handle increased load during compactor catch-up
 - If the issue persists, investigate for corrupted blocks that might be blocking compaction
 
 ### MimirCompactorHasNotSuccessfullyRunCompaction
