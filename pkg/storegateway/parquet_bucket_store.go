@@ -394,8 +394,113 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 }
 
 func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	// TODO implement me
-	panic("implement me")
+	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
+	}
+
+	var (
+		stats    = newSafeQueryStats()
+		resHints = &hintspb.LabelValuesResponseHints{}
+	)
+
+	defer s.recordLabelValuesCallResult(stats)
+	defer s.recordRequestAmbientTime(stats, time.Now())
+
+	var reqBlockMatchers []*labels.Matcher
+	if req.Hints != nil {
+		reqHints := &hintspb.LabelValuesRequestHints{}
+		err := types.UnmarshalAny(req.Hints, reqHints)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal label values request hints").Error())
+		}
+
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(reqHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	var setsMtx sync.Mutex
+	var sets [][]string
+	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
+
+	var blocks []*parquetBucketBlock
+	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
+		resHints.AddQueriedBlock(b.meta.ULID)
+		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
+		blocks = append(blocks, b)
+	})
+
+	for _, b := range blocks {
+		g.Go(func() error {
+			// We need to keep the block open until we finish iterating over it.
+			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+
+			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+				var parquetShards []parquetstorage.ParquetShard
+				parquetShards = append(parquetShards, b)
+				return parquetShards, nil
+			}
+
+			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
+			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet queryable")
+			}
+			q, err := parquetQueryable.Querier(req.Start, req.End)
+			if err != nil {
+				return errors.Wrap(err, "error creating parquet querier")
+			}
+			result, _, err := q.LabelValues(gctx, req.Label, nil, reqSeriesMatchers...)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return err
+				}
+				return errors.Wrap(err, "error querying label values")
+			}
+
+			if len(result) > 0 {
+				setsMtx.Lock()
+				sets = append(sets, result)
+				setsMtx.Unlock()
+			}
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, status.Error(codes.Canceled, err.Error())
+		}
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(sets)
+		for sl, count := range blocksQueriedByBlockMeta {
+			stats.blocksQueriedByBlockMeta[sl] = count
+		}
+	})
+
+	anyHints, err := types.MarshalAny(resHints)
+	if err != nil {
+		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
+	}
+
+	values := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(values) > int(req.Limit) {
+		values = values[:req.Limit]
+	}
+
+	return &storepb.LabelValuesResponse{
+		Values: values,
+		Hints:  anyHints,
+	}, nil
 }
 
 // Placeholder methods for parquet-specific functionality
@@ -1054,5 +1159,9 @@ func (s *ParquetBucketStore) TimeRange() (mint, maxt int64) {
 }
 
 func (s *ParquetBucketStore) recordLabelNamesCallResult(stats *safeQueryStats) {
+	// TODO implement for proper stats reporting
+}
+
+func (s *ParquetBucketStore) recordLabelValuesCallResult(stats *safeQueryStats) {
 	// TODO implement for proper stats reporting
 }
