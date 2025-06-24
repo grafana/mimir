@@ -943,7 +943,7 @@ groups:
             message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
           expr: |
-            sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",job=~".*/(store-gateway.*|cortex|mimir|mimir-backend.*)"}[5m])) > 0
+            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",job=~".*/(store-gateway.*|cortex|mimir|mimir-backend.*)"}[5m])) > 0
           for: 6h
           labels:
             severity: warning

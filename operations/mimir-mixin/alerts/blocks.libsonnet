@@ -241,8 +241,8 @@
           alert: $.alertName('HighVolumeLevel1BlocksQueried'),
           'for': '6h',
           expr: |||
-            sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",%s}[%s])) > 0
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.alertRangeInterval(5)],
+            sum by(%s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",%s}[%s])) > 0
+          ||| % [$._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.store_gateway), $.alertRangeInterval(5)],
           labels: {
             severity: 'warning',
           },
