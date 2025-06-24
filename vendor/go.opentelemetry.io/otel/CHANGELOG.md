@@ -8,11 +8,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
-
-## [1.37.0/0.59.0/0.13.0] 2025-06-25
-
 ### Added
 
 - The `go.opentelemetry.io/otel/semconv/v1.33.0` package.
@@ -25,6 +20,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Add `EventName` to `EnabledParameters` in `go.opentelemetry.io/otel/log`. (#6825)
 - Add `EventName` to `EnabledParameters` in `go.opentelemetry.io/otel/sdk/log`. (#6825)
 - Changed handling of `go.opentelemetry.io/otel/exporters/prometheus` metric renaming to add unit suffixes when it doesn't match one of the pre-defined values in the unit suffix map. (#6839)
+
+### Removed
+
+- `go.opentelemetry.io/otel/exporters/prometheus` no longer exports `otel_scope_info` metric. (#6770)
 
 ### Changed
 
@@ -46,9 +45,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Validate exponential histogram scale range for Prometheus compatibility in `go.opentelemetry.io/otel/exporters/prometheus`. (#6822)
 - Context cancellation during metric pipeline produce does not corrupt data in `go.opentelemetry.io/otel/sdk/metric`. (#6914)
 
-### Removed
-
-- `go.opentelemetry.io/otel/exporters/prometheus` no longer exports `otel_scope_info` metric. (#6770)
+<!-- Released section -->
+<!-- Don't change this section unless doing release -->
 
 ## [0.12.2] 2025-05-22
 
