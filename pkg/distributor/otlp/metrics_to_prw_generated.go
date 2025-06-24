@@ -56,8 +56,8 @@ type Settings struct {
 	ConvertHistogramsToNHCB           bool
 	AllowDeltaTemporality             bool
 
-	// PromoteScopeMetadata controls whether to promote OTel scope metadata to metric labels.
-	PromoteScopeMetadata bool
+	// ConvertScopeMetadata controls whether to convert OTel scope metadata to metric labels.
+	ConvertScopeMetadata bool
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
@@ -96,7 +96,7 @@ func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric
 	case pmetric.MetricTypeGauge:
 		m.Type = otlptranslator.MetricTypeGauge
 	case pmetric.MetricTypeSum:
-		if metric.Sum().IsMonotonic() {
+		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
 			m.Type = otlptranslator.MetricTypeMonotonicCounter
 		} else {
 			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
