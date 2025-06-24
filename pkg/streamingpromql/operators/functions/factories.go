@@ -485,10 +485,10 @@ func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	}
 
 	f := Timestamp
-	selector, isSelector := args[0].(*selectors.InstantVectorSelector)
+	_, isSelector := args[0].(*selectors.InstantVectorSelector)
 
 	if isSelector {
-		selector.ReturnSampleTimestamps = true
+		// We'll have already set ReturnSampleTimestamps on the InstantVectorSelector during the planning process, so we don't need to do that here.
 		f.SeriesDataFunc = PassthroughData
 	}
 

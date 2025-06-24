@@ -19,7 +19,13 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+
+	if v.ReturnSampleTimestamps {
+		return d + " (return sample timestamps)"
+	}
+
+	return d
 }
 
 func (v *VectorSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -48,7 +54,8 @@ func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
-		v.Offset == otherVectorSelector.Offset
+		v.Offset == otherVectorSelector.Offset &&
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
@@ -72,7 +79,7 @@ func (v *VectorSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, false)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
