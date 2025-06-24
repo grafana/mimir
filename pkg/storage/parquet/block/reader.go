@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/block/indexheader/header.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package block
 
 import (
@@ -8,28 +13,15 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/pkg/errors"
 	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/thanos-io/objstore"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 )
-
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/block/indexheader/header.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Thanos Authors.
 
 const (
 	DefaultIndexHeaderLazyLoadingEnabled     = true
 	DefaultIndexHeaderLazyLoadingIdleTimeout = 60 * time.Minute
-)
-
-var tracer = otel.Tracer("pkg/storage/parquet/index")
-
-var (
-	errInvalidParquetIndexLazyLoadingConcurrency = errors.New("invalid parquet index lazy loading max concurrency; must be non-negative")
 )
 
 // FirstShardIndex represents the default initial shard for a parquet block reader;
@@ -143,16 +135,4 @@ func (r *BasicReader) Close() error {
 	err = multierror.Append(err, r.chunksFile.Close())
 	// TODO figure out if we need to do anything with the loaded schema here
 	return err.ErrorOrNil()
-}
-
-func labelsFileName(blockID string, shardIdx int) string {
-	return schema.LabelsPfileNameForShard(blockID, shardIdx)
-}
-
-func labelsFileLocalPath(localDir, blockID string, shardIdx int) string {
-	return filepath.Join(localDir, labelsFileName(blockID, shardIdx))
-}
-
-func chunksFileName(blockID string, shardIdx int) string {
-	return schema.ChunksPfileNameForShard(blockID, shardIdx)
 }
