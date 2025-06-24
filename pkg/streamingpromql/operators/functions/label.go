@@ -11,24 +11,29 @@ import (
 	"strings"
 
 	"github.com/grafana/regexp"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/validation"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+<<<<<<< HEAD
 func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+=======
+func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator, namingScheme validation.NamingScheme) SeriesMetadataFunction {
+	return func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+>>>>>>> 940085b850 (feat(querier): validate label/metric names with per-tenant naming scheme)
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !namingScheme.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
 		srcLabels := make([]string, len(srcLabelOps))
 		for i, op := range srcLabelOps {
 			src := op.GetValue()
-			if !model.LabelName(src).IsValid() {
+			if !namingScheme.IsValidLabelName(src) {
 				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
 			}
 			srcLabels[i] = src
@@ -63,15 +68,20 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 	}
 }
 
+<<<<<<< HEAD
 func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+=======
+func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.StringOperator, namingScheme validation.NamingScheme) SeriesMetadataFunction {
+	return func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+>>>>>>> 940085b850 (feat(querier): validate label/metric names with per-tenant naming scheme)
 		regexStr := regexOp.GetValue()
 		regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
 		if err != nil {
 			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
-		if !model.LabelName(dst).IsValid() {
+		if !namingScheme.IsValidLabelName(dst) {
 			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()
