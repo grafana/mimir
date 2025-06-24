@@ -19,7 +19,7 @@ jobs:
 
       - name: Retrieve Secrets from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@5d7e361bc7e0a183cde8afe9899fb7b596d2659b
+        uses: grafana/shared-workflows/actions/get-vault-secrets@5d7e361bc7e0a183cde8afe9899fb7b596d2659b # get-vault-secrets-v1.2.0
         with:
           repo_secrets: |
             LOKI_URL=ci/repo/grafana/mimir/flaky-tests-bot:loki-url
@@ -37,7 +37,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Run Flaky Tests Analysis
-        uses: dimitarvdimitrov/shared-workflows/actions/go-flaky-tests@7098037f3a45b90ae7938f3405aec85635d7181e
+        uses: dimitarvdimitrov/shared-workflows/actions/go-flaky-tests@7098037f3a45b90ae7938f3405aec85635d7181e # dimitar/analyze-test-failures/github-issues
         with:
           loki-url: ${{ env.LOKI_URL }}
           loki-username: ${{ env.LOKI_USERNAME }}
