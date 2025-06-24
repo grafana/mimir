@@ -56,7 +56,7 @@ func NewOTelFromEnv(serviceName string, logger log.Logger, opts ...OTelOption) (
 		tracesdk.WithBatcher(exp),
 		tracesdk.WithResource(resource),
 	}
-	if jaegerRemoteSampler, ok, err := MaybeJaegerRemoteSamplerFromEnv(serviceName); err != nil {
+	if jaegerRemoteSampler, ok, err := maybeJaegerRemoteSamplerFromEnv(serviceName); err != nil {
 		return nil, fmt.Errorf("failed to create Jaeger remote sampler: %w", err)
 	} else if ok {
 		options = append(options, tracesdk.WithSampler(jaegerRemoteSampler))
@@ -160,7 +160,7 @@ func NewResource(serviceName string, customAttributes []attribute.KeyValue) (*re
 	)
 }
 
-// MaybeJaegerRemoteSamplerFromEnv checks the environment variables to see
+// maybeJaegerRemoteSamplerFromEnv checks the environment variables to see
 // if `jaeger_remote` or `parentbased_jaeger_remote` sampler is configured through OTEL_TRACES_SAMPLER.
 //
 // This extends go.opentelemetry.io/otel/sdk/trace/sampler_env.go `samplerFromEnv()` with support for Jaeger remote samplers as per docs in:
@@ -169,7 +169,9 @@ func NewResource(serviceName string, customAttributes []attribute.KeyValue) (*re
 //
 // If the environment variable is set to "jaeger_remote" or "parentbased_jaeger_remote",
 // but `OTEL_TRACES_SAMPLER_ARG` is not in the correct format (according to the docs mentioned above), then an error is returned.
-func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool, error) {
+//
+// When maybeJaegerRemoteSamplerFromEnv finds a supported Jaeger remote sampler OTEL_TRACES_SAMPLER value, it unsets that environment variable.
+func maybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool, error) {
 	samplerName, ok := os.LookupEnv("OTEL_TRACES_SAMPLER")
 	if !ok {
 		return nil, false, nil
@@ -184,6 +186,10 @@ func MaybeJaegerRemoteSamplerFromEnv(serviceName string) (tracesdk.Sampler, bool
 		// If it's something known, trace provider already configured it through samplerFromEnv() function in the SDK.
 		return nil, false, nil
 	}
+
+	// Unset the OTEL_TRACES_SAMPLER environment variable to the SDK's samplerFromEnv()
+	// function complaining about unknown sampler and logging confusing messages.
+	_ = os.Unsetenv("OTEL_TRACES_SAMPLER")
 
 	args, ok := os.LookupEnv("OTEL_TRACES_SAMPLER_ARG")
 	if !ok || args == "" {
