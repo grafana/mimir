@@ -1412,6 +1412,12 @@ func (o *Overrides) LabelsQueryOptimizerEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).LabelsQueryOptimizerEnabled
 }
 
+// ValidationScheme returns the validation scheme to use for a particular tenant.
+func (o *Overrides) ValidationScheme(_ string) model.ValidationScheme {
+	// TODO(juliusmh): make this configurable by tenant
+	return model.LegacyValidation
+}
+
 // CardinalityAnalysisMaxResults returns the maximum number of results that
 // can be returned in a single cardinality API request.
 func (o *Overrides) CardinalityAnalysisMaxResults(userID string) int {
