@@ -476,7 +476,6 @@ templates:
 	require.NoError(t, err)
 
 	gCfg.AlertmanagerConfig.Global = mCfg.Global
-	gCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 
 	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
 	require.NoError(t, err)
