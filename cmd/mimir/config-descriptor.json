@@ -5776,12 +5776,12 @@
         },
         {
           "kind": "field",
-          "name": "otel_convert_scope_metadata",
+          "name": "otel_promote_scope_metadata",
           "required": false,
-          "desc": "Whether to convert OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.",
+          "desc": "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "distributor.otel-convert-scope-metadata",
+          "fieldFlag": "distributor.otel-promote-scope-metadata",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
