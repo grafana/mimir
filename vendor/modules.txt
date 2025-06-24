@@ -1159,10 +1159,12 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus-community/parquet-common v0.0.0-20250612090827-2b68cd3ab6ca
+# github.com/prometheus-community/parquet-common v0.0.0-20250619184244-76512c603fb1
 ## explicit; go 1.23.4
 github.com/prometheus-community/parquet-common/convert
+github.com/prometheus-community/parquet-common/queryable
 github.com/prometheus-community/parquet-common/schema
+github.com/prometheus-community/parquet-common/search
 github.com/prometheus-community/parquet-common/storage
 github.com/prometheus-community/parquet-common/util
 # github.com/prometheus/alertmanager v0.28.1 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
