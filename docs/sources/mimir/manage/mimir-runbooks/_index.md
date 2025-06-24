@@ -1817,6 +1817,24 @@ How to **investigate**:
 
 Query for the client side metric `cortex_client_invalid_cluster_validation_label_requests_total`, to determine which clients are sending the mislabeled requests.
 
+### MimirGoThreadsTooHigh
+
+This alert fires when a Mimir instance is running a very high number of Go threads.
+
+How it **works**:
+
+- In Go, concurrency is handled via goroutines, which are lightweight threads managed by the Go runtime.
+- Goroutines are multiplexed onto a small number of actual OS threads by the Go scheduler.
+- Go threads are limited to 10K. When this limit is reached, the application panics with error like `runtime: program exceeds 10000-thread limit`.
+- If a goroutine makes a syscall that blocks (e.g. network I/O, disk I/O, ...), the Go runtime will try to schedule other goroutines on other OS threads, starting new threads on-demand.
+- Idle go threads are never terminated ([issue](https://github.com/golang/go/issues/14592)), so once an application has a spike in the number of go threads, the process needs to be restarted to get back to a low number of threads.
+
+How to **investigate**:
+
+- Check the process stack trace to find common patterns in where the goroutines were blocked (typically a syscall):
+  - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
+  - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -2660,6 +2678,20 @@ How to **fix** it:
 
 - If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 - Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+
+### err-mimir-distributor-max-influx-request-size
+
+This error occurs when a distributor rejects an Influx write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming Influx write requests before and after decompression regardless of the compression type.
+- Configure this limit in the `-distributor.max-influx-request-size` setting.
+
+How to **fix** it:
+
+- If you use the `telegraf` agent, decrease the maximum batch size in the `metric_batch_size` setting. Refer to [Agent configuration](https://docs.influxdata.com/telegraf/v1/configuration/#agent-configuration) for details.
+- Increase the allowed limit in the `-distributor.max-influx-request-size` setting.
 
 ### err-mimir-distributor-max-write-request-data-item-size
 

@@ -18,7 +18,7 @@
     ]) +
     container.withArgsMixin($.util.mapToFlags($.query_tee_args)) +
     $.util.resourcesRequests('1', '512Mi') +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   query_tee_deployment: if !($._config.query_tee_enabled) then {} else
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +

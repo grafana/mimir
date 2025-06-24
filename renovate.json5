@@ -30,12 +30,11 @@
         ],
         "enabled": false
       },
-      // Pin Go at the current version, since we want to upgrade it manually.
-      // Remember to keep this in sync when upgrading our Go version!
       {
-        "matchDatasources": ["docker", "golang-version"],
-        "matchPackageNames": ["go", "golang"],
-        "allowedVersions": "<=1.22.5"
+        // Update Go version everywhere at once: build image, go.mod and GitHub Actions workflows.
+        "matchDatasources": ["docker", "golang-version", "github-releases"],
+        "matchPackageNames": ["go", "golang", "actions/go-versions"],
+        "groupName": "Go"
       },
       // Keep deps for the dashboard screenshotting tool up to date
       {
@@ -54,6 +53,7 @@
       }
     ],
     "branchPrefix": "deps-update/",
+    "labels": ["dependency-update"],
     "vulnerabilityAlerts": {
       "enabled": true,
       "labels": ["security-update"]

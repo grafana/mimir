@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
@@ -51,6 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -59,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -421,12 +424,13 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	}
 
 	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
-	if err == nil {
-		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
-		// anything in the start/stopping phase. Thus we can create it as part of runtime config
-		// setup without any service instance of its own.
-		t.TenantLimits = newTenantLimits(serv)
+	if err != nil {
+		return nil, err
 	}
+	// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
+	// anything in the start/stopping phase. Thus we can create it as part of runtime config
+	// setup without any service instance of its own.
+	t.TenantLimits = newTenantLimits(serv)
 
 	t.RuntimeConfig = serv
 	t.API.RegisterRuntimeConfig(runtimeConfigHandler(t.RuntimeConfig, t.Cfg.LimitsConfig), validation.UserLimitsHandler(t.Cfg.LimitsConfig, t.TenantLimits))
@@ -447,7 +451,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
-	return serv, err
+	return serv, nil
 }
 
 func (t *Mimir) initOverrides() (serv services.Service, err error) {
@@ -796,8 +800,32 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
+	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	// Disable concurrency limits for sharded queries spawned by the query-frontend.
+	promOpts.ActiveQueryTracker = nil
+	// Always eagerly load selectors so that they are loaded in parallel in the background.
+	mqeOpts.EagerLoadSelectors = true
 
-	engineOpts, _ := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	// Use either the Prometheus engine or Mimir Query Engine (with optional fallback to Prometheus
+	// if it has been configured) for middlewares that require executing queries using a PromQL engine.
+	var eng promql.QueryEngine
+	switch t.Cfg.Frontend.QueryEngine {
+	case querier.PrometheusEngine:
+		eng = promql.NewEngine(promOpts)
+	case querier.MimirEngine:
+		streamingEngine, err := streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryPlanner, util_log.Logger)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
+		}
+
+		if t.Cfg.Frontend.EnableQueryEngineFallback {
+			eng = streamingpromqlcompat.NewEngineWithFallback(streamingEngine, promql.NewEngine(promOpts), mqeOpts.CommonOpts.Reg, util_log.Logger)
+		} else {
+			eng = streamingEngine
+		}
+	default:
+		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", t.Cfg.Querier.QueryEngine))
+	}
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -805,7 +833,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Overrides,
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
-		engineOpts,
+		eng,
+		promOpts,
 		t.QueryFrontendTopicOffsetsReaders,
 		t.Registerer,
 	)
@@ -854,7 +883,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
-	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
+	// Allow the Prometheus engine to be explicitly selected if MQE is in use and a fallback is configured.
+	fallbackInjector := streamingpromqlcompat.EngineFallbackInjector{}
+	t.API.RegisterQueryFrontendHandler(fallbackInjector.Wrap(handler), t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -883,13 +914,9 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initQueryPlanner() (services.Service, error) {
-	if t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
-		_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
-		t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
-	}
+	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
+	t.QueryPlanner = streamingpromql.NewQueryPlanner(mqeOpts)
 
-	// Register the analysis endpoint even if query planning is disabled: the analysis endpoint will return a clear
-	// error message in this case, indicating that query planning is disabled.
 	analysisHandler := streamingpromql.AnalysisHandler(t.QueryPlanner)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
