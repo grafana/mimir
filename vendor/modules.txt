@@ -1694,11 +1694,7 @@ go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
-<<<<<<< HEAD
 # golang.org/x/crypto v0.38.0
-=======
-# golang.org/x/crypto v0.36.0
->>>>>>> origin/release-2.16
 ## explicit; go 1.23.0
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
