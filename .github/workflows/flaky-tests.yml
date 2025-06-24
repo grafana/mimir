@@ -2,7 +2,7 @@ name: Flaky Tests Detection
 
 on:
   schedule:
-    - cron: "0 9 * * 1" # Run every Monday at 9 AM
+    - cron: "0 8 * * 1" # Run every Monday at 8 AM
   workflow_dispatch:
 
 permissions:
