@@ -736,7 +736,7 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 
 		if ps := s.getPartitionState(spec.Topic, spec.Partition); ps.committed.beyondSpec(spec) {
 			// Job is before the committed offset. Remove it.
-			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset",
+			level.Info(s.logger).Log("msg", "removing job as it's behind the committed offset (expected at startup)",
 				"job_id", k.id, "epoch", k.epoch, "partition", spec.Partition,
 				"start_offset", spec.StartOffset, "end_offset", spec.EndOffset,
 				"committed", ps.committed.offset())
@@ -896,19 +896,16 @@ type advancingOffset struct {
 // allow backwards movement. If a gap is detected, a warning is logged, a
 // metric is incremented and the offset is not advanced.
 func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
-	// Offsets are initialized to -1. We allow transitioning out of -1 without checks.
-	if o.off >= 0 {
-		if o.beyondSpec(spec) {
-			level.Warn(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
-				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-			return
-		}
-		if o.off < spec.StartOffset {
-			// Gap detected.
-			level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
-				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-			// TODO: increment metric.
-		}
+	if o.beyondSpec(spec) {
+		level.Warn(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
+		return
+	}
+	if o.off < spec.StartOffset {
+		// Gap detected.
+		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
+		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
 	}
 
 	o.off = spec.EndOffset
