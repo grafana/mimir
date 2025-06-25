@@ -3286,9 +3286,9 @@ type tsdbMeta struct {
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
 
-	var pending atomic.Int64
-	idleTimeoutSet := i.compactionIdleTimeout > 0
+	pending := atomic.NewInt64(0)
 	compactBlocksStart := time.Now()
+	idleTimeoutSet := i.compactionIdleTimeout > 0
 	var tsdbs = []tsdbMeta{}
 	for _, userID := range i.getTSDBUsers() {
 		if !allowed.IsAllowed(userID) {
@@ -3304,57 +3304,65 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			continue
 		}
 
-		isIdle := userDB.isIdle(compactBlocksStart, i.compactionIdleTimeout)
-		if idleTimeoutSet && isIdle {
-			pending.Inc()
+		if force {
+			tsdbs = append(tsdbs, tsdbMeta{userID: userID})
+			continue
 		}
-		tsdbs = append(tsdbs, tsdbMeta{userID: userID, isIdle: idleTimeoutSet && isIdle})
+
+		if idleTimeoutSet && userDB.isIdle(compactBlocksStart, i.compactionIdleTimeout) {
+			pending.Inc()
+			tsdbs = append(tsdbs, tsdbMeta{userID: userID, isIdle: true})
+			continue
+		}
+
+		tsdbs = append(tsdbs, tsdbMeta{userID: userID, isIdle: false})
 	}
 
-	// ordering tsdbs such that idle DBs appear first allows us to unset forcedCompactionInProgress while
+	// order tsdbs such that idle DBs appear and are compacted first. This allows us to unset forcedCompactionInProgress
+	// while the remaining tenants are compacted.
 	sort.Slice(tsdbs, func(i, j int) bool {
-		return !tsdbs[i].isIdle && tsdbs[j].isIdle
+		return tsdbs[i].isIdle && !tsdbs[j].isIdle
 	})
 
 	// Expose a metric tracking whether there's a forced head compaction pending or in-progress.
 	// This metric can be used in alerts and when troubleshooting.
-	if force {
-		i.setForcedCompaction()
-		pending.Store(int64(len(tsdbs)))
-		defer i.unsetForcedCompaction()
-	} else if pending.Load() > 0 {
+	maxPending := pending.Load()
+	if force || maxPending > 0 {
 		i.setForcedCompaction()
 		defer i.unsetForcedCompaction()
 	}
 
 	_ = concurrency.ForEachJob(ctx, len(tsdbs), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, idx int) error {
 		var err error
-
-		i.metrics.compactionsTriggered.Inc()
 		userDB := i.getTSDB(tsdbs[idx].userID)
 		minTimeBefore := userDB.Head().MinTime()
 		reason := ""
 		switch {
 		case force:
 			reason = "forced"
+			i.metrics.compactionsTriggered.WithLabelValues(reason).Inc()
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
-			pending.Dec()
 
-		case i.compactionIdleTimeout > 0 && userDB.isIdle(compactBlocksStart, i.compactionIdleTimeout):
+		// check TSDB is still idle before `compactHead`, if recv new writes since isIdle set, falls through to regular compaction.
+		case tsdbs[idx].isIdle && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
 			reason = "idle"
+			i.metrics.compactionsTriggered.WithLabelValues(reason).Inc()
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
-			pending.Dec()
+			if pending.Dec() == 0 {
+				i.unsetForcedCompaction()
+			}
 
 		default:
 			reason = "regular"
+			i.metrics.compactionsTriggered.WithLabelValues(reason).Inc()
 			err = userDB.Compact()
 		}
 
 		if err != nil {
-			i.metrics.compactionsFailed.Inc()
+			i.metrics.compactionsFailed.WithLabelValues(reason).Inc()
 			level.Warn(i.logger).Log("msg", "TSDB blocks compaction for user has failed", "user", userID, "err", err, "compactReason", reason)
 		} else {
 			level.Debug(i.logger).Log("msg", "TSDB blocks compaction completed successfully", "user", userID, "compactReason", reason)
@@ -3370,10 +3378,6 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 				r = recomputeOwnedSeriesReasonEarlyCompaction
 			}
 			userDB.triggerRecomputeOwnedSeries(r)
-		}
-
-		if pending.Load() <= 0 {
-			i.unsetForcedCompaction()
 		}
 
 		return nil

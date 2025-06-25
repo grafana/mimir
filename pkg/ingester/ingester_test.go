@@ -7874,6 +7874,13 @@ func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	require.NoError(t, err)
 }
 
+func pushSingleSampleWithUserID(t *testing.T, i *Ingester, uid string) {
+	ctx := user.InjectOrgID(context.Background(), uid)
+	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
+	_, err := i.Push(ctx, req)
+	require.NoError(t, err)
+}
+
 func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, ts)
@@ -8269,6 +8276,111 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	ok, _ = db.changeState(forceCompacting, active)
 	require.True(t, ok)
 	pushSingleSampleWithMetadata(t, i)
+}
+
+func TestIngester_ForcedCompactionAtomicSetWhenTriggeredByIdleTSDB(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Second
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push a sample, it should succeed.
+	pushSingleSampleWithMetadata(t, i)
+	db := i.getTSDB(userID)
+	db.lastUpdate.Store(time.Now().Add(-1 * time.Minute).UnixMilli())
+	isIdle := db.isIdle(time.Now(), i.compactionIdleTimeout)
+	require.True(t, isIdle)
+
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		return i.forcedCompactionInProgress.Load()
+	})
+}
+
+func TestIngester_PublishReasonLabelsOnCompactionsTriggeredTotal(t *testing.T) {
+	activeUser := "100"
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push a sample, it should succeed.
+	pushSingleSampleWithMetadata(t, i)
+	db := i.getTSDB(userID)
+	db.lastUpdate.Store(time.Now().Add(-1 * time.Minute).UnixMilli())
+	isIdle := db.isIdle(time.Now(), i.compactionIdleTimeout)
+	require.True(t, isIdle)
+
+	// Simulate an active user. Push a sample and set updateTime to near-future, will not be idle compacted
+	pushSingleSampleWithUserID(t, i, activeUser)
+	db = i.getTSDB(activeUser)
+	db.lastUpdate.Store(time.Now().Add(1 * time.Minute).UnixMilli())
+
+	i.compactBlocks(context.Background(), false, math.MaxInt64, nil)
+	test.Poll(t, 2*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_tsdb_compactions_triggered_total Total number of triggered compactions.
+			# TYPE cortex_ingester_tsdb_compactions_triggered_total counter
+			cortex_ingester_tsdb_compactions_triggered_total{reason="idle"} 1
+			cortex_ingester_tsdb_compactions_triggered_total{reason="regular"} 1
+		`), "cortex_ingester_tsdb_compactions_triggered_total")
+	})
+}
+
+func TestIngester_NoIdleCompactionsWhenTimeoutIsUnset(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 0 * time.Second
+
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	require.NoError(t, err)
+	fmt.Println(i.compactionIdleTimeout)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), i)
+	})
+
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push a sample, it should succeed.
+	pushSingleSampleWithMetadata(t, i)
+	db := i.getTSDB(userID)
+	db.lastUpdate.Store(time.Now().Add(-1440 * time.Minute).UnixMilli())
+
+	i.compactBlocks(context.Background(), false, math.MaxInt64, nil)
+	test.Poll(t, 2*time.Second, nil, func() interface{} {
+		return testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_ingester_tsdb_compactions_triggered_total Total number of triggered compactions.
+			# TYPE cortex_ingester_tsdb_compactions_triggered_total counter
+			cortex_ingester_tsdb_compactions_triggered_total{reason="regular"} 1
+		`), "cortex_ingester_tsdb_compactions_triggered_total")
+	})
 }
 
 func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
