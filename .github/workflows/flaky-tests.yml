@@ -28,9 +28,9 @@ jobs:
         uses: grafana/shared-workflows/actions/get-vault-secrets@5d7e361bc7e0a183cde8afe9899fb7b596d2659b # get-vault-secrets-v1.2.0
         with:
           repo_secrets: |
-            LOKI_URL=ci/repo/grafana/mimir/flaky-tests-bot:loki-url
-            LOKI_USERNAME=ci/repo/grafana/mimir/flaky-tests-bot:loki-username
-            LOKI_PASSWORD=ci/repo/grafana/mimir/flaky-tests-bot:loki-password
+            LOKI_URL=flaky-tests-bot:loki-url
+            LOKI_USERNAME=flaky-tests-bot:loki-username
+            LOKI_PASSWORD=flaky-tests-bot:loki-password
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
 
