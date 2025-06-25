@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
@@ -207,10 +208,13 @@ func (r *LazyReaderLocalLabelsBucketChunks) convertLabelsFileToLocalDisk() error
 	bucketFileOpener := storage.NewParquetBucketOpener(r.bkt)
 
 	bucketLabelsFile, err := bucketFileOpener.Open(r.ctx, labelsFileName, r.shardOpts...)
+	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFile, "close bucket labels file")
+
 	if err != nil {
 		return errors.Wrap(err, "open bucket parquet labels file")
 	}
 	bucketLabelsFileReader := parquet.NewGenericReader[any](bucketLabelsFile)
+	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFileReader, "close bucket labels file reader")
 	labelsFileSchema, err := schema.FromLabelsFile(bucketLabelsFile.File)
 	if err != nil {
 		return errors.Wrap(err, "get schema from bucket parquet labels file")
