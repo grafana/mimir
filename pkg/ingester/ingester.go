@@ -3334,7 +3334,8 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 	_ = concurrency.ForEachJob(ctx, len(tsdbs), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, idx int) error {
 		var err error
-		userDB := i.getTSDB(tsdbs[idx].userID)
+		userID := tsdbs[idx].userID
+		userDB := i.getTSDB(userID)
 		minTimeBefore := userDB.Head().MinTime()
 		reason := ""
 		switch {
