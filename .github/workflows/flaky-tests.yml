@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: '0' # we need all commits so that the git history check returns valid commits
 
       - name: Retrieve Secrets from Vault
         id: get-secrets
