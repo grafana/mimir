@@ -227,7 +227,7 @@
               // policy which is selected by default.
               policies: [
                 {
-                  // Allow to scale up at most autoscaling_querier_scaledown_percent_cap perecent of pods every 2m. Why 2m?
+                  // Allow to scale up at most autoscaling_querier_scaledown_percent_cap percent of pods every 2m. Why 2m?
                   // Because the metric looks back 1m and we give another 1m to let new queriers to start and process some
                   // backlog.
                   //
