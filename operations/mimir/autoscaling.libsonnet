@@ -9,8 +9,8 @@
     autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of queriers needed.
     autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
     autoscaling_querier_predictive_scaling_lookback: '30m',  // The time range to consider when considering scheduler metrics for predictive scaling. For example: if lookback is 30m and period is 6d23h30m, the querier will scale based on the maximum inflight queries between 6d23h30m and 7d0h0m ago.
-    autoscaling_querier_scaleup_percent_cap: 50, // The maximum percent a querier deployment may scale up every 2m.
-    autoscaling_querier_scaledown_percent_cap: 10, // The maximum percent a querier deployment may scale down every 2m.
+    autoscaling_querier_scaleup_percent_cap: 50,  // The maximum percent a querier deployment may scale up every 2m.
+    autoscaling_querier_scaledown_percent_cap: 10,  // The maximum percent a querier deployment may scale down every 2m.
 
     autoscaling_ruler_querier_enabled: false,
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
@@ -227,8 +227,8 @@
               // policy which is selected by default.
               policies: [
                 {
-                  // Allow to scale up at most autoscaling_querier_scaledown_percent_cap perecent of pods every 2m. Why 2m? 
-                  // Because the metric looks back 1m and we give another 1m to let new queriers to start and process some 
+                  // Allow to scale up at most autoscaling_querier_scaledown_percent_cap perecent of pods every 2m. Why 2m?
+                  // Because the metric looks back 1m and we give another 1m to let new queriers to start and process some
                   // backlog.
                   //
                   // This policy covers the case we already have an high number of queriers running and adding +50%
@@ -257,7 +257,7 @@
                 // Allow to scale down up to autoscaling_querier_scaledown_percent_cap percent of pods every 2m.
                 // A higher configured value leads to faster scale down.
                 type: 'Percent',
-                value: $._config.autoscaling_querier_scaledown_percent_cap, 
+                value: $._config.autoscaling_querier_scaledown_percent_cap,
                 periodSeconds: 120,
               }],
               // Reduce the likelihood of flapping replicas. When the metrics indicate that the target should be scaled
