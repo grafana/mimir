@@ -23,7 +23,7 @@
   * Moved `distributor.ha_tracker.ha_tracker_update_timeout` to `limits.ha_tracker.ha_tracker_update_timeout`
   * Moved `distributor.ha_tracker.ha_tracker_update_timeout_jitter_max` to `limits.ha_tracker.ha_tracker_update_timeout_jitter_max`
   * Moved `distributor.ha_tracker.ha_tracker_failover_timeout` to `limits.ha_tracker.ha_tracker_failover_timeout`
-* [CHANGE] Distributor: `Memberlist` marked as stable as an option for backend storage for the HA tracker.
+* [CHANGE] Distributor: `Memberlist` marked as stable as an option for backend storage for the HA tracker. #11861
 * [FEATURE] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: Created timestamp is ignored, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192 #11143
 * [FEATURE] Query-frontend: expand `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` configuration options to cache non-transient response failures for instant queries. #11120
 * [FEATURE] Query-frontend: Allow use of Mimir Query Engine (MQE) via the experimental CLI flags `-query-frontend.query-engine` or `-query-frontend.enable-query-engine-fallback` or corresponding YAML. #11417 #11775

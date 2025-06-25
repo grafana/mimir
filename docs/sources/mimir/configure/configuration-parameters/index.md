@@ -858,8 +858,8 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
   [enable_elected_replica_metric: <boolean> | default = false]
 
-  # Backend storage to use for the ring. Note that memberlist support is
-  # experimental.
+  # Backend storage to use for the ring. Supported values are: consul, etcd,
+  # inmemory, memberlist, multi.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
