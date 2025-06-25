@@ -129,17 +129,21 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 
 #### Limitation: Decreasing the tenant shard size
 
-The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from safely decreasing the tenant shard size when you enable ingesters’ shuffle sharding on the read path.
+The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when you enable ingesters’ shuffle sharding on the read path. Decreasing the tenant shard size without following the complete procedure might result in query failures.
 
-If a tenant’s shard decreases in size, there is currently no way for the queriers and rulers to know how large the tenant shard was previously, and as a result, they potentially miss an ingester with data for that tenant.
-The blocks-storage.tsdb.retention-period, which is used to select the ingesters that might have received series since 'now - blocks-storage.tsdb.retention-period', doesn't work correctly for finding tenant shards if the tenant shard size is decreased.
+When you decrease a tenant's shard size, the queriers and rulers can't determine how large the tenant shard was previously. As a result, they could potentially miss an ingester with data for a given tenant.
+The `blocks-storage.tsdb.retention-period` setting, which is used to select the ingesters that might have received series since the value of 'now - blocks-storage.tsdb.retention-period', doesn't work correctly for finding tenant shards if you decrease the tenant shard size.
 
-Although decreasing the tenant shard size is not supported, consider the following workaround:
+To safely decrease the tenant shard size, follow these steps.
 
 1. Disable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
 1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
 1. Re-enable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
+
+{{< admonition type="note" >}}
+The procedure for decreasing the tenant shard size is the same as for enabling shuffle sharding. Enabling shuffle sharding on the ingesters effectively decreases the tenant shard size.
+{{< /admonition >}}
 
 ### Query-frontend and query-scheduler shuffle sharding
 
