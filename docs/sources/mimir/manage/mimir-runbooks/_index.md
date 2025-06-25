@@ -1831,7 +1831,7 @@ How it **works**:
 
 How to **investigate**:
 
-- Check the process stack trace to find common patterns in where the goroutines blocked on syscall:
+- Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
   - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
   - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
 
