@@ -94,31 +94,30 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 
 	// Patch the base config with the custom SMTP config sent by Grafana.
 	if gCfg.SmtpConfig != nil {
-		s := gCfg.SmtpConfig
-		if s.EhloIdentity != "" {
-			emailCfg.EhloIdentity = s.EhloIdentity
+		if gCfg.SmtpConfig.EhloIdentity != "" {
+			emailCfg.EhloIdentity = gCfg.SmtpConfig.EhloIdentity
 		}
-		if s.FromAddress != "" {
-			emailCfg.FromAddress = s.FromAddress
+		if gCfg.SmtpConfig.FromAddress != "" {
+			emailCfg.FromAddress = gCfg.SmtpConfig.FromAddress
 		}
-		if s.FromName != "" {
-			emailCfg.FromName = s.FromName
+		if gCfg.SmtpConfig.FromName != "" {
+			emailCfg.FromName = gCfg.SmtpConfig.FromName
 		}
-		if s.Host != "" {
-			emailCfg.Host = s.Host
+		if gCfg.SmtpConfig.Host != "" {
+			emailCfg.Host = gCfg.SmtpConfig.Host
 		}
-		if s.Password != "" {
-			emailCfg.AuthPassword = s.Password
+		if gCfg.SmtpConfig.Password != "" {
+			emailCfg.AuthPassword = gCfg.SmtpConfig.Password
 		}
-		emailCfg.SkipVerify = s.SkipVerify
-		if s.StartTlsPolicy != "" {
-			emailCfg.StartTLSPolicy = s.StartTlsPolicy
+		emailCfg.SkipVerify = gCfg.SmtpConfig.SkipVerify
+		if gCfg.SmtpConfig.StartTlsPolicy != "" {
+			emailCfg.StartTLSPolicy = gCfg.SmtpConfig.StartTlsPolicy
 		}
-		if s.StaticHeaders != nil {
-			emailCfg.StaticHeaders = s.StaticHeaders
+		if gCfg.SmtpConfig.StaticHeaders != nil {
+			emailCfg.StaticHeaders = gCfg.SmtpConfig.StaticHeaders
 		}
-		if s.User != "" {
-			emailCfg.AuthUser = s.User
+		if gCfg.SmtpConfig.User != "" {
+			emailCfg.AuthUser = gCfg.SmtpConfig.User
 		}
 	}
 

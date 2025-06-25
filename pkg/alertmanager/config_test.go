@@ -76,7 +76,7 @@ const grafanaConfigWithDuplicateReceiverName = `{
 }`
 
 func TestCreateUsableGrafanaConfig(t *testing.T) {
-	defaultFromAddress := "grafana@localhost.com"
+	defaultFromAddress := "grafana@example.com"
 	mimirConfig := fmt.Sprintf(`
 global:
   smtp_from: %s

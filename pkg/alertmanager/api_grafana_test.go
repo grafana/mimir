@@ -200,7 +200,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	}
 
 	smtpConfig := &alertspb.SmtpConfig{
-		FromAddress:   "test@grafana.com",
+		FromAddress:   "test@example.com",
 		StaticHeaders: map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
 	}
 	externalURL := "http://test.grafana.com"

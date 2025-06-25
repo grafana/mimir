@@ -1038,7 +1038,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 	}`
 
 	smtpConfig := &alertmanager.SmtpConfig{
-		FromAddress: "test@test.com",
+		FromAddress: "test@example.com",
 		StaticHeaders: map[string]string{
 			"Header-1": "Value-1",
 			"Header-2": "Value-2",
