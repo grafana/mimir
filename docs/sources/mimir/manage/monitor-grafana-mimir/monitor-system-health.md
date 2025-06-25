@@ -28,6 +28,4 @@ Once you've collected metrics, logs, and traces from Grafana Mimir or GEM and st
 
 Start by configuring Grafana with datasources for metrics, logs, and traces. This typically involves adding Prometheus, Loki, and Tempo datasources that point to the respective backends.
 
-From there, refer to [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/) for instructions on how to set up our best practice dashboards and alerts for observing Grafana Mimir. 
-
-
+From there, refer to [Installing Grafana Mimir dashboards and alerts](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts/) for instructions on how to set up our best practice dashboards and alerts for observing Grafana Mimir.
