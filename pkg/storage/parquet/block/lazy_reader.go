@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,7 +181,8 @@ func (r *LazyReaderLocalLabelsBucketChunks) labelsFileName() string {
 }
 
 func (r *LazyReaderLocalLabelsBucketChunks) labelsFileLocalPath() string {
-	return filepath.Join(r.localDir, r.labelsFileName())
+	// trim labels filename prefix before joining as it includes the block ID already
+	return filepath.Join(r.localDir, strings.TrimPrefix(r.labelsFileName(), r.blockID.String()))
 }
 
 func (r *LazyReaderLocalLabelsBucketChunks) ensureLabelsFileToLocalDisk() error {
@@ -256,12 +258,16 @@ func (r *LazyReaderLocalLabelsBucketChunks) downloadLabelsFileToLocalDisk() erro
 	}
 	defer runutil.CloseWithLogOnErr(r.logger, reader, "close bucket labels reader")
 
-	if err := os.MkdirAll(r.localDir, 0o755); err != nil {
+	outPath := r.labelsFileLocalPath()
+	outPathDir := filepath.Dir(outPath)
+	err = os.MkdirAll(outPathDir, os.ModePerm)
+	if err != nil {
 		return errors.Wrap(err, "create local directory")
 	}
-	f, err := os.Create(r.labelsFileLocalPath())
+
+	f, err := os.Create(outPath)
 	if err != nil {
-		return errors.Wrap(err, "create local file")
+		return errors.Wrap(err, "create local file and open for write")
 	}
 	defer runutil.CloseWithLogOnErr(r.logger, f, "close local parquet labels file")
 
