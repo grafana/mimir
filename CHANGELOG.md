@@ -151,6 +151,7 @@
 * [FEATURE] Allow configuring tracing with OTel environment variables through `$._config.otlp_traces_endpoint`. When configured, the `$.jaeger_mixin` is no longer available for use.
 * [FEATURE] Updated rollout-operator to support `OTEL_` environment variables for tracing. #11787
 * [ENHANCEMENT] Add `query_frontend_only_args` option to specify CLI flags that apply only to query-frontends but not ruler-query-frontends. #11799
+* [ENHANCEMENT] Make querier scale up (`$_config.autoscaling_querier_scaleup_percent_cap`) and scale down rates (`$_config.autoscaling_querier_scaledown_percent_cap`) configurable. #11862
 
 ### Mimirtool
 
