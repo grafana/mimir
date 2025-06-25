@@ -103,6 +103,9 @@ type LazyReaderLocalLabelsBucketChunks struct {
 
 	blockID  ulid.ULID
 	shardIdx int
+	// earlyValidation indicates whether the labels file should be validated as
+	// soon as it is downloaded to local disk.
+	earlyValidation bool
 
 	// bkt to download the labels file to local disk and open the chunks file from the bucket
 	bkt       objstore.InstrumentedBucketReader
@@ -135,14 +138,16 @@ func NewLazyReaderLocalLabelsBucketChunks(
 	metrics *LazyParquetReaderMetrics,
 	onClosed func(*LazyReaderLocalLabelsBucketChunks),
 	lazyLoadingGate gate.Gate,
+	earlyValidation bool,
 	logger log.Logger,
 ) (*LazyReaderLocalLabelsBucketChunks, error) {
 	reader := &LazyReaderLocalLabelsBucketChunks{
-		ctx:      ctx,
-		blockID:  blockID,
-		shardIdx: FirstShardIndex,
-		bkt:      bkt,
-		localDir: localDir,
+		ctx:             ctx,
+		blockID:         blockID,
+		shardIdx:        FirstShardIndex,
+		earlyValidation: earlyValidation,
+		bkt:             bkt,
+		localDir:        localDir,
 
 		metrics:  metrics,
 		usedAt:   atomic.NewInt64(0),
@@ -189,10 +194,16 @@ func (r *LazyReaderLocalLabelsBucketChunks) ensureLabelsFileToLocalDisk() error 
 		return errors.Wrap(err, "read parquet labels file from disk")
 	}
 
-	level.Debug(r.logger).Log("msg", "parquet labels file not on disk; loading", "path", localPath)
+	level.Debug(r.logger).Log("msg", "parquet labels file not on disk; loading", "path", localPath, "validating", r.earlyValidation)
 	start := time.Now()
-	if err := r.convertLabelsFileToLocalDisk(); err != nil {
-		return errors.Wrap(err, "write labels file")
+	if r.earlyValidation {
+		if err := r.convertLabelsFileToLocalDisk(); err != nil {
+			return errors.Wrap(err, "download and validate labels file")
+		}
+	} else {
+		if err := r.downloadLabelsFileToLocalDisk(); err != nil {
+			return errors.Wrap(err, "download labels file")
+		}
 	}
 	level.Debug(r.logger).Log("msg", "loaded parquet labels file to disk", "path", localPath, "elapsed", time.Since(start))
 	return nil
@@ -231,6 +242,31 @@ func (r *LazyReaderLocalLabelsBucketChunks) convertLabelsFileToLocalDisk() error
 	err = shardedBucketToFileWriter.Write(r.ctx)
 	if err != nil {
 		return errors.Wrap(err, "convert bucket parquet labels file to disk")
+	}
+	return nil
+}
+
+// downloadLabelsFileToLocalDisk downloads the labels file from the bucket to
+// local disk. It does not parse or validate the file in any way, it simply
+// downloads it as-is.
+func (r *LazyReaderLocalLabelsBucketChunks) downloadLabelsFileToLocalDisk() error {
+	reader, err := r.bkt.Get(r.ctx, r.labelsFileName())
+	if err != nil {
+		return errors.Wrap(err, "download parquet labels file from bucket")
+	}
+	defer runutil.CloseWithLogOnErr(r.logger, reader, "close bucket labels reader")
+
+	if err := os.MkdirAll(r.localDir, 0o755); err != nil {
+		return errors.Wrap(err, "create local directory")
+	}
+	f, err := os.Create(r.labelsFileLocalPath())
+	if err != nil {
+		return errors.Wrap(err, "create local file")
+	}
+	defer runutil.CloseWithLogOnErr(r.logger, f, "close local parquet labels file")
+
+	if _, err := f.ReadFrom(reader); err != nil {
+		return errors.Wrap(err, "read parquet labels file from bucket to local file")
 	}
 	return nil
 }
