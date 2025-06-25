@@ -208,11 +208,10 @@ func (r *LazyReaderLocalLabelsBucketChunks) convertLabelsFileToLocalDisk() error
 	bucketFileOpener := storage.NewParquetBucketOpener(r.bkt)
 
 	bucketLabelsFile, err := bucketFileOpener.Open(r.ctx, labelsFileName, r.shardOpts...)
-	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFile, "close bucket labels file")
-
 	if err != nil {
 		return errors.Wrap(err, "open bucket parquet labels file")
 	}
+	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFile, "close bucket labels file")
 	bucketLabelsFileReader := parquet.NewGenericReader[any](bucketLabelsFile)
 	defer runutil.CloseWithLogOnErr(r.logger, bucketLabelsFileReader, "close bucket labels file reader")
 	labelsFileSchema, err := schema.FromLabelsFile(bucketLabelsFile.File)
