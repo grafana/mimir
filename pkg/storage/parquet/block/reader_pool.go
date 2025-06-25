@@ -43,10 +43,11 @@ func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 type ReaderPool struct {
 	services.Service
 
-	lazyReaderEnabled     bool
-	lazyReaderIdleTimeout time.Duration
-	logger                log.Logger
-	metrics               *ReaderPoolMetrics
+	lazyReaderEnabled      bool
+	earlyValidationEnabled bool
+	lazyReaderIdleTimeout  time.Duration
+	logger                 log.Logger
+	metrics                *ReaderPoolMetrics
 
 	// Gate used to limit the number of concurrent index-header loads.
 	lazyLoadingGate gate.Gate
@@ -81,12 +82,13 @@ func newReaderPool(
 	metrics *ReaderPoolMetrics,
 ) *ReaderPool {
 	return &ReaderPool{
-		logger:                logger,
-		metrics:               metrics,
-		lazyReaderEnabled:     indexHeaderConfig.LazyLoadingEnabled,
-		lazyReaderIdleTimeout: indexHeaderConfig.LazyLoadingIdleTimeout,
-		lazyReaders:           make(map[*LazyReaderLocalLabelsBucketChunks]struct{}),
-		lazyLoadingGate:       lazyLoadingGate,
+		logger:                 logger,
+		metrics:                metrics,
+		lazyReaderEnabled:      indexHeaderConfig.LazyLoadingEnabled,
+		earlyValidationEnabled: false,
+		lazyReaderIdleTimeout:  indexHeaderConfig.LazyLoadingIdleTimeout,
+		lazyReaders:            make(map[*LazyReaderLocalLabelsBucketChunks]struct{}),
+		lazyLoadingGate:        lazyLoadingGate,
 	}
 }
 
@@ -111,6 +113,7 @@ func (p *ReaderPool) GetReader(
 		p.metrics.lazyReader,
 		p.onLazyReaderClosed,
 		p.lazyLoadingGate,
+		p.earlyValidationEnabled,
 		logger,
 	)
 
