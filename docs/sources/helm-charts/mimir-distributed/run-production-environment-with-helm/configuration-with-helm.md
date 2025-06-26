@@ -20,7 +20,7 @@ If you want to manage the configuration through the Helm chart, refer to [Manage
 
 If you want to manage the configuration externally, refer to [Manage the configuration externally](#manage-the-configuration-externally).
 
-Handling sensitive information, such as credentials, is common between the two methods. Refer to [Injecting credentials](#injecting-credentials).
+Handling sensitive information, such as credentials, is common between the two methods. Refer to [Inject credentials](#injecting-credentials).
 
 ## Manage the configuration with Helm
 
@@ -134,7 +134,7 @@ Prefer `AWS_SECRET_ACCESS_KEY` over `secret-access-key.aws`.
 
 Grafana Mimir does not track changes to the credentials. If you update the credentials, restart Grafana Mimir pods to use the updated value. To trigger a restart, provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation`, which is applied to all Grafana Mimir pods. Changing the value of the global annotation makes Kubernetes recreate all pods. For example, changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart. Note that pod annotations can only be strings.
 
-### Manage runtime configuration
+## Manage runtime configuration
 
 ## Example configuration managed with Helm
 
