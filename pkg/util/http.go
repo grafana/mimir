@@ -220,12 +220,13 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 
 	switch compression {
 	case NoCompression, RawSnappy:
-		buf, ok := tryBufferFromReader(reader)
+		buf, ok := TryBufferFromReader(reader)
 		if ok {
+			if buf.Len() > maxSize {
+				return nil, MsgSizeTooLargeErr{Actual: buf.Len(), Limit: maxSize}
+			}
+
 			if compression == NoCompression {
-				if buf.Len() > maxSize {
-					return nil, MsgSizeTooLargeErr{Actual: buf.Len(), Limit: maxSize}
-				}
 				return buf.Bytes(), nil
 			}
 
@@ -256,6 +257,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	sp.AddEvent("util.ParseProtoReader[decompress]", trace.WithAttributes(attribute.Int("expectedSize", expectedSize)))
 
 	// Limit at maxSize+1 so we can tell when the size is exceeded
+	// TODO: Check payload size against max_inflight_push_requests_bytes
 	reader = io.LimitReader(reader, int64(maxSize)+1)
 
 	sz := expectedSize
@@ -300,6 +302,7 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 	if size > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
 	}
+	// TODO: Start push request.
 
 	decBuf := buffers.Get(size)
 	// Snappy bases itself on the target buffer's length, not capacity
@@ -313,9 +316,9 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 	return decoded, nil
 }
 
-// tryBufferFromReader attempts to cast the reader to a `*bytes.Buffer` this is possible when using httpgrpc.
+// TryBufferFromReader attempts to cast the reader to a `*bytes.Buffer` this is possible when using httpgrpc.
 // If it fails it will return nil and false.
-func tryBufferFromReader(reader io.Reader) (*bytes.Buffer, bool) {
+func TryBufferFromReader(reader io.Reader) (*bytes.Buffer, bool) {
 	if bufReader, ok := reader.(interface {
 		BytesBuffer() *bytes.Buffer
 	}); ok && bufReader != nil {

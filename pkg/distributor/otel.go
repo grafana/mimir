@@ -72,7 +72,7 @@ type OTLPHandlerLimits interface {
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
-func OTLPHandler(
+func (d *Distributor) OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
@@ -99,7 +99,7 @@ func OTLPHandler(
 		}
 
 		otlpConverter := newOTLPMimirConverter()
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOTelParseError)
+		parser := d.newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOTelParseError)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -190,7 +190,7 @@ func OTLPHandler(
 
 type otlpDecoderFunc = func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
 
-func getOTLPDecoderFunc(
+func (d *Distributor) getOTLPDecoderFunc(
 	ctx context.Context, r *http.Request, contentType, contentEncoding string, maxRecvMsgSize int, buffers *util.RequestBuffers, logger log.Logger,
 ) (otlpDecoderFunc, error) {
 	var compression util.CompressionType
@@ -262,22 +262,7 @@ func getOTLPDecoderFunc(
 	}
 }
 
-func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
-	resourceMetricsSlice := req.Metrics().ResourceMetrics()
-	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		resourceMetrics := resourceMetricsSlice.At(i)
-		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			metricSlice := scopeMetrics.Metrics()
-			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
-		}
-	}
-}
-
-func newOTLPParser(
+func (d *Distributor) newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
@@ -292,11 +277,17 @@ func newOTLPParser(
 		keepIdentifyingOTelResourceAttributesConfig = limits
 	}
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+		var payloadSize int64
+		if buf, ok := util.TryBufferFromReader(r.Body); ok {
+			payloadSize = int64(buf.Len())
+		} else {
+			payloadSize = r.ContentLength
+		}
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
-		if r.ContentLength > int64(maxRecvMsgSize) {
+		if payloadSize > int64(maxRecvMsgSize) {
 			return httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-				actual: int(r.ContentLength),
+				actual: int(payloadSize),
 				limit:  maxRecvMsgSize,
 			}.Error())
 		}
@@ -304,7 +295,7 @@ func newOTLPParser(
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 
-		decoderFunc, err := getOTLPDecoderFunc(ctx, r, contentType, contentEncoding, maxRecvMsgSize, buffers, logger)
+		decoderFunc, err := d.getOTLPDecoderFunc(ctx, r, contentType, contentEncoding, maxRecvMsgSize, buffers, logger)
 		if err != nil {
 			return err
 		}
@@ -315,6 +306,14 @@ func newOTLPParser(
 		spanLogger.SetTag("content_type", contentType)
 		spanLogger.SetTag("content_encoding", contentEncoding)
 		spanLogger.SetTag("content_length", r.ContentLength)
+
+		// Record an in-flight push request with the compressed size, to avoid exceeding the memory limit
+		// while decompressing.
+		ctx, err = d.StartPushRequest(ctx, payloadSize)
+		if err != nil {
+			return err
+		}
+		defer d.FinishPushRequest(ctx)
 
 		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
@@ -402,35 +401,12 @@ func newOTLPParser(
 	}
 }
 
-// validateTranslationStrategy ensures consistency between name translation strategy and name validation scheme and metric name suffix enablement.
-// Any inconsistency at this point indicates a programming error, so we panic on errors.
-func validateTranslationStrategy(translationStrategy otlptranslator.TranslationStrategyOption, limits OTLPHandlerLimits, tenantID string) {
-	validationScheme := limits.NameValidationScheme(tenantID)
-	switch validationScheme {
-	case model.LegacyValidation:
-		if !translationStrategy.ShouldEscape() {
-			panic(fmt.Errorf(
-				"metric and label name validation scheme is %s, but incompatible OTel translation strategy: %s",
-				validationScheme, translationStrategy,
-			))
-		}
-	case model.UTF8Validation:
-		if translationStrategy.ShouldEscape() {
-			panic(fmt.Errorf(
-				"metric and label name validation scheme is %s, but incompatible OTel translation strategy: %s",
-				validationScheme, translationStrategy,
-			))
-		}
-	default:
-		panic(fmt.Errorf("unhandled name validation scheme: %s", validationScheme))
+func (d *Distributor) checkOTLPRequestSize(requestSize int64) error {
+	inflightBytes := d.inflightPushRequestsBytes.Add(requestSize)
+	if err := d.checkInflightBytes(inflightBytes); err != nil {
+		return httpgrpc.Error(http.StatusRequestEntityTooLarge, err.Error())
 	}
-
-	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
-	if addSuffixes && !translationStrategy.ShouldAddSuffixes() {
-		panic(fmt.Errorf("OTel metric suffixes are enabled, but incompatible OTel translation strategy: %s", translationStrategy))
-	} else if !addSuffixes && translationStrategy.ShouldAddSuffixes() {
-		panic(fmt.Errorf("OTel metric suffixes are disabled, but incompatible OTel translation strategy: %s", translationStrategy))
-	}
+	return nil
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
