@@ -63,7 +63,7 @@ type OTLPHandlerLimits interface {
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
-func OTLPHandler(
+func (d *Distributor) OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
@@ -89,7 +89,7 @@ func OTLPHandler(
 		}
 
 		otlpConverter := newOTLPMimirConverter()
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOTelParseError)
+		parser := d.newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOTelParseError)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -162,7 +162,7 @@ func OTLPHandler(
 
 type otlpDecoderFunc = func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
 
-func getOTLPDecoderFunc(
+func (d *Distributor) getOTLPDecoderFunc(
 	ctx context.Context, r *http.Request, contentType, contentEncoding string, maxRecvMsgSize int, buffers *util.RequestBuffers, logger log.Logger,
 ) (otlpDecoderFunc, error) {
 	var compression util.CompressionType
@@ -234,7 +234,7 @@ func getOTLPDecoderFunc(
 	}
 }
 
-func newOTLPParser(
+func (d *Distributor) newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	otlpConverter *otlpMimirConverter,
@@ -243,11 +243,17 @@ func newOTLPParser(
 	discardedDueToOTelParseError *prometheus.CounterVec,
 ) parserFunc {
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+		var payloadSize int64
+		if buf, ok := util.TryBufferFromReader(r.Body); ok {
+			payloadSize = int64(buf.Len())
+		} else {
+			payloadSize = r.ContentLength
+		}
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
-		if r.ContentLength > int64(maxRecvMsgSize) {
+		if payloadSize > int64(maxRecvMsgSize) {
 			return httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-				actual: int(r.ContentLength),
+				actual: int(payloadSize),
 				limit:  maxRecvMsgSize,
 			}.Error())
 		}
@@ -255,7 +261,7 @@ func newOTLPParser(
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 
-		decoderFunc, err := getOTLPDecoderFunc(ctx, r, contentType, contentEncoding, maxRecvMsgSize, buffers, logger)
+		decoderFunc, err := d.getOTLPDecoderFunc(ctx, r, contentType, contentEncoding, maxRecvMsgSize, buffers, logger)
 		if err != nil {
 			return err
 		}
@@ -266,6 +272,14 @@ func newOTLPParser(
 		spanLogger.SetTag("content_type", contentType)
 		spanLogger.SetTag("content_encoding", contentEncoding)
 		spanLogger.SetTag("content_length", r.ContentLength)
+
+		// Record an in-flight push request with the compressed size, to avoid exceeding the memory limit
+		// while decompressing.
+		ctx, err = d.StartPushRequest(ctx, payloadSize)
+		if err != nil {
+			return err
+		}
+		defer d.FinishPushRequest(ctx)
 
 		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
@@ -339,6 +353,14 @@ func newOTLPParser(
 
 		return nil
 	}
+}
+
+func (d *Distributor) checkOTLPRequestSize(requestSize int64) error {
+	inflightBytes := d.inflightPushRequestsBytes.Add(requestSize)
+	if err := d.checkInflightBytes(inflightBytes); err != nil {
+		return httpgrpc.Error(http.StatusRequestEntityTooLarge, err.Error())
+	}
+	return nil
 }
 
 // toOtlpGRPCHTTPStatus is utilized by the OTLP endpoint.
