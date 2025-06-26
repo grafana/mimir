@@ -95,6 +95,12 @@
 * [ENHANCEMENT] Distributor: added circuit breaker to not produce Kafka records at all if the context is already canceled / expired. This applied only when experimental ingest storage is enabled. #11768
 * [ENHANCEMENT] Compactor: Optimize the planning phase for tenants with a very large number of blocks, such as tens or hundreds of thousands, at the cost of making it slightly slower for tenants with a very a small number of blocks. #11819
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
+* [ENHANCEMENT] Memberlist: Apply new default configuration values for MemberlistKV. We have observed better performance with these defaults across different production loads. #11874
+  * `memberlist.packet-dial-timeout`: `500ms`
+  * `memberlist.packet-write-timeout`: `500ms`
+  * `memberlist.max-concurrent-writes`: `5`
+  * `memberlist.acquire-writer-timeout`: `1s`
+  These defaults perform better but may cause long-running packets to be dropped in high-latency networks.
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
