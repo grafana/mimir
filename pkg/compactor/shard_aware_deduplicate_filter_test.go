@@ -7,8 +7,10 @@ package compactor
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -456,5 +458,100 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 				})
 			}
 		})
+	}
+}
+
+func TestBloomFilter(t *testing.T) {
+	ulid1 := ulid.MustNew(10, nil)
+	ulid2 := ulid.MustNew(30, nil)
+	ulid3 := ulid.MustNew(20, nil)
+
+	t.Run("empty is included in empty", func(t *testing.T) {
+		require.True(t, (&bloomFilter{}).isIncludedIn(&bloomFilter{}))
+	})
+
+	t.Run("empty is included in non-empty", func(t *testing.T) {
+		empty := bloomFilter{}
+		nonEmpty := bloomFilter{}
+		nonEmpty.add(ulid1)
+
+		require.True(t, empty.isIncludedIn(&nonEmpty))
+	})
+
+	t.Run("non empty is not included in empty", func(t *testing.T) {
+		empty := bloomFilter{}
+		nonEmpty := bloomFilter{}
+		nonEmpty.add(ulid1)
+
+		require.False(t, nonEmpty.isIncludedIn(&empty))
+	})
+
+	t.Run("included", func(t *testing.T) {
+		oneTwo := bloomFilter{}
+		oneTwo.add(ulid1)
+		oneTwo.add(ulid2)
+		oneTwoThree := bloomFilter{}
+		oneTwoThree.add(ulid1)
+		oneTwoThree.add(ulid2)
+		oneTwoThree.add(ulid3)
+
+		require.True(t, oneTwo.isIncludedIn(&oneTwoThree))
+	})
+
+	t.Run("not included", func(t *testing.T) {
+		oneTwo := bloomFilter{}
+		oneTwo.add(ulid1)
+		oneTwo.add(ulid2)
+		oneTwoThree := bloomFilter{}
+		oneTwoThree.add(ulid1)
+		oneTwoThree.add(ulid2)
+		oneTwoThree.add(ulid3)
+
+		require.False(t, oneTwoThree.isIncludedIn(&oneTwo))
+	})
+}
+
+func TestBloomFilter_MeasureFalsePositivesProbability(t *testing.T) {
+	t.Skip("this test doesn't run any assertion, but it's meant to be manually run to double check the false positives probability")
+
+	const (
+		numRuns              = 10
+		numEqualEntries      = 10_000
+		numAdditionalEntries = 1_000
+	)
+
+	var (
+		falsePositivesByAdditionalEntries = make(map[int]int)
+	)
+
+	for r := 0; r < numRuns; r++ {
+		setA := &bloomFilter{}
+		setB := &bloomFilter{}
+
+		// Add the same entries to both filters.
+		for i := 0; i < numEqualEntries; i++ {
+			id := ulid.MustNew(uint64(time.Now().Add(time.Duration(i)*time.Hour).UnixMilli()), rand.Reader)
+
+			setA.add(id)
+			setB.add(id)
+		}
+
+		require.True(t, setA.isIncludedIn(setB))
+		require.True(t, setB.isIncludedIn(setA))
+
+		// Add more entries (different for each set).
+		for i := 0; i < numAdditionalEntries; i++ {
+			setA.add(ulid.MustNew(uint64(time.Now().Add(time.Duration(numEqualEntries+i)*time.Hour).UnixMilli()), rand.Reader))
+			setB.add(ulid.MustNew(uint64(time.Now().Add(time.Duration(numEqualEntries+i)*time.Hour).UnixMilli()), rand.Reader))
+
+			if setA.isIncludedIn(setB) || setB.isIncludedIn(setA) {
+				falsePositivesByAdditionalEntries[i]++
+			}
+		}
+	}
+
+	// Print summary.
+	for i := 1; i < numAdditionalEntries; i += numAdditionalEntries / 25 {
+		t.Logf("false positives probability with %d different entries per set: %.2f%%", i, float64(falsePositivesByAdditionalEntries[i])/float64(numRuns)*100)
 	}
 }

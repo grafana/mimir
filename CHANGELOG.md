@@ -93,6 +93,7 @@
   * `cortex_ingest_storage_writer_kafka_request_throttled_seconds`: measures how long Kafka requests have been throttled by the Kafka client.
 * [ENHANCEMENT] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to wall clock. #11573
 * [ENHANCEMENT] Distributor: added circuit breaker to not produce Kafka records at all if the context is already canceled / expired. This applied only when experimental ingest storage is enabled. #11768
+* [ENHANCEMENT] Compactor: Optimize the planning phase for tenants with a very large number of blocks, such as tens or hundreds of thousands, at the cost of making it slightly slower for tenants with a very a small number of blocks. #11819
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
