@@ -86,7 +86,7 @@ func OTLPHandler(
 	reg prometheus.Registerer,
 	logger log.Logger,
 ) http.Handler {
-	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
+	discardedDueToOTelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -98,13 +98,8 @@ func OTLPHandler(
 			}
 		}
 
-		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-
-		parser := newOTLPParser(
-			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-			otlpConverter, pushMetrics, discardedDueToOtelParseError,
-			OTLPPushMiddlewares,
-		)
+		otlpConverter := newOTLPMimirConverter()
+		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOTelParseError)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -181,8 +176,7 @@ func OTLPHandler(
 		}
 		if httpCode != 202 {
 			// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-			msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
-			logLevel := level.Error
+			msgs := []any{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
 			if httpCode/100 == 4 {
 				msgs = append(msgs, "insight", true)
 				logLevel = level.Warn
@@ -194,17 +188,78 @@ func OTLPHandler(
 	})
 }
 
-func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
-	// Respond as per spec:
-	// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
-	expResp := colmetricpb.ExportMetricsServiceResponse{
-		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
-			RejectedDataPoints: 0,
-			ErrorMessage:       pushErr.Error(),
-		},
+type otlpDecoderFunc = func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
+
+func getOTLPDecoderFunc(
+	ctx context.Context, r *http.Request, contentType, contentEncoding string, maxRecvMsgSize int, buffers *util.RequestBuffers, logger log.Logger,
+) (otlpDecoderFunc, error) {
+	var compression util.CompressionType
+	switch contentEncoding {
+	case "gzip":
+		compression = util.Gzip
+	case "lz4":
+		compression = util.Lz4
+	case "":
+		compression = util.NoCompression
+	default:
+		return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", or no compression supported", contentEncoding)
 	}
-	addSuccessHeaders(w, req.artificialDelay)
-	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
+
+	switch contentType {
+	case pbContentType:
+		return func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
+			exportReq := pmetricotlp.NewExportRequest()
+			unmarshaler := otlpProtoUnmarshaler{
+				request: &exportReq,
+			}
+			protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
+			var tooLargeErr util.MsgSizeTooLargeErr
+			if errors.As(err, &tooLargeErr) {
+				return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+					actual: tooLargeErr.Actual,
+					limit:  tooLargeErr.Limit,
+				}.Error())
+			}
+			return exportReq, protoBodySize, err
+		}, nil
+	case jsonContentType:
+		return func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
+			exportReq := pmetricotlp.NewExportRequest()
+			sz := int(r.ContentLength)
+			if sz > 0 {
+				// Extra space guarantees no reallocation
+				sz += bytes.MinRead
+			}
+			buf := buffers.Get(sz)
+			switch compression {
+			case util.Gzip:
+				gzReader, err := gzip.NewReader(reader)
+				if err != nil {
+					return exportReq, 0, errors.Wrap(err, "create gzip reader")
+				}
+				defer runutil.CloseWithLogOnErr(logger, gzReader, "close gzip reader")
+				reader = gzReader
+			case util.Lz4:
+				reader = io.NopCloser(lz4.NewReader(reader))
+			}
+
+			reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
+			if _, err := buf.ReadFrom(reader); err != nil {
+				if util.IsRequestBodyTooLarge(err) {
+					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+						actual: -1,
+						limit:  maxRecvMsgSize,
+					}.Error())
+				}
+
+				return exportReq, 0, errors.Wrap(err, "read write request")
+			}
+
+			return exportReq, buf.Len(), exportReq.UnmarshalJSON(buf.Bytes())
+		}, nil
+	default:
+		return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+	}
 }
 
 func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
@@ -228,8 +283,7 @@ func newOTLPParser(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
-	discardedDueToOtelParseError *prometheus.CounterVec,
-	OTLPPushMiddlewares []OTLPPushMiddleware,
+	discardedDueToOTelParseError *prometheus.CounterVec,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -238,87 +292,6 @@ func newOTLPParser(
 		keepIdentifyingOTelResourceAttributesConfig = limits
 	}
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
-		contentType := r.Header.Get("Content-Type")
-		contentEncoding := r.Header.Get("Content-Encoding")
-		var compression util.CompressionType
-		switch contentEncoding {
-		case "gzip":
-			compression = util.Gzip
-		case "lz4":
-			compression = util.Lz4
-		case "zstd":
-			compression = util.Zstd
-		case "":
-			compression = util.NoCompression
-		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
-		}
-
-		var decoderFunc func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
-		switch contentType {
-		case pbContentType:
-			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
-				exportReq := pmetricotlp.NewExportRequest()
-				unmarshaler := otlpProtoUnmarshaler{
-					request: &exportReq,
-				}
-				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
-				var tooLargeErr util.MsgSizeTooLargeErr
-				if errors.As(err, &tooLargeErr) {
-					return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-						compressed: tooLargeErr.Compressed,
-						actual:     tooLargeErr.Actual,
-						limit:      tooLargeErr.Limit,
-					}.Error())
-				}
-				return exportReq, protoBodySize, err
-			}
-
-		case jsonContentType:
-			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
-				exportReq := pmetricotlp.NewExportRequest()
-				sz := int(r.ContentLength)
-				if sz > 0 {
-					// Extra space guarantees no reallocation
-					sz += bytes.MinRead
-				}
-				buf := buffers.Get(sz)
-				switch compression {
-				case util.Gzip:
-					gzReader, err := gzip.NewReader(reader)
-					if err != nil {
-						return exportReq, 0, errors.Wrap(err, "create gzip reader")
-					}
-					defer runutil.CloseWithLogOnErr(logger, gzReader, "close gzip reader")
-					reader = gzReader
-				case util.Lz4:
-					reader = io.NopCloser(lz4.NewReader(reader))
-				case util.Zstd:
-					reader, err = zstd.NewReader(reader)
-					if err != nil {
-						return exportReq, 0, errors.Wrap(err, "create zstd reader")
-					}
-				}
-
-				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
-				if _, err := buf.ReadFrom(reader); err != nil {
-					if util.IsRequestBodyTooLarge(err) {
-						return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
-							actual: -1,
-							limit:  maxRecvMsgSize,
-						}.Error())
-					}
-
-					return exportReq, 0, errors.Wrap(err, "read write request")
-				}
-
-				return exportReq, buf.Len(), exportReq.UnmarshalJSON(buf.Bytes())
-			}
-
-		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
-		}
-
 		// Check the request size against the message size limit, regardless of whether the request is compressed.
 		// If the request is compressed and its compressed length already exceeds the size limit, there's no need to decompress it.
 		if r.ContentLength > int64(maxRecvMsgSize) {
@@ -326,6 +299,14 @@ func newOTLPParser(
 				actual: int(r.ContentLength),
 				limit:  maxRecvMsgSize,
 			}.Error())
+		}
+
+		contentType := r.Header.Get("Content-Type")
+		contentEncoding := r.Header.Get("Content-Encoding")
+
+		decoderFunc, err := getOTLPDecoderFunc(ctx, r, contentType, contentEncoding, maxRecvMsgSize, buffers, logger)
+		if err != nil {
+			return err
 		}
 
 		spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.decodeAndConvert")
@@ -387,7 +368,7 @@ func newOTLPParser(
 			spanLogger,
 		)
 		if metricsDropped > 0 {
-			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
+			discardedDueToOTelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
 		if err != nil {
 			return err
