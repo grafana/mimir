@@ -132,7 +132,7 @@ If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and 
 The current shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when you enable ingesters’ shuffle sharding on the read path. Decreasing the tenant shard size without following the complete procedure might result in query failures.
 
 When you decrease a tenant's shard size, the queriers and rulers can't determine how large the tenant shard was previously. As a result, they could potentially miss an ingester with data for a given tenant.
-The `blocks-storage.tsdb.retention-period` setting, which is used to select the ingesters that might have received series since the value of 'now - blocks-storage.tsdb.retention-period', doesn't work correctly for finding tenant shards if you decrease the tenant shard size.
+The `blocks-storage.tsdb.retention-period` setting, which is used to select the ingesters that might have received series since the value set in `now - blocks-storage.tsdb.retention-period`, doesn't work correctly for finding tenant shards if you decrease the tenant shard size.
 
 To safely decrease the tenant shard size, follow these steps.
 
