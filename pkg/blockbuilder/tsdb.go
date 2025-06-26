@@ -365,12 +365,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 					// Don't track any metrics if context was cancelled. Otherwise, it might be misleading.
 					return
 				}
-				partitionStr := fmt.Sprintf("%d", tenant.partitionID)
+				partitionStr := strconv.Itoa(int(tenant.partitionID))
 				if err != nil {
 					b.metrics.compactAndUploadFailed.WithLabelValues(partitionStr).Inc()
 					return
 				}
 				b.metrics.compactAndUploadDuration.WithLabelValues(partitionStr).Observe(time.Since(t).Seconds())
+				b.metrics.lastSuccessfulCompactAndUploadTime.WithLabelValues(partitionStr).SetToCurrentTime()
 			}(time.Now())
 
 			if err := db.compactEverything(ctx); err != nil {
