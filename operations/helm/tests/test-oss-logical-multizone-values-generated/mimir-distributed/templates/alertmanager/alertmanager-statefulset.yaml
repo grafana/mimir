@@ -13,6 +13,7 @@ metadata:
     name: "alertmanager-zone-a"
     rollout-group: alertmanager
     zone: zone-a
+    grafana.com/prepare-downscale: "true"
   annotations:
     rollout-max-unavailable: "2"
   namespace: "citestns"
@@ -144,6 +145,7 @@ metadata:
     name: "alertmanager-zone-b"
     rollout-group: alertmanager
     zone: zone-b
+    grafana.com/prepare-downscale: "true"
   annotations:
     rollout-max-unavailable: "2"
   namespace: "citestns"
@@ -275,6 +277,7 @@ metadata:
     name: "alertmanager-zone-c"
     rollout-group: alertmanager
     zone: zone-c
+    grafana.com/prepare-downscale: "true"
   annotations:
     rollout-max-unavailable: "2"
   namespace: "citestns"
