@@ -966,7 +966,7 @@ func (s *ParquetBucketStore) addBlock(ctx context.Context, meta *block.Meta) (er
 
 	b := newParquetBucketBlock(
 		meta,
-		nil,
+		blockReader,
 		blockLocalDir,
 	)
 	if err != nil {
