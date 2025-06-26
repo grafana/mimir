@@ -453,12 +453,12 @@ func (q *Query) Statement() parser.Statement {
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
-		// TODO: Returned promstats.QuerySamples won't report TotalSamplesPerStepMap() properly.
-		// See this for details: https://github.com/grafana/mimir/pull/11416#discussion_r2110930357
 		Samples: &promstats.QuerySamples{
 			TotalSamples:        q.stats.TotalSamples,
 			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
 			EnablePerStepStats:  q.stats.EnablePerStepStats,
+			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
+			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
 		},
 	}
 }

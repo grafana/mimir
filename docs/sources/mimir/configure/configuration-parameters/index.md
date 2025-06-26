@@ -1796,6 +1796,10 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
+# Cache statistics of processed samples on results cache.
+# CLI flag: -query-frontend.cache-samples-processed-stats
+[cache_samples_processed_stats: <boolean> | default = false]
+
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]

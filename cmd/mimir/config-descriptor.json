@@ -7553,6 +7553,16 @@
         },
         {
           "kind": "field",
+          "name": "cache_samples_processed_stats",
+          "required": false,
+          "desc": "Cache statistics of processed samples on results cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-samples-processed-stats",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "downstream_url",
           "required": false,
           "desc": "URL of downstream Prometheus.",

@@ -30,7 +30,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	chunkPresentInBothSources := createTestChunk(t, 2500, 7.89)
 
 	reg := prometheus.NewPedanticRegistry()
-	queryStats := &stats.Stats{}
+	queryStats := &stats.SafeStats{}
 	series := streamingChunkSeries{
 		labels: labels.FromStrings("the-name", "the-value"),
 		sources: []client.StreamingSeriesSource{
@@ -92,7 +92,7 @@ func assertChunkIteratorsEqual(t testing.TB, c1, c2 chunkenc.Iterator) {
 
 func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	queryStats := &stats.Stats{}
+	queryStats := &stats.SafeStats{}
 	series := streamingChunkSeries{
 		labels: labels.FromStrings("the-name", "the-value"),
 		// Create a stream reader that will always return an error because we'll try to read a series when it has no series to read.
@@ -118,7 +118,7 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 		},
 		context: &streamingChunkSeriesContext{
 			queryMetrics: stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
-			queryStats:   &stats.Stats{},
+			queryStats:   &stats.SafeStats{},
 		},
 	}
 
