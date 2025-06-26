@@ -44,7 +44,7 @@ Grafana Mimir components run with a configuration calculated by the following pr
 1. The configuration file, as well as any extra CLI flags, are provided to the Mimir pods.
 1. Each component evaluates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
 
-> **Note:** CLI flags are component-specific, and therefore,  don't show up in the generated `ConfigMap` (or `Secret`). This makes it less obvious which configuration is running. Use these flags only when necessary.
+> **Note:** CLI flags are component-specific, and therefore, don't show up in the generated `ConfigMap` (or `Secret`). This makes it less obvious which configuration is running. Use these flags only when necessary.
 
 ### Inspect changes to the configuration before upgrade
 
@@ -56,11 +56,11 @@ Preparation:
 1. Set `configStorageType` value to `ConfigMap`.
 1. Inspect changes using the `helm diff` sub command:
 
-  ```bash
-  helm -n mimir-test diff upgrade grafana/mimir-distributed -f custom.yaml
-  ```
+```bash
+helm -n mimir-test diff upgrade grafana/mimir-distributed -f custom.yaml
+```
 
-  This command shows the differences between the running installation and the installation that would result from running the `helm upgrade` command. Search for `name: mimir-config` in the output to see the difference in configuration settings. Refer to [Example output of helm diff command](#example-output-of-helm-diff-command) for a concrete example.
+This command shows the differences between the running installation and the installation that would result from running the `helm upgrade` command. Search for `name: mimir-config` in the output to see the difference in configuration settings. Refer to [Example output of helm diff command](#example-output-of-helm-diff-command) for a concrete example.
 
 > **Note:** You can find CLI flags and their differences in the `Deployment` and `StatefulSet` objects.
 
