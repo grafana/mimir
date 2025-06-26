@@ -183,7 +183,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
-	c.registerMemberlistFlagsWithChangedDefaultValues(f)
+	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
 	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
@@ -199,14 +199,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
-
 	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f)
 	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
-	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
@@ -611,10 +609,10 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	})
 }
 
-func (c *Config) registerMemberlistFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
+func (c *Config) registerMemberlistKVFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
 
-	c.MemberlistKV.TCPTransport.RegisterFlags(throwaway)
+	c.MemberlistKV.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
 		"memberlist.packet-dial-timeout":    "500ms",
