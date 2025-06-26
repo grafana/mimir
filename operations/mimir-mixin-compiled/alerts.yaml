@@ -692,6 +692,36 @@ groups:
           for: 15m
           labels:
             severity: critical
+    - name: golang_alerts
+      rules:
+        - alert: MimirGoThreadsTooHigh
+          annotations:
+            message: |
+                Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is running a very high number of Go threads.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgothreadstoohigh
+          expr: |
+            # We filter by the namespace because go_threads can be very high cardinality in a large organization.
+            max by(cluster, namespace, pod) (go_threads{namespace=~".*(cortex|mimir).*"} > 5000)
+
+            # Further filter on namespaces actually running Mimir.
+            and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirGoThreadsTooHigh
+          annotations:
+            message: |
+                Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is running a very high number of Go threads.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgothreadstoohigh
+          expr: |
+            # We filter by the namespace because go_threads can be very high cardinality in a large organization.
+            max by(cluster, namespace, pod) (go_threads{namespace=~".*(cortex|mimir).*"} > 8000)
+
+            # Further filter on namespaces actually running Mimir.
+            and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
+          for: 15m
+          labels:
+            severity: critical
     - name: alertmanager_alerts
       rules:
         - alert: MimirAlertmanagerSyncConfigsFailing

@@ -48,6 +48,10 @@ local filename = 'mimir-remote-ruler-reads.json';
       rowTitlePrefix='Ruler-',
     ))
     .addRowIf(
+      $._config.autoscaling.ruler_query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler-query-frontend'),
+    )
+    .addRowIf(
       $._config.autoscaling.ruler_querier.enabled,
       $.row('Ruler-querier - autoscaling')
       .addPanel(

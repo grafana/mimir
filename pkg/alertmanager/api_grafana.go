@@ -60,6 +60,19 @@ type GrafanaAlertmanagerConfig struct {
 	Templates          map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
 }
+
+type SmtpConfig struct {
+	EhloIdentity   string            `json:"ehlo_identity"`
+	FromAddress    string            `json:"from_address"`
+	FromName       string            `json:"from_name"`
+	Host           string            `json:"host"`
+	Password       string            `json:"password"`
+	SkipVerify     bool              `json:"skip_verify"`
+	StartTLSPolicy string            `json:"start_tls_policy"`
+	StaticHeaders  map[string]string `json:"static_headers"`
+	User           string            `json:"user"`
+}
+
 type UserGrafanaConfig struct {
 	GrafanaAlertmanagerConfig GrafanaAlertmanagerConfig `json:"configuration"`
 	Hash                      string                    `json:"configuration_hash"`
@@ -67,8 +80,7 @@ type UserGrafanaConfig struct {
 	Default                   bool                      `json:"default"`
 	Promoted                  bool                      `json:"promoted"`
 	ExternalURL               string                    `json:"external_url"`
-	SmtpFrom                  string                    `json:"smtp_from"`
-	StaticHeaders             map[string]string         `json:"static_headers"`
+	SmtpConfig                *SmtpConfig               `json:"smtp_config,omitempty"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -323,6 +335,20 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
+	var smtpConfig *SmtpConfig
+	if cfg.SmtpConfig != nil {
+		smtpConfig = &SmtpConfig{
+			EhloIdentity:   cfg.SmtpConfig.EhloIdentity,
+			FromAddress:    cfg.SmtpConfig.FromAddress,
+			FromName:       cfg.SmtpConfig.FromName,
+			Host:           cfg.SmtpConfig.Host,
+			Password:       cfg.SmtpConfig.Password,
+			SkipVerify:     cfg.SmtpConfig.SkipVerify,
+			StartTLSPolicy: cfg.SmtpConfig.StartTlsPolicy,
+			StaticHeaders:  cfg.SmtpConfig.StaticHeaders,
+			User:           cfg.SmtpConfig.User,
+		}
+	}
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
@@ -332,8 +358,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Default:                   cfg.Default,
 			Promoted:                  cfg.Promoted,
 			ExternalURL:               cfg.ExternalUrl,
-			SmtpFrom:                  cfg.SmtpFrom,
-			StaticHeaders:             cfg.StaticHeaders,
+			SmtpConfig:                smtpConfig,
 		},
 	})
 }
@@ -392,7 +417,22 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.SmtpFrom, cfg.StaticHeaders)
+	var smtpConfig *alertspb.SmtpConfig
+	if cfg.SmtpConfig != nil {
+		smtpConfig = &alertspb.SmtpConfig{
+			EhloIdentity:   cfg.SmtpConfig.EhloIdentity,
+			FromAddress:    cfg.SmtpConfig.FromAddress,
+			FromName:       cfg.SmtpConfig.FromName,
+			Host:           cfg.SmtpConfig.Host,
+			Password:       cfg.SmtpConfig.Password,
+			SkipVerify:     cfg.SmtpConfig.SkipVerify,
+			StartTlsPolicy: cfg.SmtpConfig.StartTLSPolicy,
+			StaticHeaders:  cfg.SmtpConfig.StaticHeaders,
+			User:           cfg.SmtpConfig.User,
+		}
+	}
+
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, smtpConfig)
 	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
 		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)

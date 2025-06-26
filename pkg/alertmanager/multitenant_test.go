@@ -28,6 +28,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/alerting/definition"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -401,6 +402,10 @@ templates:
 
 	// Ensure that when a Grafana config is added, it is synced correctly.
 	testSmtpFrom := "test@grafana.com"
+	smtpConfig := &alertspb.SmtpConfig{
+		FromAddress:   testSmtpFrom,
+		StaticHeaders: map[string]string{"Header1": "Value1"},
+	}
 	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
 		User:               "user4",
 		RawConfig:          grafanaConfig,
@@ -409,8 +414,7 @@ templates:
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        "test.grafana.com",
-		SmtpFrom:           testSmtpFrom,
-		StaticHeaders:      map[string]string{"Header1": "Value1"},
+		SmtpConfig:         smtpConfig,
 	}
 	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
 	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
@@ -472,7 +476,6 @@ templates:
 	require.NoError(t, err)
 
 	gCfg.AlertmanagerConfig.Global = mCfg.Global
-	gCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 
 	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
 	require.NoError(t, err)
@@ -2542,23 +2545,36 @@ func TestComputeConfig(t *testing.T) {
 	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
 	require.NoError(t, err)
 
-	testSmtpFrom := "test-instance@grafana.com"
+	testFromAddress := "test-instance@grafana.com"
+	testHeaders := map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"}
+	smtpConfig := &alertspb.SmtpConfig{
+		FromAddress:   testFromAddress,
+		StaticHeaders: testHeaders,
+	}
 	grafanaCfg.AlertmanagerConfig.Global = fallbackCfg.Global
-	grafanaCfg.AlertmanagerConfig.Global.SMTPFrom = testSmtpFrom
 	combinedCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
 	require.NoError(t, err)
 
-	mimirExternalURL := am.cfg.ExternalURL.String()
-	testHeaders := map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"}
+	baseEmailCfg := alertingReceivers.EmailSenderConfig{
+		FromName:      "Grafana",
+		EhloIdentity:  "localhost",
+		ExternalURL:   "https://grafana.com",
+		ContentTypes:  []string{"text/html"},
+		FromAddress:   testFromAddress,
+		StaticHeaders: testHeaders,
+		SentBy:        "Mimir vunknown", // no 'version' flag passed in tests.
+	}
 
+	mimirExternalURL := am.cfg.ExternalURL.String()
 	tests := []struct {
-		name       string
-		cfg        alertspb.AlertConfigDescs
-		expStartAM bool
-		expErr     string
-		expCfg     alertspb.AlertConfigDesc
-		expURL     string
-		expHeaders map[string]string
+		name        string
+		cfg         alertspb.AlertConfigDescs
+		expStartAM  bool
+		expErr      string
+		expCfg      alertspb.AlertConfigDesc
+		expEmailCfg alertingReceivers.EmailSenderConfig
+		expURL      string
+		expHeaders  map[string]string
 	}{
 		{
 			name: "no grafana configuration, custom mimir config",
@@ -3194,12 +3210,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: am.fallbackConfig,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        "user-grafana",
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3208,8 +3223,9 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: testHeaders,
+			expEmailCfg: baseEmailCfg,
+			expURL:      grafanaExternalURL,
+			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, empty mimir config",
@@ -3218,12 +3234,11 @@ func TestComputeConfig(t *testing.T) {
 					User: "user-grafana",
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        "user-grafana",
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3232,8 +3247,9 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: testHeaders,
+			expEmailCfg: baseEmailCfg,
+			expURL:      grafanaExternalURL,
+			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, default mimir config, receiving requests",
@@ -3243,12 +3259,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: am.fallbackConfig,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          tenantReceivingRequests,
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3257,8 +3272,9 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: testHeaders,
+			expEmailCfg: baseEmailCfg,
+			expURL:      grafanaExternalURL,
+			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, empty mimir config, receiving requests",
@@ -3267,12 +3283,11 @@ func TestComputeConfig(t *testing.T) {
 					User: tenantReceivingRequests,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          tenantReceivingRequests,
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3281,8 +3296,9 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: testHeaders,
+			expEmailCfg: baseEmailCfg,
+			expURL:      grafanaExternalURL,
+			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, default mimir config, idle Alertmanager",
@@ -3292,12 +3308,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: am.fallbackConfig,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          tenantReceivingRequestsExpired,
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3306,8 +3321,9 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: testHeaders,
+			expEmailCfg: baseEmailCfg,
+			expURL:      grafanaExternalURL,
+			expHeaders:  testHeaders,
 		},
 		{
 			name: "usable grafana configuration, empty mimir config, idle Alertmanager",
@@ -3316,12 +3332,11 @@ func TestComputeConfig(t *testing.T) {
 					User: tenantReceivingRequestsExpired,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          tenantReceivingRequestsExpired,
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3330,8 +3345,55 @@ func TestComputeConfig(t *testing.T) {
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
-			expURL:     grafanaExternalURL,
-			expHeaders: testHeaders,
+			expEmailCfg: baseEmailCfg,
+			expURL:      grafanaExternalURL,
+			expHeaders:  testHeaders,
+		},
+		{
+			name: "usable grafana configuration with custom SMTP configs, empty mimir config, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User: tenantReceivingRequestsExpired,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:        tenantReceivingRequestsExpired,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig: &alertspb.SmtpConfig{
+						EhloIdentity:   "test-identity",
+						FromAddress:    "test@test.com",
+						FromName:       "Test From Name",
+						Host:           "http://test.com",
+						Password:       "test-password",
+						SkipVerify:     true,
+						StartTlsPolicy: "test-policy",
+						StaticHeaders:  nil,
+						User:           "test-user",
+					},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expEmailCfg: alertingReceivers.EmailSenderConfig{
+				AuthPassword:   "test-password",
+				AuthUser:       "test-user",
+				ContentTypes:   []string{"text/html"},
+				EhloIdentity:   "test-identity",
+				ExternalURL:    grafanaExternalURL,
+				FromName:       "Test From Name",
+				FromAddress:    "test@test.com",
+				Host:           "http://test.com",
+				SkipVerify:     true,
+				StartTLSPolicy: "test-policy",
+				StaticHeaders:  nil,
+				SentBy:         "Mimir vunknown",
+			},
+			expURL: grafanaExternalURL,
 		},
 		{
 			// TODO: change once merging configs is implemented.
@@ -3342,12 +3404,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user-grafana",
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        "user-grafana",
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3365,12 +3426,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          tenantReceivingRequests,
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3388,12 +3448,11 @@ func TestComputeConfig(t *testing.T) {
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          tenantReceivingRequests,
-					RawConfig:     grafanaConfig,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					SmtpFrom:      testSmtpFrom,
-					StaticHeaders: testHeaders,
+					User:        tenantReceivingRequests,
+					RawConfig:   grafanaConfig,
+					Promoted:    true,
+					ExternalUrl: grafanaExternalURL,
+					SmtpConfig:  smtpConfig,
 				},
 			},
 			expStartAM: true,
@@ -3412,10 +3471,11 @@ func TestComputeConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+			require.Equal(t, test.expEmailCfg, cfg.emailConfig)
 
 			require.True(t, startAM)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+			require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
 			if test.expURL == "" {
 				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
 			} else {
@@ -3433,7 +3493,7 @@ func TestComputeConfig(t *testing.T) {
 
 			require.Equal(t, test.expStartAM, startAM)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
-			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+			require.Equal(t, test.expHeaders, cfg.emailConfig.StaticHeaders)
 			if test.expURL == "" {
 				require.Equal(t, mimirExternalURL, cfg.tmplExternalURL.String())
 			} else {

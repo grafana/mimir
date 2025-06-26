@@ -47,7 +47,7 @@ message FrontendToClient {
 message ClientToFrontend {
   httpgrpc.HTTPResponse httpResponse = 1;
   string clientID = 2;
-  stats.Stats stats = 3;
+  stats.Stats stats = 3[(gogoproto.customtype) = "github.com/grafana/mimir/pkg/querier/stats.SafeStats"];
 }
 
 message NotifyClientShutdownRequest {
