@@ -27,7 +27,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -327,7 +326,7 @@ func newOTLPParser(
 		)
 
 		req.Timeseries = metrics
-		req.Metadata = otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
+		req.Metadata = otlpConverter.Metadata()
 
 		return nil
 	}
@@ -438,65 +437,6 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 	return o.request.UnmarshalProto(data)
 }
 
-func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
-	switch otelMetric.Type() {
-	case pmetric.MetricTypeGauge:
-		return mimirpb.GAUGE
-	case pmetric.MetricTypeSum:
-		metricType := mimirpb.GAUGE
-		if otelMetric.Sum().IsMonotonic() {
-			metricType = mimirpb.COUNTER
-		}
-		return metricType
-	case pmetric.MetricTypeHistogram:
-		return mimirpb.HISTOGRAM
-	case pmetric.MetricTypeSummary:
-		return mimirpb.SUMMARY
-	case pmetric.MetricTypeExponentialHistogram:
-		return mimirpb.HISTOGRAM
-	}
-	return mimirpb.UNKNOWN
-}
-
-func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
-	resourceMetricsSlice := md.ResourceMetrics()
-
-	metadataLength := 0
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
-		}
-	}
-
-	namer := otlptranslator.MetricNamer{
-		Namespace:          "",
-		WithMetricSuffixes: addSuffixes,
-		UTF8Allowed:        false,
-	}
-
-	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
-				metric := scopeMetrics.Metrics().At(k)
-				entry := mimirpb.MetricMetadata{
-					Type: otelMetricTypeToMimirMetricType(metric),
-					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
-					Help:             metric.Description(),
-					Unit:             metric.Unit(),
-				}
-				metadata = append(metadata, &entry)
-			}
-		}
-	}
-
-	return metadata
-}
-
 type conversionOptions struct {
 	addSuffixes                       bool
 	enableCTZeroIngestion             bool
@@ -569,6 +509,10 @@ func (c *otlpMimirConverter) Err() error {
 		return fmt.Errorf("otlp parse error: %s", errMsg)
 	}
 	return nil
+}
+
+func (c *otlpMimirConverter) Metadata() []*mimirpb.MetricMetadata {
+	return c.converter.Metadata()
 }
 
 // TimeseriesToOTLPRequest is used in tests.
