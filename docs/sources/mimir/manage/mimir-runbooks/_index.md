@@ -610,7 +610,7 @@ This alert fires when the store-gateway is querying level 1 blocks for more than
 
 How it **works**:
 
-- Level 1 blocks are deduplicated 2-hour blocks and contain less optimized data compared to higher-level blocks
+- Level 1 blocks are 2-hour blocks shipped by ingesters, not yet optimized by the compactor
 - When the compactor falls behind, store-gateways must serve queries from these less efficient level 1 blocks instead of well-compacted higher-level blocks
 - This can lead to increased query latency and resource usage
 - Out-of-order blocks are excluded from this alert as they may be shipped for previous dates and queried before being compacted into bigger blocks
