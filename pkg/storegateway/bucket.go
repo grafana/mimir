@@ -1211,7 +1211,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
 
 	for m, count := range stats.blocksQueriedByBlockMeta {
-		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), strconv.Itoa(m.level), strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), m.level, strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
@@ -1232,7 +1232,7 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.recordStreamingSeriesStats(stats)
 
 	for m, count := range stats.blocksQueriedByBlockMeta {
-		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), strconv.Itoa(m.level), strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), m.level, strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 }
 
