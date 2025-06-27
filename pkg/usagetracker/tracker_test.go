@@ -23,8 +23,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
 
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestMain(m *testing.M) {
+	utiltest.VerifyNoLeakTestMain(m)
+}
 
 // testPartitionsCount is lower in test to make debugging easier.
 const testPartitionsCount = 16
@@ -38,6 +43,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			"a0": newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster),
 			"b0": newTestUsageTracker(t, 0, "zone-b", ikv, pkv, cluster),
 		}
+		t.Cleanup(func() { stopAllTrackers(t, trackers) })
 		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// First checks, we haven't done any kind of reconciliation yet, so no partitions should be active yet, no partitions have owners.
@@ -243,6 +249,16 @@ func requireAllTrackersNotReady(t *testing.T, trackers map[string]*UsageTracker)
 		require.Error(t, ut.CheckReady(context.Background()), "Tracker %q should not be ready yet", key)
 	}
 }
+
+func stopAllTrackers(t *testing.T, trackers map[string]*UsageTracker) {
+	t.Helper()
+	for key, ut := range trackers {
+		if err := services.StopAndAwaitTerminated(t.Context(), ut); err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Unexpected error stopping tracker %q: %s", key, err)
+		}
+	}
+}
+
 func waitUntilAllTrackersSeeAllInstancesInTheirZones(t *testing.T, trackers map[string]*UsageTracker) {
 	require.EventuallyWithT(t, func(t *assert.CollectT) {
 		trackersPerZone := map[string]int{}

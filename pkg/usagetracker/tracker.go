@@ -508,7 +508,7 @@ func (t *UsageTracker) stop(_ error) error {
 		p.StopAsync()
 	}
 	for _, p := range t.partitions {
-		if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
+		if err := p.AwaitTerminated(context.Background()); err != nil {
 			errs.Add(errors.Wrapf(err, "unable to stop partition %d", p.partitionID))
 		}
 	}
@@ -519,6 +519,7 @@ func (t *UsageTracker) stop(_ error) error {
 
 	// Close Kafka clients.
 	t.eventsKafkaWriter.Close()
+	t.snapshotsMetadataKafkaWriter.Close()
 
 	return errs.Err()
 }

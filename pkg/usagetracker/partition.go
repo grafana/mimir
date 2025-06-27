@@ -390,6 +390,7 @@ func (p *partition) stop(_ error) error {
 
 	// Close our read client, don't close the write client.
 	p.eventsKafkaReader.Close()
+	p.snapshotsKafkaReader.Close()
 	return err
 }
 
