@@ -41,3 +41,20 @@ message SeriesCreatedEvent {
   // The hashes of the series to track.
   repeated uint64 seriesHashes = 3;
 }
+
+message SnapshotRecord {
+  int64 timestamp = 1;
+  repeated string filenames = 2;
+
+  int64 lastEventOffsetPublishedBeforeSnapshot = 3;
+  int64 lastSnapshotEventOffset = 4;
+}
+
+message SnapshotEvent {
+  int64 timestamp = 1;
+  string filename = 2;
+}
+
+message SnapshotFile {
+  repeated bytes data = 1;
+}

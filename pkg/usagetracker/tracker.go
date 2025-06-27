@@ -35,8 +35,10 @@ import (
 const (
 	SnapshotsStoragePrefix = "usage-tracker-snapshots"
 
-	eventsKafkaWriterMetricsPrefix = "cortex_usage_tracker_events_writer"
-	eventsKafkaReaderMetricsPrefix = "cortex_usage_tracker_events_reader"
+	eventsKafkaWriterComponent    = "usage-tracker-events-writer"
+	eventsKafkaReaderComponent    = "usage-tracker-events-reader"
+	snapshotsKafkaWriterComponent = "usage-tracker-snapshots-metadata-writer"
+	snapshotsKafkaReaderComponent = "usage-tracker-snapshots-metadata-reader"
 )
 
 type Config struct {
@@ -50,14 +52,24 @@ type Config struct {
 	InstanceRing  InstanceRingConfig  `yaml:"instance_ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
-	EventsStorage    EventsStorageConfig `yaml:"events_storage"`
-	SnapshotsStorage bucket.Config       `yaml:"snapshots_storage"`
+	EventsStorageWriter ingest.KafkaConfig `yaml:"writer"`
+	EventsStorageReader ingest.KafkaConfig `yaml:"reader"`
+
+	SnapshotsMetadataWriter ingest.KafkaConfig `yaml:"snapshots_metadata_writer"`
+	SnapshotsMetadataReader ingest.KafkaConfig `yaml:"snapshots_metadata_reader"`
+	SnapshotsStorage        bucket.Config      `yaml:"snapshots_storage"`
 
 	IdleTimeout                           time.Duration `yaml:"idle_timeout"`
 	CreatedSeriesEventsMaxPending         int           `yaml:"max_pending_created_series_events"`
 	CreatedSeriesEventsMaxBatchSizeBytes  int           `yaml:"created_series_events_max_batch_size_bytes"`
 	CreatedSeriesEventsBatchTTL           time.Duration `yaml:"created_series_events_batch_ttl"`
 	CreatedSeriesEventsPublishConcurrency int           `yaml:"created_series_events_publish_concurrency"`
+
+	SnapshotIntervalJitter      float64 `yaml:"snapshot_interval_jitter"`
+	TargetSnapshotFileSizeBytes int     `yaml:"target_snapshot_file_size_bytes"`
+
+	SnapshotCleanupInterval       time.Duration `yaml:"snapshot_cleanup_interval"`
+	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -70,7 +82,13 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
-	c.EventsStorage.RegisterFlags(f)
+
+	c.EventsStorageWriter.RegisterFlagsWithPrefix("usage-tracker.events-storage.writer.", f)
+	c.EventsStorageReader.RegisterFlagsWithPrefix("usage-tracker.events-storage.reader.", f)
+
+	c.SnapshotsMetadataWriter.RegisterFlagsWithPrefix("usage-tracker.snapshots-metadata.writer.", f)
+	c.SnapshotsMetadataReader.RegisterFlagsWithPrefix("usage-tracker.snapshots-metadata.reader.", f)
+
 	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshot-storage.", "usagetrackersnapshots", f)
 
 	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
@@ -78,6 +96,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.CreatedSeriesEventsMaxBatchSizeBytes, "usage-tracker.created-series-events-max-batch-size-bytes", 1<<20, "Maximum size of a batch of created series events to be published.")
 	f.DurationVar(&c.CreatedSeriesEventsBatchTTL, "usage-tracker.created-series-events-batch-ttl", 250*time.Millisecond, "Time after which a batch of created series events is published even if it's not full.")
 	f.IntVar(&c.CreatedSeriesEventsPublishConcurrency, "usage-tracker.created-series-events-publish-concurrency", 10, "Number of concurrent workers publishing created series events.")
+
+	f.Float64Var(&c.SnapshotIntervalJitter, "usage-tracker.snapshot-interval-jitter", 0.1, "Jitter to apply to the snapshot interval. This is a percentage of the snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
+	f.IntVar(&c.TargetSnapshotFileSizeBytes, "usage-tracker.target-snapshot-file-size-bytes", 100*1024*1024, "Target size of a snapshot file in bytes. This is used to determine when to create a new snapshot file. It should be greater than 0.")
+
+	f.DurationVar(&c.SnapshotCleanupInterval, "usage-tracker.snapshot-cleanup-interval", time.Hour, "Interval to clean up old snapshots.")
+	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 }
 
 func (c *Config) Validate() error {
@@ -90,17 +114,37 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid number of partitions %d, must be a power of 2", c.Partitions)
 	}
 
-	if err := c.EventsStorage.Validate(); err != nil {
-		return err
+	if err := c.EventsStorageWriter.Validate(); err != nil {
+		return errors.Wrap(err, "Events Kafka writer")
 	}
+	if err := c.EventsStorageReader.Validate(); err != nil {
+		return errors.Wrap(err, "Events Kafka reader")
+	}
+
+	if err := c.SnapshotsMetadataWriter.Validate(); err != nil {
+		return errors.Wrap(err, "Snapshots metadata Kafka writer")
+	}
+	if err := c.SnapshotsMetadataReader.Validate(); err != nil {
+		return errors.Wrap(err, "Snapshots metadata Kafka reader")
+	}
+
+	if c.EventsStorageWriter.AutoCreateTopicEnabled && c.EventsStorageWriter.AutoCreateTopicDefaultPartitions < c.Partitions {
+		return fmt.Errorf("number of configured partitions for events storage %d must be less or equal than the default number of partitions to be auto created %d for the Kafka topic", c.Partitions, c.EventsStorageWriter.AutoCreateTopicDefaultPartitions)
+	}
+	if c.SnapshotsMetadataWriter.AutoCreateTopicEnabled && c.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions < c.Partitions {
+		return fmt.Errorf("number of configured partitions for snapshots metadata %d must be less or equal than the default number of partitions to be auto created %d for the Kafka topic", c.Partitions, c.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions)
+	}
+
 	if err := c.SnapshotsStorage.Validate(); err != nil {
 		return err
 	}
+
 	if c.IdleTimeout <= 0 || c.IdleTimeout > time.Hour {
 		return fmt.Errorf("invalid usage-tracker idle timeout %q, should be greater than 0 and less than 1 hour", c.IdleTimeout)
 	}
-	if c.EventsStorage.Writer.AutoCreateTopicEnabled && c.EventsStorage.Writer.AutoCreateTopicDefaultPartitions < c.Partitions {
-		return fmt.Errorf("number of configured partitions %d must be less or equal than the default number of partitions to be auto created %d for the Kafka topic", c.Partitions, c.EventsStorage.Writer.AutoCreateTopicDefaultPartitions)
+
+	if c.SnapshotIntervalJitter < 0 || c.SnapshotIntervalJitter > 1 {
+		return fmt.Errorf("invalid usage-tracker snapshot interval jitter %f, should be between 0 and 1", c.SnapshotIntervalJitter)
 	}
 
 	return nil
@@ -125,6 +169,9 @@ type UsageTracker struct {
 
 	// Events storage (Kafka).
 	eventsKafkaWriter *kgo.Client
+
+	// Snapshots metadata storage (Kafka).
+	snapshotsMetadataKafkaWriter *kgo.Client
 
 	partitionsMtx sync.RWMutex
 	partitions    map[int32]*partition
@@ -179,14 +226,25 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 	t.bucket = bkt
 
 	// Create Kafka writer for events storage.
-	if t.cfg.EventsStorage.Writer.AutoCreateTopicEnabled {
-		if err := ingest.CreateTopic(t.cfg.EventsStorage.Writer, t.logger); err != nil {
+	if t.cfg.EventsStorageWriter.AutoCreateTopicEnabled {
+		if err := ingest.CreateTopic(t.cfg.EventsStorageWriter, t.logger); err != nil {
 			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker events")
 		}
 	}
-	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorage.Writer, 20, t.logger, prometheus.WrapRegistererWithPrefix(eventsKafkaWriterMetricsPrefix, t.registerer))
+	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorageWriter, 20, t.logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": eventsKafkaWriterComponent}, t.registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")
+	}
+
+	// Create Kafka writer for snapshots metadata storage.
+	if t.cfg.SnapshotsMetadataWriter.AutoCreateTopicEnabled {
+		if err := ingest.CreateTopic(t.cfg.SnapshotsMetadataWriter, t.logger); err != nil {
+			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker snapshots metadata")
+		}
+	}
+	t.snapshotsMetadataKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.SnapshotsMetadataWriter, 20, t.logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": snapshotsKafkaWriterComponent}, t.registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker snapshots metadata")
 	}
 
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
@@ -208,6 +266,14 @@ func (t *UsageTracker) start(ctx context.Context) error {
 func (t *UsageTracker) run(ctx context.Context) error {
 	// TODO: check here if all partitions already have owners, in which case we should reconcilePartitions immediately (no need to wait).
 	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
+
+	var snapshotsCleanupTickerChan <-chan time.Time
+	if t.instanceID == 0 {
+		ticker := time.NewTicker(util.DurationWithJitter(t.cfg.SnapshotCleanupInterval, t.cfg.SnapshotCleanupIntervalJitter))
+		defer ticker.Stop()
+		snapshotsCleanupTickerChan = ticker.C
+	}
+
 	for {
 		select {
 		case <-time.After(t.cfg.PartitionReconcileInterval):
@@ -218,6 +284,8 @@ func (t *UsageTracker) run(ctx context.Context) error {
 			return ctx.Err()
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
+		case <-snapshotsCleanupTickerChan:
+			// TODO: run the cleanup.
 		}
 	}
 }
@@ -310,6 +378,7 @@ losingPartitions:
 
 	added := 0
 	skipped := 0
+	started := make(chan error)
 	for pid := start; pid < end; pid++ {
 		if _, ok := t.partitions[pid]; ok {
 			// We already have this partition.
@@ -328,13 +397,36 @@ losingPartitions:
 			return errors.Wrapf(err, "unable to create partition %d", pid)
 		}
 		level.Info(logger).Log("msg", "starting partition")
-		if err := services.StartAndAwaitRunning(ctx, p); err != nil {
+		if err := p.StartAsync(ctx); err != nil {
 			return errors.Wrapf(err, "unable to start partition %d ", pid)
 		}
+		go func() {
+			if err := p.AwaitRunning(ctx); err != nil {
+				started <- errors.Wrapf(err, "unable to run partition %d", pid)
+			} else {
+				started <- nil
+			}
+		}()
+
 		locked(func() { t.partitions[pid] = p })
 		level.Info(logger).Log("msg", "partition started")
 		added++
 	}
+
+	level.Info(logger).Log("msg", "waiting for partitions to start", "added", added)
+
+	// Wait until all partitions have started.
+	for range added {
+		select {
+		case err := <-started:
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
 	if skipped > 0 {
 		level.Info(logger).Log("msg", "max partitions to create reached, skipping the rest until next reconcile", "added", added, "skipped", skipped)
 	} else if !t.ready.Load() {

@@ -315,6 +315,7 @@ func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv k
 	fs := flag.NewFlagSet("usage-tracker", flag.PanicOnError)
 	cfg.RegisterFlags(fs, log.NewNopLogger())
 	require.NoError(t, fs.Parse(nil))
+	cfg.Enabled = true
 
 	cfg.Partitions = testPartitionsCount
 	cfg.InstanceRing.InstanceID = instanceID
@@ -327,8 +328,17 @@ func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv k
 	cfg.PartitionRing.waitOwnersDurationOnPending = 100 * time.Millisecond
 	cfg.PartitionRing.lifecyclerPollingInterval = 50 * time.Millisecond
 	// Fake kafka cluster address.
-	cfg.EventsStorage.Reader.Address = cluster.ListenAddrs()[0]
-	cfg.EventsStorage.Writer.Address = cluster.ListenAddrs()[0]
+	cfg.EventsStorageWriter.Topic = "usage-tracker-events"
+	cfg.EventsStorageReader.Topic = "usage-tracker-events"
+	cfg.EventsStorageReader.Address = cluster.ListenAddrs()[0]
+	cfg.EventsStorageWriter.Address = cluster.ListenAddrs()[0]
+	cfg.EventsStorageWriter.AutoCreateTopicDefaultPartitions = testPartitionsCount
+
+	cfg.SnapshotsMetadataWriter.Topic = "usage-tracker-snapshots-metadata"
+	cfg.SnapshotsMetadataReader.Topic = "usage-tracker-snapshots-metadata"
+	cfg.SnapshotsMetadataReader.Address = cluster.ListenAddrs()[0]
+	cfg.SnapshotsMetadataWriter.Address = cluster.ListenAddrs()[0]
+	cfg.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions = testPartitionsCount
 
 	cfg.PartitionReconcileInterval = time.Hour // we do reconciliation manually
 

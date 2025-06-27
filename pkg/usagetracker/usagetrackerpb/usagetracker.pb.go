@@ -4,6 +4,7 @@
 package usagetrackerpb
 
 import (
+	bytes "bytes"
 	context "context"
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
@@ -197,36 +198,208 @@ func (m *SeriesCreatedEvent) GetSeriesHashes() []uint64 {
 	return nil
 }
 
+type SnapshotRecord struct {
+	Timestamp                              int64    `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Filenames                              []string `protobuf:"bytes,2,rep,name=filenames,proto3" json:"filenames,omitempty"`
+	LastEventOffsetPublishedBeforeSnapshot int64    `protobuf:"varint,3,opt,name=lastEventOffsetPublishedBeforeSnapshot,proto3" json:"lastEventOffsetPublishedBeforeSnapshot,omitempty"`
+	LastSnapshotEventOffset                int64    `protobuf:"varint,4,opt,name=lastSnapshotEventOffset,proto3" json:"lastSnapshotEventOffset,omitempty"`
+}
+
+func (m *SnapshotRecord) Reset()      { *m = SnapshotRecord{} }
+func (*SnapshotRecord) ProtoMessage() {}
+func (*SnapshotRecord) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{3}
+}
+func (m *SnapshotRecord) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotRecord) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotRecord.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotRecord) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotRecord.Merge(m, src)
+}
+func (m *SnapshotRecord) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotRecord) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotRecord.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotRecord proto.InternalMessageInfo
+
+func (m *SnapshotRecord) GetTimestamp() int64 {
+	if m != nil {
+		return m.Timestamp
+	}
+	return 0
+}
+
+func (m *SnapshotRecord) GetFilenames() []string {
+	if m != nil {
+		return m.Filenames
+	}
+	return nil
+}
+
+func (m *SnapshotRecord) GetLastEventOffsetPublishedBeforeSnapshot() int64 {
+	if m != nil {
+		return m.LastEventOffsetPublishedBeforeSnapshot
+	}
+	return 0
+}
+
+func (m *SnapshotRecord) GetLastSnapshotEventOffset() int64 {
+	if m != nil {
+		return m.LastSnapshotEventOffset
+	}
+	return 0
+}
+
+type SnapshotEvent struct {
+	Timestamp int64  `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Filename  string `protobuf:"bytes,2,opt,name=filename,proto3" json:"filename,omitempty"`
+}
+
+func (m *SnapshotEvent) Reset()      { *m = SnapshotEvent{} }
+func (*SnapshotEvent) ProtoMessage() {}
+func (*SnapshotEvent) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{4}
+}
+func (m *SnapshotEvent) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotEvent) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotEvent.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotEvent) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotEvent.Merge(m, src)
+}
+func (m *SnapshotEvent) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotEvent) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotEvent.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotEvent proto.InternalMessageInfo
+
+func (m *SnapshotEvent) GetTimestamp() int64 {
+	if m != nil {
+		return m.Timestamp
+	}
+	return 0
+}
+
+func (m *SnapshotEvent) GetFilename() string {
+	if m != nil {
+		return m.Filename
+	}
+	return ""
+}
+
+type SnapshotFile struct {
+	Data [][]byte `protobuf:"bytes,1,rep,name=data,proto3" json:"data,omitempty"`
+}
+
+func (m *SnapshotFile) Reset()      { *m = SnapshotFile{} }
+func (*SnapshotFile) ProtoMessage() {}
+func (*SnapshotFile) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{5}
+}
+func (m *SnapshotFile) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SnapshotFile) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SnapshotFile.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SnapshotFile) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SnapshotFile.Merge(m, src)
+}
+func (m *SnapshotFile) XXX_Size() int {
+	return m.Size()
+}
+func (m *SnapshotFile) XXX_DiscardUnknown() {
+	xxx_messageInfo_SnapshotFile.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SnapshotFile proto.InternalMessageInfo
+
+func (m *SnapshotFile) GetData() [][]byte {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*TrackSeriesRequest)(nil), "usagetrackerpb.TrackSeriesRequest")
 	proto.RegisterType((*TrackSeriesResponse)(nil), "usagetrackerpb.TrackSeriesResponse")
 	proto.RegisterType((*SeriesCreatedEvent)(nil), "usagetrackerpb.SeriesCreatedEvent")
+	proto.RegisterType((*SnapshotRecord)(nil), "usagetrackerpb.SnapshotRecord")
+	proto.RegisterType((*SnapshotEvent)(nil), "usagetrackerpb.SnapshotEvent")
+	proto.RegisterType((*SnapshotFile)(nil), "usagetrackerpb.SnapshotFile")
 }
 
 func init() { proto.RegisterFile("usagetracker.proto", fileDescriptor_24aa1621a7eb7fd6) }
 
 var fileDescriptor_24aa1621a7eb7fd6 = []byte{
-	// 308 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x91, 0x31, 0x4e, 0xc3, 0x30,
-	0x14, 0x86, 0x6d, 0x0a, 0x95, 0x6a, 0x2a, 0x06, 0x53, 0xa1, 0xaa, 0x42, 0x4f, 0x55, 0x58, 0x3a,
-	0x05, 0xa9, 0xdc, 0x00, 0x8a, 0x44, 0xd7, 0xb4, 0x30, 0xb0, 0xb9, 0xed, 0x23, 0x04, 0xd4, 0x38,
-	0xd8, 0x0e, 0x33, 0x47, 0xe0, 0x18, 0x1c, 0x85, 0x31, 0x63, 0x47, 0xe2, 0x2c, 0x8c, 0x3d, 0x02,
-	0x4a, 0x82, 0xd4, 0x04, 0x50, 0xc5, 0x96, 0xf7, 0xbf, 0x5f, 0x7f, 0x7e, 0x7f, 0x8f, 0xf1, 0x58,
-	0x0b, 0x1f, 0x8d, 0x12, 0xf3, 0x47, 0x54, 0x6e, 0xa4, 0xa4, 0x91, 0xfc, 0xa0, 0xaa, 0x45, 0xb3,
-	0x5e, 0xc7, 0x97, 0xbe, 0x2c, 0x56, 0xa7, 0xf9, 0x57, 0xe9, 0x72, 0x42, 0xc6, 0xa7, 0xb9, 0x65,
-	0x82, 0x2a, 0x40, 0xed, 0xe1, 0x53, 0x8c, 0xda, 0xf0, 0x23, 0xd6, 0x8c, 0x35, 0xaa, 0xf1, 0xa8,
-	0x4b, 0xfb, 0x74, 0xd0, 0xf2, 0xbe, 0x27, 0x7e, 0xcc, 0x5a, 0x91, 0x50, 0x26, 0x30, 0x81, 0x0c,
-	0xbb, 0x3b, 0x7d, 0x3a, 0xd8, 0xf3, 0x36, 0x02, 0x77, 0x58, 0x5b, 0x17, 0x31, 0x57, 0x42, 0xdf,
-	0xa3, 0xee, 0x36, 0xfa, 0x8d, 0xc1, 0xae, 0x57, 0xd3, 0x9c, 0x31, 0x3b, 0xac, 0xfd, 0x4f, 0x47,
-	0x32, 0xd4, 0xc8, 0x87, 0xac, 0xa3, 0xf0, 0x01, 0xe7, 0x06, 0x17, 0x93, 0x6a, 0x04, 0x2d, 0x22,
-	0xfe, 0xdc, 0xe5, 0xd5, 0xcb, 0xf9, 0x42, 0xa1, 0x30, 0xb8, 0xb8, 0x7c, 0xc6, 0x70, 0x6b, 0x75,
-	0x13, 0x2c, 0x51, 0x1b, 0xb1, 0x8c, 0x8a, 0xea, 0x0d, 0x6f, 0x23, 0xfc, 0xa7, 0xfa, 0xf0, 0x8e,
-	0xb5, 0xaf, 0x73, 0xa4, 0xd3, 0x12, 0x29, 0xbf, 0x61, 0xfb, 0x95, 0xa7, 0x70, 0xc7, 0xad, 0x03,
-	0x77, 0x7f, 0x73, 0xed, 0x9d, 0x6c, 0xf5, 0x94, 0x2c, 0xce, 0x47, 0x49, 0x0a, 0x64, 0x95, 0x02,
-	0x59, 0xa7, 0x40, 0x5f, 0x2c, 0xd0, 0x37, 0x0b, 0xf4, 0xdd, 0x02, 0x4d, 0x2c, 0xd0, 0x0f, 0x0b,
-	0xf4, 0xd3, 0x02, 0x59, 0x5b, 0xa0, 0xaf, 0x19, 0x90, 0x24, 0x03, 0xb2, 0xca, 0x80, 0xdc, 0xfe,
-	0x38, 0xf7, 0xac, 0x59, 0xdc, 0xf7, 0xec, 0x2b, 0x00, 0x00, 0xff, 0xff, 0x60, 0x2d, 0x57, 0xa1,
-	0x1b, 0x02, 0x00, 0x00,
+	// 433 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x53, 0x41, 0x6f, 0xd3, 0x30,
+	0x18, 0x8d, 0x97, 0x32, 0x91, 0x8f, 0xb2, 0x83, 0x99, 0x20, 0xaa, 0x26, 0x2b, 0x0a, 0x12, 0xca,
+	0xa9, 0x48, 0xe3, 0xc2, 0x79, 0x0c, 0x44, 0x4f, 0x20, 0x77, 0xec, 0xc0, 0xcd, 0x6d, 0xbe, 0xb4,
+	0x81, 0x34, 0x0e, 0xb6, 0xc3, 0x99, 0x9f, 0xc0, 0xcf, 0xe0, 0xa7, 0x70, 0xec, 0x71, 0x27, 0x44,
+	0xd3, 0x0b, 0xc7, 0xfd, 0x04, 0x14, 0x87, 0xd0, 0x64, 0xc0, 0xd8, 0xcd, 0xef, 0x7d, 0x2f, 0xcf,
+	0xcf, 0xf1, 0x33, 0xd0, 0x52, 0x8b, 0x05, 0x1a, 0x25, 0xe6, 0xef, 0x51, 0x8d, 0x0b, 0x25, 0x8d,
+	0xa4, 0x07, 0x5d, 0xae, 0x98, 0x8d, 0x0e, 0x17, 0x72, 0x21, 0xed, 0xe8, 0x71, 0xbd, 0x6a, 0x54,
+	0x61, 0x0e, 0xf4, 0xac, 0x96, 0x4c, 0x51, 0xa5, 0xa8, 0x39, 0x7e, 0x28, 0x51, 0x1b, 0x7a, 0x1f,
+	0xf6, 0x4b, 0x8d, 0x6a, 0x72, 0xea, 0x93, 0x80, 0x44, 0x1e, 0xff, 0x85, 0xe8, 0x11, 0x78, 0x85,
+	0x50, 0x26, 0x35, 0xa9, 0xcc, 0xfd, 0xbd, 0x80, 0x44, 0xb7, 0xf8, 0x8e, 0xa0, 0x21, 0x0c, 0xb5,
+	0xb5, 0x79, 0x29, 0xf4, 0x12, 0xb5, 0xef, 0x06, 0x6e, 0x34, 0xe0, 0x3d, 0x2e, 0x9c, 0xc0, 0xbd,
+	0xde, 0x7e, 0xba, 0x90, 0xb9, 0x46, 0x7a, 0x0c, 0x87, 0x0a, 0xdf, 0xe1, 0xdc, 0x60, 0x3c, 0xed,
+	0x5a, 0x10, 0x6b, 0xf1, 0xd7, 0x59, 0x1d, 0xbd, 0xc1, 0xcf, 0x14, 0x0a, 0x83, 0xf1, 0xf3, 0x8f,
+	0x98, 0x5f, 0x1b, 0xdd, 0xa4, 0x2b, 0xd4, 0x46, 0xac, 0x0a, 0x1b, 0xdd, 0xe5, 0x3b, 0xe2, 0x46,
+	0xd1, 0xbf, 0x11, 0x38, 0x98, 0xe6, 0xa2, 0xd0, 0x4b, 0x69, 0x38, 0xce, 0xa5, 0x8a, 0xfb, 0xa6,
+	0xe4, 0xaa, 0xe9, 0x11, 0x78, 0x49, 0x9a, 0x61, 0x2e, 0x56, 0xa8, 0xfd, 0xbd, 0xc0, 0x8d, 0x3c,
+	0xbe, 0x23, 0xe8, 0x39, 0x3c, 0xca, 0x84, 0x36, 0x36, 0xf5, 0xab, 0x24, 0xd1, 0x68, 0x5e, 0x97,
+	0xb3, 0x2c, 0xd5, 0x4b, 0x8c, 0x4f, 0x30, 0x91, 0x0a, 0xdb, 0xbd, 0x7c, 0xd7, 0x1a, 0xdf, 0x50,
+	0x4d, 0x9f, 0xc2, 0x83, 0x5a, 0xd9, 0xe2, 0xce, 0x17, 0xfe, 0xc0, 0x1a, 0xfd, 0x6b, 0x1c, 0x4e,
+	0xe0, 0x6e, 0x8f, 0xfe, 0xcf, 0xf1, 0x46, 0x70, 0xbb, 0x3d, 0x8d, 0xfd, 0xa1, 0x1e, 0xff, 0x8d,
+	0xc3, 0x10, 0x86, 0xad, 0xd5, 0x8b, 0x34, 0x43, 0x4a, 0x61, 0x10, 0x0b, 0x23, 0xec, 0x7d, 0x0e,
+	0xb9, 0x5d, 0x1f, 0x27, 0x30, 0x7c, 0x53, 0x57, 0xf4, 0xac, 0xa9, 0x28, 0x3d, 0x87, 0x3b, 0x9d,
+	0x6a, 0xd0, 0x70, 0xdc, 0x2f, 0xf0, 0xf8, 0xcf, 0x9e, 0x8e, 0x1e, 0x5e, 0xab, 0x69, 0xba, 0x75,
+	0x72, 0xba, 0xde, 0x30, 0xe7, 0x62, 0xc3, 0x9c, 0xcb, 0x0d, 0x23, 0x9f, 0x2a, 0x46, 0xbe, 0x54,
+	0x8c, 0x7c, 0xad, 0x18, 0x59, 0x57, 0x8c, 0x7c, 0xaf, 0x18, 0xf9, 0x51, 0x31, 0xe7, 0xb2, 0x62,
+	0xe4, 0xf3, 0x96, 0x39, 0xeb, 0x2d, 0x73, 0x2e, 0xb6, 0xcc, 0x79, 0x7b, 0xe5, 0xf9, 0xcc, 0xf6,
+	0xed, 0x7b, 0x79, 0xf2, 0x33, 0x00, 0x00, 0xff, 0xff, 0x55, 0xf3, 0x20, 0x6a, 0x6b, 0x03, 0x00,
+	0x00,
 }
 
 func (this *TrackSeriesRequest) Equal(that interface{}) bool {
@@ -328,6 +501,100 @@ func (this *SeriesCreatedEvent) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SnapshotRecord) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotRecord)
+	if !ok {
+		that2, ok := that.(SnapshotRecord)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if len(this.Filenames) != len(that1.Filenames) {
+		return false
+	}
+	for i := range this.Filenames {
+		if this.Filenames[i] != that1.Filenames[i] {
+			return false
+		}
+	}
+	if this.LastEventOffsetPublishedBeforeSnapshot != that1.LastEventOffsetPublishedBeforeSnapshot {
+		return false
+	}
+	if this.LastSnapshotEventOffset != that1.LastSnapshotEventOffset {
+		return false
+	}
+	return true
+}
+func (this *SnapshotEvent) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotEvent)
+	if !ok {
+		that2, ok := that.(SnapshotEvent)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Timestamp != that1.Timestamp {
+		return false
+	}
+	if this.Filename != that1.Filename {
+		return false
+	}
+	return true
+}
+func (this *SnapshotFile) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SnapshotFile)
+	if !ok {
+		that2, ok := that.(SnapshotFile)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Data) != len(that1.Data) {
+		return false
+	}
+	for i := range this.Data {
+		if !bytes.Equal(this.Data[i], that1.Data[i]) {
+			return false
+		}
+	}
+	return true
+}
 func (this *TrackSeriesRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -359,6 +626,40 @@ func (this *SeriesCreatedEvent) GoString() string {
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
 	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
 	s = append(s, "SeriesHashes: "+fmt.Sprintf("%#v", this.SeriesHashes)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotRecord) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&usagetrackerpb.SnapshotRecord{")
+	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
+	s = append(s, "Filenames: "+fmt.Sprintf("%#v", this.Filenames)+",\n")
+	s = append(s, "LastEventOffsetPublishedBeforeSnapshot: "+fmt.Sprintf("%#v", this.LastEventOffsetPublishedBeforeSnapshot)+",\n")
+	s = append(s, "LastSnapshotEventOffset: "+fmt.Sprintf("%#v", this.LastSnapshotEventOffset)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotEvent) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&usagetrackerpb.SnapshotEvent{")
+	s = append(s, "Timestamp: "+fmt.Sprintf("%#v", this.Timestamp)+",\n")
+	s = append(s, "Filename: "+fmt.Sprintf("%#v", this.Filename)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SnapshotFile) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&usagetrackerpb.SnapshotFile{")
+	s = append(s, "Data: "+fmt.Sprintf("%#v", this.Data)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -598,6 +899,120 @@ func (m *SeriesCreatedEvent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *SnapshotRecord) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotRecord) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.LastSnapshotEventOffset != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.LastSnapshotEventOffset))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.LastEventOffsetPublishedBeforeSnapshot != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.LastEventOffsetPublishedBeforeSnapshot))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.Filenames) > 0 {
+		for iNdEx := len(m.Filenames) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Filenames[iNdEx])
+			copy(dAtA[i:], m.Filenames[iNdEx])
+			i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.Filenames[iNdEx])))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotEvent) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotEvent) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotEvent) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Filename) > 0 {
+		i -= len(m.Filename)
+		copy(dAtA[i:], m.Filename)
+		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.Filename)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.Timestamp != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Timestamp))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SnapshotFile) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SnapshotFile) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SnapshotFile) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Data) > 0 {
+		for iNdEx := len(m.Data) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Data[iNdEx])
+			copy(dAtA[i:], m.Data[iNdEx])
+			i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.Data[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintUsagetracker(dAtA []byte, offset int, v uint64) int {
 	offset -= sovUsagetracker(v)
 	base := offset
@@ -671,6 +1086,61 @@ func (m *SeriesCreatedEvent) Size() (n int) {
 	return n
 }
 
+func (m *SnapshotRecord) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Timestamp != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Timestamp))
+	}
+	if len(m.Filenames) > 0 {
+		for _, s := range m.Filenames {
+			l = len(s)
+			n += 1 + l + sovUsagetracker(uint64(l))
+		}
+	}
+	if m.LastEventOffsetPublishedBeforeSnapshot != 0 {
+		n += 1 + sovUsagetracker(uint64(m.LastEventOffsetPublishedBeforeSnapshot))
+	}
+	if m.LastSnapshotEventOffset != 0 {
+		n += 1 + sovUsagetracker(uint64(m.LastSnapshotEventOffset))
+	}
+	return n
+}
+
+func (m *SnapshotEvent) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Timestamp != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Timestamp))
+	}
+	l = len(m.Filename)
+	if l > 0 {
+		n += 1 + l + sovUsagetracker(uint64(l))
+	}
+	return n
+}
+
+func (m *SnapshotFile) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Data) > 0 {
+		for _, b := range m.Data {
+			l = len(b)
+			n += 1 + l + sovUsagetracker(uint64(l))
+		}
+	}
+	return n
+}
+
 func sovUsagetracker(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -707,6 +1177,40 @@ func (this *SeriesCreatedEvent) String() string {
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
 		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
 		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotRecord) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotRecord{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Filenames:` + fmt.Sprintf("%v", this.Filenames) + `,`,
+		`LastEventOffsetPublishedBeforeSnapshot:` + fmt.Sprintf("%v", this.LastEventOffsetPublishedBeforeSnapshot) + `,`,
+		`LastSnapshotEventOffset:` + fmt.Sprintf("%v", this.LastSnapshotEventOffset) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotEvent) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotEvent{`,
+		`Timestamp:` + fmt.Sprintf("%v", this.Timestamp) + `,`,
+		`Filename:` + fmt.Sprintf("%v", this.Filename) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SnapshotFile) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SnapshotFile{`,
+		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -881,10 +1385,7 @@ func (m *TrackSeriesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthUsagetracker
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthUsagetracker
 			}
 			if (iNdEx + skippy) > l {
@@ -1010,10 +1511,7 @@ func (m *TrackSeriesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthUsagetracker
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthUsagetracker
 			}
 			if (iNdEx + skippy) > l {
@@ -1190,10 +1688,329 @@ func (m *SeriesCreatedEvent) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthUsagetracker
 			}
-			if (iNdEx + skippy) < 0 {
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotRecord) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotRecord: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotRecord: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
+			}
+			m.Timestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Timestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Filenames", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Filenames = append(m.Filenames, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LastEventOffsetPublishedBeforeSnapshot", wireType)
+			}
+			m.LastEventOffsetPublishedBeforeSnapshot = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.LastEventOffsetPublishedBeforeSnapshot |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LastSnapshotEventOffset", wireType)
+			}
+			m.LastSnapshotEventOffset = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.LastSnapshotEventOffset |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotEvent) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotEvent: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotEvent: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
+			}
+			m.Timestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Timestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Filename", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Filename = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SnapshotFile) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SnapshotFile: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SnapshotFile: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Data = append(m.Data, make([]byte, postIndex-iNdEx))
+			copy(m.Data[len(m.Data)-1], dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthUsagetracker
 			}
 			if (iNdEx + skippy) > l {
@@ -1211,6 +2028,7 @@ func (m *SeriesCreatedEvent) Unmarshal(dAtA []byte) error {
 func skipUsagetracker(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
+	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -1242,10 +2060,8 @@ func skipUsagetracker(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			return iNdEx, nil
 		case 1:
 			iNdEx += 8
-			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -1266,55 +2082,30 @@ func skipUsagetracker(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthUsagetracker
 			}
 			iNdEx += length
-			if iNdEx < 0 {
-				return 0, ErrInvalidLengthUsagetracker
-			}
-			return iNdEx, nil
 		case 3:
-			for {
-				var innerWire uint64
-				var start int = iNdEx
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return 0, ErrIntOverflowUsagetracker
-					}
-					if iNdEx >= l {
-						return 0, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= (uint64(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				innerWireType := int(innerWire & 0x7)
-				if innerWireType == 4 {
-					break
-				}
-				next, err := skipUsagetracker(dAtA[start:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx = start + next
-				if iNdEx < 0 {
-					return 0, ErrInvalidLengthUsagetracker
-				}
-			}
-			return iNdEx, nil
+			depth++
 		case 4:
-			return iNdEx, nil
+			if depth == 0 {
+				return 0, ErrUnexpectedEndOfGroupUsagetracker
+			}
+			depth--
 		case 5:
 			iNdEx += 4
-			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthUsagetracker
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
 	}
-	panic("unreachable")
+	return 0, io.ErrUnexpectedEOF
 }
 
 var (
-	ErrInvalidLengthUsagetracker = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowUsagetracker   = fmt.Errorf("proto: integer overflow")
+	ErrInvalidLengthUsagetracker        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowUsagetracker          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupUsagetracker = fmt.Errorf("proto: unexpected end of group")
 )
