@@ -100,8 +100,6 @@ func remoteReadSamples(
 		}
 	}
 
-	// Use concurrency.ForEachJob to limit parallel execution
-	// If maxConcurrency is 0 or negative, use unlimited concurrency by setting to len(jobs)
 	concurrencyLimit := maxConcurrency
 	if concurrencyLimit <= 0 {
 		concurrencyLimit = len(jobs)
@@ -168,8 +166,6 @@ func remoteReadStreamedXORChunks(
 
 	results := make([]queryResult, len(req.Queries))
 
-	// Use concurrency.ForEachJob to limit parallel execution
-	// If maxConcurrency is 0 or negative, use unlimited concurrency by setting to len(req.Queries)
 	concurrencyLimit := maxConcurrency
 	if concurrencyLimit <= 0 {
 		concurrencyLimit = len(req.Queries)
