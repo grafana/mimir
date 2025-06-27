@@ -764,9 +764,6 @@ integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
-
 # Those vars are needed for packages target
 export VERSION
 
