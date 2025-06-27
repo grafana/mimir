@@ -135,6 +135,9 @@ func newPartition(
 		kgo.ConsumeTopics(p.cfg.SnapshotsMetadataReader.Topic),
 		kgo.ConsumeStartOffset(kgo.NewOffset().AtEnd().Relative(-1)),
 	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker snapshots")
+	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	p.store = newTrackerStore(cfg.IdleTimeout, logger, lim, eventsPublisher)
@@ -218,8 +221,8 @@ func (p *partition) loadSnapshotAndPrepareKafkaEventsReader(ctx context.Context)
 
 func (p *partition) loadAllSnapshotShards(ctx context.Context, files []string) error {
 	t0 := time.Now()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
 	type downloadedSnapshot struct {
 		filename string
@@ -285,6 +288,7 @@ func (p *partition) loadAllSnapshotShards(ctx context.Context, files []string) e
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	case err := <-errs:
+		cancel(err)
 		if err == nil {
 			level.Info(p.logger).Log("msg", "all snapshot shards loaded successfully", "elapsed", time.Since(t0))
 		}
@@ -535,8 +539,6 @@ func (p *partition) publishSeriesCreatedEvents(ctx context.Context) {
 	publish := make(chan []*kgo.Record)
 	defer close(publish)
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	for w := 0; w < p.cfg.CreatedSeriesEventsPublishConcurrency; w++ {
 		wg.Go(func() {
 			for batch := range publish {
