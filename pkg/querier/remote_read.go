@@ -44,12 +44,7 @@ const (
 )
 
 // RemoteReadHandler handles Prometheus remote read requests.
-func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger) http.Handler {
-	return remoteReadHandler(q, maxRemoteReadFrameBytes, 0, logger) // 0 means unlimited concurrency (backward compatibility)
-}
-
-// RemoteReadHandlerWithConfig handles Prometheus remote read requests with configurable concurrency.
-func RemoteReadHandlerWithConfig(q storage.SampleAndChunkQueryable, logger log.Logger, cfg Config) http.Handler {
+func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger, cfg Config) http.Handler {
 	return remoteReadHandler(q, maxRemoteReadFrameBytes, cfg.MaxConcurrentRemoteReadQueries, logger)
 }
 

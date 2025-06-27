@@ -303,7 +303,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					}, nil
 				},
 			}
-			handler := RemoteReadHandler(q, log.NewNopLogger())
+			handler := RemoteReadHandler(q, log.NewNopLogger(), Config{})
 
 			requestBody, err := proto.Marshal(&prompb.ReadRequest{Queries: queryData.query})
 			require.NoError(t, err)
@@ -1266,7 +1266,7 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 
 					// Stall for a short period to allow concurrency measurement
 					time.Sleep(100 * time.Millisecond)
-					
+
 					concurrentQueries.Dec()
 					queryProcessed <- struct{}{}
 
@@ -1282,26 +1282,26 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                     string
-		queries                  int
-		maxConcurrency          int
-		expectedMaxConcurrent   int32
+		name                  string
+		queries               int
+		maxConcurrency        int
+		expectedMaxConcurrent int32
 	}{
 		{
-			name:                   "unlimited concurrency (0) allows all queries to run concurrently",
-			queries:                5,
+			name:                  "unlimited concurrency (0) allows all queries to run concurrently",
+			queries:               5,
 			maxConcurrency:        0,
 			expectedMaxConcurrent: 5,
 		},
 		{
-			name:                   "concurrency limit of 2 restricts to 2 concurrent queries",
-			queries:                5, 
+			name:                  "concurrency limit of 2 restricts to 2 concurrent queries",
+			queries:               5,
 			maxConcurrency:        2,
 			expectedMaxConcurrent: 2,
 		},
 		{
-			name:                   "concurrency limit of 1 serializes all queries",
-			queries:                3,
+			name:                  "concurrency limit of 1 serializes all queries",
+			queries:               3,
 			maxConcurrency:        1,
 			expectedMaxConcurrent: 1,
 		},
@@ -1312,14 +1312,14 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 			// Reset counters
 			concurrentQueries.Store(0)
 			maxConcurrentQueries.Store(0)
-			
+
 			// Clear the channel
 			for len(queryProcessed) > 0 {
 				<-queryProcessed
 			}
 
 			// Create handler with configurable concurrency (this will be implemented later)
-			handler := RemoteReadHandlerWithConfig(q, log.NewNopLogger(), Config{MaxConcurrentRemoteReadQueries: tt.maxConcurrency})
+			handler := RemoteReadHandler(q, log.NewNopLogger(), Config{MaxConcurrentRemoteReadQueries: tt.maxConcurrency})
 
 			// Create multiple queries
 			queries := make([]*prompb.Query, tt.queries)
@@ -1361,7 +1361,7 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 
 			// Verify concurrency was limited as expected
 			actualMaxConcurrent := maxConcurrentQueries.Load()
-			require.Equal(t, tt.expectedMaxConcurrent, actualMaxConcurrent, 
+			require.Equal(t, tt.expectedMaxConcurrent, actualMaxConcurrent,
 				"expected max concurrent queries: %d, actual: %d", tt.expectedMaxConcurrent, actualMaxConcurrent)
 		})
 	}

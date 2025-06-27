@@ -212,20 +212,6 @@ func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
 // server to fulfill the Prometheus query API.
 func NewQuerierHandler(
 	cfg Config,
-	queryable storage.SampleAndChunkQueryable,
-	exemplarQueryable storage.ExemplarQueryable,
-	metadataSupplier querier.MetadataSupplier,
-	engine promql.QueryEngine,
-	distributor Distributor,
-	reg prometheus.Registerer,
-	logger log.Logger,
-	limits *validation.Overrides,
-) http.Handler {
-	return NewQuerierHandlerWithQuerierConfig(cfg, querier.Config{}, queryable, exemplarQueryable, metadataSupplier, engine, distributor, reg, logger, limits)
-}
-
-func NewQuerierHandlerWithQuerierConfig(
-	cfg Config,
 	querierCfg querier.Config,
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
@@ -340,7 +326,7 @@ func NewQuerierHandlerWithQuerierConfig(
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandlerWithConfig(queryable, logger, querierCfg)))
+	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg)))
 	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
 	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
 	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
