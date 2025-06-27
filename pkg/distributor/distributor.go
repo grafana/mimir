@@ -1611,7 +1611,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		}
 
 		// We don't know request size yet, will check it later.
-		ctx, rs, err := d.startPushRequest(ctx, -1)
+		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}

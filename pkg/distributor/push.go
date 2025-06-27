@@ -211,6 +211,7 @@ func handler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 		if isRW2 {
 			ctx = contextWithWriteResponseStats(ctx)
 		}

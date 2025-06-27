@@ -29,9 +29,18 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/ring"
+	ring_client "github.com/grafana/dskit/ring/client"
+	dskit_test "github.com/grafana/dskit/test"
+	"github.com/grafana/mimir/pkg/ingester"
+
 	dskit_server "github.com/grafana/dskit/server"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -40,6 +49,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -1251,6 +1261,105 @@ func TestRetryConfig_Validate(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
+		})
+	}
+}
+
+func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
+	const MiB = 1024 * 1024
+	inoutBytes := snappy.Encode(nil, createPrometheusRemoteWriteProtobuf(t))
+	reqLen := int64(len(inoutBytes))
+	dummyPushFunc := func(ctx context.Context, pushReq *Request) error {
+		return nil
+	}
+
+	testCases := map[string]struct {
+		startingInflightBytes int64
+		expectedStatusCode    int
+	}{
+		"stays_below_threshold": {
+			startingInflightBytes: MiB - 3*reqLen,
+			expectedStatusCode:    200,
+		},
+		"above_threshold_and_stays_above_threshold": {
+			startingInflightBytes: MiB + 1*reqLen,
+			expectedStatusCode:    500,
+		},
+		"starts_below_threshold_incoming_request_exceeds": {
+			startingInflightBytes: MiB - reqLen/2,
+			expectedStatusCode:    500,
+		},
+		"exactly_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
+			expectedStatusCode:    500,
+		},
+		"starts_below_threshold_incoming_request_brings_to_cap": {
+			startingInflightBytes: MiB - 1*reqLen,
+			expectedStatusCode:    500,
+		},
+	}
+
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			noopLogger := log.NewNopLogger()
+			ctx := context.Background()
+
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { require.NoError(t, closer.Close()) })
+
+			err := kvStore.CAS(ctx, ingester.IngesterRingKey,
+				func(_ interface{}) (interface{}, bool, error) {
+					d := &ring.Desc{}
+					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+					return d, true, nil
+				},
+			)
+			require.NoError(t, err)
+
+			ingestersRing, err := ring.New(ring.Config{
+				KVStore:           kv.Config{Mock: kvStore},
+				HeartbeatTimeout:  60 * time.Minute,
+				ReplicationFactor: 1,
+			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
+
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingestersRing))
+			})
+
+			dskit_test.Poll(t, time.Second, 1, func() interface{} {
+				return ingestersRing.InstancesCount()
+			})
+
+			var distributorConfig Config
+			var clientConfig client.Config
+			limits := validation.Limits{}
+			flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
+
+			distributorConfig.DefaultLimits = InstanceLimits{MaxInflightPushRequestsBytes: MiB}
+			distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
+			distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+				return &noopIngester{}, nil
+			})
+
+			overrides := validation.NewOverrides(limits, nil)
+			distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, noopLogger)
+			require.NoError(t, err)
+
+			inflightBytes := atomic.Int64{}
+			inflightBytes.Store(tc.startingInflightBytes)
+			distributor.inflightPushRequestsBytes = inflightBytes
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
+
+			ctx = user.InjectOrgID(ctx, "test")
+			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(inoutBytes)).WithContext(ctx)
+
+			handler := Handler(MiB, nil, nil, false, false, overrides, RetryConfig{}, distributor.limitsMiddleware(dummyPushFunc), nil, noopLogger)
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			assert.Equal(t, tc.expectedStatusCode, resp.Code)
 		})
 	}
 }
