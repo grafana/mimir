@@ -915,6 +915,7 @@ func (o *advancingOffset) set(offset int64) {
 	o.off = offset
 }
 
+// beyondSpec returns true if the offset is beyond the given job spec.
 func (o *advancingOffset) beyondSpec(spec schedulerpb.JobSpec) bool {
 	return spec.EndOffset <= o.off
 }
