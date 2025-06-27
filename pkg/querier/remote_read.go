@@ -90,7 +90,6 @@ func remoteReadSamples(
 	type queryJob struct {
 		index int
 		query *prompb.Query
-		err   error
 	}
 
 	jobs := make([]queryJob, len(req.Queries))
@@ -112,13 +111,11 @@ func remoteReadSamples(
 		job := &jobs[idx]
 		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(job.query)
 		if err != nil {
-			job.err = err
 			return err
 		}
 
 		querier, err := q.Querier(int64(start), int64(end))
 		if err != nil {
-			job.err = err
 			return err
 		}
 
@@ -127,28 +124,16 @@ func remoteReadSamples(
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
 		resp.Results[job.index], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
-		job.err = err
 		return err
 	}
 
 	err := concurrency.ForEachJob(ctx, len(jobs), concurrencyLimit, run)
-	var lastErr error
 	if err != nil {
-		lastErr = err
-	}
-
-	// Check for any individual job errors
-	for _, job := range jobs {
-		if job.err != nil {
-			lastErr = job.err
-		}
-	}
-	if lastErr != nil {
-		code := remoteReadErrorStatusCode(lastErr)
+		code := remoteReadErrorStatusCode(err)
 		if code/100 != 4 {
-			level.Error(logger).Log("msg", "error while processing remote read request", "err", lastErr)
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
 		}
-		http.Error(w, lastErr.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
+		http.Error(w, err.Error(), code) // change the Content-Type to text/plain and return a human-readable error message
 		return
 	}
 	w.Header().Add("Content-Type", "application/x-protobuf")
@@ -179,7 +164,6 @@ func remoteReadStreamedXORChunks(
 	type queryResult struct {
 		idx    int
 		series storage.ChunkSeriesSet
-		err    error
 	}
 
 	results := make([]queryResult, len(req.Queries))
@@ -195,42 +179,28 @@ func remoteReadStreamedXORChunks(
 		qr := req.Queries[idx]
 		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
 		if err != nil {
-			results[idx] = queryResult{idx: idx, err: err}
 			return err
 		}
 
 		querier, err := q.ChunkQuerier(int64(start), int64(end))
 		if err != nil {
-			results[idx] = queryResult{idx: idx, err: err}
 			return err
 		}
 
 		// The streaming API has to provide the series sorted.
 		seriesSet := querier.Select(ctx, true, hints, matchers...)
-		results[idx] = queryResult{idx: idx, series: seriesSet, err: nil}
+		results[idx] = queryResult{idx: idx, series: seriesSet}
 		return nil
 	}
 
 	err := concurrency.ForEachJob(ctx, len(req.Queries), concurrencyLimit, run)
-	var lastErr error
-	if err != nil {
-		lastErr = err
-	}
-
-	// Check for any individual query errors
-	for _, result := range results {
-		if result.err != nil {
-			lastErr = result.err
-		}
-	}
-
 	// If any query failed, return the error
-	if lastErr != nil {
-		code := remoteReadErrorStatusCode(lastErr)
+	if err != nil {
+		code := remoteReadErrorStatusCode(err)
 		if code/100 != 4 {
-			level.Error(logger).Log("msg", "error while processing remote read request", "err", lastErr)
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
 		}
-		http.Error(w, lastErr.Error(), code)
+		http.Error(w, err.Error(), code)
 		return
 	}
 
