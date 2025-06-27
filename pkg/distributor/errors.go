@@ -120,6 +120,10 @@ func (e validationError) Cause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
+func (e validationError) Unwrap() error {
+	return e.error
+}
+
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
 
