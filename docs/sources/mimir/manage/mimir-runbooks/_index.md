@@ -933,7 +933,7 @@ How to **fix** it:
     ```
   - Restarting an ingester typically reduces the memory allocated by mmap-ed files. After the restart, ingester may allocate this memory again over time, but it may give more time while working on a longer term solution
 - Check the `Mimir / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
-  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
+  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (the general rule is ~2 million series per ingester, though some clusters might have a higher target. Series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
 ### MimirGossipMembersTooHigh
@@ -1816,6 +1816,24 @@ Whenever this occurs, it's cause for concern because unless Mimir components are
 How to **investigate**:
 
 Query for the client side metric `cortex_client_invalid_cluster_validation_label_requests_total`, to determine which clients are sending the mislabeled requests.
+
+### MimirGoThreadsTooHigh
+
+This alert fires when a Mimir instance is running a very high number of Go threads.
+
+How it **works**:
+
+- In Go, concurrency is handled via goroutines, which are lightweight threads managed by the Go runtime.
+- Goroutines are multiplexed onto a small number of actual OS threads by the Go scheduler.
+- Go threads are limited to 10K. When this limit is reached, the application panics with error like `runtime: program exceeds 10000-thread limit`.
+- If a goroutine makes a call to a blocking syscall, for example, disk I/O, the Go runtime tries to schedule other goroutines on other OS threads. This process starts new threads on-demand. Note that network syscalls use asynchronous I/O under the hood, and therefore, don't create this problem.
+- Idle go threads are never terminated ([issue](https://github.com/golang/go/issues/14592)), so once an application has a spike in the number of go threads, the process needs to be restarted to get back to a low number of threads.
+
+How to **investigate**:
+
+- Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
+  - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
+  - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
 
 ## Errors catalog
 

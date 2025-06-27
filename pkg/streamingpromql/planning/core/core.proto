@@ -125,6 +125,7 @@ message VectorSelectorDetails {
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+  bool returnSampleTimestamps = 5;
 }
 
 message MatrixSelectorDetails {

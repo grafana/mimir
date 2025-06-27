@@ -18,7 +18,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250616075643-3b7e2f87d946
+	github.com/grafana/dskit v0.0.0-20250619084012-67e74f32cb6f
 	github.com/grafana/e2e v0.1.2-0.20250428181430-708d63bcc673
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -72,14 +72,14 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 	github.com/pierrec/lz4/v4 v4.1.22
-	github.com/prometheus/otlptranslator v0.0.0-20250611134851-61633f473931
+	github.com/prometheus/otlptranslator v0.0.0-20250620074007-94f535e0c588
 	github.com/prometheus/procfs v0.16.1
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250317105316-a0136a6f898d
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.19.4
 	github.com/twmb/franz-go/pkg/kadm v1.15.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250603004440-37eecbb8927f
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250620172413-c17130ef7765
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -344,7 +344,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250620055426-d1217a3b6036
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250624141317-3b699fd79779
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
