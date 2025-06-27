@@ -64,6 +64,21 @@ This command shows the differences between the running installation and the inst
 
 > **Note:** You can find CLI flags and their differences in the `Deployment` and `StatefulSet` objects.
 
+### Manage runtime configuration
+
+You can also use the Helm chart to manage runtime configuration files. A runtime configuration file contains configuration parameters and is periodically reloaded while Mimir is running. This process allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
+
+To manage runtime configuration with the Helm chart, add the following stanza to <location?>:
+
+```yaml
+runtime_config: <placeholder values>
+  overrides:
+    tenant_a:
+      ingestion_rate: 123
+```
+
+For more information about runtime configuration in Grafana Mimir, refer to [About Grafana Mimir runtime configuration](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
+
 ## Manage the configuration externally
 
 Prepare the configuration as text, without including Helm template functions or value evaluations. You can include references to environment variables, as explained in [Injecting credentials](#injecting-credentials).
@@ -133,8 +148,6 @@ To avoid complications, make sure that the key names in the secret contain only 
 Prefer `AWS_SECRET_ACCESS_KEY` over `secret-access-key.aws`.
 
 Grafana Mimir does not track changes to the credentials. If you update the credentials, restart Grafana Mimir pods to use the updated value. To trigger a restart, provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation`, which is applied to all Grafana Mimir pods. Changing the value of the global annotation makes Kubernetes recreate all pods. For example, changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart. Note that pod annotations can only be strings.
-
-## Manage runtime configuration
 
 ## Example configuration managed with Helm
 
