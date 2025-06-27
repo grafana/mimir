@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -44,10 +45,15 @@ const (
 
 // RemoteReadHandler handles Prometheus remote read requests.
 func RemoteReadHandler(q storage.SampleAndChunkQueryable, logger log.Logger) http.Handler {
-	return remoteReadHandler(q, maxRemoteReadFrameBytes, logger)
+	return remoteReadHandler(q, maxRemoteReadFrameBytes, 0, logger) // 0 means unlimited concurrency (backward compatibility)
 }
 
-func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, lg log.Logger) http.Handler {
+// RemoteReadHandlerWithConfig handles Prometheus remote read requests with configurable concurrency.
+func RemoteReadHandlerWithConfig(q storage.SampleAndChunkQueryable, logger log.Logger, cfg Config) http.Handler {
+	return remoteReadHandler(q, maxRemoteReadFrameBytes, cfg.MaxConcurrentRemoteReadQueries, logger)
+}
+
+func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, maxConcurrency int, lg log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		var req prompb.ReadRequest
@@ -66,9 +72,9 @@ func remoteReadHandler(q storage.SampleAndChunkQueryable, maxBytesInFrame int, l
 
 		switch respType {
 		case prompb.ReadRequest_STREAMED_XOR_CHUNKS:
-			remoteReadStreamedXORChunks(ctx, q, w, &req, maxBytesInFrame, logger)
+			remoteReadStreamedXORChunks(ctx, q, w, &req, maxBytesInFrame, maxConcurrency, logger)
 		default:
-			remoteReadSamples(ctx, q, w, &req, logger)
+			remoteReadSamples(ctx, q, w, &req, maxConcurrency, logger)
 		}
 	})
 }
@@ -78,42 +84,68 @@ func remoteReadSamples(
 	q storage.Queryable,
 	w http.ResponseWriter,
 	req *prompb.ReadRequest,
+	maxConcurrency int,
 	logger log.Logger,
 ) {
 	resp := prompb.ReadResponse{
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
-	// Fetch samples for all queries in parallel.
-	errCh := make(chan error)
 
-	for i, qr := range req.Queries {
-		go func(i int, qr *prompb.Query) {
-			start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(qr)
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			querier, err := q.Querier(int64(start), int64(end))
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			seriesSet := querier.Select(ctx, false, hints, matchers...)
-
-			// We can over-read when querying, but we don't need to return samples
-			// outside the queried range, so can filter them out.
-			resp.Results[i], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
-			errCh <- err
-		}(i, qr)
+	// Create job structure for concurrency.ForEachJob
+	type queryJob struct {
+		index int
+		query *prompb.Query
+		err   error
 	}
 
-	var lastErr error
-	for range req.Queries {
-		err := <-errCh
+	jobs := make([]queryJob, len(req.Queries))
+	for i, qr := range req.Queries {
+		jobs[i] = queryJob{
+			index: i,
+			query: qr,
+		}
+	}
+
+	// Use concurrency.ForEachJob to limit parallel execution
+	// If maxConcurrency is 0 or negative, use unlimited concurrency by setting to len(jobs)
+	concurrencyLimit := maxConcurrency
+	if concurrencyLimit <= 0 {
+		concurrencyLimit = len(jobs)
+	}
+
+	run := func(ctx context.Context, idx int) error {
+		job := &jobs[idx]
+		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(job.query)
 		if err != nil {
-			lastErr = err
+			job.err = err
+			return err
+		}
+
+		querier, err := q.Querier(int64(start), int64(end))
+		if err != nil {
+			job.err = err
+			return err
+		}
+
+		seriesSet := querier.Select(ctx, false, hints, matchers...)
+
+		// We can over-read when querying, but we don't need to return samples
+		// outside the queried range, so can filter them out.
+		resp.Results[job.index], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+		job.err = err
+		return err
+	}
+
+	err := concurrency.ForEachJob(ctx, len(jobs), concurrencyLimit, run)
+	var lastErr error
+	if err != nil {
+		lastErr = err
+	}
+
+	// Check for any individual job errors
+	for _, job := range jobs {
+		if job.err != nil {
+			lastErr = job.err
 		}
 	}
 	if lastErr != nil {
@@ -138,6 +170,7 @@ func remoteReadStreamedXORChunks(
 	w http.ResponseWriter,
 	req *prompb.ReadRequest,
 	maxBytesInFrame int,
+	maxConcurrency int,
 	logger log.Logger,
 ) {
 	f, ok := w.(http.Flusher)
@@ -154,36 +187,43 @@ func remoteReadStreamedXORChunks(
 		err    error
 	}
 
-	resultCh := make(chan queryResult, len(req.Queries))
+	results := make([]queryResult, len(req.Queries))
 
-	// Launch goroutines to process each query concurrently
-	for i, qr := range req.Queries {
-		go func(i int, qr *prompb.Query) {
-			start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
-			if err != nil {
-				resultCh <- queryResult{idx: i, err: err}
-				return
-			}
-
-			querier, err := q.ChunkQuerier(int64(start), int64(end))
-			if err != nil {
-				resultCh <- queryResult{idx: i, err: err}
-				return
-			}
-
-			// The streaming API has to provide the series sorted.
-			seriesSet := querier.Select(ctx, true, hints, matchers...)
-			resultCh <- queryResult{idx: i, series: seriesSet, err: nil}
-		}(i, qr)
+	// Use concurrency.ForEachJob to limit parallel execution
+	// If maxConcurrency is 0 or negative, use unlimited concurrency by setting to len(req.Queries)
+	concurrencyLimit := maxConcurrency
+	if concurrencyLimit <= 0 {
+		concurrencyLimit = len(req.Queries)
 	}
 
-	// Collect results and maintain order
-	results := make([]queryResult, len(req.Queries))
-	var lastErr error
+	run := func(ctx context.Context, idx int) error {
+		qr := req.Queries[idx]
+		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
+		if err != nil {
+			results[idx] = queryResult{idx: idx, err: err}
+			return err
+		}
 
-	for range req.Queries {
-		result := <-resultCh
-		results[result.idx] = result
+		querier, err := q.ChunkQuerier(int64(start), int64(end))
+		if err != nil {
+			results[idx] = queryResult{idx: idx, err: err}
+			return err
+		}
+
+		// The streaming API has to provide the series sorted.
+		seriesSet := querier.Select(ctx, true, hints, matchers...)
+		results[idx] = queryResult{idx: idx, series: seriesSet, err: nil}
+		return nil
+	}
+
+	err := concurrency.ForEachJob(ctx, len(req.Queries), concurrencyLimit, run)
+	var lastErr error
+	if err != nil {
+		lastErr = err
+	}
+
+	// Check for any individual query errors
+	for _, result := range results {
 		if result.err != nil {
 			lastErr = result.err
 		}
