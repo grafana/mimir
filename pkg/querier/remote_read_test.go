@@ -1244,3 +1244,125 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
+	concurrentQueries := atomic.NewInt32(0)
+	maxConcurrentQueries := atomic.NewInt32(0)
+	queryProcessed := make(chan struct{}, 10) // Buffer for up to 10 queries
+
+	// Mock queryable that tracks concurrent executions and stalls
+	q := mockSampleAndChunkQueryable{
+		queryableFn: func(mint, maxt int64) (storage.Querier, error) {
+			return &mockQuerier{
+				selectFn: func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+					// Track concurrent queries
+					current := concurrentQueries.Inc()
+					for {
+						max := maxConcurrentQueries.Load()
+						if current <= max || maxConcurrentQueries.CompareAndSwap(max, current) {
+							break
+						}
+					}
+
+					// Stall for a short period to allow concurrency measurement
+					time.Sleep(100 * time.Millisecond)
+					
+					concurrentQueries.Dec()
+					queryProcessed <- struct{}{}
+
+					// Return a simple series set
+					return series.NewConcreteSeriesSet([]storage.Series{
+						series.NewConcreteSeries(labels.FromStrings("foo", "bar"), []model.SamplePair{
+							{Timestamp: 1, Value: 1.0},
+						}),
+					})
+				},
+			}, nil
+		},
+	}
+
+	tests := []struct {
+		name                     string
+		queries                  int
+		maxConcurrency          int
+		expectedMaxConcurrent   int32
+	}{
+		{
+			name:                   "unlimited concurrency (0) allows all queries to run concurrently",
+			queries:                5,
+			maxConcurrency:        0,
+			expectedMaxConcurrent: 5,
+		},
+		{
+			name:                   "concurrency limit of 2 restricts to 2 concurrent queries",
+			queries:                5, 
+			maxConcurrency:        2,
+			expectedMaxConcurrent: 2,
+		},
+		{
+			name:                   "concurrency limit of 1 serializes all queries",
+			queries:                3,
+			maxConcurrency:        1,
+			expectedMaxConcurrent: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset counters
+			concurrentQueries.Store(0)
+			maxConcurrentQueries.Store(0)
+			
+			// Clear the channel
+			for len(queryProcessed) > 0 {
+				<-queryProcessed
+			}
+
+			// Create handler with configurable concurrency (this will be implemented later)
+			handler := RemoteReadHandlerWithConfig(q, log.NewNopLogger(), Config{MaxConcurrentRemoteReadQueries: tt.maxConcurrency})
+
+			// Create multiple queries
+			queries := make([]*prompb.Query, tt.queries)
+			for i := 0; i < tt.queries; i++ {
+				queries[i] = &prompb.Query{
+					StartTimestampMs: 1,
+					EndTimestampMs:   10,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+					},
+				}
+			}
+
+			requestBody, err := proto.Marshal(&prompb.ReadRequest{Queries: queries})
+			require.NoError(t, err)
+			requestBody = snappy.Encode(nil, requestBody)
+
+			request, err := http.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(requestBody))
+			require.NoError(t, err)
+			request.Header.Add("Content-Encoding", "snappy")
+			request.Header.Set("Content-Type", "application/x-protobuf")
+
+			response := httptest.NewRecorder()
+
+			// Execute request
+			handler.ServeHTTP(response, request)
+
+			// Wait for all queries to complete
+			for i := 0; i < tt.queries; i++ {
+				select {
+				case <-queryProcessed:
+				case <-time.After(5 * time.Second):
+					t.Fatal("timed out waiting for queries to complete")
+				}
+			}
+
+			// Verify response is successful
+			require.Equal(t, http.StatusOK, response.Code)
+
+			// Verify concurrency was limited as expected
+			actualMaxConcurrent := maxConcurrentQueries.Load()
+			require.Equal(t, tt.expectedMaxConcurrent, actualMaxConcurrent, 
+				"expected max concurrent queries: %d, actual: %d", tt.expectedMaxConcurrent, actualMaxConcurrent)
+		})
+	}
+}
