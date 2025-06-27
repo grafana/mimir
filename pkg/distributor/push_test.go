@@ -34,13 +34,10 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
-	dskit_test "github.com/grafana/dskit/test"
-	"github.com/grafana/mimir/pkg/ingester"
-
 	dskit_server "github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	dskit_test "github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -54,6 +51,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
