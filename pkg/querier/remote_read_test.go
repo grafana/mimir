@@ -1247,28 +1247,16 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 
 func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 	concurrentQueries := atomic.NewInt32(0)
-	maxConcurrentQueries := atomic.NewInt32(0)
-	queryProcessed := make(chan struct{}, 10) // Buffer for up to 10 queries
+	controlChan := make(chan struct{})
 
-	// Mock queryable that tracks concurrent executions and stalls
+	// Mock queryable that waits for control signal
 	q := mockSampleAndChunkQueryable{
 		queryableFn: func(mint, maxt int64) (storage.Querier, error) {
 			return &mockQuerier{
 				selectFn: func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-					// Track concurrent queries
-					current := concurrentQueries.Inc()
-					for {
-						max := maxConcurrentQueries.Load()
-						if current <= max || maxConcurrentQueries.CompareAndSwap(max, current) {
-							break
-						}
-					}
-
-					// Stall for a short period to allow concurrency measurement
-					time.Sleep(100 * time.Millisecond)
-
-					concurrentQueries.Dec()
-					queryProcessed <- struct{}{}
+					concurrentQueries.Inc()
+					defer concurrentQueries.Dec()
+					<-controlChan
 
 					// Return a simple series set
 					return series.NewConcreteSeriesSetFromUnsortedSeries(
@@ -1309,16 +1297,13 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset counters
+			// Reset counters and ensure control channel is empty
 			concurrentQueries.Store(0)
-			maxConcurrentQueries.Store(0)
-
-			// Clear the channel
-			for len(queryProcessed) > 0 {
-				<-queryProcessed
+			for len(controlChan) > 0 {
+				<-controlChan
 			}
 
-			// Create handler with configurable concurrency (this will be implemented later)
+			// Create handler with configurable concurrency
 			handler := RemoteReadHandler(q, log.NewNopLogger(), Config{MaxConcurrentRemoteReadQueries: tt.maxConcurrency})
 
 			// Create multiple queries
@@ -1344,25 +1329,50 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 
 			response := httptest.NewRecorder()
 
-			// Execute request
-			handler.ServeHTTP(response, request)
+			// Start request in goroutine
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				handler.ServeHTTP(response, request)
+			}()
 
-			// Wait for all queries to complete
-			for i := 0; i < tt.queries; i++ {
-				select {
-				case <-queryProcessed:
-				case <-time.After(5 * time.Second):
-					t.Fatal("timed out waiting for queries to complete")
+			// Wait for expected concurrency to be reached and verify limits
+			maxObserved := int32(0)
+			require.Eventually(t, func() bool {
+				current := concurrentQueries.Load()
+				if current > maxObserved {
+					maxObserved = current
 				}
+
+				// Check that we never exceed the expected limit
+				require.LessOrEqual(t, current, tt.expectedMaxConcurrent,
+					"concurrent queries (%d) exceeded limit (%d)", current, tt.expectedMaxConcurrent)
+
+				// Return true when we've reached the expected concurrency
+				return current == tt.expectedMaxConcurrent
+			}, 10*time.Second, 100*time.Millisecond, "failed to reach expected concurrency level")
+
+			// Release all queries by sending signals to control channel
+			for i := 0; i < tt.queries; i++ {
+				controlChan <- struct{}{}
+			}
+
+			// Wait for request to complete
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for request to complete")
 			}
 
 			// Verify response is successful
 			require.Equal(t, http.StatusOK, response.Code)
 
-			// Verify concurrency was limited as expected
-			actualMaxConcurrent := maxConcurrentQueries.Load()
-			require.Equal(t, tt.expectedMaxConcurrent, actualMaxConcurrent,
-				"expected max concurrent queries: %d, actual: %d", tt.expectedMaxConcurrent, actualMaxConcurrent)
+			// Verify we observed the expected maximum concurrency
+			require.Equal(t, tt.expectedMaxConcurrent, maxObserved,
+				"expected max concurrent queries: %d, observed: %d", tt.expectedMaxConcurrent, maxObserved)
+
+			// Verify control channel is empty (all signals consumed)
+			require.Equal(t, 0, len(controlChan), "control channel should be empty")
 		})
 	}
 }
