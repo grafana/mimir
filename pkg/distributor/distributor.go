@@ -1518,7 +1518,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 	}()
 
 	il := d.getInstanceLimits()
-	if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
+	if il.MaxInflightPushRequests > 0 && inflight >= int64(il.MaxInflightPushRequests) {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 		return ctx, nil, errMaxInflightRequestsReached
 	}
@@ -1568,7 +1568,7 @@ func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize i
 func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
 	il := d.getInstanceLimits()
 
-	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
+	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes >= int64(il.MaxInflightPushRequestsBytes) {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
 		return errMaxInflightRequestsBytesReached
 	}
