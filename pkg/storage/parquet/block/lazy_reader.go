@@ -279,16 +279,29 @@ func (r *LazyReaderLocalLabelsBucketChunks) downloadLabelsFileToLocalDisk() erro
 
 func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() *storage.ParquetFile {
 	loaded := r.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		// TODO: the current interface does not allow to return an error
+		level.Error(r.logger).Log("msg", "failed to get labels file from lazy reader", "err", loaded.err)
+		return nil
+	}
 	return loaded.reader.LabelsFile()
 }
 
 func (r *LazyReaderLocalLabelsBucketChunks) ChunksFile() *storage.ParquetFile {
 	loaded := r.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		// TODO: the current interface does not allow to return an error
+		level.Error(r.logger).Log("msg", "failed to get chunks file from lazy reader", "err", loaded.err)
+		return nil
+	}
 	return loaded.reader.ChunksFile()
 }
 
 func (r *LazyReaderLocalLabelsBucketChunks) TSDBSchema() (*schema.TSDBSchema, error) {
 	loaded := r.getOrLoadReader(r.ctx)
+	if loaded.err != nil {
+		return nil, errors.Wrap(loaded.err, "get TSDB schema from lazy reader")
+	}
 	return loaded.reader.TSDBSchema()
 }
 
@@ -332,7 +345,10 @@ func (r *LazyReaderLocalLabelsBucketChunks) loadReader() (Reader, error) {
 	startTime := time.Now()
 
 	labelsLocalFilePath := r.labelsFileLocalPath()
-	labelsLocalFileOpener := NewParquetLocalFileOpener(r.localDir)
+	// The BasicReader appends the block ID to the local directory, so we need to trim it here.
+	// TODO: we should rethink the namings conventions to locate the files to avoid these hacks.
+	localDir := strings.TrimSuffix(r.localDir, r.blockID.String())
+	labelsLocalFileOpener := NewParquetLocalFileOpener(localDir)
 	chunksBucketOpener := storage.NewParquetBucketOpener(r.bkt)
 
 	reader, err := NewBasicReader(
