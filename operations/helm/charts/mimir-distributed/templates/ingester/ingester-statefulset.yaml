@@ -10,8 +10,23 @@ metadata:
   name: {{ include "mimir.resourceName" $args }}
   labels:
     {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if (eq $rolloutZone.noDownscale true )}}
+    grafana.com/no-downscale: {{ $rolloutZone.noDownscale | quote }}
+    {{- else }}
+    {{- if (eq $rolloutZone.prepareDownscale true )}}
+    grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
+    grafana.com/min-time-between-zones-downscale: 12h
+    {{- end }}
+    {{- end }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
+    {{- if $rolloutZone.prepareDownscale }}
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . | quote }}
+    {{- end -}}
+    {{- if $rolloutZone.downscaleLeader }}
+    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
+    {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
