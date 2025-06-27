@@ -86,7 +86,6 @@ func remoteReadSamples(
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 
-	// Create job structure for concurrency.ForEachJob
 	type queryJob struct {
 		index int
 		query *prompb.Query
@@ -99,13 +98,21 @@ func remoteReadSamples(
 			query: qr,
 		}
 	}
+	closers := make([]io.Closer, len(jobs))
+	defer func() {
+		for _, closer := range closers {
+			if closer != nil {
+				_ = closer.Close()
+			}
+		}
+	}()
 
 	concurrencyLimit := maxConcurrency
 	if concurrencyLimit <= 0 {
 		concurrencyLimit = len(jobs)
 	}
 
-	run := func(ctx context.Context, idx int) error {
+	run := func(_ context.Context, idx int) error {
 		job := &jobs[idx]
 		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(job.query)
 		if err != nil {
@@ -116,6 +123,7 @@ func remoteReadSamples(
 		if err != nil {
 			return err
 		}
+		closers[idx] = querier
 
 		seriesSet := querier.Select(ctx, false, hints, matchers...)
 
@@ -160,18 +168,28 @@ func remoteReadStreamedXORChunks(
 
 	// Process all queries concurrently and collect their ChunkSeriesSet results
 	type queryResult struct {
-		idx    int
-		series storage.ChunkSeriesSet
+		idx     int
+		series  storage.ChunkSeriesSet
+		querier io.Closer
 	}
 
 	results := make([]queryResult, len(req.Queries))
+
+	// Ensure all queriers are closed when the function exits
+	defer func() {
+		for _, result := range results {
+			if result.querier != nil {
+				result.querier.Close()
+			}
+		}
+	}()
 
 	concurrencyLimit := maxConcurrency
 	if concurrencyLimit <= 0 {
 		concurrencyLimit = len(req.Queries)
 	}
 
-	run := func(ctx context.Context, idx int) error {
+	run := func(_ context.Context, idx int) error {
 		qr := req.Queries[idx]
 		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
 		if err != nil {
@@ -184,8 +202,10 @@ func remoteReadStreamedXORChunks(
 		}
 
 		// The streaming API has to provide the series sorted.
+		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
+		// but we need the SeriesSet to remain valid for streaming later.
 		seriesSet := querier.Select(ctx, true, hints, matchers...)
-		results[idx] = queryResult{idx: idx, series: seriesSet}
+		results[idx] = queryResult{idx: idx, series: seriesSet, querier: querier}
 		return nil
 	}
 
@@ -194,7 +214,7 @@ func remoteReadStreamedXORChunks(
 	if err != nil {
 		code := remoteReadErrorStatusCode(err)
 		if code/100 != 4 {
-			level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
+			level.Error(logger).Log("msg", "error while processing streaming remote read request", "err", err)
 		}
 		http.Error(w, err.Error(), code)
 		return
