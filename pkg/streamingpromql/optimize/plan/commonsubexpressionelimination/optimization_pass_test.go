@@ -286,6 +286,32 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 			expectedDuplicateNodes: 1,
 		},
+		"duplicate operation with different children": {
+			expr: `topk(3, foo) + topk(5, foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: topk
+						- expression: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- parameter: NumberLiteral: 3
+					- RHS: AggregateExpression: topk
+						- expression: ref#1 Duplicate ...
+						- parameter: NumberLiteral: 5
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"duplicate expression with multiple children": {
+			expr: `topk(5, foo) + topk(5, foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- AggregateExpression: topk
+							- expression: VectorSelector: {__name__="foo"}
+							- parameter: NumberLiteral: 5
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
 	}
 
 	ctx := context.Background()
