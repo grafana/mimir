@@ -66,7 +66,7 @@ This command shows the differences between the running installation and the inst
 
 ### Manage runtime configuration
 
-You can also use the Helm chart to manage runtime configuration files. A runtime configuration file contains configuration parameters and is periodically reloaded while Mimir is running. This process allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
+You can also use the Helm chart to manage runtime configuration files. Runtime configuration files contain configuration parameters and are periodically reloaded while Mimir is running. This process allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
 
 To manage runtime configuration with the Helm chart, add the following stanza to <location?>:
 
