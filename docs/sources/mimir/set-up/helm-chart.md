@@ -15,11 +15,11 @@ The [`mimir-distributed` Helm chart](https://github.com/grafana/mimir/blob/main/
 
 The mimir-distributed Helm chart includes the following example values files:
 
-| File name                                                                                                        | Description                                                                                                              |
-| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| [`values.yaml`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml) | Contains default values for testing GEM in non-production environments using a test MinIO deployment for object storage. |
-| [`small.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/small.yaml)   | Contains values for production use for ingestion up to approximately one million series.                                 |
-| [`large.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/large.yaml)   | Contains values for production use for ingestion up to approximately ten million series.                                 |
+| File name                                                                                                        | Description                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`values.yaml`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml) | Contains default values for testing GEM in non-production environments using a test MinIO deployment for object storage.                                                                             |
+| [`small.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/small.yaml)   | Contains values for a higher scale than defaults, for ingestion up to approximately one million series. Not suitable for high-availability production use, due to single replicas of key components. |
+| [`large.yaml`](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed/large.yaml)   | Contains values for production use for ingestion up to approximately ten million series.                                                                                                             |
 
 ## See also
 

@@ -3,8 +3,8 @@
 # The default values specified in this file are enough to deploy all of the
 # Grafana Mimir or Grafana Enterprise Metrics microservices but are not suitable for
 # production load.
-# To configure the resources for production load, refer to the small.yaml or
-# large.yaml values files.
+# To configure the resources for higher scale, refer to the small.yaml file.
+# For production load with high availability, refer to the large.yaml values file.
 
 # Note: The values in this file are not backward compatible. Copying and pasting the values is discouraged, but if you do so,
 # make sure to use the values.yaml from the branch or tag that matches the mimir-distributed Helm chart version that you
