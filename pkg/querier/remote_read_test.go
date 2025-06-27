@@ -830,7 +830,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 			// frame to contain at most 2 chunks.
 			maxBytesInFrame := 10 + 165*2
 
-			handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
+			handler := remoteReadHandler(q, maxBytesInFrame, 0, log.NewNopLogger())
 
 			requestBody, err := proto.Marshal(&prompb.ReadRequest{
 				Queries:               testData.query,
@@ -1071,7 +1071,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 						}, err
 					},
 				}
-				handler := remoteReadHandler(q, 1024*1024, log.NewNopLogger())
+				handler := remoteReadHandler(q, 1024*1024, 0, log.NewNopLogger())
 
 				// Create queries based on the number of expected errors/series sets
 				var queries []*prompb.Query
@@ -1125,7 +1125,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 						}, err
 					},
 				}
-				handler := remoteReadHandler(q, 1024*1024, log.NewNopLogger())
+				handler := remoteReadHandler(q, 1024*1024, 0, log.NewNopLogger())
 
 				// Create queries based on the number of expected errors/series sets
 				var queries []*prompb.Query
@@ -1271,11 +1271,11 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 					queryProcessed <- struct{}{}
 
 					// Return a simple series set
-					return series.NewConcreteSeriesSet([]storage.Series{
-						series.NewConcreteSeries(labels.FromStrings("foo", "bar"), []model.SamplePair{
-							{Timestamp: 1, Value: 1.0},
-						}),
-					})
+					return series.NewConcreteSeriesSetFromUnsortedSeries(
+						[]storage.Series{
+							series.NewConcreteSeries(labels.FromStrings("foo", "bar"), []model.SamplePair{{Timestamp: 1, Value: 1.0}}, nil),
+						},
+					)
 				},
 			}, nil
 		},
