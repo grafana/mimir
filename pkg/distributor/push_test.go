@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
@@ -1272,28 +1273,41 @@ func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
 		return nil
 	}
 
+	uncompBytesMetrics := `
+# HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
+# TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 101
+cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+`
+
 	testCases := map[string]struct {
 		startingInflightBytes int64
 		expectedStatusCode    int
+		metrics               string
 	}{
-		"stays_below_threshold": {
+		"starts_below_threshold_stays_below_threshold": {
 			startingInflightBytes: MiB - 3*reqLen,
 			expectedStatusCode:    200,
+			metrics:               uncompBytesMetrics,
 		},
-		"above_threshold_and_stays_above_threshold": {
-			startingInflightBytes: MiB + 1*reqLen,
+		// NOTE: This is a special case, the compressed req. brings inflight bytes exactly to the cap and the push is allowed to begin. The uncompressed 
+		// request will exceed the limit, so we end up decompressing the request and then rejecting to push.
+		"starts_below_threshold_incoming_request_meets_threshold": {
+			startingInflightBytes: MiB - reqLen,
 			expectedStatusCode:    500,
+			metrics:               uncompBytesMetrics,
 		},
-		"starts_below_threshold_incoming_request_exceeds": {
+		"starts_below_threshold_incoming_request_exceeds_threshold": {
 			startingInflightBytes: MiB - reqLen/2,
 			expectedStatusCode:    500,
 		},
-		"exactly_at_threshold_incoming_request_exceeds_threshold": {
-			startingInflightBytes: MiB,
+		"starts_above_threshold_stays_above_threshold": {
+			startingInflightBytes: MiB + reqLen,
 			expectedStatusCode:    500,
 		},
-		"starts_below_threshold_incoming_request_brings_to_cap": {
-			startingInflightBytes: MiB - 1*reqLen,
+		"starts_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
 			expectedStatusCode:    500,
 		},
 	}
@@ -1354,10 +1368,13 @@ func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
 			ctx = user.InjectOrgID(ctx, "test")
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
-			handler := Handler(MiB, nil, nil, false, false, overrides, RetryConfig{}, distributor.limitsMiddleware(dummyPushFunc), nil, noopLogger)
+			reg := prometheus.NewRegistry()
+			handler := Handler(MiB, nil, nil, false, false, overrides, RetryConfig{}, distributor.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), noopLogger)
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
 		})
 	}
