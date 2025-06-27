@@ -3313,12 +3313,6 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 
-			// Set the ingester to read-only mode to avoid receiving new samples.
-			if err := i.lifecycler.ChangeReadOnlyState(ctx, true); err != nil {
-				return err
-			}
-			defer i.lifecycler.ChangeReadOnlyState(ctx, false)
-
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
 
