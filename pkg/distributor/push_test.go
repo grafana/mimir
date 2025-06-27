@@ -1288,27 +1288,27 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
 	}{
 		"starts_below_threshold_stays_below_threshold": {
 			startingInflightBytes: MiB - 3*reqLen,
-			expectedStatusCode:    200,
+			expectedStatusCode:    http.StatusOK,
 			metrics:               uncompBytesMetrics,
 		},
-		// NOTE: This is a special case, the compressed req. brings inflight bytes exactly to the cap and the push is allowed to begin. The uncompressed 
+		// NOTE: This is a special case, the compressed req. brings inflight bytes exactly to the cap and the push is allowed to begin. The uncompressed
 		// request will exceed the limit, so we end up decompressing the request and then rejecting to push.
 		"starts_below_threshold_incoming_request_meets_threshold": {
 			startingInflightBytes: MiB - reqLen,
-			expectedStatusCode:    500,
+			expectedStatusCode:    http.StatusInternalServerError,
 			metrics:               uncompBytesMetrics,
 		},
 		"starts_below_threshold_incoming_request_exceeds_threshold": {
 			startingInflightBytes: MiB - reqLen/2,
-			expectedStatusCode:    500,
+			expectedStatusCode:    http.StatusInternalServerError,
 		},
 		"starts_above_threshold_stays_above_threshold": {
 			startingInflightBytes: MiB + reqLen,
-			expectedStatusCode:    500,
+			expectedStatusCode:    http.StatusInternalServerError,
 		},
 		"starts_at_threshold_incoming_request_exceeds_threshold": {
 			startingInflightBytes: MiB,
-			expectedStatusCode:    500,
+			expectedStatusCode:    http.StatusInternalServerError,
 		},
 	}
 
@@ -1375,6 +1375,105 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
 			handler.ServeHTTP(resp, req)
 
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
+			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+		})
+	}
+}
+
+func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
+	const MiB = 1024 * 1024
+	inoutBytes := []byte("measurement,t1=v1 f1=2 1465839830100400200")
+	reqLen := int64(len(inoutBytes))
+	dummyPushFunc := func(ctx context.Context, pushReq *Request) error {
+		return nil
+	}
+
+	testCases := map[string]struct {
+		startingInflightBytes int64
+		expectedStatusCode    int
+	}{
+		"starts_below_threshold_stays_below_threshold": {
+			startingInflightBytes: MiB - 3*reqLen,
+			expectedStatusCode:    http.StatusNoContent,
+		},
+		"starts_below_threshold_incoming_request_meets_threshold": {
+			startingInflightBytes: MiB - reqLen,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+		"starts_below_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB - reqLen/2,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+		"starts_above_threshold_stays_above_threshold": {
+			startingInflightBytes: MiB + reqLen,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+		"starts_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
+			expectedStatusCode:    http.StatusServiceUnavailable,
+		},
+	}
+
+	for tn, tc := range testCases {
+		t.Run(tn, func(t *testing.T) {
+			noopLogger := log.NewNopLogger()
+			ctx := context.Background()
+
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { require.NoError(t, closer.Close()) })
+
+			err := kvStore.CAS(ctx, ingester.IngesterRingKey,
+				func(_ interface{}) (interface{}, bool, error) {
+					d := &ring.Desc{}
+					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+					return d, true, nil
+				},
+			)
+			require.NoError(t, err)
+
+			ingestersRing, err := ring.New(ring.Config{
+				KVStore:           kv.Config{Mock: kvStore},
+				HeartbeatTimeout:  60 * time.Minute,
+				ReplicationFactor: 1,
+			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
+
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingestersRing))
+			})
+
+			dskit_test.Poll(t, time.Second, 1, func() interface{} {
+				return ingestersRing.InstancesCount()
+			})
+
+			var distributorConfig Config
+			var clientConfig client.Config
+			limits := validation.Limits{}
+			flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
+
+			distributorConfig.DefaultLimits = InstanceLimits{MaxInflightPushRequestsBytes: MiB}
+			distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
+			distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+				return &noopIngester{}, nil
+			})
+
+			overrides := validation.NewOverrides(limits, nil)
+			distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, noopLogger)
+			require.NoError(t, err)
+
+			inflightBytes := atomic.Int64{}
+			inflightBytes.Store(tc.startingInflightBytes)
+			distributor.inflightPushRequestsBytes = inflightBytes
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
+
+			ctx = user.InjectOrgID(ctx, "test")
+			req := httptest.NewRequest("POST", "/api/v1/push/influx/write", bytes.NewReader(inoutBytes)).WithContext(ctx)
+
+			handler := InfluxHandler(MiB, distributor.RequestBufferPool, nil, RetryConfig{}, distributor.limitsMiddleware(dummyPushFunc), nil, noopLogger)
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
 		})
 	}
