@@ -178,7 +178,7 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	localSparseHeaderBytes, err := os.ReadFile(sparseHeadersPath)
 	if err == nil {
 		level.Debug(logger).Log("msg", "loading sparse index-header from local disk")
-		err = r.loadFromSparseIndexHeader(logger, localSparseHeaderBytes, postingOffsetsInMemSampling)
+		err = r.loadFromSparseIndexHeader(ctx, logger, localSparseHeaderBytes, postingOffsetsInMemSampling)
 		if err == nil {
 			return nil
 		}
@@ -193,7 +193,7 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
 	if err == nil {
 		// Try to load the downloaded sparse header
-		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
+		err = r.loadFromSparseIndexHeader(ctx, logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
 		if err == nil {
 			tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
 			return nil
@@ -243,7 +243,7 @@ func tryReadBucketSparseHeader(ctx context.Context, logger log.Logger, bkt objst
 }
 
 // loadFromSparseIndexHeader load from sparse index-header on disk.
-func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
+func (r *StreamBinaryReader) loadFromSparseIndexHeader(ctx context.Context, logger log.Logger, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
 	start := time.Now()
 	defer func() {
 		level.Info(logger).Log("msg", "loaded sparse index-header from disk", "elapsed", time.Since(start))
