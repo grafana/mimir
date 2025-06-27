@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
 	"github.com/grafana/alerting/receivers/mqtt"
+	"github.com/grafana/alerting/receivers/oncall"
 	"github.com/grafana/alerting/receivers/opsgenie"
 	"github.com/grafana/alerting/receivers/pagerduty"
 	"github.com/grafana/alerting/receivers/pushover"
@@ -155,6 +156,10 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 	"mqtt": {NotifierType: "mqtt",
 		Config:  mqtt.FullValidConfigForTesting,
 		Secrets: mqtt.FullValidSecretsForTesting,
+	},
+	"oncall": {NotifierType: "oncall",
+		Config:  oncall.FullValidConfigForTesting,
+		Secrets: oncall.FullValidSecretsForTesting,
 	},
 	"opsgenie": {NotifierType: "opsgenie",
 		Config:  opsgenie.FullValidConfigForTesting,
