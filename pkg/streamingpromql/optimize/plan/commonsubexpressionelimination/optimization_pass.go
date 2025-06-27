@@ -30,6 +30,7 @@ import (
 
 type OptimizationPass struct {
 	duplicationNodesIntroduced prometheus.Counter
+	selectorsEliminated        prometheus.Counter
 }
 
 func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
@@ -37,6 +38,10 @@ func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced",
 			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
+		}),
+		selectorsEliminated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated",
+			Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
 		}),
 	}
 }
@@ -50,7 +55,7 @@ func (e *OptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan) (*
 	paths := e.accumulatePaths(plan)
 
 	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
-	err := e.groupAndApplyDeduplication(paths, 0)
+	err := e.groupAndApplyDeduplication(paths, 0, false)
 	if err != nil {
 		return nil, err
 	}
@@ -104,11 +109,11 @@ func (e *OptimizationPass) accumulatePath(soFar *path) []*path {
 	return paths
 }
 
-func (e *OptimizationPass) groupAndApplyDeduplication(paths []*path, offset int) error {
+func (e *OptimizationPass) groupAndApplyDeduplication(paths []*path, offset int, haveAlreadyEliminatedSelectors bool) error {
 	groups := e.groupPaths(paths, offset)
 
 	for _, group := range groups {
-		if err := e.applyDeduplication(group, offset); err != nil {
+		if err := e.applyDeduplication(group, offset, haveAlreadyEliminatedSelectors); err != nil {
 			return err
 		}
 	}
@@ -171,7 +176,7 @@ func (e *OptimizationPass) groupPaths(paths []*path, offset int) [][]*path {
 	return groups
 }
 
-func (e *OptimizationPass) applyDeduplication(group []*path, offset int) error {
+func (e *OptimizationPass) applyDeduplication(group []*path, offset int, haveAlreadyEliminatedSelectors bool) error {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
@@ -182,21 +187,31 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) error {
 		return err
 	}
 
+	var skipLongerExpressions bool
+	eliminatedSelectors := !haveAlreadyEliminatedSelectors
+
 	// We only want to deduplicate instant vectors.
 	if resultType == parser.ValueTypeVector {
-		if skipLongerExpressions, err := e.introduceDuplicateNode(group, duplicatePathLength); err != nil {
-			return err
-		} else if skipLongerExpressions {
-			return nil
-		}
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
 		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
-		if skipLongerExpressions, err := e.introduceDuplicateNode(group, duplicatePathLength-1); err != nil {
-			return err
-		} else if skipLongerExpressions {
-			return nil
-		}
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
+	} else {
+		// Duplicated subquery, but the function that encloses each instance isn't the same (or isn't the same on all paths).
+		eliminatedSelectors = false
+	}
+
+	if err != nil {
+		return nil
+	}
+
+	if eliminatedSelectors {
+		e.selectorsEliminated.Add(float64(len(group) - 1))
+	}
+
+	if skipLongerExpressions {
+		return nil
 	}
 
 	if len(group) <= 2 {
@@ -210,7 +225,7 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) error {
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	if err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
+	if err := e.groupAndApplyDeduplication(group, duplicatePathLength, haveAlreadyEliminatedSelectors || eliminatedSelectors); err != nil {
 		return err
 	}
 
