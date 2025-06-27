@@ -1826,7 +1826,7 @@ How it **works**:
 - In Go, concurrency is handled via goroutines, which are lightweight threads managed by the Go runtime.
 - Goroutines are multiplexed onto a small number of actual OS threads by the Go scheduler.
 - Go threads are limited to 10K. When this limit is reached, the application panics with error like `runtime: program exceeds 10000-thread limit`.
-- If a goroutine makes a call to a blocking syscall (e.g. disk I/O, but not networking given it's implement using async I/O under the hood), the Go runtime will try to schedule other goroutines on other OS threads, starting new threads on-demand.
+- If a goroutine makes a call to a blocking syscall, for example, disk I/O, the Go runtime tries to schedule other goroutines on other OS threads. This process starts new threads on-demand. Note that network syscalls use asynchronous I/O under the hood, and therefore, don't create this problem.
 - Idle go threads are never terminated ([issue](https://github.com/golang/go/issues/14592)), so once an application has a spike in the number of go threads, the process needs to be restarted to get back to a low number of threads.
 
 How to **investigate**:
