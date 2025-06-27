@@ -724,7 +724,7 @@ github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20250619084012-67e74f32cb6f
+# github.com/grafana/dskit v0.0.0-20250619084012-67e74f32cb6f => github.com/grafana/dskit v0.0.0-20250623104114-2b869a388a3c
 ## explicit; go 1.23.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1154,7 +1154,7 @@ github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
 github.com/prometheus/alertmanager/ui
-# github.com/prometheus/client_golang v1.22.0
+# github.com/prometheus/client_golang v1.22.0 => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e
 ## explicit; go 1.22
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -1165,7 +1165,6 @@ github.com/prometheus/client_golang/prometheus/collectors
 github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/promauto
 github.com/prometheus/client_golang/prometheus/promhttp
-github.com/prometheus/client_golang/prometheus/promhttp/internal
 github.com/prometheus/client_golang/prometheus/push
 github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
@@ -2122,4 +2121,6 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5
+# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250623104114-2b869a388a3c
+# github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e
 # github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
