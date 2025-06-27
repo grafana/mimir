@@ -5906,6 +5906,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_promote_scope_metadata",
+          "required": false,
+          "desc": "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-promote-scope-metadata",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
@@ -7669,6 +7680,16 @@
           "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "cache_samples_processed_stats",
+          "required": false,
+          "desc": "Cache statistics of processed samples on results cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-samples-processed-stats",
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -18646,7 +18667,7 @@
           "required": false,
           "desc": "Timeout used when connecting to other nodes to send packet.",
           "fieldValue": null,
-          "fieldDefaultValue": 2000000000,
+          "fieldDefaultValue": 500000000,
           "fieldFlag": "memberlist.packet-dial-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -18657,7 +18678,7 @@
           "required": false,
           "desc": "Timeout for writing 'packet' data.",
           "fieldValue": null,
-          "fieldDefaultValue": 5000000000,
+          "fieldDefaultValue": 500000000,
           "fieldFlag": "memberlist.packet-write-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -18668,7 +18689,7 @@
           "required": false,
           "desc": "Maximum number of concurrent writes to other nodes.",
           "fieldValue": null,
-          "fieldDefaultValue": 3,
+          "fieldDefaultValue": 5,
           "fieldFlag": "memberlist.max-concurrent-writes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -18679,7 +18700,7 @@
           "required": false,
           "desc": "Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped.",
           "fieldValue": null,
-          "fieldDefaultValue": 250000000,
+          "fieldDefaultValue": 1000000000,
           "fieldFlag": "memberlist.acquire-writer-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"

@@ -99,7 +99,7 @@ type frontendResponseStreamer func(
 	c client.PoolClient,
 	queryID uint64,
 	response *httpgrpc.HTTPResponse,
-	stats *querier_stats.Stats,
+	stats *querier_stats.SafeStats,
 	logger log.Logger) error
 
 // Handles incoming queries from query-scheduler.
@@ -263,7 +263,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 }
 
 func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger, queryID uint64, frontendAddress string, statsEnabled bool, request *httpgrpc.HTTPRequest, queueTime time.Duration) {
-	var stats *querier_stats.Stats
+	var stats *querier_stats.SafeStats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
 		stats.AddQueueTime(queueTime)
@@ -359,7 +359,7 @@ func streamResponse(
 	c client.PoolClient,
 	queryID uint64,
 	response *httpgrpc.HTTPResponse,
-	stats *querier_stats.Stats,
+	stats *querier_stats.SafeStats,
 	logger log.Logger,
 ) error {
 	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)

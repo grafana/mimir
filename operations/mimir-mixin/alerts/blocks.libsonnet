@@ -235,6 +235,21 @@
             message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
+        {
+          // Alert if there's sustained querying of level 1 blocks, which indicates the compactor
+          // is not keeping up and the store-gateway is serving blocks that aren't well compacted.
+          alert: $.alertName('HighVolumeLevel1BlocksQueried'),
+          'for': '6h',
+          expr: |||
+            sum by(%s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%s}[%s])) > 0
+          ||| % [$._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.store_gateway), $.alertRangeInterval(5)],
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
+          },
+        },
       ],
     },
   ],

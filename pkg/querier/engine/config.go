@@ -66,6 +66,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
+		EnablePerStepStats: true, // Always enable per-step stats, since they are collected only if "stats=all" query parameter is set in addition to engine option.
 	}
 
 	cfg.MimirQueryEngine.CommonOpts = commonOpts

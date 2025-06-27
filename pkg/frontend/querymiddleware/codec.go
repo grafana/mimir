@@ -138,6 +138,9 @@ type MetricsQueryRequest interface {
 	GetHints() *Hints
 	// GetLookbackDelta returns the lookback delta for the request.
 	GetLookbackDelta() time.Duration
+	// GetStats returns the stats parameter for the request.
+	// See WithStats() comment for more details.
+	GetStats() string
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
@@ -157,6 +160,12 @@ type MetricsQueryRequest interface {
 	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(span trace.Span)
+	// WithStats returns a copy of the current request with the provided value for the "stats" parameter.
+	//
+	// This value is passed to the querier to enable per-step statistics collection,
+	// which are exposed via querier.Stats. Currently, only the value "all" has an effect in Mimir.
+	// Note: unlike Prometheus, Mimir does not return query stats in the response body if stats is set.
+	WithStats(string) (MetricsQueryRequest, error)
 }
 
 // LabelsSeriesQueryRequest represents a label names, label values, or series query request that can be process by middlewares.
@@ -365,8 +374,9 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	var options Options
 	decodeOptions(r, &options)
 
+	stats := reqValues.Get("stats")
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -391,8 +401,10 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	var options Options
 	decodeOptions(r, &options)
 
+	stats := reqValues.Get("stats")
+
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -691,22 +703,30 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
+		values := url.Values{
+			"start": []string{encodeTime(r.GetStart())},
+			"end":   []string{encodeTime(r.GetEnd())},
+			"step":  []string{encodeDurationMs(r.GetStep())},
+			"query": []string{r.GetQuery()},
+		}
+		if s := r.GetStats(); s != "" {
+			values["stats"] = []string{s}
+		}
 		u = &url.URL{
-			Path: r.GetPath(),
-			RawQuery: url.Values{
-				"start": []string{encodeTime(r.GetStart())},
-				"end":   []string{encodeTime(r.GetEnd())},
-				"step":  []string{encodeDurationMs(r.GetStep())},
-				"query": []string{r.GetQuery()},
-			}.Encode(),
+			Path:     r.GetPath(),
+			RawQuery: values.Encode(),
 		}
 	case *PrometheusInstantQueryRequest:
+		values := url.Values{
+			"time":  []string{encodeTime(r.GetTime())},
+			"query": []string{r.GetQuery()},
+		}
+		if s := r.GetStats(); s != "" {
+			values["stats"] = []string{s}
+		}
 		u = &url.URL{
-			Path: r.GetPath(),
-			RawQuery: url.Values{
-				"time":  []string{encodeTime(r.GetTime())},
-				"query": []string{r.GetQuery()},
-			}.Encode(),
+			Path:     r.GetPath(),
+			RawQuery: values.Encode(),
 		}
 
 	default:

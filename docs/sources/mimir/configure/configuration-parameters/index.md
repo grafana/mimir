@@ -1423,8 +1423,8 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
   [enable_elected_replica_metric: <boolean> | default = false]
 
-  # Backend storage to use for the ring. Note that memberlist support is
-  # experimental.
+  # Backend storage to use for the ring. Supported values are: consul, etcd,
+  # inmemory, memberlist, multi.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -2442,6 +2442,10 @@ results_cache:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
+
+# Cache statistics of processed samples on results cache.
+# CLI flag: -query-frontend.cache-samples-processed-stats
+[cache_samples_processed_stats: <boolean> | default = false]
 
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
@@ -3854,20 +3858,20 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Timeout used when connecting to other nodes to send packet.
 # CLI flag: -memberlist.packet-dial-timeout
-[packet_dial_timeout: <duration> | default = 2s]
+[packet_dial_timeout: <duration> | default = 500ms]
 
 # (advanced) Timeout for writing 'packet' data.
 # CLI flag: -memberlist.packet-write-timeout
-[packet_write_timeout: <duration> | default = 5s]
+[packet_write_timeout: <duration> | default = 500ms]
 
 # (advanced) Maximum number of concurrent writes to other nodes.
 # CLI flag: -memberlist.max-concurrent-writes
-[max_concurrent_writes: <int> | default = 3]
+[max_concurrent_writes: <int> | default = 5]
 
 # (advanced) Timeout for acquiring one of the concurrent write slots. After this
 # time, the message will be dropped.
 # CLI flag: -memberlist.acquire-writer-timeout
-[acquire_writer_timeout: <duration> | default = 250ms]
+[acquire_writer_timeout: <duration> | default = 1s]
 
 # (advanced) Enable TLS on the memberlist transport layer.
 # CLI flag: -memberlist.tls-enabled
@@ -4801,6 +4805,12 @@ ruler_alertmanager_client_config:
 # histograms with custom buckets.
 # CLI flag: -distributor.otel-convert-histograms-to-nhcb
 [otel_convert_histograms_to_nhcb: <boolean> | default = false]
+
+# (experimental) Whether to promote OTel scope metadata (scope name, version,
+# schema URL, attributes) to corresponding metric labels, prefixed with
+# otel_scope_.
+# CLI flag: -distributor.otel-promote-scope-metadata
+[otel_promote_scope_metadata: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.

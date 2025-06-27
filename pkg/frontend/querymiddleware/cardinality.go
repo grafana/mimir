@@ -95,7 +95,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request MetricsQueryRequ
 	}
 
 	statistics := stats.FromContext(ctx)
-	actualCardinality := statistics.GetFetchedSeriesCount()
+	actualCardinality := statistics.LoadFetchedSeries()
 	spanLog.LogKV("actual cardinality", actualCardinality)
 
 	if !estimateAvailable || !isCardinalitySimilar(actualCardinality, estimatedCardinality) {

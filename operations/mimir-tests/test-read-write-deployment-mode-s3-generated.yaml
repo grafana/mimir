@@ -564,7 +564,7 @@ spec:
         - -target=read
         - -usage-stats.installation-mode=jsonnet
         env: []
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -1002,7 +1002,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1193,7 +1193,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1384,7 +1384,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1519,7 +1519,7 @@ spec:
         - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1654,7 +1654,7 @@ spec:
         - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1789,7 +1789,7 @@ spec:
         - -shutdown-delay=90s
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.16.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

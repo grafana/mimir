@@ -156,7 +156,7 @@ type storeGatewayStreamReader struct {
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
 	memoryTracker       memoryConsumptionTracker
-	stats               *stats.Stats
+	stats               *stats.SafeStats
 	metrics             *blocksStoreQueryableMetrics
 	log                 log.Logger
 
@@ -168,7 +168,7 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, stats *stats.Stats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, stats *stats.SafeStats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
 		ctx:                 ctx,
 		client:              client,

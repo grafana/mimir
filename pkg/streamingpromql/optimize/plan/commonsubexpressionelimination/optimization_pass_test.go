@@ -259,6 +259,33 @@ func TestOptimizationPass(t *testing.T) {
 			expr:            `max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[7m:])`,
 			expectUnchanged: true, // We don't support deduplicating common expressions that are evaluated over different ranges.
 		},
+		"duplicate selectors, both with timestamp()": {
+			expr: `timestamp(foo) + timestamp(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- FunctionCall: timestamp(...)
+							- VectorSelector: {__name__="foo"} (return sample timestamps)
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
+		"duplicate selectors, one with timestamp()": {
+			expr:            `timestamp(foo) + foo`,
+			expectUnchanged: true, // In the future, we might be able to deduplicate these, but for now, treat them as unique expressions.
+		},
+		"duplicate selectors, one with timestamp() over an intermediate expression": {
+			expr: `timestamp(abs(foo)) + foo`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: timestamp(...)
+						- FunctionCall: abs(...)
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes: 1,
+		},
 	}
 
 	ctx := context.Background()
