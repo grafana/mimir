@@ -117,6 +117,5 @@ func (b *InstantVectorOperatorBuffer) Close() {
 	b.buffer = nil
 	b.output = nil
 
-	types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
-	b.seriesUsed = nil
+	types.BoolSlicePool.Put(&b.seriesUsed, b.memoryConsumptionTracker)
 }

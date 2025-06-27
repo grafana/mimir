@@ -116,7 +116,7 @@ func (t *RangeQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer types.FPointSlicePool.Put(&paramValues.Samples, t.MemoryConsumptionTracker)
 
 	t.k, err = types.Int64SlicePool.Get(t.TimeRange.StepCount, t.MemoryConsumptionTracker)
 	if err != nil {
@@ -244,7 +244,7 @@ func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 	}
 
 	// topk() and bottomk() ignore histograms, so return the HPoint slice to the pool now.
-	types.HPointSlicePool.Put(nextSeries.Histograms, t.MemoryConsumptionTracker)
+	types.HPointSlicePool.Put(&nextSeries.Histograms, t.MemoryConsumptionTracker)
 
 	g := t.remainingInnerSeriesToGroup[0]
 	t.remainingInnerSeriesToGroup = t.remainingInnerSeriesToGroup[1:]
@@ -252,7 +252,7 @@ func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 		return err
 	}
 
-	types.FPointSlicePool.Put(nextSeries.Floats, t.MemoryConsumptionTracker)
+	types.FPointSlicePool.Put(&nextSeries.Floats, t.MemoryConsumptionTracker)
 
 	return nil
 }
@@ -387,16 +387,16 @@ func (t *RangeQuery) accumulatePointIntoGroup(g *rangeQueryGroup, timestampIndex
 
 func (t *RangeQuery) returnGroupToPool(g *rangeQueryGroup) {
 	for _, ts := range g.seriesForTimestamps {
-		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
+		types.IntSlicePool.Put(&ts, t.MemoryConsumptionTracker)
 	}
 
-	intSliceSlicePool.Put(g.seriesForTimestamps, t.MemoryConsumptionTracker)
-	rangeQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+	intSliceSlicePool.Put(&g.seriesForTimestamps, t.MemoryConsumptionTracker)
+	rangeQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 }
 
 func (t *RangeQuery) returnSeriesToPool(series rangeQuerySeries) {
-	types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
-	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
+	types.BoolSlicePool.Put(&series.shouldReturnPoint, t.MemoryConsumptionTracker)
+	types.Float64SlicePool.Put(&series.values, t.MemoryConsumptionTracker)
 }
 
 func (t *RangeQuery) returnGroupAndSeriesToPool(g *rangeQueryGroup, firstSeriesIdxToReturn int) {
@@ -423,8 +423,7 @@ func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
-	t.k = nil
+	types.Int64SlicePool.Put(&t.k, t.MemoryConsumptionTracker)
 
 	if t.currentGroup != nil {
 		t.returnGroupAndSeriesToPool(t.currentGroup, t.seriesIndexInCurrentGroup)

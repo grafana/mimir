@@ -115,8 +115,7 @@ func (s *oneSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTrack
 	s.mergedData = types.InstantVectorSeriesData{}
 
 	if s.matchGroup != nil {
-		types.IntSlicePool.Put(s.matchGroup.presence, memoryConsumptionTracker)
-		s.matchGroup.presence = nil
+		types.IntSlicePool.Put(&s.matchGroup.presence, memoryConsumptionTracker)
 	}
 }
 
@@ -214,9 +213,9 @@ func (g *GroupedVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context)
 	}
 
 	if len(allMetadata) == 0 {
-		types.SeriesMetadataSlicePool.Put(allMetadata, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(oneSideSeriesUsed, g.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(manySideSeriesUsed, g.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&allMetadata, g.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(&oneSideSeriesUsed, g.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(&manySideSeriesUsed, g.MemoryConsumptionTracker)
 		g.Close()
 		return nil, nil
 	}
@@ -682,8 +681,7 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 	matchGroup.oneSideCount--
 
 	if matchGroup.oneSideCount == 0 {
-		types.IntSlicePool.Put(matchGroup.presence, g.MemoryConsumptionTracker)
-		matchGroup.presence = nil
+		types.IntSlicePool.Put(&matchGroup.presence, g.MemoryConsumptionTracker)
 	}
 
 	return nil
@@ -769,11 +767,8 @@ func (g *GroupedVectorVectorBinaryOperation) Close() {
 	g.Right.Close()
 	// We don't need to close g.oneSide or g.manySide, as these are either g.Left or g.Right and so have been closed above.
 
-	types.SeriesMetadataSlicePool.Put(g.oneSideMetadata, g.MemoryConsumptionTracker)
-	g.oneSideMetadata = nil
-
-	types.SeriesMetadataSlicePool.Put(g.manySideMetadata, g.MemoryConsumptionTracker)
-	g.manySideMetadata = nil
+	types.SeriesMetadataSlicePool.Put(&g.oneSideMetadata, g.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&g.manySideMetadata, g.MemoryConsumptionTracker)
 
 	if g.oneSideBuffer != nil {
 		g.oneSideBuffer.Close()

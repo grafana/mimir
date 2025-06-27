@@ -73,8 +73,8 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	if len(leftMetadata) == 0 && len(rightMetadata) == 0 {
 		// Nothing to return.
-		types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
-		types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 		o.Right.Close()
@@ -86,7 +86,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the right side.
 		o.nextSeriesIsFromLeft = false
 		o.rightSeriesCount = []int{len(rightMetadata)}
-		types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 
@@ -97,15 +97,15 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the left side.
 		o.nextSeriesIsFromLeft = true
 		o.leftSeriesCount = []int{len(leftMetadata)}
-		types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Right.Close()
 
 		return leftMetadata, nil
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
-	defer types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 	o.computeGroups(leftMetadata, rightMetadata)
 
@@ -388,6 +388,5 @@ func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, mem
 }
 
 func (g *orGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.BoolSlicePool.Put(g.leftSamplePresence, memoryConsumptionTracker)
-	g.leftSamplePresence = nil
+	types.BoolSlicePool.Put(&g.leftSamplePresence, memoryConsumptionTracker)
 }

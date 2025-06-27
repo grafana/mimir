@@ -804,7 +804,7 @@ func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.S
 		return 0, false, nil, err
 	}
 
-	defer types.Float64SlicePool.Put(values, memoryConsumptionTracker)
+	defer types.Float64SlicePool.Put(&values, memoryConsumptionTracker)
 
 	for _, p := range head {
 		values = append(values, p.F)

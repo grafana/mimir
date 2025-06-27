@@ -483,7 +483,6 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -513,6 +512,8 @@ func TestGroupedVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible
 					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
@@ -651,7 +652,7 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			for range testCase.seriesToRead {
 				d, err := o.NextSeries(ctx)

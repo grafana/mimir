@@ -235,11 +235,11 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	}
 
 	if returnInputFPointSlice {
-		types.FPointSlicePool.Put(series.Floats, v.MemoryConsumptionTracker)
+		types.FPointSlicePool.Put(&series.Floats, v.MemoryConsumptionTracker)
 	}
 
 	if returnInputHPointSlice {
-		types.HPointSlicePool.Put(series.Histograms, v.MemoryConsumptionTracker)
+		types.HPointSlicePool.Put(&series.Histograms, v.MemoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{
@@ -264,8 +264,7 @@ func (v *VectorScalarBinaryOperation) Close() {
 	v.Scalar.Close()
 	v.Vector.Close()
 
-	types.FPointSlicePool.Put(v.scalarData.Samples, v.MemoryConsumptionTracker)
-	v.scalarData.Samples = nil
+	types.FPointSlicePool.Put(&v.scalarData.Samples, v.MemoryConsumptionTracker)
 }
 
 func (v *VectorScalarBinaryOperation) emitAnnotation(generator types.AnnotationGenerator) {

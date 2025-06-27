@@ -546,7 +546,6 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -576,6 +575,8 @@ func TestOrBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
 					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
@@ -686,7 +687,7 @@ func TestOrBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) 
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 			// Read the output series to trigger the loading of some intermediate state for at least one of the output groups.
 			for range testCase.closeAfterReadingIndex + 1 {
 				_, err := o.NextSeries(ctx)

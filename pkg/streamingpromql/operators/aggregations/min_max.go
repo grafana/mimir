@@ -118,9 +118,6 @@ func (g *MinMaxAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRan
 }
 
 func (g *MinMaxAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.Float64SlicePool.Put(g.floatValues, memoryConsumptionTracker)
-	g.floatValues = nil
-
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-	g.floatPresent = nil
+	types.Float64SlicePool.Put(&g.floatValues, memoryConsumptionTracker)
+	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 }

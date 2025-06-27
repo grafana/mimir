@@ -383,7 +383,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
 			}
-			types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 
 			// Read the first output series to force the creation of incomplete groups.
 			seriesData, err := o.NextSeries(ctx)
