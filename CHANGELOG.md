@@ -114,6 +114,7 @@
 * [BUGFIX] Ingester: Fix issue where ingesters could leave read-only mode during forced compactions, resulting in write errors. #11664
 * [BUGFIX] Ruler: Fix rare panic when the ruler is shutting down. #11781
 * [BUGFIX] Block-builder-scheduler: Fix data loss bug in job assignment. #11785
+* [BUGFIX] Ingester: Fix issue where ingesters could leave read-only mode during idle compactions, resulting in write errors. #11890
 
 ### Mixin
 
