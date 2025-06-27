@@ -340,7 +340,7 @@ type Ingester struct {
 	seriesCount atomic.Int64
 
 	// Tracks if a forced compaction is in progress
-	forcedCompactionInProgress atomic.Bool
+	numCompactionsInProgress atomic.Uint32
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -3269,14 +3269,15 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
+	i.numCompactionsInProgress.Inc()
+	defer i.numCompactionsInProgress.Dec()
+
 	// Expose a metric tracking whether there's a forced head compaction in progress.
 	// This metric can be used in alerts and when troubleshooting.
 	if force {
 		i.metrics.forcedCompactionInProgress.Set(1)
-		i.forcedCompactionInProgress.Store(true)
 		defer func() {
 			i.metrics.forcedCompactionInProgress.Set(0)
-			i.forcedCompactionInProgress.Store(false)
 		}()
 	}
 
@@ -3311,6 +3312,12 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
+
+			// Set the ingester to read-only mode to avoid receiving new samples.
+			if err := i.lifecycler.ChangeReadOnlyState(ctx, true); err != nil {
+				return err
+			}
+			defer i.lifecycler.ChangeReadOnlyState(ctx, false)
 
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
