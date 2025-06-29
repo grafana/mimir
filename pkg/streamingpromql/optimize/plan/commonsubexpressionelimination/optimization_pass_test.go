@@ -189,6 +189,21 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
 			expectedSelectorsEliminated: 2,
 		},
+		"duplicated binary operation with different matrix selectors": {
+			expr: `(rate(a[5m]) - rate(b[5m])) + (rate(a[5m]) - rate(b[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- BinaryExpression: LHS - RHS
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="a"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="b"}[5m0s]
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
+			expectedSelectorsEliminated: 2,
+		},
 		"same selector used for both vector and matrix selector": {
 			expr:            `foo + rate(foo[5m])`,
 			expectUnchanged: true,
