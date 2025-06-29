@@ -15,6 +15,8 @@ data:
     activity_tracker:
       filepath: /active-query-tracker/activity.log
     alertmanager:
+      alertmanager_client:
+        tls_enabled: false
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
@@ -44,11 +46,16 @@ data:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
     frontend:
+      grpc_client_config:
+        tls_enabled: false
       parallelize_shardable_queries: true
       scheduler_address: scheduler-name-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400
+        tls_enabled: false
+      query_scheduler_grpc_client_config:
+        tls_enabled: false
       scheduler_address: scheduler-name-values-mimir-query-scheduler-headless.citestns.svc:9095
     ingester:
       ring:
@@ -63,6 +70,7 @@ data:
       grpc_client_config:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
+        tls_enabled: false
     limits:
       max_cache_freshness: 10m
       max_query_parallelism: 240
@@ -74,12 +82,20 @@ data:
       - dns+scheduler-name-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
     querier:
       max_concurrent: 16
+      store_gateway_client:
+        tls_enabled: false
     query_scheduler:
+      grpc_client_config:
+        tls_enabled: false
       max_outstanding_requests_per_tenant: 800
     ruler:
+      alertmanager_client:
+        tls_enabled: false
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.scheduler-name-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
+      ruler_client:
+        tls_enabled: false
     runtime_config:
       file: /var/mimir/runtime.yaml
     store_gateway:

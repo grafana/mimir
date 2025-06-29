@@ -62,6 +62,8 @@ spec:
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -70,9 +72,9 @@ spec:
               containerPort: {{ include "mimir.serverGrpcListenPort" . }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.federation_frontend.livenessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.federation_frontend.livenessProbe) . | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.federation_frontend.readinessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.federation_frontend.readinessProbe) . | nindent 12 }}
           resources:
             {{- toYaml .Values.federation_frontend.resources | nindent 12 }}
           securityContext:
@@ -118,6 +120,9 @@ spec:
         - name: license
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.federation_frontend.extraVolumes }}
         {{- toYaml .Values.federation_frontend.extraVolumes | nindent 8 }}
         {{- end }}

@@ -88,9 +88,9 @@ spec:
               containerPort: {{ include "mimir.serverGrpcListenPort" . }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.query_frontend.livenessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.query_frontend.livenessProbe) . | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.query_frontend.readinessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.query_frontend.readinessProbe) . | nindent 12 }}
           resources:
             {{- toYaml .Values.query_frontend.resources | nindent 12 }}
           securityContext:

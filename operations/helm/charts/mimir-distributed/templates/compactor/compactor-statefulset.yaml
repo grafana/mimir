@@ -159,9 +159,9 @@ spec:
               containerPort: {{ include "mimir.memberlistBindPort" . }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.compactor.livenessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.compactor.livenessProbe) . | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.compactor.readinessProbe | nindent 12 }}
+            {{- tpl (toYaml .Values.compactor.readinessProbe) . | nindent 12 }}
           resources:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:
