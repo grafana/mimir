@@ -94,7 +94,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.seriesBlocksQueried = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_blocks_queried",
-		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
+		Help: "Number of blocks in a bucket store that were touched to satisfy a query. level|source=unknown/old_block means that the block was created before we started collecting these statistics in 2.12.0.",
 	}, []string{"source", "level", "out_of_order"})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
