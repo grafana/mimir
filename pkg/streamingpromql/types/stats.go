@@ -87,7 +87,7 @@ func (qs *QueryStats) Clear() {
 
 func (qs *QueryStats) Close() {
 	if qs.TotalSamplesPerStep != nil {
-		Int64SlicePool.Put(qs.TotalSamplesPerStep, qs.memoryConsumptionTracker)
+		Int64SlicePool.Put(&qs.TotalSamplesPerStep, qs.memoryConsumptionTracker)
 		qs.TotalSamplesPerStep = nil
 	}
 }
