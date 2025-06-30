@@ -66,6 +66,8 @@ type OTLPHandlerLimits interface {
 	NameValidationScheme(id string) model.ValidationScheme
 }
 
+type OtlpPushWrapper func(ctx context.Context, req pmetricotlp.ExportRequest)
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
@@ -74,6 +76,7 @@ func OTLPHandler(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
+	otlpPushWrappers []OtlpPushWrapper,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -93,7 +96,7 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError)
+		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, pushMetrics, discardedDueToOtelParseError, otlpPushWrappers)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -202,6 +205,7 @@ func newOTLPParser(
 	otlpConverter *otlpMimirConverter,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
+	otlpPushWrappers []OtlpPushWrapper,
 ) parserFunc {
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
@@ -296,6 +300,10 @@ func newOTLPParser(
 		otlpReq, uncompressedBodySize, err := decoderFunc(r.Body)
 		if err != nil {
 			return err
+		}
+
+		for _, wrapper := range otlpPushWrappers {
+			wrapper(ctx, otlpReq)
 		}
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")

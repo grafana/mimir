@@ -180,6 +180,7 @@ type Distributor struct {
 	// Metrics to be passed to distributor push handlers
 	PushMetrics *PushMetrics
 
+	OtlpPushWrappers    []OtlpPushWrapper
 	PushWithMiddlewares PushFunc
 
 	RequestBufferPool util.Pool
@@ -263,6 +264,9 @@ type Config struct {
 	// and access the deserialized write requests before/after they are pushed.
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
+
+	// OtlpPushWrappers are wrappers that are called when an OTLP push request is received.
+	OtlpPushWrappers []OtlpPushWrapper `yaml:"-"`
 
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
