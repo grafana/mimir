@@ -201,6 +201,12 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		defer runutil.CloseWithLogOnErr(s.logger, shard, "close block shard")
 	}
 
+	spanLogger.DebugLog(
+		"msg", "opened parquet shards for reading",
+		"blocks", len(s.blockSet.sortedBlocks),
+		"num_shards", len(shards),
+	)
+
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
 	done, err := s.limitConcurrentQueries(ctx, stats)
@@ -553,13 +559,12 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	seriesLimiter SeriesLimiter,
 	stats *safeQueryStats,
 ) (iterator[labels.Labels], iterator[[]storepb.AggrChunk], error) {
-	// TODO(jesusvazquez) This shardfinder function could be extracted to a variable and perhaps we dont need to filter mint and maxt
+	spanLogger := spanlogger.FromContext(ctx, s.logger)
+
 	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
 		var parquetShards []parquetstorage.ParquetShard
 		for _, shard := range shards {
-			if shard.overlapsClosedInterval(mint, maxt) {
-				parquetShards = append(parquetShards, shard)
-			}
+			parquetShards = append(parquetShards, shard)
 		}
 		return parquetShards, nil
 	}
@@ -592,6 +597,16 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
 	}
+
+	spanLogger.DebugLog(
+		"msg", "createLabelsAndChunksIterators",
+		"shards", len(shards),
+		"hints", hints,
+		"matchers", matchers,
+		"numLabels", len(lbls),
+		"numAggrChks", len(aggrChunks),
+		"skipChunks", req.SkipChunks,
+	)
 
 	labelsIt := &concreteIterator[labels.Labels]{items: lbls}
 	if req.SkipChunks {
