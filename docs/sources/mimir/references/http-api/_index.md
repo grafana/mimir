@@ -347,7 +347,7 @@ POST /api/v1/push/influx/write
 To send Influx data to Grafana Cloud, refer to [Send or visualize InfluxDB metrics](https://grafana.com/docs/grafana-cloud/send-data/metrics/metrics-influxdb/).
 {{% /admonition %}}
 
-Entrypoint for the [Influx HTTP](https://docs.influxdata.com/influxdb/v1/tools/api/#write-http-endpoint).
+Entry point for the [Influx HTTP](https://docs.influxdata.com/influxdb/v1/tools/api/#write-http-endpoint).
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded in `text/plain` and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find more information on the protocol in [InfluxDB line protocol](https://docs.influxdata.com/influxdb/v1/write_protocols/line_protocol_tutorial/).
