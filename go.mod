@@ -52,7 +52,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.54.0
+	cloud.google.com/go/storage v1.55.0
 	github.com/alecthomas/chroma/v2 v2.18.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.79.3
@@ -183,7 +183,7 @@ require (
 	go.opentelemetry.io/collector/processor v1.34.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.11.0 // indirect
 	go.opentelemetry.io/contrib/bridges/prometheus v0.61.0 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.35.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.36.0 // indirect
 	go.opentelemetry.io/contrib/exporters/autoexport v0.61.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.61.0 // indirect
 	go.opentelemetry.io/contrib/samplers/jaegerremote v0.30.0 // indirect
@@ -212,7 +212,7 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.121.0 // indirect
+	cloud.google.com/go v0.121.1 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
