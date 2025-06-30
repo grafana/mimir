@@ -15,9 +15,11 @@ import (
 	"github.com/grafana/alerting/receivers/discord"
 	"github.com/grafana/alerting/receivers/email"
 	"github.com/grafana/alerting/receivers/googlechat"
+	"github.com/grafana/alerting/receivers/jira"
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
 	"github.com/grafana/alerting/receivers/mqtt"
+	"github.com/grafana/alerting/receivers/oncall"
 	"github.com/grafana/alerting/receivers/opsgenie"
 	"github.com/grafana/alerting/receivers/pagerduty"
 	"github.com/grafana/alerting/receivers/pushover"
@@ -139,6 +141,10 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 		Config:  googlechat.FullValidConfigForTesting,
 		Secrets: googlechat.FullValidSecretsForTesting,
 	},
+	"jira": {NotifierType: "jira",
+		Config:  jira.FullValidConfigForTesting,
+		Secrets: jira.FullValidSecretsForTesting,
+	},
 	"kafka": {NotifierType: "kafka",
 		Config:  kafka.FullValidConfigForTesting,
 		Secrets: kafka.FullValidSecretsForTesting,
@@ -150,6 +156,10 @@ var AllKnownConfigsForTesting = map[string]NotifierConfigTest{
 	"mqtt": {NotifierType: "mqtt",
 		Config:  mqtt.FullValidConfigForTesting,
 		Secrets: mqtt.FullValidSecretsForTesting,
+	},
+	"oncall": {NotifierType: "oncall",
+		Config:  oncall.FullValidConfigForTesting,
+		Secrets: oncall.FullValidSecretsForTesting,
 	},
 	"opsgenie": {NotifierType: "opsgenie",
 		Config:  opsgenie.FullValidConfigForTesting,

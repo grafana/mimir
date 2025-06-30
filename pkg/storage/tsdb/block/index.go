@@ -20,7 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -258,7 +258,7 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 	}
 	stats.LabelNamesCount = int64(len(lnames))
 
-	lvals, err := r.LabelValues(ctx, "__name__")
+	lvals, err := r.LabelValues(ctx, "__name__", nil)
 	if err != nil {
 		return stats, errors.Wrap(err, "metric label values")
 	}
@@ -632,8 +632,8 @@ type seriesRepair struct {
 // which index.Reader does not implement.
 type indexReader interface {
 	Symbols() index.StringIter
-	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
-	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 	SortedPostings(index.Postings) index.Postings
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings

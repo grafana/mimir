@@ -5,17 +5,12 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/url"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -24,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -34,12 +30,12 @@ const (
 )
 
 type spinOffSubqueriesMiddleware struct {
-	next   MetricsQueryHandler
-	limits Limits
-	logger log.Logger
+	next      MetricsQueryHandler
+	rangeNext MetricsQueryHandler
+	limits    Limits
+	logger    log.Logger
 
-	rangeHandler    MetricsQueryHandler
-	engine          *promql.Engine
+	engine          promql.QueryEngine
 	defaultStepFunc func(int64) int64
 
 	metrics spinOffSubqueriesMetrics
@@ -94,20 +90,24 @@ func newSpinOffSubqueriesMetrics(registerer prometheus.Registerer) spinOffSubque
 func newSpinOffSubqueriesMiddleware(
 	limits Limits,
 	logger log.Logger,
-	engine *promql.Engine,
-	rangeHandler MetricsQueryHandler,
+	engine promql.QueryEngine,
 	registerer prometheus.Registerer,
+	rangeMiddleware MetricsQueryMiddleware,
 	defaultStepFunc func(int64) int64,
 ) MetricsQueryMiddleware {
 	metrics := newSpinOffSubqueriesMetrics(registerer)
-
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+		rangeNext := next
+		if rangeMiddleware != nil {
+			rangeNext = rangeMiddleware.Wrap(next)
+		}
+
 		return &spinOffSubqueriesMiddleware{
 			next:            next,
+			rangeNext:       rangeNext,
 			limits:          limits,
 			logger:          logger,
 			engine:          engine,
-			rangeHandler:    rangeHandler,
 			metrics:         metrics,
 			defaultStepFunc: defaultStepFunc,
 		}
@@ -118,8 +118,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
 	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
-	defer spanLog.Span.Finish()
+	spanLog, ctx := spanlogger.New(ctx, logger, tracer, "spinOffSubqueriesMiddleware.Do")
+	defer spanLog.Finish()
 
 	// For now, the feature is completely opt-in
 	// So we check that the given query is allowed to be spun off
@@ -128,29 +128,8 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	matched := false
-	for _, tenantID := range tenantIDs {
-		patterns := s.limits.InstantQueriesWithSubquerySpinOff(tenantID)
-
-		for _, pattern := range patterns {
-			matcher, err := labels.NewFastRegexMatcher(pattern)
-			if err != nil {
-				return nil, apierror.New(apierror.TypeBadData, err.Error())
-			}
-
-			if matcher.MatchString(req.GetQuery()) {
-				matched = true
-				break
-			}
-		}
-
-		if matched {
-			break
-		}
-	}
-
-	if !matched {
-		spanLog.DebugLog("msg", "expression did not match any configured subquery spin-off patterns, so subquery spin-off is disabled for this query")
+	if !validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.SubquerySpinOffEnabled) {
+		spanLog.DebugLog("msg", "subquery spin-off is disabled for a tenant", "tenant_ids", tenantIDs)
 		return s.next.Do(ctx, req)
 	}
 
@@ -214,7 +193,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	annotationAccumulator := NewAnnotationAccumulator()
 
-	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeHandler)
+	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeNext)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
@@ -243,71 +222,17 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	warn = removeDuplicates(warn)
 	info = removeDuplicates(info)
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: string(res.Value.Type()),
-			Result:     extracted,
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: string(res.Value.Type()),
+				Result:     extracted,
+			},
+			Headers:  queryable.getResponseHeaders(),
+			Warnings: warn,
+			Infos:    info,
 		},
-		Headers:  queryable.getResponseHeaders(),
-		Warnings: warn,
-		Infos:    info,
+		finalizer: qry.Close,
 	}, nil
-}
-
-// spinOffQueryHandler is a query handler that takes a request and sends it to a remote endpoint.
-type spinOffQueryHandler struct {
-	codec         Codec
-	logger        log.Logger
-	rangeQueryURL *url.URL
-}
-
-func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string, maxRetries int, retryMiddlewareMetrics prometheus.Observer) (MetricsQueryHandler, error) {
-	rangeQueryURL, err := url.Parse(sendURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid spin-off URL: %w", err)
-	}
-	var handler MetricsQueryHandler = &spinOffQueryHandler{
-		codec:         codec,
-		logger:        logger,
-		rangeQueryURL: rangeQueryURL,
-	}
-
-	if maxRetries > 0 {
-		handler = newRetryMiddleware(logger, maxRetries, retryMiddlewareMetrics).Wrap(handler)
-	}
-
-	return handler, nil
-}
-
-func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	httpReq, err := s.codec.EncodeMetricsQueryRequest(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("error encoding request: %w", err)
-	}
-	httpReq.RequestURI = "" // Reset RequestURI to force URL to be used in the request.
-	// Override the URL with the configured range query URL.
-	httpReq.URL.Scheme = s.rangeQueryURL.Scheme
-	httpReq.URL.Host = s.rangeQueryURL.Host
-	httpReq.URL.Path = s.rangeQueryURL.Path
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
-		return nil, fmt.Errorf("error injecting org ID into request: %v", err)
-	}
-
-	client := http.DefaultClient
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
-	}
-	defer resp.Body.Close()
-	decoded, err := s.codec.DecodeMetricsQueryResponse(ctx, resp, req, s.logger)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding response: %v. Status: %s", err, resp.Status)
-	}
-	promRes, ok := decoded.(*PrometheusResponse)
-	if !ok {
-		return nil, fmt.Errorf("expected PrometheusResponse, got %T", decoded)
-	}
-	return promRes, nil
 }

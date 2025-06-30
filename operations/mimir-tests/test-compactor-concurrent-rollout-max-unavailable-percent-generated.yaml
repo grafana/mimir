@@ -539,9 +539,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -636,9 +634,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -716,10 +712,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "5000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -791,7 +784,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -846,7 +839,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.22.0
+        image: grafana/rollout-operator:v0.28.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -922,7 +915,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1031,9 +1024,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1126,7 +1117,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1179,7 +1170,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1232,7 +1223,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1247,7 +1238,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       name: memcached-metadata
@@ -1285,7 +1276,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.3
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1368,9 +1359,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1000"
-        image: grafana/mimir:2.15.0
+        image: grafana/mimir:2.16.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

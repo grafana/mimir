@@ -13,14 +13,24 @@ weight: 30
 
 Mimir Jsonnet supports autoscaling for the following components:
 
-- [Ruler Querier]({{< relref "../../references/architecture/components/ruler" >}})
-- [Querier]({{< relref "../../references/architecture/components/querier" >}})
-- [Distributor]({{< relref "../../references/architecture/components/distributor" >}})
+- [Ruler Querier](../../../references/architecture/components/ruler/)
+- [Querier](../../../references/architecture/components/querier/)
+- [Distributor](../../../references/architecture/components/distributor/)
 
-Autoscaling, which is based on Prometheus metrics and [Kubernetes-based Event Driven Autoscaler (KEDA)](https://keda.sh), uses Kubernetes’ Horizontal Pod Autoscaler (HPA).
+Autoscaling, which is based on Prometheus metrics and [Kubernetes-based Event Driven Autoscaler (KEDA)](https://keda.sh), uses Kubernetes' Horizontal Pod Autoscaler (HPA).
 
 HPA is not configured directly in Jsonnet but it's created and updated by KEDA.
 KEDA is an operator, running in the Kubernetes cluster, which is responsible to simplify the setup of HPA with custom metrics (Prometheus in our case).
+
+{{< admonition type="warning" >}}
+Do not use the same Mimir or Grafana Enterprise Metrics cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop:
+
+Don't use the same Mimir or Grafana Enterprise Metrics cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop.
+
+For instance, if the Mimir or GEM cluster becomes unavailable, autoscaling stops working, because it cannot query the metrics. This prevents the cluster from automatically scaling up during high load or recovery. This inability to scale further exacerbates the cluster's unavailability, which might, in turn, prevent the cluster from recovering.
+
+Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
+{{< /admonition >}}
 
 ## How KEDA works
 
@@ -53,7 +63,7 @@ However, if KEDA is not running successfully, there are consequences for Mimir a
 Use a [high availability](https://keda.sh/docs/latest/operate/cluster/#high-availability) KEDA configuration if autoscaling is critical for your use case.
 {{< /admonition >}}
 
-The [alert `MimirAutoscalerNotActive`]({{< relref "../../manage/monitor-grafana-mimir" >}}) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
+The [alert `MimirAutoscalerNotActive`](../../../manage/monitor-grafana-mimir/) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
 
 ## How Kubernetes HPA works
 

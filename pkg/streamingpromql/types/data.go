@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type SeriesMetadata struct {
@@ -29,6 +31,39 @@ type InstantVectorSeriesData struct {
 	// Samples must not have duplicate timestamps.
 	// Samples must not share FloatHistogram instances.
 	Histograms []promql.HPoint
+}
+
+func (d InstantVectorSeriesData) Clone(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (InstantVectorSeriesData, error) {
+	clone := InstantVectorSeriesData{}
+
+	var err error
+	clone.Floats, err = FPointSlicePool.Get(len(d.Floats), memoryConsumptionTracker)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
+
+	clone.Floats = clone.Floats[:len(d.Floats)]
+	copy(clone.Floats, d.Floats) // We can do a simple copy here, as FPoints don't contain pointers.
+
+	clone.Histograms, err = HPointSlicePool.Get(len(d.Histograms), memoryConsumptionTracker)
+	if err != nil {
+		return InstantVectorSeriesData{}, err
+	}
+
+	clone.Histograms = clone.Histograms[:len(d.Histograms)]
+
+	for i, p := range d.Histograms {
+		clone.Histograms[i].T = p.T
+
+		// Reuse existing FloatHistogram instance if we can.
+		if clone.Histograms[i].H == nil {
+			clone.Histograms[i].H = p.H.Copy()
+		} else {
+			p.H.CopyTo(clone.Histograms[i].H)
+		}
+	}
+
+	return clone, nil
 }
 
 type InstantVectorSeriesDataIterator struct {
@@ -151,11 +186,12 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 }
 
 type QueryTimeRange struct {
-	StartT               int64 // Start timestamp, in milliseconds since Unix epoch.
-	EndT                 int64 // End timestamp, in milliseconds since Unix epoch.
-	IntervalMilliseconds int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+	StartT               int64 `json:"startT"`               // Start timestamp, in milliseconds since Unix epoch.
+	EndT                 int64 `json:"endT"`                 // End timestamp, in milliseconds since Unix epoch.
+	IntervalMilliseconds int64 `json:"intervalMilliseconds"` // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
 
-	StepCount int // 1 for instant queries.
+	StepCount int  `json:"-"` // 1 for instant queries.
+	IsInstant bool `json:"isInstant,omitempty"`
 }
 
 func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
@@ -166,6 +202,7 @@ func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
 		EndT:                 ts,
 		IntervalMilliseconds: 1,
 		StepCount:            1,
+		IsInstant:            true,
 	}
 }
 
@@ -179,6 +216,7 @@ func NewRangeQueryTimeRange(start time.Time, end time.Time, interval time.Durati
 		EndT:                 endT,
 		IntervalMilliseconds: IntervalMilliseconds,
 		StepCount:            int((endT-startT)/IntervalMilliseconds) + 1,
+		IsInstant:            false,
 	}
 }
 
@@ -192,4 +230,12 @@ func (q *QueryTimeRange) PointIndex(t int64) int64 {
 // p must be less than StepCount
 func (q *QueryTimeRange) IndexTime(p int64) int64 {
 	return q.StartT + p*q.IntervalMilliseconds
+}
+
+func (q *QueryTimeRange) Equal(other QueryTimeRange) bool {
+	return q.StartT == other.StartT &&
+		q.EndT == other.EndT &&
+		q.IntervalMilliseconds == other.IntervalMilliseconds &&
+		q.StepCount == other.StepCount &&
+		q.IsInstant == other.IsInstant
 }

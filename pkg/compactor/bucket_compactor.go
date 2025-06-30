@@ -22,15 +22,16 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
-	"go.uber.org/atomic"
+	"github.com/thanos-io/objstore/providers/filesystem"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -386,7 +387,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	level.Info(jobLogger).Log("msg", "compacted blocks", "new_block_count", len(compIDs), "new_blocks", fmt.Sprintf("%v", compIDs), "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
-	uploadedBlocks := atomic.NewInt64(0)
 
 	if err = verifyCompactedBlocksTimeRanges(compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), subDir); err != nil {
 		level.Warn(jobLogger).Log("msg", "compacted blocks verification failed", "err", err)
@@ -394,11 +394,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+	uploadBlocksCount := len(blocksToUpload)
+
+	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
-
-		uploadedBlocks.Inc()
-
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 
 		// When splitting is enabled, we need to inject the shard ID as an external label.
@@ -406,6 +406,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		if job.UseSplitting() {
 			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
+		blocksToUpload[idx].labels = newLabels
 
 		newMeta, err := block.InjectThanosMeta(jobLogger, bdir, block.ThanosMeta{
 			Labels:       newLabels,
@@ -413,6 +414,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			Source:       block.CompactorSource,
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
+
 		if err != nil {
 			return errors.Wrapf(err, "failed to finalize the block %s", bdir)
 		}
@@ -421,18 +423,65 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrap(err, "remove tombstones")
 		}
 
-		// Ensure the compacted block is valid.
 		if err := block.VerifyBlock(ctx, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
+	}
 
+	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a
+	// compacted block if there's an error affecting sparse-index-headers.
+	switch c.uploadSparseIndexHeaders {
+	case true:
+		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
+		// construct sparse-index-headers without making requests to object storage.
+		fsbkt, err := filesystem.NewBucket(subDir)
+		if err != nil {
+			c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
+			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+			break
+		}
+
+		// instrument filesystem.Bucket to objstore.InstrumentedBucket
+		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
+		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+			blockToUpload := blocksToUpload[idx]
+			err := prepareSparseIndexHeader(ctx, jobLogger, fsInstrBkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
+			if err != nil {
+				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
+				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			}
+			return nil
+		})
+	}
+
+	// upload all blocks
+	c.metrics.blockUploadsStarted.Add(float64(uploadBlocksCount))
+	err = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		blockToUpload := blocksToUpload[idx]
+		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		begin := time.Now()
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
+
+		opts := []objstore.UploadOption{
+			objstore.WithUploadConcurrency(c.maxPerBlockUploadConcurrency),
+		}
+
+		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
+			var uploadErr *block.UploadError
+			if errors.As(err, &uploadErr) {
+				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
+			} else {
+				c.metrics.blockUploadsFailed.WithLabelValues(string(block.FileTypeUnknown)).Inc()
+			}
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
 		elapsed := time.Since(begin)
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
+		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(blockToUpload.labels))
 		return nil
 	})
 	if err != nil {
@@ -440,7 +489,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed = time.Since(uploadBegin)
-	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadedBlocks, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
@@ -457,8 +506,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return false, nil, errors.Wrapf(err, "mark old block for deletion from bucket")
 		}
 	}
-
 	return true, compIDs, nil
+}
+
+func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
+	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
@@ -530,6 +588,7 @@ func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob 
 type ulidWithShardIndex struct {
 	ulid       ulid.ULID
 	shardIndex int
+	labels     map[string]string
 }
 
 // issue347Error is a type wrapper for errors that should invoke the repair process for broken block.
@@ -661,17 +720,21 @@ func deleteBlock(bkt objstore.Bucket, id ulid.ULID, bdir string, logger log.Logg
 
 // BucketCompactorMetrics holds the metrics tracked by BucketCompactor.
 type BucketCompactorMetrics struct {
-	groupCompactionRunsStarted         prometheus.Counter
-	groupCompactionRunsCompleted       prometheus.Counter
-	groupCompactionRunsFailed          prometheus.Counter
-	groupCompactions                   prometheus.Counter
-	blockCompactionDelay               *prometheus.HistogramVec
-	compactionBlocksVerificationFailed prometheus.Counter
-	blocksMarkedForDeletion            prometheus.Counter
-	blocksMarkedForNoCompact           *prometheus.CounterVec
-	blocksMaxTimeDelta                 prometheus.Histogram
-	compactionJobDuration              *prometheus.HistogramVec
-	compactionJobBlocks                *prometheus.HistogramVec
+	groupCompactionRunsStarted               prometheus.Counter
+	groupCompactionRunsCompleted             prometheus.Counter
+	groupCompactionRunsFailed                prometheus.Counter
+	groupCompactions                         prometheus.Counter
+	blockCompactionDelay                     *prometheus.HistogramVec
+	compactionBlocksVerificationFailed       prometheus.Counter
+	compactionBlocksBuildSparseHeadersFailed prometheus.Counter
+	blocksMarkedForDeletion                  prometheus.Counter
+	blocksMarkedForNoCompact                 *prometheus.CounterVec
+	blocksMaxTimeDelta                       prometheus.Histogram
+	compactionJobDuration                    *prometheus.HistogramVec
+	compactionJobBlocks                      *prometheus.HistogramVec
+	blockUploadsStarted                      prometheus.Counter
+	blockUploadsFailed                       *prometheus.CounterVec
+	blockUploadsDuration                     *prometheus.HistogramVec
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -721,6 +784,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name: "cortex_compactor_blocks_verification_failures_total",
 			Help: "Total number of failures when verifying min/max time ranges of compacted blocks.",
 		}),
+		compactionBlocksBuildSparseHeadersFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_compactor_build_sparse_headers_failures_total",
+			Help: "Total number of failures when building sparse index headers.",
+		}),
 		blocksMarkedForDeletion: blocksMarkedForDeletion,
 		blocksMarkedForNoCompact: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_compactor_blocks_marked_for_no_compaction_total",
@@ -731,6 +798,22 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Help:    "Difference between now and the max time of a block being compacted in seconds.",
 			Buckets: prometheus.LinearBuckets(86400, 43200, 8), // 1 to 5 days, in 12 hour intervals
 		}),
+		blockUploadsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_compactor_block_uploads_started_total",
+			Help: "Total number of block uploads started.",
+		}),
+		blockUploadsFailed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_compactor_block_uploads_failed_total",
+			Help: "Total number of block uploads failed.",
+		}, []string{"type"}),
+		blockUploadsDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_block_upload_duration_seconds",
+			Help:                            "Duration of successful block uploads.",
+			Buckets:                         prometheus.ExponentialBuckets(0.004, 2, 14), // 4ms to 32768ms
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"type"}),
 	}
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason).Add(0)
@@ -747,20 +830,24 @@ var ownAllJobs = func(*Job) (bool, error) {
 
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
-	logger               log.Logger
-	sy                   *metaSyncer
-	grouper              Grouper
-	comp                 Compactor
-	planner              Planner
-	compactDir           string
-	bkt                  objstore.Bucket
-	concurrency          int
-	skipUnhealthyBlocks  bool
-	ownJob               ownCompactionJobFunc
-	sortJobs             JobsOrderFunc
-	waitPeriod           time.Duration
-	blockSyncConcurrency int
-	metrics              *BucketCompactorMetrics
+	logger                        log.Logger
+	sy                            *metaSyncer
+	grouper                       Grouper
+	comp                          Compactor
+	planner                       Planner
+	compactDir                    string
+	bkt                           objstore.Bucket
+	concurrency                   int
+	skipUnhealthyBlocks           bool
+	uploadSparseIndexHeaders      bool
+	sparseIndexHeaderSamplingRate int
+	maxPerBlockUploadConcurrency  int
+	sparseIndexHeaderconfig       indexheader.Config
+	ownJob                        ownCompactionJobFunc
+	sortJobs                      JobsOrderFunc
+	waitPeriod                    time.Duration
+	blockSyncConcurrency          int
+	metrics                       *BucketCompactorMetrics
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -779,25 +866,38 @@ func NewBucketCompactor(
 	waitPeriod time.Duration,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
+	uploadSparseIndexHeaders bool,
+	sparseIndexHeaderSamplingRate int,
+	sparseIndexHeaderconfig indexheader.Config,
+	maxPerBlockUploadConcurrency int,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, errors.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
 	}
+
+	if maxPerBlockUploadConcurrency <= 0 {
+		return nil, errors.Errorf("invalid per block upload concurrency level (%d), concurrency must be > 0", maxPerBlockUploadConcurrency)
+	}
+
 	return &BucketCompactor{
-		logger:               logger,
-		sy:                   sy,
-		grouper:              grouper,
-		planner:              planner,
-		comp:                 comp,
-		compactDir:           compactDir,
-		bkt:                  bkt,
-		concurrency:          concurrency,
-		skipUnhealthyBlocks:  skipUnhealthyBlocks,
-		ownJob:               ownJob,
-		sortJobs:             sortJobs,
-		waitPeriod:           waitPeriod,
-		blockSyncConcurrency: blockSyncConcurrency,
-		metrics:              metrics,
+		logger:                        logger,
+		sy:                            sy,
+		grouper:                       grouper,
+		planner:                       planner,
+		comp:                          comp,
+		compactDir:                    compactDir,
+		bkt:                           bkt,
+		concurrency:                   concurrency,
+		skipUnhealthyBlocks:           skipUnhealthyBlocks,
+		ownJob:                        ownJob,
+		sortJobs:                      sortJobs,
+		waitPeriod:                    waitPeriod,
+		blockSyncConcurrency:          blockSyncConcurrency,
+		metrics:                       metrics,
+		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
+		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
+		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
+		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
 	}, nil
 }
 
@@ -816,10 +916,10 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 	}()
 
+	// Keep this channel outside the compaction loop, because we want the "max compaction time"
+	// to apply on compactions across multiple consecutive loops. This channel is initialised
+	// after the first planning.
 	var maxCompactionTimeChan <-chan time.Time
-	if maxCompactionTime > 0 {
-		maxCompactionTimeChan = time.After(maxCompactionTime)
-	}
 
 	// Loop over bucket and compact until there's no work left.
 	for {
@@ -977,6 +1077,14 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		level.Info(c.logger).Log("msg", "start of compactions")
+
+		// Start the max compaction timer only after the first planning has been completed. This is important
+		// in case the metas syncing (or planning in general) is slow. If did start the timer before the first
+		// planning we could end up in a situation where the planning takes longer than "max compaction time"
+		// and we would never run compactions at all for a given tenant.
+		if maxCompactionTimeChan == nil && maxCompactionTime > 0 {
+			maxCompactionTimeChan = time.After(maxCompactionTime)
+		}
 
 		maxCompactionTimeReached := false
 		// Send all jobs found during this pass to the compaction workers.

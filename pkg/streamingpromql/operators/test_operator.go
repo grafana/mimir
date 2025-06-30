@@ -8,14 +8,16 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // TestOperator is an InstantVectorOperator used only in tests.
 type TestOperator struct {
-	Series []labels.Labels
-	Data   []types.InstantVectorSeriesData
+	Series                   []labels.Labels
+	Data                     []types.InstantVectorSeriesData
+	Closed                   bool
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
 var _ types.InstantVectorOperator = &TestOperator{}
@@ -25,7 +27,20 @@ func (t *TestOperator) ExpressionPosition() posrange.PositionRange {
 }
 
 func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata, error) {
-	return testutils.LabelsToSeriesMetadata(t.Series), nil
+	if len(t.Series) == 0 {
+		return nil, nil
+	}
+
+	seriesPool, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	seriesPool = seriesPool[:len(t.Series)]
+	for i, l := range t.Series {
+		seriesPool[i].Labels = l
+	}
+	return seriesPool, nil
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
@@ -39,6 +54,20 @@ func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesD
 	return d, nil
 }
 
+func (t *TestOperator) ReleaseUnreadData(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	for _, d := range t.Data {
+		types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+	}
+
+	t.Data = nil
+}
+
+func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error {
+	// Nothing to do.
+	return nil
+}
+
 func (t *TestOperator) Close() {
-	panic("Close() not supported")
+	// Note that we do not return any unused series data here: it is the responsibility of the test to call ReleaseUnreadData, if needed.
+	t.Closed = true
 }

@@ -16,10 +16,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
@@ -73,8 +75,10 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "alertmanager", util.GRPCProtocol)
+
 	factory := client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, inst, requestDuration)
+		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, inst, requestDuration, invalidClusterValidation, logger)
 	})
 
 	poolCfg := client.PoolConfig{
@@ -84,9 +88,8 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "alertmanager_distributor_clients",
-		Help:      "The current number of alertmanager distributor clients in the pool.",
+		Name: "cortex_alertmanager_distributor_clients",
+		Help: "The current number of alertmanager distributor clients in the pool.",
 	})
 
 	return &alertmanagerClientsPool{pool: client.NewPool("alertmanager", poolCfg, discovery, factory, clientsCount, logger)}
@@ -103,11 +106,14 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 
 // dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
 // and collects observations of request durations.
-func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
-	opts, err := cfg.DialOption(grpcclient.Instrument(requestDuration))
+func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*alertmanagerClient, error) {
+	unary, stream := grpcclient.Instrument(requestDuration)
+	opts, err := cfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {

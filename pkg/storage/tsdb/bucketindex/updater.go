@@ -16,7 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 
@@ -29,6 +29,7 @@ var (
 	ErrBlockMetaCorrupted         = block.ErrorSyncMetaCorrupted
 	ErrBlockDeletionMarkNotFound  = errors.New("block deletion mark not found")
 	ErrBlockDeletionMarkCorrupted = errors.New("block deletion mark corrupted")
+	errStopIter                   = errors.New("stop iteration")
 )
 
 // Updater is responsible to generate an update in-memory bucket index.
@@ -73,7 +74,7 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	// the block still exists, which is what we want to avoid, otherwise we may update the bucket
 	// index with a block that has been deleted, it is still referenced in the list of blocks in the
 	// index, but its deletion mark is not referenced anymore in the index.
-	blockDeletionMarks, err := w.updateBlockDeletionMarks(ctx, oldBlockDeletionMarks)
+	blockDeletionMarks, updPartials, err := w.updateBlockDeletionMarks(ctx, oldBlockDeletionMarks)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -81,6 +82,14 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	blocks, partials, err := w.updateBlocks(ctx, oldBlocks)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// merge blocks with inconsistent deletion marks and partial blocks related to inaccessible meta.json,
+	// giving priority to errors from missing or corrupted meta.json.
+	for id, err := range updPartials {
+		if _, ok := partials[id]; !ok {
+			partials[id] = err
+		}
 	}
 
 	return &Index{
@@ -192,13 +201,14 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	return block, nil
 }
 
-func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, error) {
+func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDeletionMark) ([]*BlockDeletionMark, map[ulid.ULID]error, error) {
 	out := make([]*BlockDeletionMark, 0, len(old))
+	partials := map[ulid.ULID]error{}
 
 	// Find all markers in the storage.
 	discovered, err := block.ListBlockDeletionMarks(ctx, w.bkt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	level.Info(w.logger).Log("msg", "listed deletion markers", "count", len(discovered))
@@ -221,7 +231,16 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 		m, err := w.updateBlockDeletionMarkIndexEntry(ctx, id)
 		if errors.Is(err, ErrBlockDeletionMarkNotFound) {
 			// This could happen if the block is permanently deleted between the "list objects" and now.
-			level.Warn(w.logger).Log("msg", "skipped missing block deletion mark when updating bucket index", "block", id.String())
+			if isDirEmpty(ctx, w.bkt, id) {
+				level.Info(w.logger).Log("msg", "removing stale block deletion mark", "block", id)
+				if err := w.bkt.Delete(ctx, block.DeletionMarkFilepath(id)); err != nil {
+					level.Warn(w.logger).Log("msg", "failed to clean stale global deletion mark", "block", id.String())
+				}
+				return nil, nil
+			}
+			// If the block's deletion mark is not found and the block's directory contains some files, then it has not yet been
+			// permanently deleted. Record any partially deleted blocks so that we can check if deletion should be retried.
+			partials[id] = err
 			return nil, nil
 		}
 		if errors.Is(err, ErrBlockDeletionMarkCorrupted) {
@@ -235,13 +254,21 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 		return BlockDeletionMarks{m}, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out = append(out, updatedMarks...)
 
 	level.Info(w.logger).Log("msg", "updated deletion markers for recently marked blocks", "count", len(discovered), "total_deletion_markers", len(out))
+	return out, partials, nil
+}
 
-	return out, nil
+func isDirEmpty(ctx context.Context, bkt objstore.Bucket, id ulid.ULID) bool {
+	empty := true
+	_ = bkt.Iter(ctx, id.String(), func(_ string) error {
+		empty = false
+		return errStopIter
+	})
+	return empty
 }
 
 func (w *Updater) updateBlockDeletionMarkIndexEntry(ctx context.Context, id ulid.ULID) (*BlockDeletionMark, error) {

@@ -13,7 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1300,7 +1300,7 @@ func encodeCachedSeriesForPostings(set seriesChunkRefsSet, diffEncodedPostings [
 		DiffEncodedPostings: diffEncodedPostings,
 	}
 	for i, s := range set.series {
-		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
+		entry.Series[i].Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
 	}
 
 	uncompressed, err := entry.Marshal()

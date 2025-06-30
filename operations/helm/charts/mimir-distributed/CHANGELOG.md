@@ -29,13 +29,33 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
+* [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231
+* [CHANGE] All: Environment variable `JAEGER_REPORTER_MAX_QUEUE_SIZE` is no longer set. Components will use OTel's default value of `2048` unless explicitly configured. You can still configure `JAEGER_REPORTER_MAX_QUEUE_SIZE` if you configure tracing using Jaeger env vars, and you can always set `OTEL_BSP_MAX_QUEUE_SIZE` OTel configuration. #11700
+* [CHANGE] Update rollout-operator to latest release, this includes support for `OTEL_` tracing environment variables. #11748 #11794
+* [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
+* [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
+* [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
+* [BUGFIX] KEDA Autoscaling: Resolved an issue where the authModes field was missing from the ScaledObject definition for the querier when authentication was enabled. #11709
+* [BUGFIX] Fix indentation in the templates that resolve `extraVolumes` values. #11202
+* [BUGFIX] Added extraVolumes to provisioner to support mounting TLS certificates. #11400
+
+## 5.7.0
+
+* [CHANGE] Tokengen: Added k8s secret storage for the admin token. #5237
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
+* [CHANGE] Memcached: Use 3 replicas for all cache types by default in `large.yaml` and `small.yaml`. #10739
+* [CHANGE] Memcached: Honor `global.clusterDomain` when building hostnames for each cache cluster. #10858
+* [ENHANCEMENT] Upgrade Mimir and GEM to [2.16.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2160). #10962
 * [ENHANCEMENT] Minio: update subchart to v5.4.0. #10346
 * [ENHANCEMENT] Individual mimir components can override their container images via the *.image values. The component's image definitions always override the values set in global `image` or `enterprise.image`. #10340
 * [ENHANCEMENT] Alertmanager, compactor, ingester, and store-gateway StatefulSets can configure their PVC template name via the corresponding *.persistentVolume.name values. #10376
 * [ENHANCEMENT] Set resources for smoke-test job. #10608
+* [ENHANCEMENT] All components can expose additional ports with their respective services via the *.service.extraPorts values. This allows exposing the containers that components declare in `extraContainers`. #10659
+* [ENHANCEMENT] Add optional Helm update job for provisioning tenants. #10864
+* [ENHANCEMENT] Add extra values for KEDA autoscaling to support authentication, `ignoreNullValues`, `unsafeSsl`, and `PromQLLabelSelector`. #10265
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 * [ENHANCEMENT] Add values for setting annotations and labels for rollout-operator. #6733

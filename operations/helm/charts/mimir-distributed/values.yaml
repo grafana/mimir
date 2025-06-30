@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r330-61dfefa
+  tag: r347-0fc0f9a3
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -394,6 +394,7 @@ mimir:
         memcached:
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
+          timeout: 500ms
       {{- end }}
     {{- end }}
 
@@ -542,7 +543,26 @@ kedaAutoscaling:
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
+  ignoreNullValues: true
+  unsafeSsl: false
 
+  # If your metrics are stored in a datasource with multiple mimir instances extra labels to filter the data are required to get the right metric.
+  toPromQLLabelSelector:
+  #  - cluster!="eu-west"
+  #  - app="foobar"
+
+  # --KEDA trigger authentication settings.
+  # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
+  authentication:
+    enabled: false
+    authModes: ""
+    secretTargetRef: []
+    # - key: username
+    #   name: my-secret-name
+    #   parameter: username
+    # - key: password
+    #   name: my-secret-name
+    #   parameter: password
 alertmanager:
   enabled: true
   # -- Total number of replicas for the alertmanager across all availability zones
@@ -555,7 +575,7 @@ alertmanager:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   statefulSet:
     enabled: true
@@ -577,6 +597,11 @@ alertmanager:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
+    # - port: 11811
+    #   protocol: TCP
+    #   name: reverse-proxy
+    #   targetPort: 11811
 
   # -- Optionally set the scheduler for pods of the alertmanager
   schedulerName: ""
@@ -741,10 +766,6 @@ alertmanager:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
   # -- Options to configure zone-aware replication for alertmanager
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -852,7 +873,7 @@ distributor:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -862,15 +883,19 @@ distributor:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -885,6 +910,7 @@ distributor:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -959,10 +985,6 @@ distributor:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
 ingester:
   # -- Whether to render the manifests related to the ingester component.
   enabled: true
@@ -971,7 +993,7 @@ ingester:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -988,6 +1010,7 @@ ingester:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1110,10 +1133,6 @@ ingester:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
   # -- Options to configure zone-aware replication for ingester
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -1127,7 +1146,7 @@ ingester:
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
   #       storageClass: storage-class-us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #       storageClass: storage-class-us-central1-b
@@ -1231,7 +1250,7 @@ overrides_exporter:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -1245,6 +1264,7 @@ overrides_exporter:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   strategy:
     type: RollingUpdate
@@ -1316,10 +1336,6 @@ overrides_exporter:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 ruler:
   enabled: true
 
@@ -1327,7 +1343,7 @@ ruler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -1336,15 +1352,19 @@ ruler:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 100
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1359,6 +1379,7 @@ ruler:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
@@ -1441,10 +1462,6 @@ ruler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
   # -- If set to true, a dedicated query path will be deployed for the ruler and operational mode will be set to use remote evaluation. https://grafana.com/docs/mimir/latest/references/architecture/components/ruler/#remote
   # -- This is useful for isolating the ruler queries from other queriers (api/grafana).
   remoteEvaluationDedicatedQueryPath: false
@@ -1455,7 +1472,7 @@ ruler_querier:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -1464,11 +1481,11 @@ ruler_querier:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1496,6 +1513,7 @@ ruler_querier:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1569,17 +1587,13 @@ ruler_querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1589,15 +1603,19 @@ ruler_query_frontend:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1612,6 +1630,7 @@ ruler_query_frontend:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1685,17 +1704,13 @@ ruler_query_frontend:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   # -- Allows to override the container image of the ruler-query-scheduler component.
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -1705,6 +1720,7 @@ ruler_query_scheduler:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1778,10 +1794,6 @@ ruler_query_scheduler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 querier:
   # -- Whether to render the manifests related to the querier component.
   enabled: true
@@ -1790,7 +1802,7 @@ querier:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -1799,11 +1811,11 @@ querier:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1842,6 +1854,7 @@ querier:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1915,10 +1928,6 @@ querier:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
@@ -1927,7 +1936,7 @@ query_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1937,15 +1946,19 @@ query_frontend:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
+    # -- Target CPU utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetCPUUtilizationPercentage: 75
+    # -- Target memory utilization percentage for KEDA autoscaling. This controls the headroom each pod has compared to its current usage.
+    # targetting lower percentages overprovisions the containers, so they can handle bursts of traffic and tolerate failures without waiting to scale out.
     targetMemoryUtilizationPercentage: 100
     behavior:
       scaleDown:
@@ -1960,6 +1973,7 @@ query_frontend:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -2033,10 +2047,6 @@ query_frontend:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 5000
-
 query_scheduler:
   enabled: true
 
@@ -2044,7 +2054,7 @@ query_scheduler:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 2
 
@@ -2054,6 +2064,7 @@ query_scheduler:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -2127,10 +2138,6 @@ query_scheduler:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
   enabled: true
@@ -2139,7 +2146,7 @@ store_gateway:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2153,6 +2160,7 @@ store_gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -2279,10 +2287,6 @@ store_gateway:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: 1000
-
   # -- Options to configure zone-aware replication for store-gateway
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -2295,7 +2299,7 @@ store_gateway:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #     - name: zone-c
@@ -2390,7 +2394,7 @@ compactor:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -2400,6 +2404,7 @@ compactor:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
@@ -2517,16 +2522,12 @@ compactor:
   env: []
   extraEnvFrom: []
 
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 memcached:
   image:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.36-alpine
+    tag: 1.6.38-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2549,7 +2550,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.15.0
+    tag: v0.15.3
     pullPolicy: IfNotPresent
 
   resources:
@@ -2673,6 +2674,7 @@ chunks-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
@@ -2773,6 +2775,7 @@ index-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
@@ -2873,6 +2876,7 @@ metadata-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
@@ -2973,6 +2977,7 @@ results-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:
@@ -3067,7 +3072,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.27-alpine
+    tag: 1.28-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -3142,6 +3147,7 @@ nginx:
     labels: {}
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
+    extraPorts: []
   # Ingress configuration
   ingress:
     # -- Specifies whether an ingress for the nginx should be created
@@ -3432,7 +3438,7 @@ gateway:
   # Only applies to the GEM gateway. Use gateway.nginx.image for the nginx gateway.
   image:
     # repository: grafana/mimir-enterprise
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Number of replicas for the Deployment
   replicas: 1
@@ -3442,7 +3448,11 @@ gateway:
     enabled: false
     minReplicas: 1
     maxReplicas: 3
+    # -- Target CPU utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the CPU utilization autoscaling.
     targetCPUUtilizationPercentage: 70
+    # -- Target memory utilization percentage for nginx HPA. This controls the averageUtilization value for the HPA.
+    # Setting it to null disables the memory utilization autoscaling.
     targetMemoryUtilizationPercentage: 70
 
   # -- Deployment strategy. See `kubectl explain deployment.spec.strategy` for more,
@@ -3468,9 +3478,6 @@ gateway:
   env: []
   # -- Environment variables from secrets or configmaps to add to the Pods.
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Volumes to add to the Pods
   extraVolumes: []
   # -- Volume mounts to add to the Pods
@@ -3551,6 +3558,7 @@ gateway:
     nameOverride: ""
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
+    extraPorts: []
 
   ingress:
     enabled: false
@@ -3610,7 +3618,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.27-alpine
+      tag: 1.28-alpine
 
     # -- Basic auth configuration
     basicAuth:
@@ -4125,7 +4133,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r330-648cb08a
+    tag: r347-76214caf
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4146,6 +4154,10 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  # -- Controls whether to store the generated admin token in a Kubernetes secret
+  storeTokenInSecret: false
+  # -- Name of the secret to store the admin token.
+  adminTokenSecret: "admin-token"
 
   # -- SecurityContext override for tokengenjob pods
   securityContext: {}
@@ -4160,6 +4172,73 @@ tokengenJob:
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
 
+# -- kubetclImage is used in the enterprise provisioner and tokengen jobs
+kubectlImage:
+  # -- The Docker registry for the kubectl image
+  registry: docker.io
+  # -- The kubectl image repository
+  repository: bitnami/kubectl
+  # -- The kubectl image tag
+  tag: latest
+  # -- The kubectl image pull policy
+  pullPolicy: IfNotPresent
+
+# Settings for the provisioner job. Can only be enabled if enterprise.enabled is true - requires license.
+# The provisioner job creates tenants, read and write access policies and associated tokens based on configuration
+# provided in the additionalTenants section and creates secrets to store the provisioned tokens.
+# It does not affect any existing tenants, access policies and tokens.
+# Note: Uses tokengenJob.adminTokenSecret value to mount the admin token used to call the admin api.
+provisioner:
+  # -- Whether the job should be part of the deployment
+  enabled: false
+  # -- Name of the secret to store provisioned tokens in
+  provisionedSecretPrefix: '{{ template "mimir.fullname" . }}'
+  # -- Hook type(s) to customize when the job runs.  defaults to post-install
+  hookType: "post-install,post-upgrade"
+  # -- URL for the admin API service.
+  apiUrl: 'http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}'
+  # -- Additional tenants to be created. Each tenant will get a read and write policy
+  # and associated token. Tenant must have a name and a namespace for the secret containing
+  # the token to be created in. For example:
+  # additionalTenants:
+  #   - name: mimir
+  #     secretNamespace: grafana
+  additionalTenants: []
+  # -- Additional Kubernetes environment
+  env: []
+  # -- Additional labels for the `provisioner` Job
+  labels: {}
+  # -- Additional annotations for the `provisioner` Job
+  annotations: {}
+  # -- Affinity for tokengen Pods
+  affinity: {}
+  # -- Node selector for tokengen Pods
+  nodeSelector: {}
+  # -- Tolerations for tokengen Pods
+  tolerations: []
+  # -- The name of the PriorityClass for provisioner Job
+  priorityClassName: null
+  # -- Run containers as nonroot user (uid=10001)`
+  securityContext:
+    runAsNonRoot: true
+    runAsGroup: 10001
+    runAsUser: 10001
+    fsGroup: 10001
+  # -- Provisioner image to Utilize
+  image:
+    # -- The Docker registry
+    registry: us-docker.pkg.dev
+    # -- Docker image repository
+    repository: grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner
+    # -- Overrides the image tag whose default is the chart's appVersion
+    tag: latest
+    # -- Docker image pull policy
+    pullPolicy: IfNotPresent
+  # -- Volume mounts to add to the provisioner pods
+  extraVolumeMounts: []
+  # -- Volumes to add to the provisioner pods
+  extraVolumes: []
+
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
 admin_api:
@@ -4170,7 +4249,7 @@ admin_api:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/enterprise-metrics
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   replicas: 1
 
@@ -4181,6 +4260,7 @@ admin_api:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   initContainers: []
 
@@ -4249,10 +4329,6 @@ admin_api:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
-
 # -- Cache for admin bucket.
 # If this is disabled, in-memory cache will be set by default.
 # You can use Redis too for cache and set the configuration via structuredConfig.
@@ -4332,6 +4408,7 @@ admin-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 graphite:
   # -- If true, enables graphite querier and graphite write proxy functionality.
@@ -4357,6 +4434,7 @@ graphite:
     service:
       annotations: {}
       labels: {}
+      extraPorts: []
 
     # -- Resources for graphite-querier pods
     resources:
@@ -4421,9 +4499,6 @@ graphite:
 
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4438,6 +4513,7 @@ graphite:
     service:
       annotations: {}
       labels: {}
+      extraPorts: []
 
     # -- Resources for graphite-write-proxy pods
     resources:
@@ -4503,9 +4579,6 @@ graphite:
     terminationGracePeriodSeconds: 180
     env: []
     extraEnvFrom: []
-    # -- Jaeger reporter queue size
-    # Set to 'null' to use the Jaeger client's default value
-    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -4578,6 +4651,7 @@ gr-aggr-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 # Graphite's metric name cache. If you want to know more about it please check
 # https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#metric-name-cache
@@ -4643,6 +4717,7 @@ gr-metricname-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
@@ -4652,7 +4727,7 @@ federation_frontend:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
 
   # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
   # federation-frontend without the rest of the GEM components.
@@ -4734,13 +4809,11 @@ federation_frontend:
     annotations: {}
     # -- Additional labels for the federation-frontend service
     labels: {}
+    extraPorts: []
+
   # -- Pod Disruption Budget configuration
   podDisruptionBudget:
     maxUnavailable: 1
-
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
 
 # -- Settings for the smoke-test job. This is meant to run as a Helm test hook
 # (`helm test RELEASE`) after installing the chart. It quickly verifies
@@ -4751,7 +4824,7 @@ smoke_test:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir
-    # tag: 2.15.0
+    # tag: 2.16.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4775,7 +4848,7 @@ continuous_test:
   # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
   image:
     # repository: grafana/mimir-continuous-test
-    # tag: 2.15.0
+    # tag: 2.16.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4822,9 +4895,6 @@ continuous_test:
   extraArgs: {}
   # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
-  # -- Jaeger reporter queue size
-  # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
   # -- Extra volumes for the continuous test container
   extraVolumes: []
   # -- Extra volume mounts for the continuous test container
@@ -4850,6 +4920,7 @@ continuous_test:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
   # -- Upgrade strategy for the continuous test Deployment
   strategy:
     type: RollingUpdate

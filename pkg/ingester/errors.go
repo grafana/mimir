@@ -129,8 +129,8 @@ func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapte
 	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
-func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+func newSampleDuplicateTimestampError(errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+	return newSampleError(globalerror.SampleDuplicateTimestamp, errMsg, timestamp, labels)
 }
 
 // exemplarError is an ingesterError indicating a problem with an exemplar.

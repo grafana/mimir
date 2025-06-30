@@ -3,6 +3,7 @@
 package binops
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -17,9 +18,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // vectorMatchingGroupKeyFunc returns a function that computes the grouping key of the output group a series belongs to.
@@ -128,7 +128,7 @@ func formatConflictError(
 // Samples in data where mask has value desiredMaskValue are returned.
 //
 // The return value reuses the slices from data, and returns any unused slices to the pool.
-func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskValue bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskValue bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 	filteredData := types.InstantVectorSeriesData{}
 	nextOutputFloatIndex := 0
 
@@ -184,6 +184,10 @@ func emitIncompatibleTypesAnnotation(a *annotations.Annotations, op parser.ItemT
 	a.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition))
 }
 
+func emitIncompatibleBucketLayoutAnnotation(a *annotations.Annotations, op parser.ItemType, expressionPosition posrange.PositionRange) {
+	a.Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op.String(), expressionPosition))
+}
+
 func sampleTypeDescription(h *histogram.FloatHistogram) string {
 	if h == nil {
 		return "float"
@@ -197,7 +201,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 	opFunc                   binaryOperationFunc
 	leftIterator             types.InstantVectorSeriesDataIterator
 	rightIterator            types.InstantVectorSeriesDataIterator
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	expressionPosition       posrange.PositionRange
 }
@@ -205,7 +209,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 func newVectorVectorBinaryOperationEvaluator(
 	op parser.ItemType,
 	returnBool bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (vectorVectorBinaryOperationEvaluator, error) {
@@ -363,7 +367,11 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight)
 
 		if err != nil {
-			err = functions.NativeHistogramErrorToAnnotation(err, e.emitAnnotation)
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				emitIncompatibleBucketLayoutAnnotation(e.annotations, e.op, e.expressionPosition)
+				err = nil
+			}
+
 			if err != nil {
 				return err
 			}
@@ -426,10 +434,6 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		Floats:     fPoints,
 		Histograms: hPoints,
 	}, nil
-}
-
-func (e *vectorVectorBinaryOperationEvaluator) emitAnnotation(generator types.AnnotationGenerator) {
-	e.annotations.Add(generator("", e.expressionPosition))
 }
 
 type binaryOperationFunc func(

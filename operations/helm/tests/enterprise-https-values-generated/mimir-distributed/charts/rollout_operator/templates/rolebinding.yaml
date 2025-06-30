@@ -4,11 +4,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: enterprise-https-values-rollout-operator
+  namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.23.0
+    helm.sh/chart: rollout-operator-0.30.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: enterprise-https-values
-    app.kubernetes.io/version: "v0.23.0"
+    app.kubernetes.io/version: "v0.28.0"
     app.kubernetes.io/managed-by: Helm
 roleRef:
   apiGroup: rbac.authorization.k8s.io

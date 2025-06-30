@@ -7,9 +7,7 @@ import (
 	"path"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
 
@@ -24,14 +22,14 @@ func TestTSDBChunks(t *testing.T) {
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				sample{10, 11, nil, nil},
-				sample{20, 12, nil, nil},
-				sample{30, 13, nil, nil},
+				test.Sample{TS: 10, Val: 11},
+				test.Sample{TS: 20, Val: 12},
+				test.Sample{TS: 30, Val: 13},
 			})),
 			must(chunks.ChunkFromSamples([]chunks.Sample{
-				sample{40, 0, test.GenerateTestHistogram(1), nil},
-				sample{50, 0, test.GenerateTestHistogram(2), nil},
-				sample{60, 0, test.GenerateTestHistogram(3), nil},
+				test.Sample{TS: 40, Hist: test.GenerateTestHistogram(1)},
+				test.Sample{TS: 50, Hist: test.GenerateTestHistogram(2)},
+				test.Sample{TS: 60, Hist: test.GenerateTestHistogram(3)},
 			})),
 		},
 	}
@@ -61,40 +59,6 @@ Chunk #1: minTS=40 (1970-01-01T00:00:00.04Z), maxTS=60 (1970-01-01T00:00:00.06Z)
 	expected = fmt.Sprintf(expected, chunkFilename)
 
 	require.Equal(t, expected, sout)
-}
-
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func (s sample) T() int64                      { return s.t }
-func (s sample) F() float64                    { return s.v }
-func (s sample) H() *histogram.Histogram       { return s.h }
-func (s sample) FH() *histogram.FloatHistogram { return s.fh }
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	c := sample{t: s.t, v: s.v}
-	if s.h != nil {
-		c.h = s.h.Copy()
-	}
-	if s.fh != nil {
-		c.fh = s.fh.Copy()
-	}
-	return c
 }
 
 func must[T any](v T, err error) T {

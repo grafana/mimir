@@ -63,6 +63,16 @@ type PreallocWriteRequest struct {
 
 	// SkipUnmarshalingExemplars is an optimization to not unmarshal exemplars when they are disabled by the config anyway.
 	SkipUnmarshalingExemplars bool
+
+	// UnmarshalRW2 is set to true if the Unmarshal method should unmarshal the data as a remote write 2.0 message.
+	UnmarshalFromRW2 bool
+
+	// RW2SymbolOffset is an optimization used for RW2-adjacent applications where typical symbol refs are shifted by an offset.
+	// This allows certain symbols to be reserved without being present in the symbols list.
+	RW2SymbolOffset uint32
+	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
+	// These symbols are never sent in the request to begin with.
+	RW2CommonSymbols []string
 }
 
 // Unmarshal implements proto.Message.
@@ -70,13 +80,54 @@ type PreallocWriteRequest struct {
 // gets copied into the PreallocTimeseries{} object which gets appended to Timeseries.
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
-	p.WriteRequest.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+	p.unmarshalFromRW2 = p.UnmarshalFromRW2
+	p.rw2symbols.offset = p.RW2SymbolOffset
+	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
-func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
-	for idx := range p.Timeseries {
-		p.Timeseries[idx].clearUnmarshalData()
+// getMetricName cuts the mandatory OpenMetrics suffix from the
+// seriesName and returns the metric name and whether it cut the suffix.
+// Based on https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
+func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
+	switch metricType {
+	case METRIC_TYPE_SUMMARY:
+		retval, ok := strings.CutSuffix(seriesName, "_count")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_sum")
+	case METRIC_TYPE_HISTOGRAM:
+		retval, ok := strings.CutSuffix(seriesName, "_bucket")
+		if ok {
+			return retval, true
+		}
+		retval, ok = strings.CutSuffix(seriesName, "_count")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_sum")
+	case METRIC_TYPE_GAUGEHISTOGRAM:
+		retval, ok := strings.CutSuffix(seriesName, "_bucket")
+		if ok {
+			return retval, true
+		}
+		retval, ok = strings.CutSuffix(seriesName, "_gcount")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_gsum")
+	default:
+		// Note that _total for counters and _info for info metrics are not
+		// removed.
+		return seriesName, false
+	}
+}
+
+func (m *WriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range m.Timeseries {
+		m.Timeseries[idx].clearUnmarshalData()
 	}
 }
 
@@ -215,14 +266,20 @@ func (p *PreallocTimeseries) clearUnmarshalData() {
 var TimeseriesUnmarshalCachingEnabled = true
 
 // Unmarshal implements proto.Message. Input data slice is retained.
-// Copied from the protobuf generated code, the only change is that in case 3 the exemplars don't get unmarshaled
-// if p.skipUnmarshalingExemplars is false.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
-	if TimeseriesUnmarshalCachingEnabled {
+// Copied from the protobuf generated code, change are that:
+//   - in case 3 the exemplars don't get unmarshaled if
+//     p.skipUnmarshalingExemplars is false,
+//   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
+func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata map[string]*MetricMetadata) error {
+	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
+		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
 	}
 	p.TimeSeries = TimeseriesFromPool()
-	p.TimeSeries.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
+	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
+	if symbols != nil {
+		return p.UnmarshalRW2(dAtA, symbols, metadata)
+	}
 	return p.TimeSeries.Unmarshal(dAtA)
 }
 
@@ -467,6 +524,13 @@ func ReuseSlice(ts []PreallocTimeseries) {
 		ReusePreallocTimeseries(&ts[i])
 	}
 
+	ReuseSliceOnly(ts)
+}
+
+// ReuseSliceOnly reuses the slice of timeseries, but not its contents.
+// Only use this if you have another means of reusing the individual timeseries contained within.
+// Most times, you want to use ReuseSlice instead.
+func ReuseSliceOnly(ts []PreallocTimeseries) {
 	preallocTimeseriesSlicePool.Put(ts[:0])
 }
 
@@ -719,7 +783,7 @@ func copyHistogram(src Histogram) Histogram {
 
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
-func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
+func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
 	var timeseriesCount, metadataCount int
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
@@ -734,17 +798,17 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
-			metadata = append(metadata, p.Metadata[i-initialMetadataIndex])
+			metadata = append(metadata, m.Metadata[i-initialMetadataIndex])
 		} else {
-			timeseries = append(timeseries, p.Timeseries[i])
+			timeseries = append(timeseries, m.Timeseries[i])
 		}
 	}
 
 	return &WriteRequest{
 		Timeseries:          timeseries,
 		Metadata:            metadata,
-		Source:              p.Source,
-		SkipLabelValidation: p.SkipLabelValidation,
+		Source:              m.Source,
+		SkipLabelValidation: m.SkipLabelValidation,
 	}
 }
 
@@ -753,4 +817,18 @@ func preallocSliceIfNeeded[T any](size int) []T {
 		return make([]T, 0, size)
 	}
 	return nil
+}
+
+// MakeReferencesSafeToRetain converts all of ts' unsafe references to safe copies.
+func (ts *TimeSeries) MakeReferencesSafeToRetain() {
+	for i, l := range ts.Labels {
+		ts.Labels[i].Name = strings.Clone(l.Name)
+		ts.Labels[i].Value = strings.Clone(l.Value)
+	}
+	for i, e := range ts.Exemplars {
+		for j, l := range e.Labels {
+			ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
+			ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+		}
+	}
 }

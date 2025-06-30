@@ -17,7 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -104,7 +104,7 @@ func newShipper(
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "Ingester.Shipper.Sync")
+	log, ctx := spanlogger.New(ctx, s.logger, tracer, "Ingester.Shipper.Sync")
 	defer log.Finish()
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
@@ -235,7 +235,7 @@ func (s *shipper) blockMetasFromOldest() (metas []*block.Meta, _ error) {
 		metas = append(metas, m)
 	}
 	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		return metas[i].MinTime < metas[j].MinTime
 	})
 	return metas, nil
 }

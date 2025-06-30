@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/alerting/receivers/discord"
 	"github.com/grafana/alerting/receivers/email"
 	"github.com/grafana/alerting/receivers/googlechat"
+	"github.com/grafana/alerting/receivers/jira"
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
 	"github.com/grafana/alerting/receivers/mqtt"
@@ -107,15 +108,10 @@ func (e IntegrationTimeoutError) Error() string {
 
 func (am *GrafanaAlertmanager) TestReceivers(ctx context.Context, c TestReceiversConfigBodyParams) (*TestReceiversResult, int, error) {
 	am.reloadConfigMtx.RLock()
-
-	tmpls := make([]string, 0, len(am.templates))
-	for _, tc := range am.templates {
-		tmpls = append(tmpls, tc.Template)
-	}
-
+	templates := am.templates
 	am.reloadConfigMtx.RUnlock()
 
-	return TestReceivers(ctx, c, tmpls, am.buildReceiverIntegrationsFunc, am.ExternalURL())
+	return TestReceivers(ctx, c, am.buildReceiverIntegrations, templates)
 }
 
 func newTestAlert(c TestReceiversConfigBodyParams, startsAt, updatedAt time.Time) types.Alert {
@@ -188,6 +184,7 @@ type GrafanaReceiverConfig struct {
 	DiscordConfigs      []*NotifierConfig[discord.Config]
 	EmailConfigs        []*NotifierConfig[email.Config]
 	GooglechatConfigs   []*NotifierConfig[googlechat.Config]
+	JiraConfigs         []*NotifierConfig[jira.Config]
 	KafkaConfigs        []*NotifierConfig[kafka.Config]
 	LineConfigs         []*NotifierConfig[line.Config]
 	OpsgenieConfigs     []*NotifierConfig[opsgenie.Config]
@@ -262,8 +259,8 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decode De
 	result := GrafanaReceiverConfig{
 		Name: api.Name,
 	}
-	for _, receiver := range api.Integrations {
-		err := parseNotifier(ctx, &result, receiver, decode, decrypt)
+	for i, receiver := range api.Integrations {
+		err := parseNotifier(ctx, &result, receiver, decode, decrypt, i)
 		if err != nil {
 			return GrafanaReceiverConfig{}, IntegrationValidationError{
 				Integration: receiver,
@@ -275,7 +272,7 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decode De
 }
 
 // parseNotifier parses receivers and populates the corresponding field in GrafanaReceiverConfig. Returns an error if the configuration cannot be parsed.
-func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decode DecodeSecretsFn, decrypt GetDecryptedValueFn) error {
+func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decode DecodeSecretsFn, decrypt GetDecryptedValueFn, idx int) error {
 	secureSettings, err := decode(receiver.SecureSettings)
 	if err != nil {
 		return err
@@ -291,133 +288,139 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		if err != nil {
 			return err
 		}
-		result.AlertmanagerConfigs = append(result.AlertmanagerConfigs, newNotifierConfig(receiver, cfg))
+		result.AlertmanagerConfigs = append(result.AlertmanagerConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "dingding":
 		cfg, err := dinding.NewConfig(receiver.Settings)
 		if err != nil {
 			return err
 		}
-		result.DingdingConfigs = append(result.DingdingConfigs, newNotifierConfig(receiver, cfg))
+		result.DingdingConfigs = append(result.DingdingConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "discord":
 		cfg, err := discord.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.DiscordConfigs = append(result.DiscordConfigs, newNotifierConfig(receiver, cfg))
+		result.DiscordConfigs = append(result.DiscordConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "email":
 		cfg, err := email.NewConfig(receiver.Settings)
 		if err != nil {
 			return err
 		}
-		result.EmailConfigs = append(result.EmailConfigs, newNotifierConfig(receiver, cfg))
+		result.EmailConfigs = append(result.EmailConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "googlechat":
 		cfg, err := googlechat.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.GooglechatConfigs = append(result.GooglechatConfigs, newNotifierConfig(receiver, cfg))
+		result.GooglechatConfigs = append(result.GooglechatConfigs, newNotifierConfig(receiver, idx, cfg))
+	case "jira":
+		cfg, err := jira.NewConfig(receiver.Settings, decryptFn)
+		if err != nil {
+			return err
+		}
+		result.JiraConfigs = append(result.JiraConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "kafka":
 		cfg, err := kafka.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.KafkaConfigs = append(result.KafkaConfigs, newNotifierConfig(receiver, cfg))
+		result.KafkaConfigs = append(result.KafkaConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "line":
 		cfg, err := line.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.LineConfigs = append(result.LineConfigs, newNotifierConfig(receiver, cfg))
+		result.LineConfigs = append(result.LineConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "mqtt":
 		cfg, err := mqtt.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.MqttConfigs = append(result.MqttConfigs, newNotifierConfig(receiver, cfg))
+		result.MqttConfigs = append(result.MqttConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "opsgenie":
 		cfg, err := opsgenie.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.OpsgenieConfigs = append(result.OpsgenieConfigs, newNotifierConfig(receiver, cfg))
+		result.OpsgenieConfigs = append(result.OpsgenieConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "pagerduty":
 		cfg, err := pagerduty.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.PagerdutyConfigs = append(result.PagerdutyConfigs, newNotifierConfig(receiver, cfg))
+		result.PagerdutyConfigs = append(result.PagerdutyConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "oncall":
 		cfg, err := oncall.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.OnCallConfigs = append(result.OnCallConfigs, newNotifierConfig(receiver, cfg))
+		result.OnCallConfigs = append(result.OnCallConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "pushover":
 		cfg, err := pushover.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.PushoverConfigs = append(result.PushoverConfigs, newNotifierConfig(receiver, cfg))
+		result.PushoverConfigs = append(result.PushoverConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "sensugo":
 		cfg, err := sensugo.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.SensugoConfigs = append(result.SensugoConfigs, newNotifierConfig(receiver, cfg))
+		result.SensugoConfigs = append(result.SensugoConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "slack":
 		cfg, err := slack.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.SlackConfigs = append(result.SlackConfigs, newNotifierConfig(receiver, cfg))
+		result.SlackConfigs = append(result.SlackConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "sns":
 		cfg, err := sns.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.SNSConfigs = append(result.SNSConfigs, newNotifierConfig(receiver, cfg))
+		result.SNSConfigs = append(result.SNSConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "teams":
 		cfg, err := teams.NewConfig(receiver.Settings)
 		if err != nil {
 			return err
 		}
-		result.TeamsConfigs = append(result.TeamsConfigs, newNotifierConfig(receiver, cfg))
+		result.TeamsConfigs = append(result.TeamsConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "telegram":
 		cfg, err := telegram.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.TelegramConfigs = append(result.TelegramConfigs, newNotifierConfig(receiver, cfg))
+		result.TelegramConfigs = append(result.TelegramConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "threema":
 		cfg, err := threema.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.ThreemaConfigs = append(result.ThreemaConfigs, newNotifierConfig(receiver, cfg))
+		result.ThreemaConfigs = append(result.ThreemaConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "victorops":
 		cfg, err := victorops.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.VictoropsConfigs = append(result.VictoropsConfigs, newNotifierConfig(receiver, cfg))
+		result.VictoropsConfigs = append(result.VictoropsConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "webhook":
 		cfg, err := webhook.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.WebhookConfigs = append(result.WebhookConfigs, newNotifierConfig(receiver, cfg))
+		result.WebhookConfigs = append(result.WebhookConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "wecom":
 		cfg, err := wecom.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.WecomConfigs = append(result.WecomConfigs, newNotifierConfig(receiver, cfg))
+		result.WecomConfigs = append(result.WecomConfigs, newNotifierConfig(receiver, idx, cfg))
 	case "webex":
 		cfg, err := webex.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
-		result.WebexConfigs = append(result.WebexConfigs, newNotifierConfig(receiver, cfg))
+		result.WebexConfigs = append(result.WebexConfigs, newNotifierConfig(receiver, idx, cfg))
 	default:
 		return fmt.Errorf("notifier %s is not supported", receiver.Type)
 	}
@@ -435,13 +438,14 @@ func GetActiveReceiversMap(r *dispatch.Route) map[string]struct{} {
 	return receiversMap
 }
 
-func newNotifierConfig[T interface{}](receiver *GrafanaIntegrationConfig, settings T) *NotifierConfig[T] {
+func newNotifierConfig[T interface{}](integration *GrafanaIntegrationConfig, idx int, settings T) *NotifierConfig[T] {
 	return &NotifierConfig[T]{
 		Metadata: receivers.Metadata{
-			UID:                   receiver.UID,
-			Name:                  receiver.Name,
-			Type:                  receiver.Type,
-			DisableResolveMessage: receiver.DisableResolveMessage,
+			Index:                 idx,
+			UID:                   integration.UID,
+			Name:                  integration.Name,
+			Type:                  integration.Type,
+			DisableResolveMessage: integration.DisableResolveMessage,
 		},
 		Settings: settings,
 	}

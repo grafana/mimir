@@ -27,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -77,8 +78,7 @@ func TestTSDBBuilder(t *testing.T) {
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	// Hold samples for all cases and check for the correctness.
 	var expSamples []mimirpb.Sample
@@ -282,8 +282,7 @@ func TestTSDBBuilder(t *testing.T) {
 }
 
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
 	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 	t.Cleanup(func() {
@@ -295,7 +294,7 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 		partitionID: 0,
 		tenantID:    userID,
 	}
-	_, err = builder.getOrCreateTSDB(tenant)
+	_, err := builder.getOrCreateTSDB(tenant)
 	require.NoError(t, err)
 
 	errUploadFailed := fmt.Errorf("upload failed")
@@ -381,8 +380,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	lastEnd := 2 * time.Hour.Milliseconds()
 	currEnd := lastEnd + time.Hour.Milliseconds()
 
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
 	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 
@@ -415,6 +413,78 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].Close())
 }
 
+func TestTSDBBuilder_KafkaRecordVersion(t *testing.T) {
+	t.Run("record version header missing entirely", func(t *testing.T) {
+		userID := "1"
+		processingRange := time.Hour.Milliseconds()
+		lastEnd := 2 * processingRange
+		currEnd := 3 * processingRange
+
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+		builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+		samples := floatSample(lastEnd+20, 1)
+		histograms := histogramSample(lastEnd + 40)
+
+		rec := &kgo.Record{
+			Key:   []byte(userID),
+			Value: createWriteRequest(t, "", samples, histograms),
+		}
+		success, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+
+		require.True(t, success)
+		require.NoError(t, err)
+	})
+
+	t.Run("record version supported", func(t *testing.T) {
+		userID := "1"
+		attemptedRecordVersion := 1
+		processingRange := time.Hour.Milliseconds()
+		lastEnd := 2 * processingRange
+		currEnd := 3 * processingRange
+
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+		builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+		samples := floatSample(lastEnd+20, 1)
+		histograms := histogramSample(lastEnd + 40)
+
+		rec := &kgo.Record{
+			Key:     []byte(userID),
+			Value:   createWriteRequest(t, "", samples, histograms),
+			Headers: []kgo.RecordHeader{ingest.RecordVersionHeader(attemptedRecordVersion)},
+		}
+		success, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+
+		require.True(t, success)
+		require.NoError(t, err)
+	})
+
+	t.Run("record version unsupported", func(t *testing.T) {
+		userID := "1"
+		attemptedRecordVersion := 101
+		processingRange := time.Hour.Milliseconds()
+		lastEnd := 2 * processingRange
+		currEnd := 3 * processingRange
+
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+		builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+		samples := floatSample(lastEnd+20, 1)
+		histograms := histogramSample(lastEnd + 40)
+
+		rec := &kgo.Record{
+			Key:     []byte(userID),
+			Value:   createWriteRequest(t, "", samples, histograms),
+			Headers: []kgo.RecordHeader{ingest.RecordVersionHeader(attemptedRecordVersion)},
+		}
+		success, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+
+		require.False(t, success)
+		require.ErrorContains(t, err, fmt.Sprintf("unsupported version: %d, max supported version: %d", attemptedRecordVersion, ingest.LatestRecordVersion))
+	})
+}
+
 // TestTSDBBuilderLimits tests the correct enforcements of series limits and also
 // that series limit error does not cause the processing to fail (i.e. do not error out).
 func TestTSDBBuilderLimits(t *testing.T) {
@@ -435,8 +505,7 @@ func TestTSDBBuilderLimits(t *testing.T) {
 			NativeHistogramsIngestionEnabled: true,
 		},
 	}
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
 	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder)
@@ -504,8 +573,7 @@ func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
 			NativeHistogramsIngestionEnabled: false,
 		},
 	}
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
 	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)

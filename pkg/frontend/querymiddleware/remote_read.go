@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote"
+	"go.opentelemetry.io/otel/trace"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier"
@@ -225,7 +225,7 @@ type remoteReadQueryRequest struct {
 	promQuery string
 }
 
-func (r *remoteReadQueryRequest) AddSpanTags(_ opentracing.Span) {
+func (r *remoteReadQueryRequest) AddSpanTags(_ trace.Span) {
 	// No-op.
 }
 
@@ -290,6 +290,10 @@ func (r *remoteReadQueryRequest) GetLookbackDelta() time.Duration {
 	return 0
 }
 
+func (r *remoteReadQueryRequest) GetStats() string {
+	return ""
+}
+
 func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithID not implemented")
 }
@@ -335,6 +339,10 @@ func (r *remoteReadQueryRequest) WithStartEnd(start int64, end int64) (MetricsQu
 
 func (r *remoteReadQueryRequest) WithTotalQueriesHint(_ int32) (MetricsQueryRequest, error) {
 	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithTotalQueriesHint not implemented")
+}
+
+func (r *remoteReadQueryRequest) WithStats(stats string) (MetricsQueryRequest, error) {
+	return nil, apierror.New(apierror.TypeInternal, "remoteReadQueryRequest.WithStats not implemented")
 }
 
 // cloneRemoteReadQuery returns a deep copy of the input prompb.Query. To keep this function safe,

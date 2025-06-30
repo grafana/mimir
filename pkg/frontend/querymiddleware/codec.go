@@ -23,14 +23,14 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/munnerz/goautoneg"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -138,6 +138,9 @@ type MetricsQueryRequest interface {
 	GetHints() *Hints
 	// GetLookbackDelta returns the lookback delta for the request.
 	GetLookbackDelta() time.Duration
+	// GetStats returns the stats parameter for the request.
+	// See WithStats() comment for more details.
+	GetStats() string
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
@@ -156,7 +159,13 @@ type MetricsQueryRequest interface {
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
-	AddSpanTags(opentracing.Span)
+	AddSpanTags(span trace.Span)
+	// WithStats returns a copy of the current request with the provided value for the "stats" parameter.
+	//
+	// This value is passed to the querier to enable per-step statistics collection,
+	// which are exposed via querier.Stats. Currently, only the value "all" has an effect in Mimir.
+	// Note: unlike Prometheus, Mimir does not return query stats in the response body if stats is set.
+	WithStats(string) (MetricsQueryRequest, error)
 }
 
 // LabelsSeriesQueryRequest represents a label names, label values, or series query request that can be process by middlewares.
@@ -190,7 +199,7 @@ type LabelsSeriesQueryRequest interface {
 	// WithHeaders clones the current request with different headers.
 	WithHeaders([]*PrometheusHeader) (LabelsSeriesQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
-	AddSpanTags(opentracing.Span)
+	AddSpanTags(span trace.Span)
 }
 
 // Response represents a query range response.
@@ -198,6 +207,9 @@ type Response interface {
 	proto.Message
 	// GetHeaders returns the HTTP headers in the response.
 	GetHeaders() []*PrometheusHeader
+	// GetPrometheusResponse is a helper for where multiple types implement a PrometheusResponse
+	GetPrometheusResponse() (*PrometheusResponse, bool)
+	Close()
 }
 
 type prometheusCodecMetrics struct {
@@ -272,12 +284,16 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
+	promCloses := make([]func(), 0, len(responses))
 	promWarningsMap := make(map[string]struct{}, 0)
 	promInfosMap := make(map[string]struct{}, 0)
 	var present struct{}
 
 	for _, res := range responses {
-		pr := res.(*PrometheusResponse)
+		pr, ok := res.GetPrometheusResponse()
+		if !ok {
+			return nil, fmt.Errorf("error invalid response type: %T, expected a Prometheus response", res)
+		}
 		if pr.Status != statusSuccess {
 			return nil, fmt.Errorf("can't merge an unsuccessful response")
 		} else if pr.Data == nil {
@@ -293,6 +309,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		for _, info := range pr.Infos {
 			promInfosMap[info] = present
 		}
+		promCloses = append(promCloses, res.Close)
 	}
 
 	var promWarnings []string
@@ -308,14 +325,21 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	// Merge the responses.
 	sort.Sort(byFirstTime(promResponses))
 
-	return &PrometheusResponse{
-		Status: statusSuccess,
-		Data: &PrometheusData{
-			ResultType: model.ValMatrix.String(),
-			Result:     matrixMerge(promResponses),
+	return &PrometheusResponseWithFinalizer{
+		PrometheusResponse: &PrometheusResponse{
+			Status: statusSuccess,
+			Data: &PrometheusData{
+				ResultType: model.ValMatrix.String(),
+				Result:     matrixMerge(promResponses),
+			},
+			Warnings: promWarnings,
+			Infos:    promInfos,
 		},
-		Warnings: promWarnings,
-		Infos:    promInfos,
+		finalizer: func() {
+			for _, close := range promCloses {
+				close()
+			}
+		},
 	}, nil
 }
 
@@ -350,8 +374,9 @@ func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (MetricsQueryR
 	var options Options
 	decodeOptions(r, &options)
 
+	stats := reqValues.Get("stats")
 	req := NewPrometheusRangeQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, httpHeadersToProm(r.Header), start, end, step, c.lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -376,8 +401,10 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (MetricsQuer
 	var options Options
 	decodeOptions(r, &options)
 
+	stats := reqValues.Get("stats")
+
 	req := NewPrometheusInstantQueryRequest(
-		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil,
+		r.URL.Path, httpHeadersToProm(r.Header), time, c.lookbackDelta, queryExpr, options, nil, stats,
 	)
 	return req, nil
 }
@@ -483,7 +510,7 @@ func (p PromTimeParamDecoder) Decode(reqValues *url.Values) (int64, error) {
 			}
 			return 0, nil
 		}
-		return 0, apierror.New(apierror.TypeBadData, fmt.Sprintf("missing required parameter %q", p.timeType))
+		return 0, apierror.New(apierror.TypeBadData, fmt.Sprintf("missing required parameter %q", p.paramName))
 	}
 
 	var t int64
@@ -676,22 +703,30 @@ func (c prometheusCodec) EncodeMetricsQueryRequest(ctx context.Context, r Metric
 	var u *url.URL
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
+		values := url.Values{
+			"start": []string{encodeTime(r.GetStart())},
+			"end":   []string{encodeTime(r.GetEnd())},
+			"step":  []string{encodeDurationMs(r.GetStep())},
+			"query": []string{r.GetQuery()},
+		}
+		if s := r.GetStats(); s != "" {
+			values["stats"] = []string{s}
+		}
 		u = &url.URL{
-			Path: r.GetPath(),
-			RawQuery: url.Values{
-				"start": []string{encodeTime(r.GetStart())},
-				"end":   []string{encodeTime(r.GetEnd())},
-				"step":  []string{encodeDurationMs(r.GetStep())},
-				"query": []string{r.GetQuery()},
-			}.Encode(),
+			Path:     r.GetPath(),
+			RawQuery: values.Encode(),
 		}
 	case *PrometheusInstantQueryRequest:
+		values := url.Values{
+			"time":  []string{encodeTime(r.GetTime())},
+			"query": []string{r.GetQuery()},
+		}
+		if s := r.GetStats(); s != "" {
+			values["stats"] = []string{s}
+		}
 		u = &url.URL{
-			Path: r.GetPath(),
-			RawQuery: url.Values{
-				"time":  []string{encodeTime(r.GetTime())},
-				"query": []string{r.GetQuery()},
-			}.Encode(),
+			Path:     r.GetPath(),
+			RawQuery: values.Encode(),
 		}
 
 	default:
@@ -861,9 +896,11 @@ func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http
 		return nil, spanlog.Error(err)
 	}
 
-	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
-		otlog.Int("status_code", r.StatusCode),
-		otlog.Int("bytes", len(buf)))
+	spanlog.LogKV(
+		"message", "ParseQueryRangeResponse",
+		"status_code", r.StatusCode,
+		"bytes", len(buf),
+	)
 
 	// Before attempting to decode a response based on the content type, check if the
 	// Content-Type header was even set. When the scheduler returns gRPC errors, they
@@ -917,9 +954,11 @@ func (c prometheusCodec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r 
 		return nil, spanlog.Error(err)
 	}
 
-	spanlog.LogFields(otlog.String("message", "ParseQueryRangeResponse"),
-		otlog.Int("status_code", r.StatusCode),
-		otlog.Int("bytes", len(buf)))
+	spanlog.LogKV(
+		"message", "ParseQueryRangeResponse",
+		"status_code", r.StatusCode,
+		"bytes", len(buf),
+	)
 
 	// Before attempting to decode a response based on the content type, check if the
 	// Content-Type header was even set. When the scheduler returns gRPC errors, they
@@ -1005,15 +1044,15 @@ func findFormatter(contentType string) formatter {
 }
 
 func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
-	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.Finish()
+	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
+	defer sp.End()
 
-	a, ok := res.(*PrometheusResponse)
+	a, ok := res.GetPrometheusResponse()
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
 	if a.Data != nil {
-		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
+		sp.SetAttributes(attribute.Int("series", len(a.Data.Result)))
 	}
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
@@ -1030,7 +1069,7 @@ func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *ht
 	encodeDuration := time.Since(start)
 	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(encodeDuration.Seconds())
 	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.LogFields(otlog.Int("bytes", len(b)))
+	sp.SetAttributes(attribute.Int("bytes", len(b)))
 
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddEncodeTime(encodeDuration)
@@ -1039,16 +1078,32 @@ func (c prometheusCodec) EncodeMetricsQueryResponse(ctx context.Context, req *ht
 		Header: http.Header{
 			"Content-Type": []string{selectedContentType},
 		},
-		Body:          io.NopCloser(bytes.NewBuffer(b)),
+		Body: &prometheusReadCloser{
+			Reader:    bytes.NewBuffer(b),
+			finalizer: res.Close,
+		},
 		StatusCode:    http.StatusOK,
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
 }
 
+// prometheusReadCloser wraps an io.Reader and executes finalizer on Close
+type prometheusReadCloser struct {
+	io.Reader
+	finalizer func()
+}
+
+func (prc *prometheusReadCloser) Close() error {
+	if prc.finalizer != nil {
+		prc.finalizer()
+	}
+	return nil
+}
+
 func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Request, res Response, isSeriesResponse bool) (*http.Response, error) {
-	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
-	defer sp.Finish()
+	_, sp := tracer.Start(ctx, "APIResponse.ToHTTPResponse")
+	defer sp.End()
 
 	selectedContentType, formatter := c.negotiateContentType(req.Header.Get("Accept"))
 	if formatter == nil {
@@ -1065,7 +1120,7 @@ func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, re
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 		}
 		if a.Data != nil {
-			sp.LogFields(otlog.Int("labels", len(a.Data)))
+			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
 
 		start = time.Now()
@@ -1080,7 +1135,7 @@ func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, re
 			return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 		}
 		if a.Data != nil {
-			sp.LogFields(otlog.Int("labels", len(a.Data)))
+			sp.SetAttributes(attribute.Int("labels", len(a.Data)))
 		}
 
 		start = time.Now()
@@ -1093,7 +1148,7 @@ func (c prometheusCodec) EncodeLabelsSeriesQueryResponse(ctx context.Context, re
 
 	c.metrics.duration.WithLabelValues(operationEncode, formatter.Name()).Observe(time.Since(start).Seconds())
 	c.metrics.size.WithLabelValues(operationEncode, formatter.Name()).Observe(float64(len(b)))
-	sp.LogFields(otlog.Int("bytes", len(b)))
+	sp.SetAttributes(attribute.Int("bytes", len(b)))
 
 	resp := http.Response{
 		Header: http.Header{

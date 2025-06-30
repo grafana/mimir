@@ -1,96 +1,105 @@
-output:
-  formats:
-    - format: line-number
-
-linters:
-  enable:
-    - errorlint
-    - forbidigo
-    - gci
-    - gocritic
-    - gofmt
-    - gosec
-    - loggercheck
-    - misspell
-    - revive
-
-linters-settings:
-  errcheck:
-    # path to a file containing a list of functions to exclude from checking
-    # see https://github.com/kisielk/errcheck#excluding-functions for details
-    exclude-functions:
-      - (*github.com/grafana/dskit/spanlogger.SpanLogger).Error
-      - (github.com/go-kit/kit/log.Logger).Log
-      - (github.com/go-kit/log.Logger).Log
-      - (github.com/mitchellh/colorstring).Println
-      - (github.com/opentracing/opentracing-go.Tracer).Inject
-      - io.Copy
-      - io/ioutil.ReadFile
-      - io/ioutil.WriteFile
-
-  gci:
-    # Section configuration to compare against.
-    # Section names are case-insensitive and may contain parameters in ().
-    # The default order of sections is `standard > default > custom > blank > dot`,
-    # If `custom-order` is `true`, it follows the order of `sections` option.
-    # Default: ["standard", "default"]
-    sections:
-      - standard
-      - default
-      - prefix(github.com/grafana/mimir)
-
-    # Skip generated files.
-    # Default: true
-    skip-generated: true
-    # Enable custom order of sections.
-    # If `true`, make the section order the same as the order of `sections`.
-    # Default: false
-    custom-order: true
-
-  errorlint:
-    # Check for plain error comparisons.
-    comparison: true
-
-    # Do not check for plain type assertions and type switches.
-    asserts: false
-
-    # Do not check whether fmt.Errorf uses the %w verb for formatting errors.
-    errorf: false
-
-  forbidigo:
-    forbid:
-      # We can't use faillint for a rule like this, because it does not support matching methods on structs or interfaces (see https://github.com/fatih/faillint/issues/18)
-      - p: ^.*\.CloseSend.*$
-        msg: Do not use CloseSend on a server-streaming gRPC stream. Use util.CloseAndExhaust instead. See the documentation on CloseAndExhaust for further explanation.
-
-  gosec:
-    includes:
-      - G103
-      - G104
-      - G108
-      - G109
-      - G112
-      - G114
-      - G302
-      - G401
-  
-  gocritic:
-    disable-all: true
-    enabled-checks:
-      # See https://golangci-lint.run/usage/linters/#gocritic for possible checks.
-      - dupImport
-
+version: "2"
+issues:
+  # Disaply as many same issues as possible. This should make it easier to address all issues in one go.
+  max-same-issues: 0
 run:
   timeout: 10m
-
   # List of build tags, all linters use it.
   build-tags:
     - netgo
     - stringlabels
     - requires_docker
     - requires_libpcap
-
-issues:
-  exclude-rules:
-    - linters: [ revive ]
-      text: "if-return"
+output:
+  formats:
+    text:
+      path: stdout
+      colors: false
+linters:
+  enable:
+    - errorlint
+    - forbidigo
+    - gocritic
+    - gosec
+    - loggercheck
+    - misspell
+    - revive
+    - staticcheck
+  settings:
+    # path to a file containing a list of functions to exclude from checking
+    # see https://github.com/kisielk/errcheck#excluding-functions for details
+    errcheck:
+      exclude-functions:
+        - (*github.com/grafana/dskit/spanlogger.SpanLogger).Error
+        - (github.com/go-kit/kit/log.Logger).Log
+        - (github.com/go-kit/log.Logger).Log
+        - (github.com/mitchellh/colorstring).Println
+        - (github.com/opentracing/opentracing-go.Tracer).Inject
+        - io.Copy
+        - io/ioutil.ReadFile
+        - io/ioutil.WriteFile
+    errorlint:
+      # Do not check whether fmt.Errorf uses the %w verb for formatting errors.
+      errorf: false
+      # Do not check for plain type assertions and type switches.
+      asserts: false
+      # Check for plain error comparisons.
+      comparison: true
+    forbidigo:
+      # We can't use faillint for a rule like this, because it does not support matching methods on structs or interfaces (see https://github.com/fatih/faillint/issues/18)
+      forbid:
+        - pattern: ^.*\.CloseSend.*$
+          msg: Do not use CloseSend on a server-streaming gRPC stream. Use util.CloseAndExhaust instead. See the documentation on CloseAndExhaust for further explanation.
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        # See https://golangci-lint.run/usage/linters/#gocritic for possible checks.
+        - dupImport
+    gosec:
+      includes:
+        - G103
+        - G104
+        - G108
+        - G109
+        - G112
+        - G114
+        - G302
+        - G401
+      excludes:
+        # Relies on system umask to restrict directory permissions, preserving operator flexibility
+        - G301
+        # Uses system umask to restrict file permissions instead of hardcoding values.
+        - G306
+    revive:
+      rules:
+        - name: redefines-builtin-id
+          disabled: true
+    staticcheck:
+      checks:
+        - ST1016
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - revive
+        text: if-return
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      custom-order: true
+      # Section configuration to compare against.
+      # Section names are case-insensitive and may contain parameters in ().
+      # The default order of sections is `standard > default > custom > blank > dot`,
+      # If `custom-order` is `true`, it follows the order of `sections` option.
+      # Default: ["standard", "default"]
+      sections:
+        - standard
+        - default
+        - prefix(github.com/grafana/mimir)

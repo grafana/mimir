@@ -39,10 +39,25 @@ import (
 
 const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
-	StatusClientClosedRequest = 499
-	ServiceTimingHeaderName   = "Server-Timing"
-	cacheControlHeader        = "Cache-Control"
-	cacheControlLogField      = "header_cache_control"
+	StatusClientClosedRequest    = 499
+	ServiceTimingHeaderName      = "Server-Timing"
+	cacheControlHeader           = "Cache-Control"
+	cacheControlLogField         = "header_cache_control"
+	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
+	encodeTimeSeconds            = "encode_time_seconds"
+	estimatedSeriesCount         = "estimated_series_count"
+	fetchedChunkBytes            = "fetched_chunk_bytes"
+	fetchedChunksCount           = "fetched_chunks_count"
+	fetchedIndexBytes            = "fetched_index_bytes"
+	fetchedSeriesCount           = "fetched_series_count"
+	queryWallTimeSeconds         = "query_wall_time_seconds"
+	queueTimeSeconds             = "queue_time_seconds"
+	responseSizeBytes            = "response_size_bytes"
+	responseTime                 = "response_time"
+	resultsCacheHitBytes         = "results_cache_hit_bytes"
+	resultsCacheMissBytes        = "results_cache_miss_bytes"
+	shardedQueries               = "sharded_queries"
+	splitQueries                 = "split_queries"
 )
 
 var (
@@ -78,12 +93,14 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds    *prometheus.CounterVec
-	querySeries     *prometheus.CounterVec
-	queryChunkBytes *prometheus.CounterVec
-	queryChunks     *prometheus.CounterVec
-	queryIndexBytes *prometheus.CounterVec
-	activeUsers     *util.ActiveUsersCleanupService
+	querySeconds                       *prometheus.CounterVec
+	querySeries                        *prometheus.CounterVec
+	queryChunkBytes                    *prometheus.CounterVec
+	queryChunks                        *prometheus.CounterVec
+	queryIndexBytes                    *prometheus.CounterVec
+	querySamplesProcessed              *prometheus.CounterVec
+	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
+	activeUsers                        *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -128,6 +145,16 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of TSDB index bytes fetched from store-gateway to execute a query.",
 		}, []string{"user"})
 
+		h.querySamplesProcessed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_total",
+			Help: "Number of samples processed to execute a query.",
+		}, []string{"user"})
+		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_samples_processed_cache_adjusted_total",
+			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
+				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
@@ -135,6 +162,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunkBytes.DeleteLabelValues(user)
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
+			h.querySamplesProcessed.DeleteLabelValues(user)
+			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -177,7 +206,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
-	if f.cfg.QueryStatsEnabled {
+	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
+	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
 		var ctx context.Context
 		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
@@ -214,8 +244,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, apierror.New(apierror.TypeInternal, err.Error()))
 			return
 		}
-		ctx, _ := context.WithDeadlineCause(r.Context(), deadline,
+		ctx, cancel := context.WithDeadlineCause(r.Context(), deadline,
 			cancellation.NewErrorf("write deadline exceeded (timeout: %v)", f.cfg.ActiveSeriesWriteTimeout))
+		defer cancel()
 		r = r.WithContext(ctx)
 	}
 
@@ -244,8 +275,17 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hs[h] = vs
 	}
 
+	var parts []string
 	if f.cfg.QueryStatsEnabled {
-		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
+		parts = getQueryStats(queryResponseTime, queryDetails)
+	}
+	if queryStatsHeaderNameOk {
+		cl, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+		parts = append(parts, getResponseQueryStats(queryResponseTime, cl, queryDetails)...)
+	}
+
+	if len(parts) > 0 {
+		hs.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -290,17 +330,19 @@ func (f *Handler) reportQueryStats(
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
-	var stats *querier_stats.Stats
+	var stats *querier_stats.SafeStats
+	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
+		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
 	numIndexBytes := stats.LoadFetchedIndexBytes()
-	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
-
+	sharded := strconv.FormatBool(stats.LoadShardedQueries() > 0)
+	samplesProcessed := stats.LoadSamplesProcessed()
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
@@ -308,7 +350,9 @@ func (f *Handler) reportQueryStats(
 		f.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
+		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
+		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -320,20 +364,21 @@ func (f *Handler) reportQueryStats(
 		"route_name", middleware.ExtractRouteName(r.Context()),
 		"user_agent", r.UserAgent(),
 		"status_code", queryResponseStatusCode,
-		"response_time", queryResponseTime,
-		"response_size_bytes", queryResponseSizeBytes,
-		"query_wall_time_seconds", wallTime.Seconds(),
-		"fetched_series_count", numSeries,
-		"fetched_chunk_bytes", numBytes,
-		"fetched_chunks_count", numChunks,
-		"fetched_index_bytes", numIndexBytes,
-		"sharded_queries", stats.LoadShardedQueries(),
-		"split_queries", stats.LoadSplitQueries(),
+		responseTime, queryResponseTime,
+		responseSizeBytes, queryResponseSizeBytes,
+		queryWallTimeSeconds, wallTime.Seconds(),
+		fetchedSeriesCount, numSeries,
+		fetchedChunkBytes, numBytes,
+		fetchedChunksCount, numChunks,
+		fetchedIndexBytes, numIndexBytes,
+		shardedQueries, stats.LoadShardedQueries(),
+		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		"estimated_series_count", stats.GetEstimatedSeriesCount(),
-		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
-		"encode_time_seconds", stats.LoadEncodeTime().Seconds(),
-		"samples_processed", stats.LoadSamplesProcessed(),
+		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
+		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
+		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
+		"samples_processed", samplesProcessed,
+		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -349,8 +394,8 @@ func (f *Handler) reportQueryStats(
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
 		logMessage = append(logMessage,
-			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
-			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
+			resultsCacheHitBytes, details.ResultsCacheHitBytes,
+			resultsCacheMissBytes, details.ResultsCacheMissBytes,
 		)
 	}
 
@@ -481,14 +526,40 @@ func writeError(w http.ResponseWriter, err error) int {
 	return statusCode
 }
 
-func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {
-	if stats != nil {
-		parts := make([]string, 0)
-		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
-		parts = append(parts, statsValue("response_time", queryResponseTime))
-		parts = append(parts, statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
-		parts = append(parts, statsValue("samples_processed", stats.GetSamplesProcessed()))
-		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.QueryDetails) []string {
+	if details == nil {
+		return nil
+	}
+	stats := details.QuerierStats
+	return []string{
+		statsValue("querier_wall_time", stats.LoadWallTime()),
+		statsValue("response_time", queryResponseTime),
+		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()),
+		statsValue("samples_processed", stats.GetSamplesProcessed()),
+	}
+}
+
+// getResponseQueryStats returns the response query stats in the format of Server-Timing header.
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int, details *querymiddleware.QueryDetails) []string {
+	if details == nil {
+		return nil
+	}
+	stats := details.QuerierStats
+	return []string{
+		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
+		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
+		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
+		statsValue(fetchedChunksCount, stats.LoadFetchedChunks()),
+		statsValue(fetchedIndexBytes, stats.LoadFetchedIndexBytes()),
+		statsValue(fetchedSeriesCount, stats.LoadFetchedSeries()),
+		statsValue(queryWallTimeSeconds, stats.LoadWallTime().Seconds()),
+		statsValue(queueTimeSeconds, stats.LoadQueueTime().Seconds()),
+		statsValue(responseSizeBytes, contentLengthBytes),
+		statsValue(responseTime, queryResponseTime),
+		statsValue(resultsCacheHitBytes, details.ResultsCacheHitBytes),
+		statsValue(resultsCacheMissBytes, details.ResultsCacheMissBytes),
+		statsValue(shardedQueries, stats.LoadShardedQueries()),
+		statsValue(splitQueries, stats.LoadSplitQueries()),
 	}
 }
 
@@ -496,11 +567,13 @@ func statsValue(name string, val interface{}) string {
 	switch v := val.(type) {
 	case time.Duration:
 		durationInMs := strconv.FormatFloat(float64(v)/float64(time.Millisecond), 'f', -1, 64)
-		return name + ";dur=" + durationInMs
+		return fmt.Sprintf("%s;dur=%s", name, durationInMs)
+	case float64: // duration in seconds.
+		return fmt.Sprintf("%s;dur=%v", name, val)
 	case uint64:
-		return name + ";val=" + strconv.FormatUint(v, 10)
+		return fmt.Sprintf("%s;val=%s", name, strconv.FormatUint(v, 10))
 	default:
-		return name + ";val=" + fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%s;val=%v", name, val)
 	}
 }
 

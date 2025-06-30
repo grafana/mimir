@@ -75,14 +75,14 @@ func TestCheckDuplicates(t *testing.T) {
 			in: []rwrulefmt.RuleGroup{{
 				RuleGroup: rulefmt.RuleGroup{
 					Name: "rulegroup",
-					Rules: []rulefmt.RuleNode{
+					Rules: []rulefmt.Rule{
 						{
-							Record: yaml.Node{Value: "up"},
-							Expr:   yaml.Node{Value: "up==1"},
+							Record: "up",
+							Expr:   "up==1",
 						},
 						{
-							Record: yaml.Node{Value: "down"},
-							Expr:   yaml.Node{Value: "up==0"},
+							Record: "down",
+							Expr:   "up==0",
 						},
 					},
 				},
@@ -95,14 +95,14 @@ func TestCheckDuplicates(t *testing.T) {
 			in: []rwrulefmt.RuleGroup{{
 				RuleGroup: rulefmt.RuleGroup{
 					Name: "rulegroup",
-					Rules: []rulefmt.RuleNode{
+					Rules: []rulefmt.Rule{
 						{
-							Record: yaml.Node{Value: "up"},
-							Expr:   yaml.Node{Value: "up==1"},
+							Record: "up",
+							Expr:   "up==1",
 						},
 						{
-							Record: yaml.Node{Value: "up"},
-							Expr:   yaml.Node{Value: "up==0"},
+							Record: "up",
+							Expr:   "up==0",
 						},
 					},
 				},
@@ -118,61 +118,61 @@ func TestCheckDuplicates(t *testing.T) {
 }
 
 func TestRuleCommand_checkRules(t *testing.T) {
-	completelyBadRuleName := rulefmt.RuleNode{
-		Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-		Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+	completelyBadRuleName := rulefmt.Rule{
+		Record: "up",
+		Expr:   "up==1",
 	}
-	strictlyBadRuleName := rulefmt.RuleNode{
-		Record: yaml.Node{Value: "up:onecolonmissing", Kind: yaml.ScalarNode},
-		Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+	strictlyBadRuleName := rulefmt.Rule{
+		Record: "up:onecolonmissing",
+		Expr:   "up==1",
 	}
-	validRule1 := rulefmt.RuleNode{
-		Record: yaml.Node{Value: "rule:up:nothing", Kind: yaml.ScalarNode},
-		Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+	validRule1 := rulefmt.Rule{
+		Record: "rule:up:nothing",
+		Expr:   "up==1",
 	}
-	validRule2 := rulefmt.RuleNode{
-		Record: yaml.Node{Value: "rule:down:nothing", Kind: yaml.ScalarNode},
-		Expr:   yaml.Node{Value: "up==0", Kind: yaml.ScalarNode},
+	validRule2 := rulefmt.Rule{
+		Record: "rule:down:nothing",
+		Expr:   "up==0",
 	}
 	for _, tc := range []struct {
 		name       string
-		rules      []rulefmt.RuleNode
+		rules      []rulefmt.Rule
 		strict     bool
 		shouldFail bool
 	}{
 		{
 			name:       "completely bad rule name, not strict fails too",
-			rules:      []rulefmt.RuleNode{validRule1, completelyBadRuleName, validRule2},
+			rules:      []rulefmt.Rule{validRule1, completelyBadRuleName, validRule2},
 			strict:     false,
 			shouldFail: true,
 		},
 		{
 			name:       "strictly bad rule name, strict",
-			rules:      []rulefmt.RuleNode{validRule1, strictlyBadRuleName, validRule2},
+			rules:      []rulefmt.Rule{validRule1, strictlyBadRuleName, validRule2},
 			strict:     true,
 			shouldFail: true,
 		},
 		{
 			name:       "strictly bad rule name, not strict",
-			rules:      []rulefmt.RuleNode{validRule1, strictlyBadRuleName, validRule2},
+			rules:      []rulefmt.Rule{validRule1, strictlyBadRuleName, validRule2},
 			strict:     false,
 			shouldFail: false,
 		},
 		{
 			name:       "no duplicates, strict",
-			rules:      []rulefmt.RuleNode{validRule1, validRule2},
+			rules:      []rulefmt.Rule{validRule1, validRule2},
 			strict:     true,
 			shouldFail: false,
 		},
 		{
 			name:       "with duplicates, not strict",
-			rules:      []rulefmt.RuleNode{validRule1, validRule1},
+			rules:      []rulefmt.Rule{validRule1, validRule1},
 			strict:     false,
 			shouldFail: false,
 		},
 		{
 			name:       "with duplicates, strict",
-			rules:      []rulefmt.RuleNode{validRule1, validRule1},
+			rules:      []rulefmt.Rule{validRule1, validRule1},
 			strict:     true,
 			shouldFail: true,
 		},
@@ -213,32 +213,15 @@ func TestRuleCommand_checkRules(t *testing.T) {
 }
 
 func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
-	t.Run("Fail save because marshal need node Kind defined", func(t *testing.T) {
-		namespace := "ns1"
-		rule1 := []rwrulefmt.RuleGroup{{
-			RuleGroup: rulefmt.RuleGroup{
-				Name: "group-1",
-				Rules: []rulefmt.RuleNode{
-					{
-						Record: yaml.Node{Value: "up"},
-						Expr:   yaml.Node{Value: "up==1"},
-					},
-				},
-			},
-		}}
-		tempDir := t.TempDir()
-		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
-		assert.ErrorContains(t, err, "yaml: cannot encode node with unknown kind")
-	})
 	t.Run("Successful save", func(t *testing.T) {
 		namespace := "ns1"
 		rule1 := []rwrulefmt.RuleGroup{{
 			RuleGroup: rulefmt.RuleGroup{
 				Name: "group-1",
-				Rules: []rulefmt.RuleNode{
+				Rules: []rulefmt.Rule{
 					{
-						Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-						Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+						Record: "up",
+						Expr:   "up==1",
 					},
 				},
 			},
@@ -252,10 +235,10 @@ func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
 		rule1 := []rwrulefmt.RuleGroup{{
 			RuleGroup: rulefmt.RuleGroup{
 				Name: "group-1",
-				Rules: []rulefmt.RuleNode{
+				Rules: []rulefmt.Rule{
 					{
-						Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-						Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+						Record: "up",
+						Expr:   "up==1",
 					},
 				},
 			},
@@ -280,10 +263,10 @@ groups:
 		rule1 := []rwrulefmt.RuleGroup{{
 			RuleGroup: rulefmt.RuleGroup{
 				Name: "group-1",
-				Rules: []rulefmt.RuleNode{
+				Rules: []rulefmt.Rule{
 					{
-						Alert: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-						Expr:  yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+						Alert: "up",
+						Expr:  "up==1",
 					},
 				},
 			},

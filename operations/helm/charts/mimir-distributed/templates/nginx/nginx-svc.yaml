@@ -31,6 +31,9 @@ spec:
       nodePort: {{ .Values.nginx.service.nodePort }}
       {{- end }}
       protocol: TCP
+    {{- if .Values.nginx.service.extraPorts }}
+    {{- toYaml .Values.nginx.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "nginx") | nindent 4 }}
 {{- end -}}

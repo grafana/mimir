@@ -26,8 +26,9 @@ import (
 	mimir_stats "github.com/grafana/mimir/pkg/querier/stats"
 )
 
-// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
 func init() {
+	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	// nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 }
 
@@ -109,13 +110,15 @@ func TestStatsRenderer(t *testing.T) {
 		nil,
 		false,
 		false,
+		false,
+		false,
 		0,
 	)
 	promRouter := route.New().WithPrefix("/api/v1")
 
 	api.Register(promRouter)
 
-	runQuery := func(expr string) *mimir_stats.Stats {
+	runQuery := func(expr string) *mimir_stats.SafeStats {
 		rec := httptest.NewRecorder()
 
 		req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/query_range?query=%s&start=%d&end=%d&step=%ds", expr, start.Unix(), end.Unix(), int(step.Seconds())), nil)

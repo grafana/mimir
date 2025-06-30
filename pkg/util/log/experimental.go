@@ -14,9 +14,8 @@ import (
 //lint:ignore faillint It's non-trivial to remove this global variable.
 var experimentalFeaturesInUse = promauto.NewCounterVec(
 	prometheus.CounterOpts{
-		Namespace: "cortex",
-		Name:      "experimental_features_used_total",
-		Help:      "The number of experimental features in use.",
+		Name: "cortex_experimental_features_used_total",
+		Help: "The number of experimental features in use.",
 	}, []string{"feature"},
 )
 

@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -782,4 +783,149 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	require.Equalf(t, 1.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 	require.Equalf(t, 1.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 	require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+}
+
+func TestInvalidClusterValidationLabel(t *testing.T) {
+	testCases := map[string]struct {
+		distributorClusterLabel           string
+		ingesterClusterLabel              string
+		softValidation                    bool
+		expectedResponseStatus            int
+		expectedIngesterServerStatus      string
+		expectedIngesterClientStatus      string
+		expectedClusterValidationFailures int
+	}{
+		"when ingester client and server have the same cluster label no error is expected": {
+			distributorClusterLabel:           "cluster",
+			ingesterClusterLabel:              "cluster",
+			expectedResponseStatus:            http.StatusOK,
+			expectedIngesterServerStatus:      "OK",
+			expectedIngesterClientStatus:      "OK",
+			expectedClusterValidationFailures: 0,
+		},
+		"when ingester client and server do not have the same cluster label and soft validation is enabled no error is expected": {
+			distributorClusterLabel:           "distributor-cluster",
+			ingesterClusterLabel:              "ingester-cluster",
+			softValidation:                    true,
+			expectedResponseStatus:            http.StatusOK,
+			expectedIngesterServerStatus:      "OK",
+			expectedIngesterClientStatus:      "OK",
+			expectedClusterValidationFailures: 0,
+		},
+		"when ingester client and server do not have the same cluster label and soft validation is disabled an error is expected": {
+			distributorClusterLabel:           "distributor-cluster",
+			ingesterClusterLabel:              "ingester-cluster",
+			softValidation:                    false,
+			expectedResponseStatus:            http.StatusInternalServerError,
+			expectedIngesterServerStatus:      "FailedPrecondition",
+			expectedIngesterClientStatus:      "Internal",
+			expectedClusterValidationFailures: 1,
+		},
+	}
+
+	series := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "not_foobar",
+				},
+			},
+			Samples: []prompb.Sample{
+				{
+					Timestamp: time.Now().Round(time.Second).UnixMilli(),
+					Value:     100,
+				},
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
+
+			baseFlags := map[string]string{
+				"-distributor.ingestion-tenant-shard-size": "0",
+				"-ingester.ring.heartbeat-period":          "1s",
+				"-common.client-cluster-validation.label":  testCase.distributorClusterLabel,
+			}
+
+			flags := mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+				baseFlags,
+			)
+
+			ingesterFlags := mergeFlags(
+				flags,
+				map[string]string{
+					"-server.cluster-validation.label":                testCase.ingesterClusterLabel,
+					"-server.cluster-validation.grpc.enabled":         "true",
+					"-server.cluster-validation.grpc.soft-validation": fmt.Sprintf("%v", testCase.softValidation),
+				},
+			)
+
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+			// Start Mimir components.
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
+			require.NoError(t, s.StartAndWaitReady(distributor, ingester))
+
+			// Wait until distributor has updated the ring.
+			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+			require.NoError(t, err)
+
+			res, err := client.Push(series)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedResponseStatus, res.StatusCode)
+
+			// We track ingester server response code.
+			sums, err := ingester.SumMetrics(
+				[]string{"cortex_request_duration_seconds"},
+				e2e.WithLabelMatchers(
+					labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/Push"),
+					labels.MustNewMatcher(labels.MatchEqual, "status_code", testCase.expectedIngesterServerStatus),
+				),
+				e2e.SkipMissingMetrics,
+				e2e.WithMetricCount,
+			)
+			require.NoError(t, err)
+			require.Equal(t, 1.0, e2e.SumValues(sums))
+
+			// We track ingester client response code.
+			sums, err = distributor.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
+				e2e.WithLabelMatchers(
+					labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/Push"),
+					labels.MustNewMatcher(labels.MatchRegexp, "status_code", testCase.expectedIngesterClientStatus),
+				),
+				e2e.WithMetricCount,
+				e2e.SkipMissingMetrics,
+			)
+			require.NoError(t, err)
+			require.Equal(t, 1.0, e2e.SumValues(sums))
+
+			if testCase.expectedClusterValidationFailures > 0 {
+				// We expect that the cluster validation error is tracked by ingester client's metrics.
+				sums, err = distributor.SumMetrics([]string{"cortex_client_invalid_cluster_validation_label_requests_total"},
+					e2e.WithLabelMatchers(
+						labels.MustNewMatcher(labels.MatchEqual, "method", "/cortex.Ingester/Push"),
+						labels.MustNewMatcher(labels.MatchEqual, "client", "ingester"),
+						labels.MustNewMatcher(labels.MatchEqual, "protocol", "grpc"),
+					),
+				)
+				require.NoError(t, err)
+				require.Equal(t, float64(testCase.expectedClusterValidationFailures), e2e.SumValues(sums))
+			}
+		})
+	}
 }

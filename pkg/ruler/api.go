@@ -31,8 +31,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
-var errNoValidOrgIDFound = errors.New("no valid org id found")
+var (
+	// errNoValidOrgIDFound is returned when no valid org id is found in the request context.
+	errNoValidOrgIDFound = errors.New("no valid org id found")
+	// errTenantRuleEvaluationDisabled is returned when all rule evaluation types are disabled for the tenant.
+	errTenantRuleEvaluationDisabled = errors.New("all rule evaluation is disabled for user")
+)
 
 // In order to reimplement the prometheus rules API, a large amount of code was copied over
 // This is required because the prometheus api implementation does not allow us to return errors
@@ -43,6 +47,7 @@ type response struct {
 	Data      interface{}  `json:"data"`
 	ErrorType v1.ErrorType `json:"errorType"`
 	Error     string       `json:"error"`
+	Warnings  []string     `json:"warnings,omitempty"`
 }
 
 // AlertDiscovery has info for all active alerts.
@@ -134,6 +139,10 @@ func respondInvalidRequest(logger log.Logger, w http.ResponseWriter, msg string)
 	respondError(logger, w, http.StatusBadRequest, v1.ErrBadData, msg)
 }
 
+func respondUnprocessableRequest(logger log.Logger, w http.ResponseWriter, msg string) {
+	respondError(logger, w, http.StatusUnprocessableEntity, v1.ErrExec, msg)
+}
+
 func respondServerError(logger log.Logger, w http.ResponseWriter, msg string) {
 	respondError(logger, w, http.StatusInternalServerError, v1.ErrServer, msg)
 }
@@ -156,7 +165,7 @@ func NewAPI(r *Ruler, s rulestore.RuleStore, logger log.Logger) *API {
 }
 
 func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.PrometheusRules")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.PrometheusRules")
 	defer logger.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -219,15 +228,18 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, token, err := a.ruler.GetRules(ctx, rulesReq)
-
+	rulesResp, token, err := a.ruler.GetRules(ctx, rulesReq)
 	if err != nil {
+		if errors.Is(err, errTenantRuleEvaluationDisabled) {
+			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
 
-	groups := make([]*RuleGroup, 0, len(rgs))
-	for _, g := range rgs {
+	groups := make([]*RuleGroup, 0, len(rulesResp.Groups))
+	for _, g := range rulesResp.Groups {
 		grp := RuleGroup{
 			Name:           g.Group.Name,
 			File:           g.Group.Namespace,
@@ -279,10 +291,12 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		groups = append(groups, &grp)
 	}
 
-	b, err := json.Marshal(&response{
-		Status: "success",
-		Data:   &RuleDiscovery{RuleGroups: groups, NextToken: token},
-	})
+	resp := &response{
+		Status:   "success",
+		Data:     &RuleDiscovery{RuleGroups: groups, NextToken: token},
+		Warnings: rulesResp.Warnings,
+	}
+	b, err := json.Marshal(resp)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
 		respondServerError(logger, w, "unable to marshal the requested data")
@@ -310,7 +324,7 @@ func parseExcludeAlerts(req *http.Request) (bool, error) {
 }
 
 func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.PrometheusAlerts")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.PrometheusAlerts")
 	defer logger.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -321,16 +335,18 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
-
+	rulesResp, _, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
 	if err != nil {
+		if errors.Is(err, errTenantRuleEvaluationDisabled) {
+			respondUnprocessableRequest(logger, w, fmt.Sprintf("rule evaluation is disabled for tenant %s", userID))
+			return
+		}
 		respondServerError(logger, w, err.Error())
 		return
 	}
 
-	alerts := []*Alert{}
-
-	for _, g := range rgs {
+	alerts := make([]*Alert, 0, len(rulesResp.Groups))
+	for _, g := range rulesResp.Groups {
 		for _, rl := range g.ActiveRules {
 			if rl.Rule.Alert != "" {
 				for _, a := range rl.Alerts {
@@ -340,10 +356,12 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	b, err := json.Marshal(&response{
-		Status: "success",
-		Data:   &AlertDiscovery{Alerts: alerts},
-	})
+	resp := &response{
+		Status:   "success",
+		Data:     &AlertDiscovery{Alerts: alerts},
+		Warnings: rulesResp.Warnings,
+	}
+	b, err := json.Marshal(resp)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshaling json response", "err", err)
 		respondServerError(logger, w, "unable to marshal the requested data")
@@ -478,7 +496,7 @@ func (a *API) parseRequest(req *http.Request, requireNamespace, requireGroup boo
 }
 
 func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.ListRules")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.ListRules")
 	defer logger.Finish()
 
 	userID, namespace, _, err := a.parseRequest(req, false, false)
@@ -568,7 +586,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.GetRuleGroup")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.GetRuleGroup")
 	defer logger.Finish()
 
 	userID, namespace, groupName, err := a.parseRequest(req, true, true)
@@ -601,7 +619,7 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.CreateRuleGroup")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.CreateRuleGroup")
 	defer logger.Finish()
 
 	userID, namespace, _, err := a.parseRequest(req, true, false)
@@ -632,14 +650,24 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "attempting to unmarshal rulegroup", "userID", userID, "group", string(payload))
 
 	rg := rulefmt.RuleGroup{}
-	err = yaml.Unmarshal(payload, &rg)
-	if err != nil {
+	if err = yaml.Unmarshal(payload, &rg); err != nil {
 		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
 		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
 		return
 	}
 
-	errs := a.ruler.manager.ValidateRuleGroup(rg)
+	// Why do we unmarshal the rule group twice like this?
+	// Prometheus' validation methods require access to the original YAML nodes to produce errors with
+	// position (line and column) information, but we want to work with the non-YAML rulefmt.RuleGroup type.
+	// See https://github.com/prometheus/prometheus/pull/16252 for more discussion of this.
+	node := rulefmt.RuleGroupNode{}
+	if err = yaml.Unmarshal(payload, &node); err != nil {
+		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
+		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
+		return
+	}
+
+	errs := a.ruler.manager.ValidateRuleGroup(rg, node)
 	if len(errs) > 0 {
 		e := []string{}
 		for _, err := range errs {
@@ -652,7 +680,13 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := a.ruler.AssertMaxRulesPerRuleGroup(userID, namespace, len(rg.Rules)); err != nil {
-		level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+		level.Warn(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := a.ruler.AssertMinRuleEvaluationInterval(userID, time.Duration(rg.Interval)); err != nil {
+		level.Warn(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -669,7 +703,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if err := a.ruler.AssertMaxRuleGroups(userID, namespace, len(rgs)+1); err != nil {
-			level.Error(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
+			level.Warn(logger).Log("msg", "limit validation failure", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -691,7 +725,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteNamespace")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.DeleteNamespace")
 	defer logger.Finish()
 
 	userID, namespace, _, err := a.parseRequest(req, true, false)
@@ -728,7 +762,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteRuleGroup")
+	logger, ctx := spanlogger.New(req.Context(), a.logger, tracer, "API.DeleteRuleGroup")
 	defer logger.Finish()
 
 	userID, namespace, groupName, err := a.parseRequest(req, true, true)

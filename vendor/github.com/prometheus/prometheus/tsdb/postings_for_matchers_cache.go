@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -12,13 +13,13 @@ import (
 	"github.com/DmitriyVTitov/size"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
@@ -42,7 +43,7 @@ const (
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers.
 type IndexPostingsReader interface {
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -62,7 +63,8 @@ type IndexPostingsReader interface {
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
 // If `ttl` is 0, then it only deduplicates in-flight requests.
 // If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
-func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) *PostingsForMatchersCache {
+// The `tracingKV` parameter allows passing additional attributes for tracing purposes, which are appended to the default attributes.
+func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics, tracingKV []attribute.KeyValue) *PostingsForMatchersCache {
 	b := &PostingsForMatchersCache{
 		calls:            &sync.Map{},
 		cached:           list.New(),
@@ -79,10 +81,8 @@ func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64
 			return time.Now().UTC()
 		},
 		postingsForMatchers: PostingsForMatchers,
-
-		tracer:      otel.Tracer(""),
-		ttlAttrib:   attribute.Stringer("ttl", ttl),
-		forceAttrib: attribute.Bool("force", force),
+		// Clone the slice so we don't end up sharding it with the parent.
+		additionalAttributes: append(slices.Clone(tracingKV), attribute.Stringer("ttl", ttl), attribute.Bool("force", force)),
 	}
 
 	return b
@@ -119,10 +119,8 @@ type PostingsForMatchersCache struct {
 	// evictHeadBeforeHook is used for testing purposes. It allows to hook before calls to evictHead().
 	evictHeadBeforeHook func()
 
-	tracer trace.Tracer
 	// Preallocated for performance
-	ttlAttrib   attribute.KeyValue
-	forceAttrib attribute.KeyValue
+	additionalAttributes []attribute.KeyValue
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
@@ -132,13 +130,14 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 	defer func(startTime time.Time) {
 		span.AddEvent(
 			"PostingsForMatchers returned",
-			trace.WithAttributes(attribute.Bool("concurrent", concurrent), c.ttlAttrib, c.forceAttrib, attribute.Stringer("duration", time.Since(startTime))),
+			trace.WithAttributes(c.additionalAttributes...),
+			trace.WithAttributes(attribute.Bool("concurrent", concurrent), attribute.Stringer("duration", time.Since(startTime))),
 		)
 	}(time.Now())
 
 	if !concurrent && !c.force {
 		c.metrics.skipsBecauseIneligible.Inc()
-		span.AddEvent("cache not used")
+		span.AddEvent("cache not used", trace.WithAttributes(c.additionalAttributes...))
 
 		p, err := c.postingsForMatchers(ctx, ix, ms...)
 		if err != nil {
@@ -148,7 +147,7 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 		return p, err
 	}
 
-	span.AddEvent("using cache")
+	span.AddEvent("using cache", trace.WithAttributes(c.additionalAttributes...))
 	c.expire()
 	p, err := c.postingsForMatchersPromise(ctx, ix, ms)(ctx)
 	if err != nil {
@@ -191,6 +190,9 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 		trace.SpanFromContext(ctx).AddEvent("completed postingsForMatchers promise", trace.WithAttributes(
 			// Do not format the timestamp to introduce a performance regression.
 			attribute.Int64("evaluation completed at (epoch seconds)", p.evaluationCompletedAt.Unix()),
+			// We don't include the block ID because propagating it from the caller would increase the size of the promise.
+			// With a bigger promise we can fit fewer promises in the cache, so the cache will be less effective.
+			attribute.String("block", "unknown"),
 		))
 
 		return p.cloner.Clone(), nil
@@ -236,10 +238,13 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 			case <-oldPromise.done:
 				if c.timeNow().Sub(oldPromise.evaluationCompletedAt) >= c.ttl {
 					// The cached promise already expired, but it has not been evicted.
-					span.AddEvent("skipping cached postingsForMatchers promise because its TTL already expired", trace.WithAttributes(
-						attribute.Stringer("cached promise evaluation completed at", oldPromise.evaluationCompletedAt),
-						attribute.String("cache_key", key),
-					))
+					span.AddEvent("skipping cached postingsForMatchers promise because its TTL already expired",
+						trace.WithAttributes(
+							attribute.Stringer("cached promise evaluation completed at", oldPromise.evaluationCompletedAt),
+							attribute.String("cache_key", key),
+						),
+						trace.WithAttributes(c.additionalAttributes...),
+					)
 					c.metrics.skipsBecauseStale.Inc()
 
 					return func(ctx context.Context) (index.Postings, error) {
@@ -260,9 +265,11 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 			// We expect this race condition to be infrequent. In this case we simply skip the cache and
 			// pass through the execution to the underlying postingsForMatchers().
 			c.metrics.skipsBecauseCanceled.Inc()
-			span.AddEvent("looked up in-flight postingsForMatchers promise, but the promise was just canceled due to a race condition: skipping the cache", trace.WithAttributes(
-				attribute.String("cache_key", key),
-			))
+			span.AddEvent(
+				"looked up in-flight postingsForMatchers promise, but the promise was just canceled due to a race condition: skipping the cache",
+				trace.WithAttributes(attribute.String("cache_key", key)),
+				trace.WithAttributes(c.additionalAttributes...),
+			)
 
 			return func(ctx context.Context) (index.Postings, error) {
 				return c.postingsForMatchers(ctx, ix, ms...)
@@ -270,15 +277,16 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		}
 
 		c.metrics.hits.Inc()
-		span.AddEvent("waiting cached postingsForMatchers promise", trace.WithAttributes(
-			attribute.String("cache_key", key),
-		))
+		span.AddEvent("waiting cached postingsForMatchers promise",
+			trace.WithAttributes(attribute.String("cache_key", key)),
+			trace.WithAttributes(c.additionalAttributes...),
+		)
 
 		return oldPromise.result
 	}
 
 	c.metrics.misses.Inc()
-	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)))
+	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)), trace.WithAttributes(c.additionalAttributes...))
 
 	// promise was stored, close its channel after fulfilment
 	defer close(promise.done)
@@ -423,7 +431,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 
 	// Do not cache if cache is disabled.
 	if c.ttl <= 0 {
-		span.AddEvent("not caching promise result because configured TTL is <= 0")
+		span.AddEvent("not caching promise result because configured TTL is <= 0", trace.WithAttributes(c.additionalAttributes...))
 		c.calls.Delete(key)
 		return
 	}
@@ -431,7 +439,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 	// Do not cache if the promise execution was canceled (it gets cancelled once all the callers contexts have
 	// been canceled).
 	if errors.Is(err, context.Canceled) {
-		span.AddEvent("not caching promise result because execution has been canceled")
+		span.AddEvent("not caching promise result because execution has been canceled", trace.WithAttributes(c.additionalAttributes...))
 		c.calls.Delete(key)
 		return
 	}
@@ -452,11 +460,14 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 		c.cachedMtx.Unlock()
 	}
 
-	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
-		attribute.Stringer("evaluation completed at", completedAt),
-		attribute.Int64("size in bytes", sizeBytes),
-		attribute.Int64("cached bytes", lastCachedBytes),
-	))
+	span.AddEvent("added cached value to expiry queue",
+		trace.WithAttributes(
+			attribute.Stringer("evaluation completed at", completedAt),
+			attribute.Int64("size in bytes", sizeBytes),
+			attribute.Int64("cached bytes", lastCachedBytes),
+		),
+		trace.WithAttributes(c.additionalAttributes...),
+	)
 }
 
 // matchersKey provides a unique string key for the given matchers slice.

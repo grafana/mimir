@@ -13,10 +13,12 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentelemetry"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -25,6 +27,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/swift"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+var tracer = otel.Tracer("storage/bucket")
 
 const (
 	// S3 is the value for the S3 storage backend.
@@ -72,7 +76,7 @@ type StorageBackendConfig struct {
 	ExtraBackends []string `yaml:"-"`
 
 	// Used to keep track of the flag names registered in this config, to be able to overwrite them later properly.
-	RegisteredFlags util.RegisteredFlags `yaml:"-"`
+	registeredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
 // Returns the supportedBackends for the package and any custom backends injected into the config.
@@ -86,7 +90,7 @@ func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
-	cfg.RegisteredFlags = util.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		cfg.S3.RegisterFlagsWithPrefix(prefix, f)
 		cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
 		cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
@@ -99,6 +103,10 @@ func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(pref
 
 func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
+}
+
+func (cfg *StorageBackendConfig) RegisteredFlags() flagext.RegisteredFlags {
+	return cfg.registeredFlags
 }
 
 func (cfg *StorageBackendConfig) Validate() error {
@@ -181,7 +189,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg), tracer)
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {

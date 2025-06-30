@@ -40,15 +40,13 @@
     container.new(name, $._images.querier) +
     container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
-    $.jaeger_mixin +
+    $.tracing_env_mixin +
     $.util.readinessProbe +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
   querier_env_map:: {
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
-
     // Dynamically set GOMAXPROCS based on CPU request.
     GOMAXPROCS: std.toString(
       std.ceil(

@@ -28,8 +28,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
-	"github.com/opentracing/opentracing-go"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -38,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -45,14 +45,14 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -383,7 +383,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	return nil
 }
 
-func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]int64 {
+func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
 	previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.dir)
 	if err != nil {
 		level.Warn(s.logger).Log(
@@ -397,7 +397,7 @@ func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]int64 {
 	return previouslyLoadedBlocks
 }
 
-func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
+func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]struct{}) {
 	// This is not happening during a request so we can ignore the stats.
 	ignoredStats := newSafeQueryStats()
 	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
@@ -1301,8 +1301,8 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
-	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
-	defer span.Finish()
+	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
+	defer span.End()
 
 	var (
 		blocks       []*bucketBlock
@@ -2107,9 +2107,9 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 
 // ensureIndexHeaderLoaded lazy-loads block's index header and record the loading time.
 func (b *bucketBlock) ensureIndexHeaderLoaded(ctx context.Context, stats *safeQueryStats) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.ensureIndexHeaderLoaded")
-	defer span.Finish()
-	span.SetTag("blockID", b.meta.ULID)
+	_, span := tracer.Start(ctx, "bucketBlock.ensureIndexHeaderLoaded")
+	defer span.End()
+	span.SetAttributes(attribute.Stringer("blockID", b.meta.ULID))
 
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.

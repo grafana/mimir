@@ -7,12 +7,14 @@ title: Grafana Mimir querier
 weight: 50
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir querier
 
 The querier is a stateless component that evaluates [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)
 expressions by fetching time series and labels on the read path.
 
-The querier uses the [store-gateway]({{< relref "./store-gateway" >}}) component to query the [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture#long-term-storage" >}}) and the [ingester]({{< relref "./ingester" >}}) component to query recently written data.
+The querier uses the [store-gateway](../store-gateway/) component to query the [long-term storage](../../../../get-started/about-grafana-mimir-architecture/#long-term-storage) and the [ingester](../ingester/) component to query recently written data.
 
 ## How it works
 
@@ -70,7 +72,7 @@ Caching is optional, but highly recommended in a production environment.
 
 ### Metadata cache
 
-[Store-gateways]({{< relref "./store-gateway" >}}) and queriers can use Memcached to cache the following bucket metadata:
+[Store-gateways](../store-gateway/) and queriers can use Memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
@@ -96,4 +98,4 @@ You should use the same Memcached backend cluster for both the store-gateways an
 
 ## Querier configuration
 
-For details about querier configuration, refer to [querier]({{< relref "../../../configure/configuration-parameters#querier" >}}).
+For details about querier configuration, refer to [querier](../../../../configure/configuration-parameters/#querier).

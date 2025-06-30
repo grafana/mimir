@@ -25,21 +25,21 @@ data:
         chunks_cache:
           backend: memcached
           memcached:
-            addresses: dns+small-values-mimir-chunks-cache.citestns.svc:11211
+            addresses: dnssrvnoa+small-values-mimir-chunks-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 1048576
             timeout: 750ms
         index_cache:
           backend: memcached
           memcached:
-            addresses: dns+small-values-mimir-index-cache.citestns.svc:11211
+            addresses: dnssrvnoa+small-values-mimir-index-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 5242880
             timeout: 750ms
         metadata_cache:
           backend: memcached
           memcached:
-            addresses: dns+small-values-mimir-metadata-cache.citestns.svc:11211
+            addresses: dnssrvnoa+small-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
@@ -70,7 +70,7 @@ data:
       results_cache:
         backend: memcached
         memcached:
-          addresses: dns+small-values-mimir-results-cache.citestns.svc:11211
+          addresses: dnssrvnoa+small-values-mimir-results-cache.citestns.svc.cluster.local.:11211
           max_item_size: 5242880
           timeout: 500ms
       scheduler_address: small-values-mimir-query-scheduler-headless.citestns.svc:9095
@@ -112,8 +112,9 @@ data:
       cache:
         backend: memcached
         memcached:
-          addresses: dns+small-values-mimir-metadata-cache.citestns.svc:11211
+          addresses: dnssrvnoa+small-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
           max_item_size: 1048576
+          timeout: 500ms
     runtime_config:
       file: /var/mimir/runtime.yaml
     store_gateway:

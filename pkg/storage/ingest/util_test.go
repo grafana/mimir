@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
@@ -188,12 +189,19 @@ func TestCreateTopic(t *testing.T) {
 		)
 
 		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
-			return &kmsg.CreateTopicsResponse{}, errors.New("failed request"), true
+			return &kmsg.CreateTopicsResponse{
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{
+						Topic:     cfg.Topic,
+						ErrorCode: kerr.NotLeaderForPartition.Code,
+					},
+				},
+			}, nil, true
 		})
 
 		logger := log.NewNopLogger()
 
-		require.NoError(t, CreateTopic(cfg, logger))
+		require.Error(t, CreateTopic(cfg, logger))
 	})
 
 	t.Run("should return an error if the request succeed but the response contains an error", func(t *testing.T) {

@@ -12,9 +12,9 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/floats"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type AvgAggregationGroup struct {
@@ -33,7 +33,7 @@ type AvgAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
@@ -54,7 +54,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotationFunc)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
 	var err error
 	if len(data.Floats) > 0 && g.floats == nil {
 		// First series with float values for this group, populate it.
@@ -154,7 +154,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
 	var err error
 	if len(data.Histograms) > 0 && g.histograms == nil {
 		// First series with histogram values for this group, populate it.
@@ -191,7 +191,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
-			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotation); err != nil {
 				// Unknown error: we couldn't convert the error to an annotation. Give up.
 				return err
 			}
@@ -205,7 +205,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
-			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotation); err != nil {
 				// Unknown error: we couldn't convert the error to an annotation. Give up.
 				return err
 			}
@@ -256,7 +256,7 @@ func (g *AvgAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	return floatPointCount, haveMixedFloatsAndHistograms
 }
 
-func (g *AvgAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *AvgAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount, hasMixedData := g.reconcileAndCountFloatPoints()
 	var floatPoints []promql.FPoint
 	var err error
@@ -299,13 +299,28 @@ func (g *AvgAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
-	types.HistogramSlicePool.Put(g.histograms, memoryConsumptionTracker)
-	types.BoolSlicePool.Put(g.incrementalMeans, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints, Histograms: histogramPoints}, hasMixedData, nil
+}
+
+func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
+	g.floats = nil
+
+	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
+	g.floatMeans = nil
+
+	types.Float64SlicePool.Put(g.floatCompensatingMeans, memoryConsumptionTracker)
+	g.floatCompensatingMeans = nil
+
+	types.BoolSlicePool.Put(g.incrementalMeans, memoryConsumptionTracker)
+	g.incrementalMeans = nil
+
+	types.BoolSlicePool.Put(g.floatPresent, memoryConsumptionTracker)
+	g.floatPresent = nil
+
+	types.HistogramSlicePool.Put(g.histograms, memoryConsumptionTracker)
+	g.histograms = nil
+
+	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
+	g.groupSeriesCounts = nil
 }

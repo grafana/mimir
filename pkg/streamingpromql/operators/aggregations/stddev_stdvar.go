@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // stddev represents whether this aggregation is `stddev` (true), or `stdvar` (false)
@@ -35,7 +35,7 @@ type StddevStdvarAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
 	// Native histograms are ignored for stddev and stdvar.
 	if len(data.Histograms) > 0 {
 		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
@@ -83,7 +83,7 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 	return nil
 }
 
-func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, sc := range g.groupSeriesCounts {
 		if sc > 0 {
@@ -115,9 +115,16 @@ func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(timeRange types.Query
 		}
 	}
 
-	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
-	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *StddevStdvarAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
+	g.floats = nil
+
+	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
+	g.floatMeans = nil
+
+	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
+	g.groupSeriesCounts = nil
 }

@@ -9,6 +9,8 @@ jobs:
     steps:
     - name: "Check out code"
       uses: "actions/checkout@v4"
+      with:
+        persist-credentials: false
     - name: Run Git Config
       run: git config --global --add safe.directory '*'
     - name: Build website to test Mimir documentation
@@ -41,6 +43,7 @@ jobs:
       with:
         path: ${{ steps.mimir_branch.outputs.branch }}
         ref: ${{ steps.mimir_branch.outputs.branch }}
+        persist-credentials: false
     - name: Build website to test Helm chart documentation
       env:
         MIMIR_BRANCH: ${{ steps.mimir_branch.outputs.branch }}

@@ -58,7 +58,8 @@ type frontendSchedulerWorkers struct {
 	// Set to nil when stop is called... no more workers are created afterwards.
 	workers map[string]*frontendSchedulerWorker
 
-	enqueueDuration *prometheus.HistogramVec
+	enqueueDuration          *prometheus.HistogramVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newFrontendSchedulerWorkers(
@@ -84,6 +85,7 @@ func newFrontendSchedulerWorkers(
 			// track 1ms latency too and removing any bucket bigger than 1s.
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
+		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-frontend", util.GRPCProtocol),
 	}
 
 	var err error
@@ -219,7 +221,7 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil)
+	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil, util.NewInvalidClusterValidationReporter(f.cfg.GRPCClientConfig.ClusterValidation.Label, f.invalidClusterValidation, f.log))
 	if err != nil {
 		return nil, err
 	}
@@ -401,9 +403,9 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 
 // enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
 func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
-	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
-	spanLogger.Span.SetTag("scheduler_address", w.conn.Target())
-	defer spanLogger.Span.Finish()
+	spanLogger, _ := spanlogger.New(req.ctx, w.log, tracer, "frontendSchedulerWorker.enqueueRequest")
+	spanLogger.SetTag("scheduler_address", w.conn.Target())
+	defer spanLogger.Finish()
 
 	// Keep track of how long it takes to enqueue a request end-to-end.
 	durationTimer := prometheus.NewTimer(w.enqueueDuration)

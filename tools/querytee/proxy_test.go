@@ -856,9 +856,10 @@ func mockQueryResponseWithExpectedBody(path string, expectedBody string, status 
 //   - http: HTTPListenAddr()
 //   - grpc: GRPCListenAddr()
 func getServerAddress(proto string, server *server.Server) string {
-	if proto == "http" {
+	switch proto {
+	case "http":
 		return "http://" + server.HTTPListenAddr().String()
-	} else if proto == "grpc" {
+	case "grpc":
 		return "dns:///" + server.GRPCListenAddr().String()
 	}
 

@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package planning;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message EncodedQueryPlan {
+  EncodedQueryTimeRange timeRange = 1 [(gogoproto.nullable) = false];
+  repeated EncodedNode nodes = 2;
+  int64 rootNode = 3;
+
+  // The original PromQL expression for this query.
+  // May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
+  string originalExpression = 4;
+}
+
+message EncodedQueryTimeRange {
+  int64 startT = 1; // Start timestamp, in milliseconds since Unix epoch.
+  int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
+  int64 intervalMilliseconds = 3; // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+  bool isInstant = 4;
+}
+
+message EncodedNode {
+  // Why use Any rather than a oneof?
+  // This allows us to define nodes in multiple packages without creating dependencies between them,
+  // and allows us to define new kinds of nodes in other repositories (eg. the one used for Grafana Cloud Metrics).
+  // TODO: is this the best type to use? Any will encode a string for the type of message, which seems expensive - could we use an integer perhaps?
+  google.protobuf.Any details = 1;
+
+  repeated int64 children = 2;
+
+  // The following fields will only be populated if this plan was generated with descriptions enabled.
+  string type = 3;
+  string description = 4;
+  repeated string childrenLabels = 5;
+}

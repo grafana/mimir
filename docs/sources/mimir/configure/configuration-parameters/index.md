@@ -510,6 +510,11 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -common.client-cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### server
@@ -548,6 +553,10 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # (advanced) Maximum number of simultaneous grpc connections, <=0 to disable
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
+
+# If true, the max streams by connection gauge will be collected.
+# CLI flag: -server.grpc-collect-max-streams-by-conn
+[grpc_collect_max_streams_by_conn: <boolean> | default = true]
 
 # (experimental) Enables PROXY protocol.
 # CLI flag: -server.proxy-protocol-enabled
@@ -752,9 +761,53 @@ grpc_tls_config:
 # CLI flag: -server.log-request-headers-exclude-list
 [log_request_exclude_headers_list: <string> | default = ""]
 
+# Optionally add request headers to tracing spans.
+# CLI flag: -server.trace-request-headers
+[trace_request_headers: <boolean> | default = false]
+
+# Comma separated list of headers to exclude from tracing spans. Only used if
+# server.trace-request-headers is true. The following headers are always
+# excluded: Authorization, Cookie, X-Csrf-Token.
+# CLI flag: -server.trace-request-headers-exclude-list
+[trace_request_exclude_headers_list: <string> | default = ""]
+
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
+
+cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -server.cluster-validation.label
+  [label: <string> | default = ""]
+
+  grpc:
+    # (experimental) When enabled, cluster label validation is executed:
+    # configured cluster validation label is compared with the cluster
+    # validation label received through the requests.
+    # CLI flag: -server.cluster-validation.grpc.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) When enabled, soft cluster label validation is executed.
+    # Can be enabled only together with server.cluster-validation.grpc.enabled
+    # CLI flag: -server.cluster-validation.grpc.soft-validation
+    [soft_validation: <boolean> | default = false]
+
+  http:
+    # (experimental) When enabled, cluster label validation is executed:
+    # configured cluster validation label is compared with the cluster
+    # validation label received through the requests.
+    # CLI flag: -server.cluster-validation.http.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) When enabled, soft cluster label validation is executed.
+    # Can be enabled only together with server.cluster-validation.http.enabled
+    # CLI flag: -server.cluster-validation.http.soft-validation
+    [soft_validation: <boolean> | default = false]
+
+    # (experimental) Comma-separated list of url paths that are excluded from
+    # the cluster validation check.
+    # CLI flag: -server.cluster-validation.http.excluded-paths
+    [excluded_paths: <string> | default = ""]
 ```
 
 ### distributor
@@ -799,31 +852,14 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable
   [enable_ha_tracker: <boolean> | default = false]
 
-  # (advanced) Update the timestamp in the KV store for a given cluster/replica
-  # only after this amount of time has passed since the current stored
-  # timestamp.
-  # CLI flag: -distributor.ha-tracker.update-timeout
-  [ha_tracker_update_timeout: <duration> | default = 15s]
-
-  # (advanced) Maximum jitter applied to the update timeout, in order to spread
-  # the HA heartbeats over time.
-  # CLI flag: -distributor.ha-tracker.update-timeout-jitter-max
-  [ha_tracker_update_timeout_jitter_max: <duration> | default = 5s]
-
-  # (advanced) If we don't receive any samples from the accepted replica for a
-  # cluster in this amount of time we will failover to the next replica we
-  # receive a sample from. This value must be greater than the update timeout
-  # CLI flag: -distributor.ha-tracker.failover-timeout
-  [ha_tracker_failover_timeout: <duration> | default = 30s]
-
   # Enable the elected_replica_status metric, which shows the current elected
   # replica. It is disabled by default due to the possible high cardinality of
   # the metric.
   # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
   [enable_elected_replica_metric: <boolean> | default = false]
 
-  # Backend storage to use for the ring. Note that memberlist support is
-  # experimental.
+  # Backend storage to use for the ring. Supported values are: consul, etcd,
+  # inmemory, memberlist, multi.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -860,6 +896,15 @@ ha_tracker:
       # (advanced) Timeout for storing value to secondary store.
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
+
+  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout.
+  [ha_tracker_update_timeout: <duration> | default = ]
+
+  # (advanced) Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.
+  [ha_tracker_update_timeout_jitter_max: <duration> | default = ]
+
+  # (advanced) Deprecated. Use limits.ha_tracker_failover_timeout.
+  [ha_tracker_failover_timeout: <duration> | default = ]
 
 # (advanced) Max message size in bytes that the distributors will accept for
 # incoming push requests to the remote write API. If exceeded, the request will
@@ -1500,72 +1545,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
 
-store_gateway_client:
-  # (advanced) Enable TLS for gRPC client connecting to store-gateway.
-  # CLI flag: -querier.store-gateway-client.tls-enabled
-  [tls_enabled: <boolean> | default = false]
-
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -querier.store-gateway-client.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
-
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
-  # CLI flag: -querier.store-gateway-client.tls-key-path
-  [tls_key_path: <string> | default = ""]
-
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -querier.store-gateway-client.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
-
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -querier.store-gateway-client.tls-server-name
-  [tls_server_name: <string> | default = ""]
-
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
-
-  # (advanced) Override the default cipher suite list (separated by commas).
-  # Allowed values:
-  #
-  # Secure Ciphers:
-  # - TLS_AES_128_GCM_SHA256
-  # - TLS_AES_256_GCM_SHA384
-  # - TLS_CHACHA20_POLY1305_SHA256
-  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
-  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
-  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
-  #
-  # Insecure Ciphers:
-  # - TLS_RSA_WITH_RC4_128_SHA
-  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_CBC_SHA
-  # - TLS_RSA_WITH_AES_256_CBC_SHA
-  # - TLS_RSA_WITH_AES_128_CBC_SHA256
-  # - TLS_RSA_WITH_AES_128_GCM_SHA256
-  # - TLS_RSA_WITH_AES_256_GCM_SHA384
-  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
-  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
-  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
-  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
-  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-  # CLI flag: -querier.store-gateway-client.tls-cipher-suites
-  [tls_cipher_suites: <string> | default = ""]
-
-  # (advanced) Override the default minimum TLS version. Allowed values:
-  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  # CLI flag: -querier.store-gateway-client.tls-min-version
-  [tls_min_version: <string> | default = ""]
+# The grpc_client block configures the gRPC client used to communicate between
+# two Mimir components.
+# The CLI flags prefix for this block configuration is:
+# querier.store-gateway-client
+[store_gateway_client: <grpc_client>]
 
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
@@ -1601,7 +1585,7 @@ store_gateway_client:
 
 # (experimental) Query engine to use, either 'prometheus' or 'mimir'
 # CLI flag: -querier.query-engine
-[query_engine: <string> | default = "prometheus"]
+[query_engine: <string> | default = "mimir"]
 
 # (experimental) If set to true and the Mimir query engine is in use, fall back
 # to using the Prometheus query engine for any queries not supported by the
@@ -1644,63 +1628,11 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
-# (experimental) Enable experimental PromQL functions. This config option should
-# be set on query-frontend too when query sharding is enabled.
-# CLI flag: -querier.promql-experimental-functions-enabled
-[promql_experimental_functions_enabled: <boolean> | default = false]
-
 mimir_query_engine:
-  # (experimental) Enable support for aggregation operations in the Mimir query
-  # engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
-  [enable_aggregation_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for binary logical operations in the Mimir
-  # query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
-  [enable_binary_logical_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for one-to-many and many-to-one binary
-  # operations (group_left/group_right) in the Mimir query engine. Only applies
-  # if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
-  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for scalars in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalars
-  [enable_scalars: <boolean> | default = true]
-
-  # (experimental) Enable support for binary comparison operations between two
-  # scalars in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for subqueries in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-subqueries
-  [enable_subqueries: <boolean> | default = true]
-
-  # (experimental) Enable support for binary comparison operations between a
-  # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
-  # use.
-  # CLI flag: -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
-  [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
-
-  # (experimental) Enable support for binary comparison operations between two
-  # vectors in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
-
-  # (experimental) Comma-separated list of aggregations to disable support for.
-  # Only applies if MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.disabled-aggregations
-  [disabled_aggregations: <string> | default = ""]
-
-  # (experimental) Comma-separated list of function names to disable support
-  # for. Only applies if MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.disabled-functions
-  [disabled_functions: <string> | default = ""]
+  # (experimental) Enable common subexpression elimination when evaluating
+  # queries.
+  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
+  [enable_common_subexpression_elimination: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1817,7 +1749,7 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
-# (experimental) Cache non-transient errors from queries.
+# Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
 
@@ -1843,11 +1775,6 @@ results_cache:
 # CLI flag: -query-frontend.prune-queries
 [prune_queries: <boolean> | default = false]
 
-# (experimental) True to control access to specific PromQL experimental
-# functions per tenant.
-# CLI flag: -query-frontend.block-promql-experimental-functions
-[block_promql_experimental_functions: <boolean> | default = false]
-
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
 # but a hint given to the query sharding when the query execution is initially
@@ -1864,20 +1791,33 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
-# (experimental) If set, subqueries in instant queries are spun off as range
-# queries and sent to the given URL. This parameter also requires you to set
-# `instant_queries_with_subquery_spin_off` for the tenant.
-# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
-[spin_off_instant_subqueries_to_url: <string> | default = ""]
-
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
+# Cache statistics of processed samples on results cache.
+# CLI flag: -query-frontend.cache-samples-processed-stats
+[cache_samples_processed_stats: <boolean> | default = false]
+
 # (advanced) URL of downstream Prometheus.
 # CLI flag: -query-frontend.downstream-url
 [downstream_url: <string> | default = ""]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -query-frontend.client-cluster-validation.label
+  [label: <string> | default = ""]
+
+# (experimental) Query engine to use, either 'prometheus' or 'mimir'
+# CLI flag: -query-frontend.query-engine
+[query_engine: <string> | default = "prometheus"]
+
+# (experimental) If set to true and the Mimir query engine is in use, fall back
+# to using the Prometheus query engine for any queries not supported by the
+# Mimir query engine.
+# CLI flag: -query-frontend.enable-query-engine-fallback
+[enable_query_engine_fallback: <boolean> | default = true]
 ```
 
 ### query_scheduler
@@ -2020,11 +1960,8 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.rule-path
 [rule_path: <string> | default = "./data-ruler/"]
 
-# Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
-# to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per
-# group can be supported by using DNS service discovery format, comprehensive of
-# the scheme. Basic auth is supported as part of the URL.
-# CLI flag: -ruler.alertmanager-url
+# (deprecated) Deprecated, use
+# limits.ruler_alertmanager_client_config.alertmanager_url instead.
 [alertmanager_url: <string> | default = ""]
 
 # (advanced) How long to wait between refreshing DNS resolutions of Alertmanager
@@ -2042,33 +1979,25 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.notification-timeout
 [notification_timeout: <duration> | default = 10s]
 
+# Deprecated, use limits.ruler_alertmanager_client_config instead.
 alertmanager_client:
-  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
-  # CLI flag: -ruler.alertmanager-client.tls-enabled
-  [tls_enabled: <boolean> | default = true]
+  # (advanced)
+  [tls_enabled: <boolean> | default = ]
 
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ruler.alertmanager-client.tls-cert-path
+  # (advanced)
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
-  # CLI flag: -ruler.alertmanager-client.tls-key-path
+  # (advanced)
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ruler.alertmanager-client.tls-ca-path
+  # (advanced)
   [tls_ca_path: <string> | default = ""]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ruler.alertmanager-client.tls-server-name
+  # (advanced)
   [tls_server_name: <string> | default = ""]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+  # (advanced)
+  [tls_insecure_skip_verify: <boolean> | default = ]
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
@@ -2101,50 +2030,28 @@ alertmanager_client:
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
   # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
   # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-  # CLI flag: -ruler.alertmanager-client.tls-cipher-suites
   [tls_cipher_suites: <string> | default = ""]
 
-  # (advanced) Override the default minimum TLS version. Allowed values:
-  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  # CLI flag: -ruler.alertmanager-client.tls-min-version
+  # (advanced)
   [tls_min_version: <string> | default = ""]
 
-  # HTTP Basic authentication username. It overrides the username set in the URL
-  # (if any).
-  # CLI flag: -ruler.alertmanager-client.basic-auth-username
   [basic_auth_username: <string> | default = ""]
 
-  # HTTP Basic authentication password. It overrides the password set in the URL
-  # (if any).
-  # CLI flag: -ruler.alertmanager-client.basic-auth-password
-  [basic_auth_password: <string> | default = ""]
+  basic_auth_password:
 
   oauth2:
-    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
-    # Alertmanager.
-    # CLI flag: -ruler.alertmanager-client.oauth.client_id
     [client_id: <string> | default = ""]
 
-    # OAuth2 client secret.
-    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
-    [client_secret: <string> | default = ""]
+    client_secret:
 
-    # Endpoint used to fetch access token.
-    # CLI flag: -ruler.alertmanager-client.oauth.token_url
     [token_url: <string> | default = ""]
 
-    # Optional scopes to include with the token request.
-    # CLI flag: -ruler.alertmanager-client.oauth.scopes
     [scopes: <string> | default = ""]
 
-    # (advanced) Optional additional URL parameters to send to the token URL.
-    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
-    [endpoint_params: <map of string to string> | default = {}]
+    # (advanced)
+    [endpoint_params: <map of string to string> | default = ]
 
-  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
-  # requests through. Applies to all requests, including auxiliary traffic, such
-  # as OAuth token requests.
-  # CLI flag: -ruler.alertmanager-client.proxy-url
+  # (advanced)
   [proxy_url: <string> | default = ""]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
@@ -2364,11 +2271,6 @@ local:
   [directory: <string> | default = ""]
 
 cache:
-  # (experimental) Enabling caching of rule group contents if a cache backend is
-  # configured.
-  # CLI flag: -ruler-storage.cache.rule-group-enabled
-  [rule_group_enabled: <boolean> | default = false]
-
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
@@ -2519,10 +2421,11 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
-# (experimental) Skip starting the Alertmanager for tenants matching this suffix
-# unless they have a promoted, non-default Grafana Alertmanager configuration.
-# CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
-[grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
+# (experimental) Duration to wait before shutting down an idle Alertmanager
+# using an unpromoted or default configuration when strict initialization is
+# enabled.
+# CLI flag: -alertmanager.grafana-alertmanager-grace-period
+[grafana_alertmanager_idle_grace_period: <duration> | default = 5m]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
@@ -2669,6 +2572,11 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  cluster_validation:
+    # (experimental) Optionally define the cluster validation label.
+    # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
+    [label: <string> | default = ""]
+
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
 # sharding is enabled. This state is read when all replicas for a shard can not
@@ -2683,6 +2591,12 @@ alertmanager_client:
 # removed for any tenant that does not have a configuration.
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
+
+# (experimental) Skip initializing Alertmanagers for tenants without a
+# non-default, non-empty configuration. For Grafana Alertmanager tenants,
+# configurations not marked as 'promoted' will also be skipped.
+# CLI flag: -alertmanager.strict-initialization-enabled
+[strict_initialization: <boolean> | default = false]
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
@@ -2706,6 +2620,10 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
+
+# (experimental) Enable pre-notification hooks.
+# CLI flag: -alertmanager.notify-hooks-enabled
+[enable_notify_hooks: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -2783,6 +2701,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 - `ingester.client`
 - `querier.frontend-client`
 - `querier.scheduler-client`
+- `querier.store-gateway-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
 - `ruler.client`
@@ -2923,6 +2842,11 @@ backoff_config:
 # if ConnectTimeout > 0.
 # CLI flag: -<prefix>.connect-backoff-max-delay
 [connect_backoff_max_delay: <duration> | default = 5s]
+
+cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -<prefix>.cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### frontend_worker
@@ -3221,7 +3145,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.max-join-retries
 [max_join_retries: <int> | default = 10]
 
-# If this node fails to join memberlist cluster, abort.
+# (advanced) Abort if this node fails the fast memberlist cluster joining
+# procedure at startup. When enabled, it's guaranteed that other services,
+# depending on memberlist, have an updated view over the cluster state when
+# they're started.
+# CLI flag: -memberlist.abort-if-fast-join-fails
+[abort_if_cluster_fast_join_fails: <boolean> | default = false]
+
+# Abort if this node fails to join memberlist cluster at startup. When enabled,
+# it's not guaranteed that other services are started only after the cluster
+# state has been successfully updated; use 'abort-if-fast-join-fails' instead.
 # CLI flag: -memberlist.abort-if-join-fails
 [abort_if_cluster_join_fails: <boolean> | default = false]
 
@@ -3258,6 +3191,10 @@ The `memberlist` block configures the Gossip memberlist.
 # memory for troubleshooting (two buffers). 0 to disable.
 # CLI flag: -memberlist.message-history-buffer-bytes
 [message_history_buffer_bytes: <int> | default = 0]
+
+# (advanced) Size of the buffered channel for the WatchPrefix function.
+# CLI flag: -memberlist.watch-prefix-buffer-size
+[watch_prefix_buffer_size: <int> | default = 128]
 
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
@@ -3398,6 +3335,22 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.ha-tracker.max-clusters
 [ha_max_clusters: <int> | default = 100]
 
+# (advanced) Update the timestamp in the KV store for a given cluster/replica
+# only after this amount of time has passed since the current stored timestamp.
+# CLI flag: -distributor.ha-tracker.update-timeout
+[ha_tracker_update_timeout: <duration> | default = 15s]
+
+# (advanced) Maximum jitter applied to the update timeout, in order to spread
+# the HA heartbeats over time.
+# CLI flag: -distributor.ha-tracker.update-timeout-jitter-max
+[ha_tracker_update_timeout_jitter_max: <duration> | default = 5s]
+
+# (advanced) If we don't receive any samples from the accepted replica for a
+# cluster in this amount of time we will failover to the next replica we receive
+# a sample from. This value must be greater than the update timeout.
+# CLI flag: -distributor.ha-tracker.failover-timeout
+[ha_tracker_failover_timeout: <duration> | default = 30s]
+
 # (advanced) This flag can be used to specify label names that to drop during
 # sample ingestion within the distributor and can be repeated in order to drop
 # multiple labels.
@@ -3524,14 +3477,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # with query-sharding enabled make sure to set
 # -query-frontend.query-result-response-format to 'protobuf'.
 # CLI flag: -ingester.native-histograms-ingestion-enabled
-[native_histograms_ingestion_enabled: <boolean> | default = false]
-
-# (experimental) Enable experimental out-of-order native histogram ingestion.
-# This only takes effect if the `-ingester.out-of-order-time-window` value is
-# greater than zero and if `-ingester.native-histograms-ingestion-enabled =
-# true`
-# CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
-[ooo_native_histograms_ingestion_enabled: <boolean> | default = true]
+[native_histograms_ingestion_enabled: <boolean> | default = true]
 
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
@@ -3645,6 +3591,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -store.max-labels-query-length
 [max_labels_query_length: <duration> | default = 0s]
 
+# Maximum number of series, the series endpoint queries. This limit is enforced
+# in the querier. If the requested limit is outside of the allowed value, the
+# request doesn't fail, but is manipulated to only query data up to the allowed
+# limit. Set to 0 to disable.
+# CLI flag: -querier.max-series-query-limit
+[max_series_query_limit: <int> | default = 0]
+
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
@@ -3717,7 +3670,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
 
-# (experimental) Time to live duration for cached non-transient errors
+# Time to live duration for cached non-transient errors
 # CLI flag: -query-frontend.results-cache-ttl-for-errors
 [results_cache_ttl_for_errors: <duration> | default = 5m]
 
@@ -3732,7 +3685,22 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_query_expression_size_bytes: <int> | default = 0]
 
 # (experimental) List of queries to block.
-[blocked_queries: <blocked_queries_config...> | default = ]
+# Example:
+#   The following configuration blocks the query "rate(metric_counter[5m])".
+#   Setting the pattern to ".*" and regex to true blocks all queries.
+#   blocked_queries:
+#       - pattern: rate(metric_counter[5m])
+#         reason: because the query is misconfigured
+[blocked_queries: <list of pattern (string), regex (bool), and, optionally, reason (string)> | default = ]
+
+# (experimental) List of queries to limit and duration to limit them for.
+# Example:
+#   The following configuration limits the query "rate(metric_counter[5m])" to
+#   running, at most, every minute.
+#   limited_queries:
+#       - allowed_frequency: 1m
+#         query: rate(metric_counter[5m])
+[limited_queries: <list of query (string) and allowed_frequency (duration)> | default = ]
 
 # (experimental) List of http requests to block.
 [blocked_requests: <blocked_requests_config...> | default = ]
@@ -3755,15 +3723,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.prom2-range-compat
 [prom2_range_compat: <boolean> | default = false]
 
-# (experimental) List of regular expression patterns matching instant queries.
-# Subqueries within those instant queries will be spun off as range queries to
-# optimize their performance.
-[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
-
-# (experimental) Mutate incoming queries that look far into the future to only
-# look into the future by the set duration. 0 to disable.
-# CLI flag: -query-frontend.max-future-query-window
-[max_future_query_window: <duration> | default = 0s]
+# (experimental) Enable spinning off subqueries from instant queries as range
+# queries to optimize their performance.
+# CLI flag: -query-frontend.subquery-spin-off-enabled
+[subquery_spin_off_enabled: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -3781,6 +3744,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 
+# (experimental) Maximum number of series that can be requested in a single
+# cardinality API request.
+# CLI flag: -querier.cardinality-api-max-series-limit
+[cardinality_analysis_max_results: <int> | default = 500]
+
 # (experimental) Maximum size of an active series or active native histogram
 # series request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
@@ -3794,15 +3762,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 
-# (experimental) Maximum number of cost attribution labels allowed per user, the
-# value is capped at 4.
-# CLI flag: -validation.max-cost-attribution-labels-per-user
-[max_cost_attribution_labels_per_user: <int> | default = 2]
-
 # (experimental) Maximum cardinality of cost attribution labels allowed per
 # user.
-# CLI flag: -validation.max-cost-attribution-cardinality-per-user
-[max_cost_attribution_cardinality_per_user: <int> | default = 10000]
+# CLI flag: -validation.max-cost-attribution-cardinality
+[max_cost_attribution_cardinality: <int> | default = 10000]
 
 # (experimental) Defines how long cost attribution stays in overflow before
 # attempting a reset, with received/discarded samples extending the cooldown if
@@ -3881,6 +3844,124 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
 [ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
 
+# Per-tenant Alertmanager client configuration. If not supplied, the tenant's
+# notifications are sent to the ruler-wide default.
+ruler_alertmanager_client_config:
+  # Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
+  # to. Each URL is treated as a separate group. Multiple Alertmanagers in HA
+  # per group can be supported by using DNS service discovery format,
+  # comprehensive of the scheme. Basic auth is supported as part of the URL.
+  # CLI flag: -ruler.alertmanager-url
+  [alertmanager_url: <string> | default = ""]
+
+  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
+  # CLI flag: -ruler.alertmanager-client.tls-enabled
+  [tls_enabled: <boolean> | default = true]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ruler.alertmanager-client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ruler.alertmanager-client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ruler.alertmanager-client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ruler.alertmanager-client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ruler.alertmanager-client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ruler.alertmanager-client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ruler.alertmanager-client.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
+  # HTTP Basic authentication username. It overrides the username set in the URL
+  # (if any).
+  # CLI flag: -ruler.alertmanager-client.basic-auth-username
+  [basic_auth_username: <string> | default = ""]
+
+  # HTTP Basic authentication password. It overrides the password set in the URL
+  # (if any).
+  # CLI flag: -ruler.alertmanager-client.basic-auth-password
+  [basic_auth_password: <string> | default = ""]
+
+  oauth2:
+    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
+    # Alertmanager.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_id
+    [client_id: <string> | default = ""]
+
+    # OAuth2 client secret.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
+    [client_secret: <string> | default = ""]
+
+    # Endpoint used to fetch access token.
+    # CLI flag: -ruler.alertmanager-client.oauth.token_url
+    [token_url: <string> | default = ""]
+
+    # Optional scopes to include with the token request.
+    # CLI flag: -ruler.alertmanager-client.oauth.scopes
+    [scopes: <string> | default = ""]
+
+    # (advanced) Optional additional URL parameters to send to the token URL.
+    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
+    [endpoint_params: <map of string to string> | default = {}]
+
+  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
+  # requests through. Applies to all requests, including auxiliary traffic, such
+  # as OAuth token requests.
+  # CLI flag: -ruler.alertmanager-client.proxy-url
+  [proxy_url: <string> | default = ""]
+
+# (experimental) Minimum allowable evaluation interval for rule groups.
+# CLI flag: -ruler.min-rule-evaluation-interval
+[ruler_min_rule_evaluation_interval: <duration> | default = 0s]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -3931,6 +4012,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # validated. 0 = no limit.
 # CLI flag: -compactor.block-upload-max-block-size-bytes
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
+
+# (experimental) Blocks uploaded before the lookback aren't considered in
+# compactor cycles. If set, this value should be larger than all values in
+# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
+# blocks are considered regardless of their upload time.
+# CLI flag: -compactor.max-lookback
+[compactor_max_lookback: <duration> | default = 0s]
+
+# (advanced) Maximum number of TSDB segment files that the compactor can upload
+# concurrently per block.
+# CLI flag: -compactor.max-per-block-upload-concurrency
+[compactor_max_per_block_upload_concurrency: <int> | default = 8]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
@@ -4024,6 +4117,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 
+# URL of a hook to invoke before a notification is sent. empty = no hook.
+# CLI flag: -alertmanager.notify-hook-url
+[alertmanager_notify_hook_url: <string> | default = ""]
+
+# List of receivers to enable notify hooks for. empty = all receivers.
+# CLI flag: -alertmanager.notify-hook-receivers
+[alertmanager_notify_hook_receivers: <string> | default = ""]
+
+# Maximum amount of time to wait for a hook to complete before timing out. 0 =
+# no timeout.
+# CLI flag: -alertmanager.notify-hook-timeout
+[alertmanager_notify_hook_timeout: <duration> | default = 30s]
+
 # (advanced) Whether to enable automatic suffixes to names of metrics ingested
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
@@ -4043,6 +4149,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 # target_info metric on top of converting to job and instance labels.
 # CLI flag: -distributor.otel-keep-identifying-resource-attributes
 [otel_keep_identifying_resource_attributes: <boolean> | default = false]
+
+# (experimental) Whether to convert OTel explicit histograms into native
+# histograms with custom buckets.
+# CLI flag: -distributor.otel-convert-histograms-to-nhcb
+[otel_convert_histograms_to_nhcb: <boolean> | default = false]
+
+# (experimental) Whether to promote OTel scope metadata (scope name, version,
+# schema URL, attributes) to corresponding metric labels, prefixed with
+# otel_scope_.
+# CLI flag: -distributor.otel-promote-scope-metadata
+[otel_promote_scope_metadata: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
@@ -4185,6 +4302,15 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
+  # (experimental) The record version that this producer sends.
+  # CLI flag: -ingest-storage.kafka.producer-record-version
+  [producer_record_version: <int> | default = 0]
+
+  # The maximum amount of time a Kafka broker waits for some records before a
+  # Fetch response is returned.
+  # CLI flag: -ingest-storage.kafka.fetch-max-wait
+  [fetch_max_wait: <duration> | default = 5s]
+
   # The maximum number of concurrent fetch requests that the ingester makes when
   # reading data from Kafka during startup. Concurrent fetch requests are issued
   # only when there is sufficient backlog of records to consume. 0 to disable.
@@ -4240,6 +4366,17 @@ migration:
   # written to both backends.
   # CLI flag: -ingest-storage.migration.distributor-send-to-ingesters-enabled
   [distributor_send_to_ingesters_enabled: <boolean> | default = false]
+
+  # When enabled, errors writing to ingest storage are logged but do not affect
+  # write success or quorum. When disabled, write requests fail if ingest
+  # storage write fails.
+  # CLI flag: -ingest-storage.migration.ignore-ingest-storage-errors
+  [ignore_ingest_storage_errors: <boolean> | default = false]
+
+  # The maximum time a write request that goes through the ingest storage waits
+  # before it times out. Set to `0` to disable the timeout.
+  # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
+  [ingest_storage_max_wait_time: <duration> | default = 0s]
 ```
 
 ### blocks_storage
@@ -4952,12 +5089,12 @@ sharding_ring:
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 
-# (experimental) Blocks uploaded before the lookback aren't considered in
-# compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
-# blocks are considered regardless of their upload time.
-# CLI flag: -compactor.max-lookback
-[max_lookback: <duration> | default = 0s]
+# (experimental) If enabled, the compactor constructs and uploads sparse index
+# headers to object storage during each compaction cycle. This allows
+# store-gateway instances to use the sparse headers from object storage instead
+# of recreating them locally.
+# CLI flag: -compactor.upload-sparse-index-headers
+[upload_sparse_index_headers: <boolean> | default = false]
 ```
 
 ### store_gateway
@@ -5138,6 +5275,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 
+# (experimental) DNS provider used for resolving memcached addresses. Available
+# providers golang, miekgdns, miekgdns2
+# CLI flag: -<prefix>.memcached.addresses-provider
+[addresses_provider: <string> | default = "miekgdns"]
+
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout
 [timeout: <duration> | default = 200ms]
@@ -5145,16 +5287,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # The connection timeout.
 # CLI flag: -<prefix>.memcached.connect-timeout
 [connect_timeout: <duration> | default = 200ms]
-
-# (experimental) The size of the write buffer (in bytes). The buffer is
-# allocated for each connection to memcached.
-# CLI flag: -<prefix>.memcached.write-buffer-size-bytes
-[write_buffer_size_bytes: <int> | default = 4096]
-
-# (experimental) The size of the read buffer (in bytes). The buffer is allocated
-# for each connection to memcached.
-# CLI flag: -<prefix>.memcached.read-buffer-size-bytes
-[read_buffer_size_bytes: <int> | default = 4096]
 
 # (advanced) The minimum number of idle connections to keep open as a percentage
 # (0-100) of the number of recently used idle connections. If negative, idle
@@ -5257,6 +5389,10 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+# (experimental) Allow client creation even if initial DNS resolution fails.
+# CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
+[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### redis
@@ -5485,8 +5621,8 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
-# STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
-# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+# STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING,
+# GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 

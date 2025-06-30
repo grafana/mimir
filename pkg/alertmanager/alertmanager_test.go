@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
@@ -33,6 +34,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {
@@ -98,7 +100,8 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
 	now := time.Now()
 
@@ -183,7 +186,8 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -534,7 +538,8 @@ route:
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
 	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()
@@ -622,11 +627,16 @@ route:
 	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
 }
 
-func TestGrafanaAlertmanagerTemplates(t *testing.T) {
+func TestGrafanaAlertmanager(t *testing.T) {
+	limits := mockAlertManagerLimits{
+		emailNotificationRateLimit: rate.Inf,
+	}
+
+	suffix := "-grafana"
 	am, err := New(&Config{
-		UserID:            "test",
+		UserID:            "test" + suffix,
 		Logger:            log.NewNopLogger(),
-		Limits:            &mockAlertManagerLimits{},
+		Limits:            &limits,
 		Features:          featurecontrol.NoopFlags{},
 		TenantDataDir:     t.TempDir(),
 		ExternalURL:       &url.URL{Path: "/am"},
@@ -635,13 +645,16 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
-		PersisterConfig: PersisterConfig{Interval: time.Hour},
+		PersisterConfig:                  PersisterConfig{Interval: time.Hour},
+		GrafanaAlertmanagerCompatibility: true,
 	}, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
 	// The webhook message should contain the executed Grafana template.
 	type notification struct {
+		*alertingTemplates.ExtendedData
+
 		Message string `json:"message"`
 	}
 	c := make(chan notification)
@@ -677,12 +690,17 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	expMessage := "This is a test template"
+	expMessage := `{"field":"value"}`
 	testTemplate := alertingTemplates.TemplateDefinition{
 		Name:     "test",
-		Template: fmt.Sprintf(`{{ define "test" -}} %s {{- end }}`, expMessage),
+		Template: `{{ define "test" -}} {{ coll.Dict "field" "value" | data.ToJSON }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
 	}
-	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+
+	expectedImageURL := "http://example.com/image.png"
+
+	var emailCfg alertingReceivers.EmailSenderConfig
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
 
 	now := time.Now()
 	alert := types.Alert{
@@ -690,19 +708,49 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 			Labels: model.LabelSet{
 				"alertname": model.LabelValue("test-alert"),
 			},
+			Annotations: model.LabelSet{
+				// Check that the image URL is included in the message.
+				alertingmodels.ImageURLAnnotation: model.LabelValue(expectedImageURL),
+			},
 			StartsAt: now.Add(-5 * time.Minute),
 			EndsAt:   now.Add(5 * time.Minute),
 		},
 		UpdatedAt: now,
 	}
+	expected := testTemplate
+	expected.Kind = alertingTemplates.GrafanaKind // should patch kind
 	require.NoError(t, am.alerts.Put(&alert))
-	require.Equal(t, am.templates[0], testTemplate)
+	require.Equal(t, am.templates[0], expected)
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:
-			return got.Message == expMessage
+			return got.Message == expMessage && got.Alerts[0].ImageURL == expectedImageURL
 		default:
 			return false
 		}
 	}, 5*time.Second, 100*time.Millisecond)
+
+	// Ensure templates are correctly built for empty/noop/blackhole notifiers.
+	cfgRaw = `{
+            "route": {
+                "receiver": "empty_receiver",
+                "group_by": ["alertname"]
+            },
+            "receivers": [{
+                "name": "empty_receiver"
+            }],
+        }`
+
+	cfg, err = definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
+
+	// Now attempt to use a template function that doesn't exist. Ensure ApplyConfig fails to validate even if there are no non-empty receivers.
+	testTemplate = alertingTemplates.TemplateDefinition{
+		Name:     "test",
+		Template: `{{ define "test" -}} {{ DOESNTEXIST "field" "value" }} {{- end }}`,
+		Kind:     alertingTemplates.GrafanaKind,
+	}
+	require.Error(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, emailCfg, true))
 }

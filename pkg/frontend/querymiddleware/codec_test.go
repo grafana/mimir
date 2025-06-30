@@ -91,6 +91,23 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
+				"",
+			),
+		},
+		// Same as above, but with stats=all.
+		{
+			url: "/api/v1/query_range?end=1536716880&query=sum+by+%28namespace%29+%28container_memory_rss%29&start=1536673680&stats=all&step=120",
+			expected: NewPrometheusRangeQueryRequest(
+				"/api/v1/query_range",
+				nil,
+				1536673680*1e3,
+				1536716880*1e3,
+				(2 * time.Minute).Milliseconds(),
+				0,
+				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
+				Options{},
+				nil,
+				"all",
 			),
 		},
 		{
@@ -103,6 +120,7 @@ func TestPrometheusCodec_EncodeMetricsQueryRequest(t *testing.T) {
 				parseQuery(t, "sum(container_memory_rss) by (namespace)"),
 				Options{},
 				nil,
+				"",
 			),
 		},
 		{
@@ -185,6 +203,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
+		"",
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
@@ -194,6 +213,7 @@ func TestMetricsQuery_MinMaxTime(t *testing.T) {
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
+		"",
 	)
 
 	for _, testCase := range []struct {
@@ -312,6 +332,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
+		"",
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
@@ -321,6 +342,7 @@ func TestMetricsQuery_WithStartEnd_TransformConsistency(t *testing.T) {
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
+		"",
 	)
 
 	for _, testCase := range []struct {
@@ -393,6 +415,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
+		"",
 	)
 	instantRequest := NewPrometheusInstantQueryRequest(
 		"/api/v1/query",
@@ -402,6 +425,7 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 		parseQuery(t, "go_goroutines{}"),
 		Options{},
 		nil,
+		"",
 	)
 
 	for _, testCase := range []struct {
@@ -1408,7 +1432,7 @@ func TestMergeAPIResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := codec.MergeResponse(tc.input...)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, output)
+			requireEqualPrometheusResponse(t, tc.expected, output)
 		})
 	}
 
@@ -1453,6 +1477,14 @@ func TestMergeAPIResponses(t *testing.T) {
 		_, err := codec.MergeResponse(matrixResponse, vectorResponse)
 		require.Error(t, err)
 	})
+}
+
+func requireEqualPrometheusResponse(t *testing.T, expected, actual Response) {
+	prometheusResponse, ok := expected.GetPrometheusResponse()
+	require.True(t, ok)
+	prometheusResponseActual, ok := actual.GetPrometheusResponse()
+	require.True(t, ok)
+	require.Equal(t, prometheusResponse, prometheusResponseActual)
 }
 
 func mustParse(t *testing.T, response string) Response {
@@ -1577,6 +1609,71 @@ func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapte
 				},
 			},
 		},
+	}
+}
+
+func TestDecodeRangeQueryTimeParams(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		input         *url.Values
+		expectedStart int64
+		expectedEnd   int64
+		expectedStep  int64
+		expectedErr   error
+	}{
+		{
+			name: "success",
+			input: &url.Values{
+				"start": []string{"1997-08-29T12:00:00Z"},
+				"end":   []string{"1997-08-29T18:00:00Z"},
+				"step":  []string{"5m"},
+			},
+			expectedStart: 872856000000,
+			expectedEnd:   872877600000,
+			expectedStep:  300000,
+			expectedErr:   nil,
+		},
+		{
+			name: "missing start",
+			input: &url.Values{
+				"end":  []string{"1997-08-29T18:00:00Z"},
+				"step": []string{"5m"},
+			},
+			expectedStart: 0,
+			expectedEnd:   0,
+			expectedStep:  0,
+			expectedErr:   apierror.New(apierror.TypeBadData, "missing required parameter \"start\""),
+		},
+		{
+			name: "missing end",
+			input: &url.Values{
+				"start": []string{"1997-08-29T12:00:00Z"},
+				"step":  []string{"5m"},
+			},
+			expectedStart: 0,
+			expectedEnd:   0,
+			expectedStep:  0,
+			expectedErr:   apierror.New(apierror.TypeBadData, "missing required parameter \"end\""),
+		},
+		{
+			name: "missing step",
+			input: &url.Values{
+				"start": []string{"1997-08-29T12:00:00Z"},
+				"end":   []string{"1997-08-29T18:00:00Z"},
+			},
+			expectedStart: 0,
+			expectedEnd:   0,
+			expectedStep:  0,
+			expectedErr:   apierror.New(apierror.TypeBadData, "missing required parameter \"step\""),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			actualStart, actualEnd, actualStep, err := DecodeRangeQueryTimeParams(tt.input)
+			assert.Equal(t, tt.expectedStart, actualStart)
+			assert.Equal(t, tt.expectedEnd, actualEnd)
+			assert.Equal(t, tt.expectedStep, actualStep)
+			assert.Equal(t, tt.expectedErr, err)
+		})
 	}
 }
 
@@ -1894,6 +1991,81 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 		require.Equal(t, query, decoded2.GetQuery())
 
 		require.Equal(t, decoded, decoded2)
+	})
+}
+
+func TestPrometheusCodec_DecodeEncode_Stats(t *testing.T) {
+	const query = "sum by (namespace) (container_memory_rss)"
+	const allStats = "all"
+	t.Run("instant query", func(t *testing.T) {
+		params := url.Values{
+			"query": []string{query},
+			"time":  []string{"1000000000.011"},
+			"stats": []string{allStats},
+		}
+		req, err := http.NewRequest("POST", "/api/v1/query?", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		ctx := context.Background()
+		codec := newTestPrometheusCodec()
+		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, allStats, decoded.GetStats())
+	})
+	t.Run("range query", func(t *testing.T) {
+		params := url.Values{
+			"query": []string{query},
+			"start": []string{"1000000000.011"},
+			"end":   []string{"1000000010.022"},
+			"step":  []string{"1s"},
+			"stats": []string{allStats},
+		}
+		req, err := http.NewRequest("POST", "/api/v1/query_range?", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		ctx := context.Background()
+		codec := newTestPrometheusCodec()
+		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, allStats, decoded.GetStats())
+	})
+	t.Run("instant query with no stats", func(t *testing.T) {
+		params := url.Values{
+			"query": []string{query},
+			"time":  []string{"1000000000.011"},
+		}
+		req, err := http.NewRequest("POST", "/api/v1/query?", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		ctx := context.Background()
+		codec := newTestPrometheusCodec()
+		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, "", decoded.GetStats())
+	})
+	t.Run("range query with no stats", func(t *testing.T) {
+		params := url.Values{
+			"query": []string{query},
+			"start": []string{"1000000000.011"},
+			"end":   []string{"1000000010.022"},
+			"step":  []string{"1s"},
+		}
+		req, err := http.NewRequest("POST", "/api/v1/query_range?", strings.NewReader(params.Encode()))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		ctx := context.Background()
+		codec := newTestPrometheusCodec()
+		decoded, err := codec.DecodeMetricsQueryRequest(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, "", decoded.GetStats())
 	})
 }
 

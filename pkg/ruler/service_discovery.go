@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,14 +25,31 @@ func init() {
 	discovery.RegisterConfig(dnsServiceDiscovery{})
 }
 
+// AddressProvider performs node address resolution given a list of addresses.
+type AddressProvider interface {
+	// Resolve resolves the provided list of addresses to the actual nodes
+	Resolve(context.Context, []string) error
+
+	// Addresses returns the nodes
+	Addresses() []string
+}
+
 type dnsServiceDiscovery struct {
-	refreshMetrics discovery.RefreshMetricsInstantiator
+	refreshMetrics  discovery.RefreshMetricsInstantiator
+	resolver        AddressProvider
+	refreshInterval time.Duration
+	qType           dns.QType
+	host            string
+}
 
-	Resolver cache.AddressProvider
-
-	RefreshInterval time.Duration
-	QType           dns.QType
-	Host            string
+func dnsSD(refreshInterval time.Duration, resolver AddressProvider, qType dns.QType, url *url.URL, rmi discovery.RefreshMetricsInstantiator) discovery.Config {
+	return dnsServiceDiscovery{
+		resolver:        resolver,
+		refreshInterval: refreshInterval,
+		host:            url.Host,
+		qType:           qType,
+		refreshMetrics:  rmi,
+	}
 }
 
 func (dnsServiceDiscovery) Name() string {
@@ -44,7 +60,7 @@ func (c dnsServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (di
 	return refresh.NewDiscovery(refresh.Options{
 		Logger:              opts.Logger,
 		Mech:                mechanismName,
-		Interval:            c.RefreshInterval,
+		Interval:            c.refreshInterval,
 		RefreshF:            c.resolve,
 		MetricsInstantiator: c.refreshMetrics,
 	}), nil
@@ -55,11 +71,11 @@ func (c dnsServiceDiscovery) NewDiscovererMetrics(prometheus.Registerer, discove
 }
 
 func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
-	if err := c.Resolver.Resolve(ctx, []string{string(c.QType) + "+" + c.Host}); err != nil {
+	if err := c.resolver.Resolve(ctx, []string{string(c.qType) + "+" + c.host}); err != nil {
 		return nil, err
 	}
 
-	resolved := c.Resolver.Addresses()
+	resolved := c.resolver.Addresses()
 	targets := make([]model.LabelSet, len(resolved))
 	for i, r := range resolved {
 		targets[i] = model.LabelSet{
@@ -69,20 +85,10 @@ func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group,
 
 	tg := &targetgroup.Group{
 		Targets: targets,
-		Source:  c.Host,
+		Source:  c.host,
 	}
 
 	return []*targetgroup.Group{tg}, nil
-}
-
-func dnsSD(rulerConfig *Config, resolver cache.AddressProvider, qType dns.QType, url *url.URL, rmi discovery.RefreshMetricsInstantiator) discovery.Config {
-	return dnsServiceDiscovery{
-		Resolver:        resolver,
-		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
-		Host:            url.Host,
-		QType:           qType,
-		refreshMetrics:  rmi,
-	}
 }
 
 func staticTarget(url *url.URL) discovery.Config {

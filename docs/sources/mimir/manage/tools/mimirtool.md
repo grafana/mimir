@@ -9,44 +9,46 @@ title: Grafana Mimirtool
 weight: 40
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimirtool
 
 Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics.
 
 - The `alertmanager` command enables you to create, update, and delete tenant configurations in Grafana Mimir Alertmanager or Grafana Cloud Metrics.
 
-  For more information about the `alertmanager` command, refer to [Alertmanager]({{< relref "#alertmanager" >}}).
+  For more information about the `alertmanager` command, refer to [Alertmanager](#alertmanager).
 
 - The `rules` command enables you to validate and lint Prometheus rule files and convert them for use in Grafana Mimir.
   You can also create, update, and delete rulegroups in Grafana Mimir or Grafana Cloud Metrics.
 
-  For more information about the `rules` command, refer to [Rules]({{< relref "#rules" >}}).
+  For more information about the `rules` command, refer to [Rules](#rules).
 
 - The `remote-read` subcommand enables you to fetch statistics and series from [remote-read](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations) APIs.
   You can write series from a remote-read API to a local TSDB file that you load into Prometheus.
 
-  For more information about the remote-read command, refer to [Remote-read]({{< relref "#remote-read" >}}).
+  For more information about the remote-read command, refer to [Remote-read](#remote-read).
 
 - The `analyze` command extracts statistics about metric usage from Grafana or Hosted Grafana instances.
   You can also extract the same metrics from Grafana dashboard JSON files or Prometheus rule YAML files.
 
-  For more information about the `analyze` command, refer to [Analyze]({{< relref "#analyze" >}}).
+  For more information about the `analyze` command, refer to [Analyze](#analyze).
 
 - The `bucket-validation` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
 
-  For more information about the `bucket-validation` command, refer to [Bucket validation]({{< relref "#bucket-validation" >}}).
+  For more information about the `bucket-validation` command, refer to [Bucket validation](#bucket-validation).
 
 - The `acl` command generates the label-based access control header used in Grafana Enterprise Metrics and Grafana Cloud Metrics.
 
-  For more information about the `acl` command, refer to [ACL]({{< relref "#acl" >}}).
+  For more information about the `acl` command, refer to [ACL](#acl).
 
 - The `config` command helps convert configuration files from Cortex to Grafana Mimir.
 
-  For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
+  For more information about the `config` command, refer to [Config](#config)
 
 - The `backfill` command uploads existing Prometheus TSDB blocks into Grafana Mimir.
 
-  For more information about the `backfill` command, refer to [Backfill]({{< relref "#backfill" >}})
+  For more information about the `backfill` command, refer to [Backfill](#backfill)
 
 Mimirtool interacts with:
 
@@ -310,9 +312,10 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag           | Description                                        |
-| -------------- | -------------------------------------------------- |
-| `--auth-token` | Authentication token for bearer token or JWT auth. |
+| Flag                              | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| `--auth-token`                    | Authentication token for bearer token or JWT authentication. |
+| `--enable-experimental-functions` | If set, enables parsing experimental PromQL functions.       |
 
 #### List rules
 
@@ -683,6 +686,12 @@ X-Prom-Label-Policy: 1234:%7Bnamespace=%22A%22%7D
 
 You can analyze your Grafana or Hosted Grafana instance to determine which metrics are used and exported. You can also extract metrics from dashboard JSON files and rules YAML files.
 
+Configuration options relevant to analyze commands:
+
+| Environment variable | Flag                              | Description                                                       |
+| -------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| -                    | `--enable-experimental-functions` | Enables parsing PromQL queries containing experimental functions. |
+
 #### Grafana
 
 The following command runs against your Grafana instance, downloads its dashboards, and extracts the Prometheus
@@ -899,7 +908,7 @@ mimirtool bucket-validation
 #### Convert
 
 The config convert command converts configuration parameters that work with Cortex v1.10.0 and above to parameters that work with Grafana Mimir v2.0.0.
-It supports converting both CLI flags and [YAML configuration files]({{< relref "../../configure/configuration-parameters" >}}).
+It supports converting both CLI flags and [YAML configuration files](../../../configure/configuration-parameters/).
 
 ##### Configuration
 
@@ -940,7 +949,7 @@ the `--update-defaults` flag, `mimirtool config convert` will not update the val
 
 ##### Example
 
-The following example shows a command that converts Cortex [query-frontend]({{< relref "../../references/architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
+The following example shows a command that converts Cortex [query-frontend](../../../references/architecture/components/query-frontend/) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
 
 ```bash
 mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
@@ -1138,12 +1147,12 @@ The only parameter of the script is a file containing the flags, with each flag 
 
 ### Backfill
 
-The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component]({{< relref "../../references/http-api#compactor" >}}).
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component](../../../references/http-api/#compactor).
 
 If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
 
 The block-upload feature is disabled by default.
-To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../../configure/configure-tsdb-block-upload" >}}).
+To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload](../../../configure/configure-tsdb-block-upload/).
 If block upload is not enabled for the user, `mimirtool backfill` will fail.
 
 ##### Example

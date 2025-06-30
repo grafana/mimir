@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="TSDB Store-gateway-2" type="GoRemoteDebugConfigurationType" factoryName="Go Remote" port="18009">
+  <configuration default="false" name="TSDB Store-gateway-2" type="GoRemoteDebugConfigurationType" factoryName="Go Remote" port="18012">
     <method v="2" />
   </configuration>
 </component>

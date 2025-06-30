@@ -9,12 +9,20 @@ title: Grafana Mimir Reads resources dashboard
 weight: 110
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Reads resources dashboard
 
 The Reads resources dashboard shows CPU, memory, disk, and other resources utilization metrics.
 The dashboard isolates each service on the read path into its own section and displays the order in which a read request flows.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
+
+Use this dashboard for the following use cases:
+
+- Diagnose performance issues in the read path.
+- Identify which read path component is experiencing high resource usage.
+- Monitor CPU, memory, and disk usage to identify resource bottlenecks that could affect query performance.
 
 ## Example
 

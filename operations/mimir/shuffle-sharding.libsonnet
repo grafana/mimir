@@ -43,6 +43,12 @@
       shuffle_sharding_enabled &&
       $._config.shuffle_sharding.ingest_storage_partitions_enabled,
 
+    // ingester_shard_size is expected to be multi-zone ready, so here we divide its value by 3 (the assumed RF) to get ingester_partitions_shard_size.
+    // When the partitions sharding becomes the default, the "ingester_shard_size" configuration will be a noop, so this assertion can be removed.
+    assert !partitions_shuffle_sharding_enabled ||
+           ($._config.shuffle_sharding.ingester_partitions_shard_size == $._config.shuffle_sharding.ingester_shard_size / 3)
+           : 'with $._config.shuffle_sharding.ingest_storage_partitions_enabled, "ingester_partitions_shard_size" must be equal to "ingester_shard_size / 3"',
+
     local roundUpToMultipleOfThree(n) = std.ceil(n / 3) * 3,
 
     // The ingesters shard size has been computed this way:

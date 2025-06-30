@@ -5,16 +5,16 @@ package functions
 import (
 	"github.com/prometheus/prometheus/model/histogram"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // SeriesMetadataFunction is a function to operate on the metadata across series.
-type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
+type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
 
 // DropSeriesName is a series metadata function that removes the __name__ label from all series.
 var DropSeriesName = SeriesMetadataFunctionDefinition{
-	Func: func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	Func: func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		for i := range seriesMetadata {
 			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
 		}
@@ -25,11 +25,11 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
-type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
+type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
 func floatTransformationFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
-	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = transform(seriesData.Floats[i].F)
 		}
@@ -39,7 +39,7 @@ func floatTransformationFunc(transform func(f float64) float64) InstantVectorSer
 
 func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
 	ft := floatTransformationFunc(transform)
-	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		// Functions that do not explicitly mention native histograms in their documentation will ignore histogram samples.
 		// https://prometheus.io/docs/prometheus/latest/querying/functions
 		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
@@ -48,7 +48,13 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 	}
 }
 
-func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func DropHistograms(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+	seriesData.Histograms = nil
+	return seriesData, nil
+}
+
+func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	return seriesData, nil
 }
 
@@ -75,7 +81,7 @@ type RangeVectorStepFunction func(
 	scalarArgsData []types.ScalarData,
 	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
 // RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.

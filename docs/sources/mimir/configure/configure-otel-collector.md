@@ -107,11 +107,52 @@ service:
       exporters: [..., prometheusremotewrite]
 ```
 
+## Work with default OpenTelemetry labels
+
+OpenTelemetry metrics use resource attributes to describe the set of characteristics associated with a given resource, or entity, producing telemetry data. For example, a host resource might have multiple attributes, including an ID, an image, and a type.
+
+To optimize the storage of and ability to query this data, you can use the `-distributor.otel-promote-resource-attributes` option to configure Mimir to promote specified OTel resource attributes to labels at the time of ingestion.
+
+{{< admonition type="note" >}}
+The `-distributor.otel-promote-resource-attributes` option is an experimental feature in Grafana Mimir.
+{{< /admonition >}}
+
+Grafana Cloud automatically promotes the following OTel resource attributes to labels, with periods (`.`) replaced by underscores (`_`):
+
+- `service.instance.id`
+- `service.name`
+- `service.namespace`
+- `service.version`
+- `cloud.availability_zone`
+- `cloud.region`
+- `container.name`
+- `deployment.environment.name`
+- `k8s.cluster.name`
+- `k8s.container.name`
+- `k8s.cronjob.name`
+- `k8s.daemonset.name`
+- `k8s.deployment.name`
+- `k8s.job.name`
+- `k8s.namespace.name`
+- `k8s.pod.name`
+- `k8s.replicaset.name`
+- `k8s.statefulset.name`
+
+{{< admonition type="note" >}}
+To disable this option or to update this list, contact Grafana Labs Support.
+{{< /admonition >}}
+
+Mimir stores additional OTel resource attributes in a separate series called `target_info`, which you can query using a join query or the Prometheus `info()` function. Refer to [Functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) in the Prometheus documentation for more information.
+
+To learn more about OpenTelemetry resource attributes, refer to [Resources](https://opentelemetry.io/docs/languages/js/resources/) in the OpenTelemetry documentation.
+
+To learn more about ingesting OpenTelemetry data in Grafana Cloud, refer to [OTLP: OpenTelemetry Protocol format considerations](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/).
+
 ## Format considerations
 
 We follow the official [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus) specification.
 
-By default, Grafana Mimir does not accept [OpenTelemetry Exponential Histogram](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) metrics. For Grafana Mimir to accept them, ingestion of Prometheus Native Histogram metrics must first be enabled following the instructions in [Configure native histogram ingestion]({{< relref "./configure-native-histograms-ingestion" >}}). After this is done, Grafana Mimir will accept OpenTelemetry Exponential Histograms, and convert them into Prometheus Native Histograms following the conventions described in the [Exponential Histograms specification](https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/#exponential-histograms).
+By default, Grafana Mimir does not accept [OpenTelemetry Exponential Histogram](https://opentelemetry.io/docs/specs/otel/metrics/data-model/#exponentialhistogram) metrics. For Grafana Mimir to accept them, ingestion of Prometheus Native Histogram metrics must first be enabled following the instructions in [Configure native histogram ingestion](../configure-native-histograms-ingestion/). After this is done, Grafana Mimir will accept OpenTelemetry Exponential Histograms, and convert them into Prometheus Native Histograms following the conventions described in the [Exponential Histograms specification](https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/#exponential-histograms).
 
 You might experience the following common issues:
 

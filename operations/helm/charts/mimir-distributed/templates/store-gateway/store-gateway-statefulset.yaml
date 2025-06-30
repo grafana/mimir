@@ -201,8 +201,7 @@ spec:
             {{- toYaml .Values.store_gateway.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
           {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
-          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.store_gateway }}
-          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request $jaeger_queue_size }}
+          {{- if or .Values.global.extraEnv .Values.store_gateway.env $cpu_request $mem_request }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -219,10 +218,6 @@ spec:
             {{- if $mem_request }}
             - name: "GOMEMLIMIT"
               value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
-            {{- end }}
-            {{- if $jaeger_queue_size }}
-            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
-              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.store_gateway.extraEnvFrom }}

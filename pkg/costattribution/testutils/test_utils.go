@@ -7,18 +7,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func NewMockCostAttributionLimits(idx int, lvs ...string) (*validation.Overrides, error) {
+func NewMockCostAttributionLimits(idx int, lvs ...string) *validation.Overrides {
 	baseLimits := map[string]*validation.Limits{
-		"user1": {MaxCostAttributionCardinalityPerUser: 5, CostAttributionLabels: []string{"team"}},
-		"user2": {MaxCostAttributionCardinalityPerUser: 2, CostAttributionLabels: []string{}},
-		"user3": {MaxCostAttributionCardinalityPerUser: 2, CostAttributionLabels: []string{"department", "service"}},
-		"user4": {MaxCostAttributionCardinalityPerUser: 5, CostAttributionLabels: []string{"platform"}},
-		"user5": {MaxCostAttributionCardinalityPerUser: 10, CostAttributionLabels: []string{"a"}},
+		"user1": {MaxCostAttributionCardinality: 5, CostAttributionLabels: []string{"team"}},
+		"user2": {MaxCostAttributionCardinality: 2, CostAttributionLabels: []string{}},
+		"user3": {MaxCostAttributionCardinality: 2, CostAttributionLabels: []string{"department", "service"}},
+		"user4": {MaxCostAttributionCardinality: 5, CostAttributionLabels: []string{"platform"}},
+		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabels: []string{"a"}},
 	}
 	if len(lvs) > 0 {
 		baseLimits[lvs[0]] = &validation.Limits{
-			MaxCostAttributionCardinalityPerUser: 10,
-			CostAttributionLabels:                lvs[1:],
+			MaxCostAttributionCardinality: 10,
+			CostAttributionLabels:         lvs[1:],
 		}
 	}
 	switch idx {
@@ -27,9 +27,9 @@ func NewMockCostAttributionLimits(idx int, lvs ...string) (*validation.Overrides
 	case 2:
 		baseLimits["user3"].CostAttributionLabels = []string{"team", "feature"}
 	case 3:
-		baseLimits["user3"].MaxCostAttributionCardinalityPerUser = 3
+		baseLimits["user3"].MaxCostAttributionCardinality = 3
 	case 4:
-		baseLimits["user1"].MaxCostAttributionCardinalityPerUser = 2
+		baseLimits["user1"].MaxCostAttributionCardinality = 2
 	case 5:
 		baseLimits["user1"].CostAttributionLabels = []string{"department"}
 	}

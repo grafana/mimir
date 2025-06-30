@@ -27,9 +27,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid"
-
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/common/promslog"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -68,10 +68,10 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -376,7 +376,7 @@ func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, p
 	if err != nil {
 		return nil, err
 	}
-	pfmc := NewPostingsForMatchersCache(postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics)
+	pfmc := NewPostingsForMatchersCache(postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics, []attribute.KeyValue{attribute.String("block", meta.ULID.String())})
 	ir := indexReaderWithPostingsForMatchers{indexReader, pfmc}
 	closers = append(closers, ir)
 
@@ -500,14 +500,14 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	var st []string
 	var err error
 
 	if len(matchers) == 0 {
-		st, err = r.ir.SortedLabelValues(ctx, name)
+		st, err = r.ir.SortedLabelValues(ctx, name, hints)
 	} else {
-		st, err = r.LabelValues(ctx, name, matchers...)
+		st, err = r.LabelValues(ctx, name, hints, matchers...)
 		if err == nil {
 			slices.Sort(st)
 		}
@@ -518,16 +518,16 @@ func (r blockIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 	return st, nil
 }
 
-func (r blockIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (r blockIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
-		st, err := r.ir.LabelValues(ctx, name)
+		st, err := r.ir.LabelValues(ctx, name, hints)
 		if err != nil {
 			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 		}
 		return st, nil
 	}
 
-	return labelValuesWithMatchers(ctx, r.ir, name, matchers...)
+	return labelValuesWithMatchers(ctx, r.ir, name, hints, matchers...)
 }
 
 func (r blockIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
@@ -695,7 +695,7 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) ([]ulid.ULID, bool, error) {
 	numStones := 0
 
-	if err := pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
+	if err := pb.tombstones.Iter(func(_ storage.SeriesRef, ivs tombstones.Intervals) error {
 		numStones += len(ivs)
 		return nil
 	}); err != nil {

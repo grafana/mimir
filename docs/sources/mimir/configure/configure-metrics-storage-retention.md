@@ -16,7 +16,7 @@ You can configure the object storage retention to automatically delete all metri
 
 ## Configure the storage retention
 
-The [compactor]({{< relref "../references/architecture/components/compactor" >}}) is the Mimir component that is responsible for enforcing the storage retention.
+The [compactor](/docs/mimir/<MIMIR_VERSION>/references/architecture/components/compactor/) is the Mimir component that is responsible for enforcing the storage retention.
 To configure the storage retention, set the CLI flag `-compactor.blocks-retention-period` or change the following YAML configuration:
 
 ```yaml
@@ -25,7 +25,7 @@ limits:
   compactor_blocks_retention_period: 1y
 ```
 
-To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration]({{< relref "./about-runtime-configuration" >}}):
+To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration](../about-runtime-configuration/):
 
 ```yaml
 overrides:

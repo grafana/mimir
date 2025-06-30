@@ -8,9 +8,12 @@ import (
 
 	"github.com/grafana/dskit/tenant" //lint:ignore faillint queryTracker needs tenant package
 	"github.com/grafana/dskit/tracing"
+	"go.opentelemetry.io/otel"
 
 	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker needs activitytracker
 )
+
+var tracer = otel.Tracer("pkg/querier/engine")
 
 // queryTracker implements promql.QueryTracker interface and can be used by PromQL engine for tracking queries.
 type queryTracker struct {

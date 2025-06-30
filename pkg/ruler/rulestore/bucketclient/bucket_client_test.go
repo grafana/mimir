@@ -98,7 +98,7 @@ func TestListRules(t *testing.T) {
 func TestLoadRules(t *testing.T) {
 	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
 	groups := []testGroup{
-		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.Rule{{
 			For:           model.Duration(5 * time.Minute),
 			KeepFiringFor: model.Duration(2 * time.Minute),
 			Labels:        map[string]string{"label1": "value1"},

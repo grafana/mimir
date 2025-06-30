@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	s3_service "github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/pkg/errors"
@@ -38,7 +38,7 @@ const (
 var (
 	supportedSignatureVersions = []string{SignatureVersionV4, SignatureVersionV2}
 	supportedSSETypes          = []string{SSEKMS, SSES3}
-	supportedStorageClasses    = s3_service.ObjectStorageClass_Values()
+	supportedStorageClasses    []string
 	supportedBucketLookupTypes = thanosS3BucketLookupTypesValues()
 
 	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
@@ -48,6 +48,14 @@ var (
 	errInvalidEndpointPrefix       = errors.New("the endpoint must not prefixed with the bucket name")
 	errInvalidSTSEndpoint          = errors.New("sts-endpoint must be a valid url")
 )
+
+func init() {
+	classes := types.StorageClassStandard.Values()
+	supportedStorageClasses = make([]string, 0, len(classes))
+	for _, c := range classes {
+		supportedStorageClasses = append(supportedStorageClasses, string(c))
+	}
+}
 
 var thanosS3BucketLookupTypes = map[string]s3.BucketLookupType{
 	s3.AutoLookup.String():        s3.AutoLookup,

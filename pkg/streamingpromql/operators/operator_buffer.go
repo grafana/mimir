@@ -5,8 +5,8 @@ package operators
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // InstantVectorOperatorBuffer buffers series data until it is needed by an operator.
@@ -23,9 +23,10 @@ type InstantVectorOperatorBuffer struct {
 	//  - If seriesUsed[i] == true, then the series at index i is needed for this operation and should be buffered if not used immediately.
 	//  - If seriesUsed[i] == false, then the series at index i is never used and can be immediately discarded.
 	// FIXME: could use a bitmap here to save some memory
-	seriesUsed []bool
+	seriesUsed          []bool
+	lastSeriesIndexUsed int
 
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	// Stores series read but required for later series.
 	buffer map[int]types.InstantVectorSeriesData
@@ -34,10 +35,11 @@ type InstantVectorOperatorBuffer struct {
 	output []types.InstantVectorSeriesData
 }
 
-func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
+func NewInstantVectorOperatorBuffer(source types.InstantVectorOperator, seriesUsed []bool, lastSeriesIndexUsed int, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *InstantVectorOperatorBuffer {
 	return &InstantVectorOperatorBuffer{
 		source:                   source,
 		seriesUsed:               seriesUsed,
+		lastSeriesIndexUsed:      lastSeriesIndexUsed,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		buffer:                   map[int]types.InstantVectorSeriesData{},
 	}
@@ -67,6 +69,13 @@ func (b *InstantVectorOperatorBuffer) GetSeries(ctx context.Context, seriesIndic
 }
 
 func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, seriesIndex int) (types.InstantVectorSeriesData, error) {
+	defer func() {
+		if b.nextIndexToRead > b.lastSeriesIndexUsed {
+			// If we're not going to read any more series, we can close the inner operator.
+			b.source.Close()
+		}
+	}()
+
 	for seriesIndex > b.nextIndexToRead {
 		d, err := b.source.NextSeries(ctx)
 		if err != nil {
@@ -96,9 +105,18 @@ func (b *InstantVectorOperatorBuffer) getSingleSeries(ctx context.Context, serie
 	return d, nil
 }
 
+// Close frees all resources associated with this buffer.
+// Calling GetSeries after calling Close may result in unpredictable behaviour, corruption or crashes.
+// It is safe to call Close multiple times.
 func (b *InstantVectorOperatorBuffer) Close() {
-	// NOTE: source is expected to be closed by the caller as often the buffer is bypassed.
-	if b.seriesUsed != nil {
-		types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
+	b.source.Close()
+
+	for _, d := range b.buffer {
+		types.PutInstantVectorSeriesData(d, b.memoryConsumptionTracker)
 	}
+	b.buffer = nil
+	b.output = nil
+
+	types.BoolSlicePool.Put(b.seriesUsed, b.memoryConsumptionTracker)
+	b.seriesUsed = nil
 }

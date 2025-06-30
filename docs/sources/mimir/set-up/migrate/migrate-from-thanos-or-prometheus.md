@@ -9,6 +9,8 @@ title: Migrate from Thanos or Prometheus to Grafana Mimir
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Migrate from Thanos or Prometheus to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of Thanos or Prometheus to Grafana Mimir.
@@ -21,13 +23,13 @@ Each project stores blocks in different places and uses slightly different block
 
 ## Configuring remote write to Grafana Mimir
 
-For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{< relref "../../manage/secure/authentication-and-authorization#configuring-prometheus-remote-write" >}}).
+For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write](../../../manage/secure/authentication-and-authorization/#configuring-prometheus-remote-write).
 
 ## Uploading historic TSDB blocks to Grafana Mimir
 
 Grafana Mimir supports uploading of historic TSDB blocks, notably from Prometheus.
 In order to enable this functionality, either for all tenants or a specific one, refer to
-[Configure TSDB block upload]({{< relref "../../configure/configure-tsdb-block-upload" >}}).
+[Configure TSDB block upload](../../../configure/configure-tsdb-block-upload/).
 
 Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
 
@@ -253,6 +255,10 @@ This may cause that incorrect results are returned for the query.
 
    {{< admonition type="tip" >}}
    You can get the external labels in the `meta.json` file of each block from the CSV file that's imported, and build the rewrite configuration accordingly.
+   {{< /admonition >}}
+
+   {{< admonition type="tip" >}}
+   Add the `__tenant_id__` label with the value of your target tenant. This is important for Mimir to successfully query the migrated data when you enable tenant federation and configure the Grafana data source to query multiple tenants.
    {{< /admonition >}}
 
    Create a rewrite configuration that is similar to this:

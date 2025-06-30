@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
@@ -93,6 +93,7 @@ type LeveledCompactor struct {
 	chunkPool                   chunkenc.Pool
 	ctx                         context.Context
 	maxBlockChunkSegmentSize    int64
+	useUncachedIO               bool
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
 	postingsDecoderFactory      PostingsDecoderFactory
@@ -178,6 +179,10 @@ type LeveledCompactorOptions struct {
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
+	// Metrics is set of metrics for Compactor. By default, NewCompactorMetrics would be called to initialize metrics unless it is provided.
+	Metrics *CompactorMetrics
+	// UseUncachedIO allows bypassing the page cache when appropriate.
+	UseUncachedIO bool
 }
 
 type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
@@ -223,13 +228,17 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 	if pe == nil {
 		pe = index.EncodePostingsRaw
 	}
+	if opts.Metrics == nil {
+		opts.Metrics = NewCompactorMetrics(r)
+	}
 	return &LeveledCompactor{
 		ranges:                      ranges,
 		chunkPool:                   pool,
 		logger:                      l,
-		metrics:                     NewCompactorMetrics(r),
+		metrics:                     opts.Metrics,
 		ctx:                         ctx,
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		useUncachedIO:               opts.UseUncachedIO,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
 		postingsDecoderFactory:      opts.PD,
@@ -525,7 +534,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 
 	start := time.Now()
 
-	bs, blocksToClose, err := openBlocksForCompaction(dirs, open, c.logger, c.chunkPool, c.postingsDecoderFactory, c.concurrencyOpts.MaxOpeningBlocks)
+	bs, blocksToClose, err := openBlocksForCompaction(c.ctx, dirs, open, c.logger, c.chunkPool, c.postingsDecoderFactory, c.concurrencyOpts.MaxOpeningBlocks)
 	for _, b := range blocksToClose {
 		defer b.Close()
 	}
@@ -851,7 +860,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		// Populate chunk and index files into temporary directory with
 		// data of all blocks.
 		var chunkw ChunkWriter
-		chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
+		chunkw, err = chunks.NewWriter(chunkDir(tmp), chunks.WithSegmentSize(c.maxBlockChunkSegmentSize), chunks.WithUncachedIO(c.useUncachedIO))
 		if err != nil {
 			return fmt.Errorf("open chunk writer: %w", err)
 		}
@@ -1329,12 +1338,18 @@ func populateSymbols(ctx context.Context, mergeFunc storage.VerticalChunkSeriesM
 }
 
 // Returns opened blocks, and blocks that should be closed (also returned in case of error).
-func openBlocksForCompaction(dirs []string, open []*Block, logger *slog.Logger, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, concurrency int) (blocks, blocksToClose []*Block, _ error) {
+func openBlocksForCompaction(ctx context.Context, dirs []string, open []*Block, logger *slog.Logger, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, concurrency int) (blocks, blocksToClose []*Block, _ error) {
 	blocks = make([]*Block, 0, len(dirs))
 	blocksToClose = make([]*Block, 0, len(dirs))
 
 	toOpenCh := make(chan string, len(dirs))
 	for _, d := range dirs {
+		select {
+		case <-ctx.Done():
+			return nil, blocksToClose, ctx.Err()
+		default:
+		}
+
 		meta, _, err := readMetaFile(d)
 		if err != nil {
 			return nil, blocksToClose, err

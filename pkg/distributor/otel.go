@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -25,11 +27,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/otlptranslator"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
 
@@ -54,6 +58,8 @@ type OTLPHandlerLimits interface {
 	OTelCreatedTimestampZeroIngestionEnabled(id string) bool
 	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
+	OTelConvertHistogramsToNHCB(id string) bool
+	OTelPromoteScopeMetadata(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -109,43 +115,49 @@ func OTLPHandler(
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
-			// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
 			if otlpErr := otlpConverter.Err(); otlpErr != nil {
+				// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
 				pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
-			}
-		}
-		if pushErr != nil {
-			if errors.Is(pushErr, context.Canceled) {
-				level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
-				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+			} else {
+				// Respond as per spec:
+				// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+				var expResp colmetricpb.ExportMetricsServiceResponse
+				addSuccessHeaders(w, req.artificialDelay)
+				writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 				return
 			}
-			var (
-				httpCode int
-				grpcCode codes.Code
-				errorMsg string
-			)
-			if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
-				// This code is needed for a correct handling of errors returned by the supplier function.
-				// These errors are created by using the httpgrpc package.
-				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
-				grpcCode = st.Code()
-				errorMsg = st.Message()
-			} else {
-				grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
-				errorMsg = pushErr.Error()
-			}
-			if httpCode != 202 {
-				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-				msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
-				if httpCode/100 == 4 {
-					msgs = append(msgs, "insight", true)
-				}
-				level.Error(logger).Log(msgs...)
-			}
-			addHeaders(w, pushErr, r, httpCode, retryCfg)
-			writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
 		}
+
+		if errors.Is(pushErr, context.Canceled) {
+			level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
+			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+			return
+		}
+		var (
+			httpCode int
+			grpcCode codes.Code
+			errorMsg string
+		)
+		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
+			// This code is needed for a correct handling of errors returned by the supplier function.
+			// These errors are created by using the httpgrpc package.
+			httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
+			grpcCode = st.Code()
+			errorMsg = st.Message()
+		} else {
+			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
+			errorMsg = pushErr.Error()
+		}
+		if httpCode != 202 {
+			// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
+			msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
+			if httpCode/100 == 4 {
+				msgs = append(msgs, "insight", true)
+			}
+			level.Error(logger).Log(msgs...)
+		}
+		addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
+		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 	})
 }
 
@@ -240,8 +252,8 @@ func newOTLPParser(
 			}.Error())
 		}
 
-		spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
-		defer spanLogger.Span.Finish()
+		spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.OTLPHandler.decodeAndConvert")
+		defer spanLogger.Finish()
 
 		spanLogger.SetTag("content_type", contentType)
 		spanLogger.SetTag("content_encoding", contentEncoding)
@@ -265,11 +277,27 @@ func newOTLPParser(
 		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
+		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
+		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, metricsDropped, err := otelMetricsToTimeseries(ctx, otlpConverter, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, otlpReq.Metrics(), spanLogger)
+		metrics, metricsDropped, err := otelMetricsToTimeseries(
+			ctx,
+			otlpConverter,
+			otlpReq.Metrics(),
+			conversionOptions{
+				addSuffixes:                       addSuffixes,
+				enableCTZeroIngestion:             enableCTZeroIngestion,
+				enableStartTimeQuietZero:          enableStartTimeQuietZero,
+				keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+				convertHistogramsToNHCB:           convertHistogramsToNHCB,
+				promoteScopeMetadata:              promoteScopeMetadata,
+				promoteResourceAttributes:         promoteResourceAttributes,
+			},
+			spanLogger,
+		)
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -335,29 +363,62 @@ func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 	return httpStatusCode
 }
 
-// writeErrorToHTTPResponseBody converts the given error into a grpc status and marshals it into a byte slice, in order to be written to the response body.
-// See doc https://opentelemetry.io/docs/specs/otlp/#failures-1
-func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
+// writeErrorToHTTPResponseBody converts the given error into a gRPC status and marshals it into a byte slice, in order to be written to the response body.
+// See doc https://opentelemetry.io/docs/specs/otlp/#failures-1.
+func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	validUTF8Msg := validUTF8Message(msg)
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if server.IsHandledByHttpgrpcServer(reqCtx) {
+	if server.IsHandledByHttpgrpcServer(r.Context()) {
 		w.Header().Set(server.ErrorMessageHeaderKey, validUTF8Msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
 	}
-	w.WriteHeader(httpCode)
 
-	respBytes, err := proto.Marshal(status.New(grpcCode, validUTF8Msg).Proto())
+	st := status.New(grpcCode, validUTF8Msg).Proto()
+	writeOTLPResponse(r, w, httpCode, st, logger)
+}
+
+func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
+	contentType := r.Header.Get("Content-Type")
+	switch contentType {
+	case jsonContentType, pbContentType:
+	default:
+		// Default to protobuf encoding.
+		contentType = pbContentType
+	}
+
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	body, _, err := marshal(payload, contentType)
 	if err != nil {
-		level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
-		writeResponseFailedBody, _ := proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-		_, _ = w.Write(writeResponseFailedBody)
+		httpCode = http.StatusInternalServerError
+		level.Error(logger).Log("msg", "failed to marshal payload", "err", err, "payload", payload, "content_type", contentType)
+		var format string
+		body, format, err = marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto(), contentType)
+		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
+	}
+	if err != nil {
+		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
+		contentType = "text/plain"
+		body = nil
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(httpCode)
+	if len(body) == 0 {
 		return
 	}
-
-	_, err = w.Write(respBytes)
-	if err != nil {
-		level.Error(logger).Log("msg", "write error to otlp response failed", "err", err)
+	if _, err := w.Write(body); err != nil {
+		level.Error(logger).Log("msg", "failed to write OTLP error response", "err", err, "content_type", contentType)
 	}
+}
+
+func marshal(payload proto.Message, contentType string) ([]byte, string, error) {
+	if contentType == jsonContentType {
+		data, err := json.Marshal(payload)
+		return data, "JSON", err
+	}
+
+	data, err := proto.Marshal(payload)
+	return data, "protobuf", err
 }
 
 // otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest.
@@ -408,6 +469,12 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 		}
 	}
 
+	namer := otlptranslator.MetricNamer{
+		Namespace:          "",
+		WithMetricSuffixes: addSuffixes,
+		UTF8Allowed:        false,
+	}
+
 	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
@@ -418,7 +485,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: prometheustranslator.BuildCompliantMetricName(metric, "", addSuffixes),
+					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -430,21 +497,31 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
+type conversionOptions struct {
+	addSuffixes                       bool
+	enableCTZeroIngestion             bool
+	enableStartTimeQuietZero          bool
+	keepIdentifyingResourceAttributes bool
+	convertHistogramsToNHCB           bool
+	promoteScopeMetadata              bool
+	promoteResourceAttributes         []string
+}
+
 func otelMetricsToTimeseries(
 	ctx context.Context,
 	converter *otlpMimirConverter,
-	addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero bool,
-	promoteResourceAttributes []string,
-	keepIdentifyingResourceAttributes bool,
 	md pmetric.Metrics,
+	opts conversionOptions,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
 	settings := otlp.Settings{
-		AddMetricSuffixes:                   addSuffixes,
-		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
-		PromoteResourceAttributes:           promoteResourceAttributes,
-		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
+		AddMetricSuffixes:                   opts.addSuffixes,
+		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
+		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                opts.promoteScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 

@@ -396,7 +396,7 @@ func prepareTest(t *testing.T) (dskitserver.FakeServerServer, dskitserver.FakeSe
 	clientCfg := grpcclient.Config{}
 	flagext.DefaultValues(&clientCfg)
 
-	opts, err := clientCfg.DialOption(nil, nil)
+	opts, err := clientCfg.DialOption(nil, nil, middleware.NoOpInvalidClusterValidationReporter)
 	require.NoError(t, err)
 
 	cc, err := grpc.NewClient(listener.Addr().String(), opts...)

@@ -6,6 +6,7 @@ package integration
 import (
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -41,7 +42,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -53,6 +54,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
 		map[string]string{
 			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(enableSuffixes),
 		},
@@ -111,7 +113,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Query the metadata
-	metadataResult, err := c.GetPrometheusMetadata()
+	metadataResult, err := c.GetPrometheusMetadata("")
 	require.NoError(t, err)
 	require.Equal(t, 200, metadataResult.StatusCode)
 
@@ -178,11 +180,184 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 		}
 	`, sfx, sfx)
 
-	metadataResult, err = c.GetPrometheusMetadata()
+	metadataResult, err = c.GetPrometheusMetadata("")
 	require.NoError(t, err)
 	require.Equal(t, 200, metadataResult.StatusCode)
 
 	metadataResponseBody, err = io.ReadAll(metadataResult.Body)
 	require.NoError(t, err)
 	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
+}
+
+func TestOTLPHistogramIngestion(t *testing.T) {
+	t.Run("enabling conversion to NHCB", func(t *testing.T) {
+		testOTLPHistogramIngestion(t, true)
+	})
+
+	t.Run("disabling conversion to NHCB", func(t *testing.T) {
+		testOTLPHistogramIngestion(t, false)
+	})
+}
+
+func testOTLPHistogramIngestion(t *testing.T, enableExplicitHistogramToNHCB bool) {
+	t.Helper()
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
+
+	// Start Mimir in single binary mode, reading the config from file and overwriting
+	// the backend config to make it work with Minio.
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+		map[string]string{
+			"-distributor.otel-convert-histograms-to-nhcb": strconv.FormatBool(enableExplicitHistogramToNHCB),
+		},
+	)
+
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
+	require.NoError(t, s.StartAndWaitReady(mimir))
+
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	now := time.Now()
+	nowUnix := uint64(now.UnixNano())
+
+	jsonPayload := []byte(fmt.Sprintf(`{
+		"resourceMetrics": [
+			{
+				"resource": {
+					"attributes": [
+						{ "key": "resource.attr", "value": { "stringValue": "value" } }
+					]
+				},
+				"scopeMetrics": [
+					{
+						"metrics": [
+							{
+								"name": "explicit_bucket_histogram_series",
+								"description": "Explicit bucket histogram series",
+								"unit": "s",
+								"histogram": {
+									"aggregationTemporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+									"dataPoints": [
+										{
+											"attributes": [
+												{ "key": "metric-attr", "value": { "stringValue": "metric value" } }
+											],
+											"bucketCounts": [0, 4, 3, 0, 3],
+											"explicitBounds": [0, 5, 10, 15],
+											"count": 10,
+											"sum": 20,
+											"timeUnixNano": "%d"
+										}
+									]
+								}
+							},
+							{
+								"name": "exponential_histogram_series",
+								"description": "Exponential histogram series",
+								"unit": "s",
+								"exponentialHistogram": {
+									"aggregationTemporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+									"dataPoints": [
+										{
+											"attributes": [
+												{ "key": "metric-attr", "value": { "stringValue": "metric value" } }
+											],
+											"scale": 0,
+											"count": 15,
+											"sum": 25,
+											"zeroCount": 1,
+											"positive": {
+												"offset": 1,
+												"bucketCounts": [1, 0, 3, 2, 0, 3]
+											},
+											"negative": {
+												"offset": 0,
+												"bucketCounts": [4, 0, 0, 1]
+											},
+											"timeUnixNano": "%d"
+										}
+									]
+								}
+							}
+						]
+					}
+				]
+			}
+		]
+	}`, nowUnix, nowUnix))
+
+	res, err := c.PushOTLPPayload(jsonPayload, "application/json")
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Check metric to track OTLP requests
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_distributor_otlp_requests_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
+
+	// Query the histogram series
+	if enableExplicitHistogramToNHCB {
+		// Verify that when flag is disabled, OTel explicit bucket histograms are converted to native histograms with custom buckets
+		result, err := c.Query("explicit_bucket_histogram_series", now)
+		require.NoError(t, err)
+		require.Equal(t, result.(model.Vector)[0].Histogram, &model.SampleHistogram{
+			Count: model.FloatString(10),
+			Sum:   model.FloatString(20),
+			Buckets: model.HistogramBuckets{
+				{
+					Lower: model.FloatString(0),
+					Upper: model.FloatString(5),
+					Count: model.FloatString(4),
+				},
+				{
+					Lower: model.FloatString(5),
+					Upper: model.FloatString(10),
+					Count: model.FloatString(3),
+				},
+				{
+					Lower: model.FloatString(15),
+					Upper: model.FloatString(math.Inf(1)),
+					Count: model.FloatString(3),
+				},
+			},
+		})
+	} else {
+		// Verify that when flag is enabled, OTel explicit bucket histograms are converted to classic histograms
+		expected := []struct {
+			name  string
+			value model.SampleValue
+		}{
+			{"explicit_bucket_histogram_series_count", 10},
+			{"explicit_bucket_histogram_series_sum", 20},
+			{`explicit_bucket_histogram_series_bucket{le="0"}`, 0},
+			{`explicit_bucket_histogram_series_bucket{le="5"}`, 4},
+			{`explicit_bucket_histogram_series_bucket{le="10"}`, 7},
+			{`explicit_bucket_histogram_series_bucket{le="15"}`, 7},
+			{`explicit_bucket_histogram_series_bucket{le="+Inf"}`, 10},
+		}
+		for _, exp := range expected {
+			result, err := c.Query(exp.name, now)
+			require.NoError(t, err)
+			require.Equal(t, exp.value, result.(model.Vector)[0].Value)
+		}
+	}
+
+	// Verify that OTel exponential histograms are converted to native histograms
+	result, err := c.Query("exponential_histogram_series", now)
+	require.NoError(t, err)
+	require.Equal(t, result.(model.Vector)[0].Histogram.Count, model.FloatString(15))
+	require.Equal(t, result.(model.Vector)[0].Histogram.Sum, model.FloatString(25))
 }

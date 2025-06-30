@@ -181,14 +181,14 @@ func (m *FullStateDesc) GetState() *clusterpb.FullState {
 }
 
 type GrafanaAlertConfigDesc struct {
-	User               string            `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
-	RawConfig          string            `protobuf:"bytes,2,opt,name=raw_config,json=rawConfig,proto3" json:"raw_config,omitempty"`
-	Hash               string            `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
-	CreatedAtTimestamp int64             `protobuf:"varint,5,opt,name=created_at_timestamp,json=createdAtTimestamp,proto3" json:"created_at_timestamp,omitempty"`
-	Default            bool              `protobuf:"varint,7,opt,name=default,proto3" json:"default,omitempty"`
-	Promoted           bool              `protobuf:"varint,8,opt,name=promoted,proto3" json:"promoted,omitempty"`
-	ExternalUrl        string            `protobuf:"bytes,9,opt,name=external_url,json=externalUrl,proto3" json:"external_url,omitempty"`
-	StaticHeaders      map[string]string `protobuf:"bytes,10,rep,name=static_headers,json=staticHeaders,proto3" json:"static_headers,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	User               string      `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	RawConfig          string      `protobuf:"bytes,2,opt,name=raw_config,json=rawConfig,proto3" json:"raw_config,omitempty"`
+	Hash               string      `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
+	CreatedAtTimestamp int64       `protobuf:"varint,5,opt,name=created_at_timestamp,json=createdAtTimestamp,proto3" json:"created_at_timestamp,omitempty"`
+	Default            bool        `protobuf:"varint,7,opt,name=default,proto3" json:"default,omitempty"`
+	Promoted           bool        `protobuf:"varint,8,opt,name=promoted,proto3" json:"promoted,omitempty"`
+	ExternalUrl        string      `protobuf:"bytes,9,opt,name=external_url,json=externalUrl,proto3" json:"external_url,omitempty"`
+	SmtpConfig         *SmtpConfig `protobuf:"bytes,12,opt,name=smtp_config,json=smtpConfig,proto3" json:"smtp_config,omitempty"`
 }
 
 func (m *GrafanaAlertConfigDesc) Reset()      { *m = GrafanaAlertConfigDesc{} }
@@ -272,11 +272,118 @@ func (m *GrafanaAlertConfigDesc) GetExternalUrl() string {
 	return ""
 }
 
-func (m *GrafanaAlertConfigDesc) GetStaticHeaders() map[string]string {
+func (m *GrafanaAlertConfigDesc) GetSmtpConfig() *SmtpConfig {
+	if m != nil {
+		return m.SmtpConfig
+	}
+	return nil
+}
+
+type SmtpConfig struct {
+	EhloIdentity   string            `protobuf:"bytes,1,opt,name=ehlo_identity,json=ehloIdentity,proto3" json:"ehlo_identity,omitempty"`
+	FromAddress    string            `protobuf:"bytes,2,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"`
+	FromName       string            `protobuf:"bytes,3,opt,name=from_name,json=fromName,proto3" json:"from_name,omitempty"`
+	Host           string            `protobuf:"bytes,4,opt,name=host,proto3" json:"host,omitempty"`
+	Password       string            `protobuf:"bytes,5,opt,name=password,proto3" json:"password,omitempty"`
+	SkipVerify     bool              `protobuf:"varint,6,opt,name=skip_verify,json=skipVerify,proto3" json:"skip_verify,omitempty"`
+	StartTlsPolicy string            `protobuf:"bytes,7,opt,name=start_tls_policy,json=startTlsPolicy,proto3" json:"start_tls_policy,omitempty"`
+	StaticHeaders  map[string]string `protobuf:"bytes,8,rep,name=static_headers,json=staticHeaders,proto3" json:"static_headers,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	User           string            `protobuf:"bytes,9,opt,name=user,proto3" json:"user,omitempty"`
+}
+
+func (m *SmtpConfig) Reset()      { *m = SmtpConfig{} }
+func (*SmtpConfig) ProtoMessage() {}
+func (*SmtpConfig) Descriptor() ([]byte, []int) {
+	return fileDescriptor_20493709c38b81dc, []int{4}
+}
+func (m *SmtpConfig) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SmtpConfig) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SmtpConfig.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SmtpConfig) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SmtpConfig.Merge(m, src)
+}
+func (m *SmtpConfig) XXX_Size() int {
+	return m.Size()
+}
+func (m *SmtpConfig) XXX_DiscardUnknown() {
+	xxx_messageInfo_SmtpConfig.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SmtpConfig proto.InternalMessageInfo
+
+func (m *SmtpConfig) GetEhloIdentity() string {
+	if m != nil {
+		return m.EhloIdentity
+	}
+	return ""
+}
+
+func (m *SmtpConfig) GetFromAddress() string {
+	if m != nil {
+		return m.FromAddress
+	}
+	return ""
+}
+
+func (m *SmtpConfig) GetFromName() string {
+	if m != nil {
+		return m.FromName
+	}
+	return ""
+}
+
+func (m *SmtpConfig) GetHost() string {
+	if m != nil {
+		return m.Host
+	}
+	return ""
+}
+
+func (m *SmtpConfig) GetPassword() string {
+	if m != nil {
+		return m.Password
+	}
+	return ""
+}
+
+func (m *SmtpConfig) GetSkipVerify() bool {
+	if m != nil {
+		return m.SkipVerify
+	}
+	return false
+}
+
+func (m *SmtpConfig) GetStartTlsPolicy() string {
+	if m != nil {
+		return m.StartTlsPolicy
+	}
+	return ""
+}
+
+func (m *SmtpConfig) GetStaticHeaders() map[string]string {
 	if m != nil {
 		return m.StaticHeaders
 	}
 	return nil
+}
+
+func (m *SmtpConfig) GetUser() string {
+	if m != nil {
+		return m.User
+	}
+	return ""
 }
 
 func init() {
@@ -284,45 +391,56 @@ func init() {
 	proto.RegisterType((*TemplateDesc)(nil), "alerts.TemplateDesc")
 	proto.RegisterType((*FullStateDesc)(nil), "alerts.FullStateDesc")
 	proto.RegisterType((*GrafanaAlertConfigDesc)(nil), "alerts.GrafanaAlertConfigDesc")
-	proto.RegisterMapType((map[string]string)(nil), "alerts.GrafanaAlertConfigDesc.StaticHeadersEntry")
+	proto.RegisterType((*SmtpConfig)(nil), "alerts.SmtpConfig")
+	proto.RegisterMapType((map[string]string)(nil), "alerts.SmtpConfig.StaticHeadersEntry")
 }
 
 func init() { proto.RegisterFile("alerts.proto", fileDescriptor_20493709c38b81dc) }
 
 var fileDescriptor_20493709c38b81dc = []byte{
-	// 506 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x52, 0xbb, 0x6e, 0x13, 0x4d,
-	0x18, 0xdd, 0xc9, 0xae, 0x13, 0xfb, 0x8b, 0xf3, 0xff, 0xd1, 0xc8, 0x42, 0x2b, 0x4b, 0x0c, 0xc6,
-	0x95, 0x45, 0x61, 0x43, 0x68, 0x50, 0x8a, 0x08, 0x87, 0xab, 0x28, 0x37, 0x41, 0x42, 0x34, 0xd6,
-	0x78, 0xfd, 0xf9, 0x22, 0x66, 0x2f, 0x9a, 0x99, 0x25, 0x71, 0xc7, 0x23, 0x20, 0x9e, 0x80, 0x92,
-	0x47, 0xa1, 0x74, 0x99, 0x12, 0xaf, 0x9b, 0x94, 0x79, 0x04, 0x34, 0xb3, 0xbb, 0x4e, 0x24, 0x28,
-	0xa9, 0xf6, 0x9c, 0x39, 0xe7, 0xcc, 0x7c, 0x97, 0x85, 0x26, 0x17, 0x28, 0xb5, 0xea, 0xa7, 0x32,
-	0xd1, 0x09, 0xdd, 0x2d, 0x58, 0xbb, 0x35, 0x4b, 0x66, 0x89, 0x3d, 0x1a, 0x18, 0x54, 0xa8, 0xed,
-	0xd3, 0xd9, 0x42, 0xcf, 0xb3, 0x71, 0x3f, 0x4c, 0xa2, 0x41, 0x2a, 0x93, 0x08, 0xf5, 0x1c, 0x33,
-	0x35, 0xb0, 0x99, 0x88, 0xc7, 0x7c, 0x86, 0x72, 0x10, 0x8a, 0x4c, 0xe9, 0xdb, 0x6f, 0x3a, 0xae,
-	0x50, 0x71, 0x47, 0xf7, 0x12, 0xfe, 0x1f, 0x1a, 0xff, 0x8b, 0x24, 0x9e, 0x2e, 0x66, 0x2f, 0x51,
-	0x85, 0x94, 0x82, 0x97, 0x29, 0x94, 0x3e, 0xe9, 0x90, 0x5e, 0x23, 0xb0, 0x98, 0xde, 0x07, 0x90,
-	0xfc, 0x62, 0x14, 0x5a, 0x97, 0xbf, 0x63, 0x95, 0x86, 0xe4, 0x17, 0x45, 0x8c, 0x1e, 0x41, 0x43,
-	0x63, 0x94, 0x0a, 0xae, 0x51, 0xf9, 0x6e, 0xc7, 0xed, 0xed, 0x1f, 0xb5, 0xfa, 0x65, 0x27, 0xe7,
-	0xa5, 0x60, 0xee, 0x0e, 0x6e, 0x6d, 0xdd, 0x13, 0x68, 0xde, 0x95, 0x68, 0x1b, 0xea, 0xd3, 0x85,
-	0xc0, 0x98, 0x47, 0x58, 0x3e, 0xbd, 0xe5, 0xa6, 0xa4, 0x71, 0x32, 0x59, 0x96, 0x0f, 0x5b, 0xdc,
-	0x1d, 0xc2, 0xc1, 0xeb, 0x4c, 0x88, 0x33, 0x5d, 0x5d, 0xf0, 0x08, 0x6a, 0xca, 0x10, 0x9b, 0x36,
-	0x05, 0x6c, 0x7b, 0xee, 0x6f, 0x8d, 0x41, 0x61, 0x39, 0xf6, 0xae, 0xbf, 0x3f, 0x70, 0xba, 0xdf,
-	0x5c, 0xb8, 0xf7, 0x46, 0xf2, 0x29, 0x8f, 0xf9, 0x3f, 0x18, 0x02, 0x05, 0x6f, 0xce, 0xd5, 0xdc,
-	0xf7, 0x8a, 0x88, 0xc1, 0xf4, 0x31, 0xb4, 0x42, 0x89, 0x5c, 0xe3, 0x64, 0xc4, 0xf5, 0x48, 0x2f,
-	0x22, 0x54, 0x9a, 0x47, 0xa9, 0x5f, 0xeb, 0x90, 0x9e, 0x1b, 0xd0, 0x52, 0x1b, 0xea, 0xf3, 0x4a,
-	0xa1, 0x3e, 0xec, 0x4d, 0x70, 0xca, 0x33, 0xa1, 0xfd, 0xbd, 0x0e, 0xe9, 0xd5, 0x83, 0x8a, 0x9a,
-	0x01, 0x99, 0x2d, 0x27, 0x1a, 0x27, 0x7e, 0xdd, 0x4a, 0x5b, 0x4e, 0x1f, 0x42, 0x13, 0x2f, 0x35,
-	0xca, 0x98, 0x8b, 0x51, 0x26, 0x85, 0xdf, 0xb0, 0x35, 0xec, 0x57, 0x67, 0xef, 0xa5, 0xa0, 0x1f,
-	0xe0, 0x3f, 0xd3, 0xfb, 0x22, 0x1c, 0xcd, 0x91, 0x4f, 0x50, 0x2a, 0x1f, 0xec, 0xa2, 0x9e, 0x54,
-	0x8b, 0xfa, 0xfb, 0x24, 0xfa, 0x67, 0x36, 0xf4, 0xb6, 0xc8, 0xbc, 0x8a, 0xb5, 0x5c, 0x06, 0x07,
-	0xea, 0xee, 0x59, 0xfb, 0x39, 0xd0, 0x3f, 0x4d, 0xf4, 0x10, 0xdc, 0x4f, 0xb8, 0x2c, 0x07, 0x68,
-	0x20, 0x6d, 0x41, 0xed, 0x33, 0x17, 0x19, 0x96, 0xa3, 0x2b, 0xc8, 0xf1, 0xce, 0x33, 0x52, 0xac,
-	0xe3, 0x9d, 0x57, 0x77, 0x0f, 0xbd, 0xd3, 0x93, 0xd5, 0x9a, 0x39, 0x57, 0x6b, 0xe6, 0xdc, 0xac,
-	0x19, 0xf9, 0x92, 0x33, 0xf2, 0x23, 0x67, 0xe4, 0x67, 0xce, 0xc8, 0x2a, 0x67, 0xe4, 0x57, 0xce,
-	0xc8, 0x75, 0xce, 0x9c, 0x9b, 0x9c, 0x91, 0xaf, 0x1b, 0xe6, 0xac, 0x36, 0xcc, 0xb9, 0xda, 0x30,
-	0xe7, 0x63, 0xbd, 0x68, 0x22, 0x1d, 0x8f, 0x77, 0xed, 0x8f, 0xfd, 0xf4, 0x77, 0x00, 0x00, 0x00,
-	0xff, 0xff, 0x87, 0x3a, 0xd2, 0x37, 0x4a, 0x03, 0x00, 0x00,
+	// 668 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0xcd, 0x4e, 0xdb, 0x4a,
+	0x14, 0x8e, 0x89, 0x01, 0xfb, 0x24, 0xdc, 0x1b, 0x8d, 0xa2, 0x2b, 0x2b, 0x57, 0xd7, 0xe4, 0xa6,
+	0xaa, 0x14, 0x75, 0x91, 0x54, 0xb0, 0xa9, 0x58, 0xa0, 0x86, 0xfe, 0xa3, 0xaa, 0xaa, 0x0c, 0xed,
+	0xa2, 0x1b, 0x6b, 0x12, 0x4f, 0x62, 0x8b, 0xb1, 0xc7, 0x9a, 0x19, 0x03, 0xd9, 0xf5, 0x11, 0x78,
+	0x84, 0x2e, 0xfb, 0x06, 0x7d, 0x85, 0x2e, 0x59, 0xb2, 0x2c, 0x66, 0xc3, 0x92, 0x47, 0xa8, 0x66,
+	0xfc, 0x13, 0x24, 0xb6, 0x5d, 0xf9, 0x9c, 0xef, 0xfb, 0xce, 0xcc, 0x39, 0xdf, 0x1c, 0x19, 0xda,
+	0x98, 0x12, 0x2e, 0xc5, 0x28, 0xe5, 0x4c, 0x32, 0xb4, 0x51, 0x64, 0xbd, 0xee, 0x82, 0x2d, 0x98,
+	0x86, 0xc6, 0x2a, 0x2a, 0xd8, 0xde, 0xc1, 0x22, 0x92, 0x61, 0x36, 0x1d, 0xcd, 0x58, 0x3c, 0x4e,
+	0x39, 0x8b, 0x89, 0x0c, 0x49, 0x26, 0xc6, 0xba, 0x26, 0xc6, 0x09, 0x5e, 0x10, 0x3e, 0x9e, 0xd1,
+	0x4c, 0xc8, 0xd5, 0x37, 0x9d, 0x56, 0x51, 0x71, 0xc6, 0xe0, 0x1c, 0xfe, 0x9e, 0x28, 0xfd, 0x0b,
+	0x96, 0xcc, 0xa3, 0xc5, 0x4b, 0x22, 0x66, 0x08, 0x81, 0x99, 0x09, 0xc2, 0x1d, 0xa3, 0x6f, 0x0c,
+	0x6d, 0x4f, 0xc7, 0xe8, 0x3f, 0x00, 0x8e, 0xcf, 0xfc, 0x99, 0x56, 0x39, 0x6b, 0x9a, 0xb1, 0x39,
+	0x3e, 0x2b, 0xca, 0xd0, 0x0e, 0xd8, 0x92, 0xc4, 0x29, 0xc5, 0x92, 0x08, 0xa7, 0xd9, 0x6f, 0x0e,
+	0x5b, 0x3b, 0xdd, 0x51, 0x39, 0xc9, 0x71, 0x49, 0xa8, 0xb3, 0xbd, 0x95, 0x6c, 0xb0, 0x0f, 0xed,
+	0xfb, 0x14, 0xea, 0x81, 0x35, 0x8f, 0x28, 0x49, 0x70, 0x4c, 0xca, 0xab, 0xeb, 0x5c, 0xb5, 0x34,
+	0x65, 0xc1, 0xb2, 0xbc, 0x58, 0xc7, 0x83, 0x09, 0x6c, 0xbd, 0xce, 0x28, 0x3d, 0x92, 0xd5, 0x01,
+	0x4f, 0x60, 0x5d, 0xa8, 0x44, 0x57, 0xab, 0x06, 0xea, 0x99, 0x47, 0xb5, 0xd0, 0x2b, 0x24, 0x7b,
+	0xe6, 0xed, 0xb7, 0xed, 0xc6, 0xe0, 0xc7, 0x1a, 0xfc, 0xf3, 0x86, 0xe3, 0x39, 0x4e, 0xf0, 0x1f,
+	0x30, 0x01, 0x81, 0x19, 0x62, 0x11, 0x3a, 0x66, 0x51, 0xa2, 0x62, 0xf4, 0x14, 0xba, 0x33, 0x4e,
+	0xb0, 0x24, 0x81, 0x8f, 0xa5, 0x2f, 0xa3, 0x98, 0x08, 0x89, 0xe3, 0xd4, 0x59, 0xef, 0x1b, 0xc3,
+	0xa6, 0x87, 0x4a, 0x6e, 0x22, 0x8f, 0x2b, 0x06, 0x39, 0xb0, 0x19, 0x90, 0x39, 0xce, 0xa8, 0x74,
+	0x36, 0xfb, 0xc6, 0xd0, 0xf2, 0xaa, 0x54, 0x19, 0xa4, 0x5e, 0x99, 0x49, 0x12, 0x38, 0x96, 0xa6,
+	0xea, 0x1c, 0xfd, 0x0f, 0x6d, 0x72, 0x2e, 0x09, 0x4f, 0x30, 0xf5, 0x33, 0x4e, 0x1d, 0x5b, 0xf7,
+	0xd0, 0xaa, 0xb0, 0x4f, 0x9c, 0xa2, 0x5d, 0x68, 0x89, 0x58, 0xa6, 0x55, 0xfb, 0x6d, 0x6d, 0x12,
+	0xaa, 0x5e, 0xe9, 0x28, 0x96, 0x69, 0x31, 0x87, 0x07, 0xa2, 0x8e, 0x0b, 0x9f, 0x0e, 0x4d, 0xab,
+	0xd9, 0x31, 0x0f, 0x4d, 0x0b, 0x3a, 0xad, 0x43, 0xd3, 0x6a, 0x75, 0xda, 0x83, 0x8b, 0x26, 0xc0,
+	0xaa, 0x04, 0x3d, 0x82, 0x2d, 0x12, 0x52, 0xe6, 0x47, 0x01, 0x49, 0x64, 0x24, 0x97, 0xa5, 0x6d,
+	0x6d, 0x05, 0xbe, 0x2b, 0x31, 0xd5, 0xe3, 0x9c, 0xb3, 0xd8, 0xc7, 0x41, 0xc0, 0x89, 0x10, 0xa5,
+	0x81, 0x2d, 0x85, 0x4d, 0x0a, 0x08, 0xfd, 0x0b, 0xb6, 0x96, 0xe8, 0x25, 0x68, 0x96, 0x4b, 0xc0,
+	0x59, 0xfc, 0xa1, 0x5c, 0x82, 0x90, 0x09, 0x59, 0xfb, 0xcb, 0x44, 0xe1, 0x09, 0x16, 0xe2, 0x8c,
+	0xf1, 0x40, 0x7b, 0x6a, 0x7b, 0x75, 0x8e, 0xb6, 0xa1, 0x25, 0x4e, 0xa2, 0xd4, 0x3f, 0x25, 0x3c,
+	0x9a, 0x2f, 0x9d, 0x0d, 0x6d, 0x19, 0x28, 0xe8, 0xb3, 0x46, 0xd0, 0x10, 0x3a, 0x42, 0x62, 0x2e,
+	0x7d, 0x49, 0x85, 0x9f, 0x32, 0x1a, 0xcd, 0x96, 0xda, 0x73, 0xdb, 0xfb, 0x4b, 0xe3, 0xc7, 0x54,
+	0x7c, 0xd4, 0x28, 0x7a, 0x0f, 0x0a, 0x91, 0xd1, 0xcc, 0x0f, 0x09, 0x0e, 0x08, 0x17, 0x8e, 0xa5,
+	0x97, 0xfc, 0xf1, 0x43, 0xfb, 0x46, 0x47, 0x5a, 0xf8, 0xb6, 0xd0, 0xbd, 0x4a, 0x24, 0x5f, 0x7a,
+	0x5b, 0xe2, 0x3e, 0x56, 0xef, 0x96, 0xbd, 0xda, 0xad, 0xde, 0x73, 0x40, 0x0f, 0x0b, 0x51, 0x07,
+	0x9a, 0x27, 0xa4, 0x72, 0x53, 0x85, 0xa8, 0x0b, 0xeb, 0xa7, 0x98, 0x66, 0xa4, 0x74, 0xaf, 0x48,
+	0xf6, 0xd6, 0x9e, 0x19, 0x07, 0xfb, 0x97, 0xd7, 0x6e, 0xe3, 0xea, 0xda, 0x6d, 0xdc, 0x5d, 0xbb,
+	0xc6, 0xd7, 0xdc, 0x35, 0xbe, 0xe7, 0xae, 0xf1, 0x33, 0x77, 0x8d, 0xcb, 0xdc, 0x35, 0x7e, 0xe5,
+	0xae, 0x71, 0x9b, 0xbb, 0x8d, 0xbb, 0xdc, 0x35, 0x2e, 0x6e, 0xdc, 0xc6, 0xe5, 0x8d, 0xdb, 0xb8,
+	0xba, 0x71, 0x1b, 0x5f, 0xac, 0x62, 0x80, 0x74, 0x3a, 0xdd, 0xd0, 0x3f, 0x84, 0xdd, 0xdf, 0x01,
+	0x00, 0x00, 0xff, 0xff, 0x84, 0xfc, 0x3f, 0x19, 0x82, 0x04, 0x00, 0x00,
 }
 
 func (this *AlertConfigDesc) Equal(that interface{}) bool {
@@ -387,6 +505,59 @@ func (this *TemplateDesc) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *SmtpConfig) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SmtpConfig)
+	if !ok {
+		that2, ok := that.(SmtpConfig)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.EhloIdentity != that1.EhloIdentity {
+		return false
+	}
+	if this.FromAddress != that1.FromAddress {
+		return false
+	}
+	if this.FromName != that1.FromName {
+		return false
+	}
+	if this.Host != that1.Host {
+		return false
+	}
+	if this.Password != that1.Password {
+		return false
+	}
+	if this.SkipVerify != that1.SkipVerify {
+		return false
+	}
+	if this.StartTlsPolicy != that1.StartTlsPolicy {
+		return false
+	}
+	if len(this.StaticHeaders) != len(that1.StaticHeaders) {
+		return false
+	}
+	for i := range this.StaticHeaders {
+		if this.StaticHeaders[i] != that1.StaticHeaders[i] {
+			return false
+		}
+	}
+	if this.User != that1.User {
+		return false
+	}
+	return true
+}
 func (this *AlertConfigDesc) GoString() string {
 	if this == nil {
 		return "nil"
@@ -437,6 +608,25 @@ func (this *GrafanaAlertConfigDesc) GoString() string {
 	s = append(s, "Default: "+fmt.Sprintf("%#v", this.Default)+",\n")
 	s = append(s, "Promoted: "+fmt.Sprintf("%#v", this.Promoted)+",\n")
 	s = append(s, "ExternalUrl: "+fmt.Sprintf("%#v", this.ExternalUrl)+",\n")
+	if this.SmtpConfig != nil {
+		s = append(s, "SmtpConfig: "+fmt.Sprintf("%#v", this.SmtpConfig)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SmtpConfig) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 13)
+	s = append(s, "&alertspb.SmtpConfig{")
+	s = append(s, "EhloIdentity: "+fmt.Sprintf("%#v", this.EhloIdentity)+",\n")
+	s = append(s, "FromAddress: "+fmt.Sprintf("%#v", this.FromAddress)+",\n")
+	s = append(s, "FromName: "+fmt.Sprintf("%#v", this.FromName)+",\n")
+	s = append(s, "Host: "+fmt.Sprintf("%#v", this.Host)+",\n")
+	s = append(s, "Password: "+fmt.Sprintf("%#v", this.Password)+",\n")
+	s = append(s, "SkipVerify: "+fmt.Sprintf("%#v", this.SkipVerify)+",\n")
+	s = append(s, "StartTlsPolicy: "+fmt.Sprintf("%#v", this.StartTlsPolicy)+",\n")
 	keysForStaticHeaders := make([]string, 0, len(this.StaticHeaders))
 	for k, _ := range this.StaticHeaders {
 		keysForStaticHeaders = append(keysForStaticHeaders, k)
@@ -450,6 +640,7 @@ func (this *GrafanaAlertConfigDesc) GoString() string {
 	if this.StaticHeaders != nil {
 		s = append(s, "StaticHeaders: "+mapStringForStaticHeaders+",\n")
 	}
+	s = append(s, "User: "+fmt.Sprintf("%#v", this.User)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -604,24 +795,17 @@ func (m *GrafanaAlertConfigDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 	_ = i
 	var l int
 	_ = l
-	if len(m.StaticHeaders) > 0 {
-		for k := range m.StaticHeaders {
-			v := m.StaticHeaders[k]
-			baseI := i
-			i -= len(v)
-			copy(dAtA[i:], v)
-			i = encodeVarintAlerts(dAtA, i, uint64(len(v)))
-			i--
-			dAtA[i] = 0x12
-			i -= len(k)
-			copy(dAtA[i:], k)
-			i = encodeVarintAlerts(dAtA, i, uint64(len(k)))
-			i--
-			dAtA[i] = 0xa
-			i = encodeVarintAlerts(dAtA, i, uint64(baseI-i))
-			i--
-			dAtA[i] = 0x52
+	if m.SmtpConfig != nil {
+		{
+			size, err := m.SmtpConfig.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintAlerts(dAtA, i, uint64(size))
 		}
+		i--
+		dAtA[i] = 0x62
 	}
 	if len(m.ExternalUrl) > 0 {
 		i -= len(m.ExternalUrl)
@@ -673,6 +857,107 @@ func (m *GrafanaAlertConfigDesc) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 		i -= len(m.User)
 		copy(dAtA[i:], m.User)
 		i = encodeVarintAlerts(dAtA, i, uint64(len(m.User)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SmtpConfig) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SmtpConfig) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SmtpConfig) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.User) > 0 {
+		i -= len(m.User)
+		copy(dAtA[i:], m.User)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.User)))
+		i--
+		dAtA[i] = 0x4a
+	}
+	if len(m.StaticHeaders) > 0 {
+		for k := range m.StaticHeaders {
+			v := m.StaticHeaders[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintAlerts(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintAlerts(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintAlerts(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x42
+		}
+	}
+	if len(m.StartTlsPolicy) > 0 {
+		i -= len(m.StartTlsPolicy)
+		copy(dAtA[i:], m.StartTlsPolicy)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.StartTlsPolicy)))
+		i--
+		dAtA[i] = 0x3a
+	}
+	if m.SkipVerify {
+		i--
+		if m.SkipVerify {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x30
+	}
+	if len(m.Password) > 0 {
+		i -= len(m.Password)
+		copy(dAtA[i:], m.Password)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.Password)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.Host) > 0 {
+		i -= len(m.Host)
+		copy(dAtA[i:], m.Host)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.Host)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if len(m.FromName) > 0 {
+		i -= len(m.FromName)
+		copy(dAtA[i:], m.FromName)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.FromName)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.FromAddress) > 0 {
+		i -= len(m.FromAddress)
+		copy(dAtA[i:], m.FromAddress)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.FromAddress)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.EhloIdentity) > 0 {
+		i -= len(m.EhloIdentity)
+		copy(dAtA[i:], m.EhloIdentity)
+		i = encodeVarintAlerts(dAtA, i, uint64(len(m.EhloIdentity)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -774,6 +1059,46 @@ func (m *GrafanaAlertConfigDesc) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovAlerts(uint64(l))
 	}
+	if m.SmtpConfig != nil {
+		l = m.SmtpConfig.Size()
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	return n
+}
+
+func (m *SmtpConfig) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.EhloIdentity)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	l = len(m.FromAddress)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	l = len(m.FromName)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	l = len(m.Host)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	l = len(m.Password)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
+	if m.SkipVerify {
+		n += 2
+	}
+	l = len(m.StartTlsPolicy)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
+	}
 	if len(m.StaticHeaders) > 0 {
 		for k, v := range m.StaticHeaders {
 			_ = k
@@ -781,6 +1106,10 @@ func (m *GrafanaAlertConfigDesc) Size() (n int) {
 			mapEntrySize := 1 + len(k) + sovAlerts(uint64(len(k))) + 1 + len(v) + sovAlerts(uint64(len(v)))
 			n += mapEntrySize + 1 + sovAlerts(uint64(mapEntrySize))
 		}
+	}
+	l = len(m.User)
+	if l > 0 {
+		n += 1 + l + sovAlerts(uint64(l))
 	}
 	return n
 }
@@ -833,6 +1162,23 @@ func (this *GrafanaAlertConfigDesc) String() string {
 	if this == nil {
 		return "nil"
 	}
+	s := strings.Join([]string{`&GrafanaAlertConfigDesc{`,
+		`User:` + fmt.Sprintf("%v", this.User) + `,`,
+		`RawConfig:` + fmt.Sprintf("%v", this.RawConfig) + `,`,
+		`Hash:` + fmt.Sprintf("%v", this.Hash) + `,`,
+		`CreatedAtTimestamp:` + fmt.Sprintf("%v", this.CreatedAtTimestamp) + `,`,
+		`Default:` + fmt.Sprintf("%v", this.Default) + `,`,
+		`Promoted:` + fmt.Sprintf("%v", this.Promoted) + `,`,
+		`ExternalUrl:` + fmt.Sprintf("%v", this.ExternalUrl) + `,`,
+		`SmtpConfig:` + strings.Replace(this.SmtpConfig.String(), "SmtpConfig", "SmtpConfig", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SmtpConfig) String() string {
+	if this == nil {
+		return "nil"
+	}
 	keysForStaticHeaders := make([]string, 0, len(this.StaticHeaders))
 	for k, _ := range this.StaticHeaders {
 		keysForStaticHeaders = append(keysForStaticHeaders, k)
@@ -843,15 +1189,16 @@ func (this *GrafanaAlertConfigDesc) String() string {
 		mapStringForStaticHeaders += fmt.Sprintf("%v: %v,", k, this.StaticHeaders[k])
 	}
 	mapStringForStaticHeaders += "}"
-	s := strings.Join([]string{`&GrafanaAlertConfigDesc{`,
-		`User:` + fmt.Sprintf("%v", this.User) + `,`,
-		`RawConfig:` + fmt.Sprintf("%v", this.RawConfig) + `,`,
-		`Hash:` + fmt.Sprintf("%v", this.Hash) + `,`,
-		`CreatedAtTimestamp:` + fmt.Sprintf("%v", this.CreatedAtTimestamp) + `,`,
-		`Default:` + fmt.Sprintf("%v", this.Default) + `,`,
-		`Promoted:` + fmt.Sprintf("%v", this.Promoted) + `,`,
-		`ExternalUrl:` + fmt.Sprintf("%v", this.ExternalUrl) + `,`,
+	s := strings.Join([]string{`&SmtpConfig{`,
+		`EhloIdentity:` + fmt.Sprintf("%v", this.EhloIdentity) + `,`,
+		`FromAddress:` + fmt.Sprintf("%v", this.FromAddress) + `,`,
+		`FromName:` + fmt.Sprintf("%v", this.FromName) + `,`,
+		`Host:` + fmt.Sprintf("%v", this.Host) + `,`,
+		`Password:` + fmt.Sprintf("%v", this.Password) + `,`,
+		`SkipVerify:` + fmt.Sprintf("%v", this.SkipVerify) + `,`,
+		`StartTlsPolicy:` + fmt.Sprintf("%v", this.StartTlsPolicy) + `,`,
 		`StaticHeaders:` + mapStringForStaticHeaders + `,`,
+		`User:` + fmt.Sprintf("%v", this.User) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -997,10 +1344,7 @@ func (m *AlertConfigDesc) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthAlerts
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthAlerts
 			}
 			if (iNdEx + skippy) > l {
@@ -1114,10 +1458,7 @@ func (m *TemplateDesc) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthAlerts
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthAlerts
 			}
 			if (iNdEx + skippy) > l {
@@ -1203,10 +1544,7 @@ func (m *FullStateDesc) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthAlerts
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthAlerts
 			}
 			if (iNdEx + skippy) > l {
@@ -1437,7 +1775,305 @@ func (m *GrafanaAlertConfigDesc) Unmarshal(dAtA []byte) error {
 			}
 			m.ExternalUrl = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 10:
+		case 12:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SmtpConfig", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.SmtpConfig == nil {
+				m.SmtpConfig = &SmtpConfig{}
+			}
+			if err := m.SmtpConfig.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipAlerts(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SmtpConfig) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowAlerts
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SmtpConfig: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SmtpConfig: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EhloIdentity", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EhloIdentity = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FromAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.FromAddress = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FromName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.FromName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Host", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Host = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Password", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Password = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SkipVerify", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.SkipVerify = bool(v != 0)
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTlsPolicy", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.StartTlsPolicy = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 8:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field StaticHeaders", wireType)
 			}
@@ -1553,7 +2189,7 @@ func (m *GrafanaAlertConfigDesc) Unmarshal(dAtA []byte) error {
 					if err != nil {
 						return err
 					}
-					if skippy < 0 {
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
 						return ErrInvalidLengthAlerts
 					}
 					if (iNdEx + skippy) > postIndex {
@@ -1564,16 +2200,45 @@ func (m *GrafanaAlertConfigDesc) Unmarshal(dAtA []byte) error {
 			}
 			m.StaticHeaders[mapkey] = mapvalue
 			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field User", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowAlerts
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthAlerts
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.User = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipAlerts(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthAlerts
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthAlerts
 			}
 			if (iNdEx + skippy) > l {
@@ -1591,6 +2256,7 @@ func (m *GrafanaAlertConfigDesc) Unmarshal(dAtA []byte) error {
 func skipAlerts(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
+	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -1622,10 +2288,8 @@ func skipAlerts(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			return iNdEx, nil
 		case 1:
 			iNdEx += 8
-			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -1646,55 +2310,30 @@ func skipAlerts(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthAlerts
 			}
 			iNdEx += length
-			if iNdEx < 0 {
-				return 0, ErrInvalidLengthAlerts
-			}
-			return iNdEx, nil
 		case 3:
-			for {
-				var innerWire uint64
-				var start int = iNdEx
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return 0, ErrIntOverflowAlerts
-					}
-					if iNdEx >= l {
-						return 0, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= (uint64(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				innerWireType := int(innerWire & 0x7)
-				if innerWireType == 4 {
-					break
-				}
-				next, err := skipAlerts(dAtA[start:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx = start + next
-				if iNdEx < 0 {
-					return 0, ErrInvalidLengthAlerts
-				}
-			}
-			return iNdEx, nil
+			depth++
 		case 4:
-			return iNdEx, nil
+			if depth == 0 {
+				return 0, ErrUnexpectedEndOfGroupAlerts
+			}
+			depth--
 		case 5:
 			iNdEx += 4
-			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthAlerts
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
 	}
-	panic("unreachable")
+	return 0, io.ErrUnexpectedEOF
 }
 
 var (
-	ErrInvalidLengthAlerts = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowAlerts   = fmt.Errorf("proto: integer overflow")
+	ErrInvalidLengthAlerts        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowAlerts          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupAlerts = fmt.Errorf("proto: unexpected end of group")
 )

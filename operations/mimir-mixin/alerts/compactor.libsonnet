@@ -153,6 +153,22 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
           },
         },
+        // Alert if compactor has failed to build sparse-index headers.
+        {
+          alert: $.alertName('CompactorFailingToBuildSparseIndexHeaders'),
+          'for': '30m',
+          expr: |||
+            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(range_interval)s])) > 0)
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to build sparse index headers' % $._config,
+          },
+        },
       ],
     },
   ],

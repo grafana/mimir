@@ -37,11 +37,11 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 	)
 
 	for _, rule := range group.Rules {
-		if rule.Record.Value != "" {
-			ruleMetrics[rule.Record.Value] = struct{}{}
+		if rule.Record != "" {
+			ruleMetrics[rule.Record] = struct{}{}
 		}
 
-		query := rule.Expr.Value
+		query := rule.Expr
 		expr, err := parser.ParseExpr(query)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))

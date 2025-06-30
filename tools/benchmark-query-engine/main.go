@@ -42,11 +42,12 @@ type app struct {
 	cleanup             func()
 
 	count           uint
-	testFilter      string
-	listTests       bool
+	benchmarkFilter string
+	listBenchmarks  bool
 	justRunIngester bool
 	cpuProfilePath  string
 	memProfilePath  string
+	benchtime       string
 }
 
 func (a *app) run() error {
@@ -55,13 +56,13 @@ func (a *app) run() error {
 	}
 
 	// Do this early, to avoid doing a bunch of pointless work if the regex is invalid or doesn't match any tests.
-	filteredNames, err := a.filteredTestCaseNames()
+	filteredBenchmarks, err := a.filteredBenchmarks()
 	if err != nil {
 		return err
 	}
 
-	if a.listTests {
-		a.printTests(filteredNames)
+	if a.listBenchmarks {
+		a.printBenchmarks(filteredBenchmarks)
 		return nil
 	}
 
@@ -70,8 +71,8 @@ func (a *app) run() error {
 			return fmt.Errorf("must run exactly one iteration when emitting profile, but have -count=%d", a.count)
 		}
 
-		if len(filteredNames) != 1 {
-			return fmt.Errorf("must select exactly one benchmark with -bench when emitting profile, but have %v benchmarks selected", len(filteredNames))
+		if len(filteredBenchmarks) != 1 {
+			return fmt.Errorf("must select exactly one benchmark with -bench when emitting profile, but have %v benchmarks selected", len(filteredBenchmarks))
 		}
 	}
 
@@ -94,14 +95,14 @@ func (a *app) run() error {
 		return a.waitForExit()
 	}
 
-	if err := a.runBenchmarks(filteredNames); err != nil {
+	if err := a.runBenchmarks(filteredBenchmarks); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (a *app) runBenchmarks(filteredNames []string) error {
+func (a *app) runBenchmarks(filteredBenchmarks []benchmark) error {
 	if err := a.buildBinary(); err != nil {
 		return fmt.Errorf("building binary failed: %w", err)
 	}
@@ -110,12 +111,14 @@ func (a *app) runBenchmarks(filteredNames []string) error {
 		return fmt.Errorf("benchmark binary failed validation: %w", err)
 	}
 
+	slog.Info("running benchmarks...")
+
 	haveRunAnyTests := false
 
-	for _, name := range filteredNames {
+	for _, benchmark := range filteredBenchmarks {
 		for i := uint(0); i < a.count; i++ {
-			if err := a.runTestCase(name, !haveRunAnyTests); err != nil {
-				return fmt.Errorf("running test case '%v' failed: %w", name, err)
+			if err := a.runBenchmark(benchmark, !haveRunAnyTests); err != nil {
+				return fmt.Errorf("running benchmark '%v' failed: %w", benchmark.FullName(), err)
 			}
 
 			haveRunAnyTests = true
@@ -143,12 +146,13 @@ func (a *app) waitForExit() error {
 
 func (a *app) parseArgs() error {
 	flag.UintVar(&a.count, "count", 1, "run each benchmark n times")
-	flag.StringVar(&a.testFilter, "bench", ".", "only run benchmarks matching regexp")
-	flag.BoolVar(&a.listTests, "list", false, "list known benchmarks and exit")
+	flag.StringVar(&a.benchmarkFilter, "bench", ".", "only run benchmarks matching regexp")
+	flag.BoolVar(&a.listBenchmarks, "list", false, "list known benchmarks and exit")
 	flag.BoolVar(&a.justRunIngester, "start-ingester", false, "start ingester and wait, run no benchmarks")
 	flag.StringVar(&a.ingesterAddress, "use-existing-ingester", "", "use existing ingester rather than creating a new one")
 	flag.StringVar(&a.cpuProfilePath, "cpuprofile", "", "write CPU profile to file, only supported when running a single iteration of one benchmark")
 	flag.StringVar(&a.memProfilePath, "memprofile", "", "write memory profile to file, only supported when running a single iteration of one benchmark")
+	flag.StringVar(&a.benchtime, "benchtime", "", "value passed to benchmark binary as -benchtime flag")
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Printf("%v\n", err)
@@ -195,6 +199,8 @@ func (a *app) createTempDir() error {
 }
 
 func (a *app) buildBinary() error {
+	slog.Info("building binary...")
+
 	a.binaryPath = filepath.Join(a.tempDir, "benchmark-binary")
 
 	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels", ".")
@@ -258,52 +264,52 @@ func (a *app) startIngesterAndLoadData() error {
 	return nil
 }
 
-func (a *app) printTests(names []string) {
-	for _, name := range names {
-		println(name)
+func (a *app) printBenchmarks(benchmarks []benchmark) {
+	for _, b := range benchmarks {
+		println(b.FullName())
 	}
 }
 
 // Why do this, rather than call 'go test -list'?
 // 'go test -list' only lists top-level benchmarks (eg. "BenchmarkQuery"),
 // but doesn't list sub-tests.
-func (a *app) allTestCaseNames() []string {
+func (a *app) allBenchmarks() []benchmark {
 	cases := benchmarks.TestCases(benchmarks.MetricSizes)
-	names := make([]string, 0, 2*len(cases))
+	names := make([]benchmark, 0, 3*len(cases))
 
 	for _, c := range cases {
-		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Mimir")
-		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Prometheus")
+		names = append(names, benchmark{caseName: c.Name(), engine: "Mimir"})
+		names = append(names, benchmark{caseName: c.Name(), engine: "Prometheus"})
 	}
 
 	return names
 }
 
-func (a *app) filteredTestCaseNames() ([]string, error) {
-	regex, err := regexp.Compile(a.testFilter)
+func (a *app) filteredBenchmarks() ([]benchmark, error) {
+	regex, err := regexp.Compile(a.benchmarkFilter)
 	if err != nil {
-		return nil, fmt.Errorf("invalid regexp '%v': %w", a.testFilter, err)
+		return nil, fmt.Errorf("invalid regexp '%v': %w", a.benchmarkFilter, err)
 	}
 
-	all := a.allTestCaseNames()
-	names := make([]string, 0, len(all))
+	all := a.allBenchmarks()
+	filtered := make([]benchmark, 0, len(all))
 
-	for _, name := range all {
-		if regex.MatchString(name) {
-			names = append(names, name)
+	for _, b := range all {
+		if regex.MatchString(b.FullName()) {
+			filtered = append(filtered, b)
 		}
 	}
 
-	if len(names) == 0 {
-		return nil, fmt.Errorf("regexp '%v' matched no benchmark cases, run with -list to see all available benchmark cases", a.testFilter)
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("regexp '%v' matched no benchmark cases, run with -list to see all available benchmark cases", a.benchmarkFilter)
 	}
 
-	return names, nil
+	return filtered, nil
 }
 
-func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
+func (a *app) runBenchmark(b benchmark, printBenchmarkHeader bool) error {
 	args := []string{
-		"-test.bench=" + regexp.QuoteMeta(name), "-test.run=NoTestsWillMatchThisPattern", "-test.benchmem",
+		"-test.bench=" + b.Pattern(), "-test.run=NoTestsWillMatchThisPattern", "-test.benchmem",
 	}
 
 	if a.cpuProfilePath != "" {
@@ -312,6 +318,10 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 
 	if a.memProfilePath != "" {
 		args = append(args, "-test.memprofile="+a.memProfilePath)
+	}
+
+	if a.benchtime != "" {
+		args = append(args, "-test.benchtime="+a.benchtime)
 	}
 
 	cmd := exec.Command(a.binaryPath, args...)
@@ -358,4 +368,21 @@ func maxRSSInBytes(usage *syscall.Rusage) int64 {
 	default:
 		panic(fmt.Sprintf("unknown GOOS '%v'", runtime.GOOS))
 	}
+}
+
+type benchmark struct {
+	caseName string
+	engine   string
+}
+
+func (b benchmark) FullName() string {
+	return fmt.Sprintf("%v/%v/engine=%v", benchmarkName, b.caseName, b.engine)
+}
+
+func (b benchmark) Pattern() string {
+	// go test's -bench flag takes the value provided and splits it on "/", then treats each part as a separate regex.
+	// This is problematic when using a name like 'BenchmarkQuery/a_100, instant query/engine=Mimir',
+	// as this will match any benchmark with "a_100, instant query" in the second part (eg. "1 + a_100, instant query").
+	// So we need to ensure that each part is set to match the full string.
+	return fmt.Sprintf(`^%v$/^%v$/^engine=%v$`, benchmarkName, regexp.QuoteMeta(b.caseName), regexp.QuoteMeta(b.engine))
 }

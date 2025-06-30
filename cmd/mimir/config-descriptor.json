@@ -214,6 +214,16 @@
         },
         {
           "kind": "field",
+          "name": "grpc_collect_max_streams_by_conn",
+          "required": false,
+          "desc": "If true, the max streams by connection gauge will be collected.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "server.grpc-collect-max-streams-by-conn",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "proxy_protocol_enabled",
           "required": false,
           "desc": "Enables PROXY protocol.",
@@ -707,6 +717,26 @@
         },
         {
           "kind": "field",
+          "name": "trace_request_headers",
+          "required": false,
+          "desc": "Optionally add request headers to tracing spans.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.trace-request-headers",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
+          "name": "trace_request_exclude_headers_list",
+          "required": false,
+          "desc": "Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.trace-request-headers-exclude-list",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "http_path_prefix",
           "required": false,
           "desc": "Base path to serve all API routes from (e.g. /v1/)",
@@ -715,6 +745,102 @@
           "fieldFlag": "server.path-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define the cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "soft_validation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.http.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "soft_validation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.http.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "excluded_paths",
+                  "required": false,
+                  "desc": "Comma-separated list of url paths that are excluded from the cluster validation check.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "server.cluster-validation.http.excluded-paths",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -816,39 +942,6 @@
               "fieldDefaultValue": false,
               "fieldFlag": "distributor.ha-tracker.enable",
               "fieldType": "boolean"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout",
-              "required": false,
-              "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
-              "fieldValue": null,
-              "fieldDefaultValue": 15000000000,
-              "fieldFlag": "distributor.ha-tracker.update-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout_jitter_max",
-              "required": false,
-              "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
-              "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
-              "fieldFlag": "distributor.ha-tracker.update-timeout-jitter-max",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_failover_timeout",
-              "required": false,
-              "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout",
-              "fieldValue": null,
-              "fieldDefaultValue": 30000000000,
-              "fieldFlag": "distributor.ha-tracker.failover-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -1180,6 +1273,36 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_update_timeout",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_update_timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_update_timeout_jitter_max",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_failover_timeout",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_failover_timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -1730,9 +1853,140 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "max_recv_msg_size",
+              "required": false,
+              "desc": "gRPC client max receive message size (bytes).",
+              "fieldValue": null,
+              "fieldDefaultValue": 104857600,
+              "fieldFlag": "querier.store-gateway-client.grpc-max-recv-msg-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_send_msg_size",
+              "required": false,
+              "desc": "gRPC client max send message size (bytes).",
+              "fieldValue": null,
+              "fieldDefaultValue": 104857600,
+              "fieldFlag": "querier.store-gateway-client.grpc-max-send-msg-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "grpc_compression",
+              "required": false,
+              "desc": "Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "querier.store-gateway-client.grpc-compression",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "rate_limit",
+              "required": false,
+              "desc": "Rate limit for gRPC client; 0 means disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.store-gateway-client.grpc-client-rate-limit",
+              "fieldType": "float",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "rate_limit_burst",
+              "required": false,
+              "desc": "Rate limit burst for gRPC client.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.store-gateway-client.grpc-client-rate-limit-burst",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "backoff_on_ratelimits",
+              "required": false,
+              "desc": "Enable backoff and retry when we hit rate limits.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.store-gateway-client.backoff-on-ratelimits",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "backoff_config",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "min_period",
+                  "required": false,
+                  "desc": "Minimum delay when backing off.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 100000000,
+                  "fieldFlag": "querier.store-gateway-client.backoff-min-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_period",
+                  "required": false,
+                  "desc": "Maximum delay when backing off.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10000000000,
+                  "fieldFlag": "querier.store-gateway-client.backoff-max-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Number of times to backoff and retry before failing.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 10,
+                  "fieldFlag": "querier.store-gateway-client.backoff-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "initial_stream_window_size",
+              "required": false,
+              "desc": "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "querier.store-gateway-client.initial-stream-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_connection_window_size",
+              "required": false,
+              "desc": "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldFlag": "querier.store-gateway-client.initial-connection-window-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS for gRPC client connecting to store-gateway.",
+              "desc": "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.",
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "querier.store-gateway-client.tls-enabled",
@@ -1815,6 +2069,60 @@
               "fieldFlag": "querier.store-gateway-client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_timeout",
+              "required": false,
+              "desc": "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "querier.store-gateway-client.connect-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_base_delay",
+              "required": false,
+              "desc": "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "querier.store-gateway-client.connect-backoff-base-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "connect_backoff_max_delay",
+              "required": false,
+              "desc": "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout \u003e 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "querier.store-gateway-client.connect-backoff-max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.store-gateway-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -1881,7 +2189,7 @@
           "required": false,
           "desc": "Query engine to use, either 'prometheus' or 'mimir'",
           "fieldValue": null,
-          "fieldDefaultValue": "prometheus",
+          "fieldDefaultValue": "mimir",
           "fieldFlag": "querier.query-engine",
           "fieldType": "string",
           "fieldCategory": "experimental"
@@ -1961,17 +2269,6 @@
           "fieldCategory": "advanced"
         },
         {
-          "kind": "field",
-          "name": "promql_experimental_functions_enabled",
-          "required": false,
-          "desc": "Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.promql-experimental-functions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -1979,112 +2276,13 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "enable_aggregation_operations",
+              "name": "enable_common_subexpression_elimination",
               "required": false,
-              "desc": "Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use.",
+              "desc": "Enable common subexpression elimination when evaluating queries.",
               "fieldValue": null,
               "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-aggregation-operations",
+              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_binary_logical_operations",
-              "required": false,
-              "desc": "Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-binary-logical-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_one_to_many_and_many_to_one_binary_operations",
-              "required": false,
-              "desc": "Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_scalars",
-              "required": false,
-              "desc": "Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-scalars",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_scalar_scalar_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_subqueries",
-              "required": false,
-              "desc": "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-subqueries",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_vector_scalar_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_vector_vector_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "disabled_aggregations",
-              "required": false,
-              "desc": "Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.mimir-query-engine.disabled-aggregations",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "disabled_functions",
-              "required": false,
-              "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.mimir-query-engine.disabled-functions",
-              "fieldType": "string",
               "fieldCategory": "experimental"
             }
           ],
@@ -2358,6 +2556,27 @@
               "fieldFlag": "ingester.client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingester.client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -4115,6 +4334,39 @@
         },
         {
           "kind": "field",
+          "name": "ha_tracker_update_timeout",
+          "required": false,
+          "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "distributor.ha-tracker.update-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_update_timeout_jitter_max",
+          "required": false,
+          "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000000000,
+          "fieldFlag": "distributor.ha-tracker.update-timeout-jitter-max",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_failover_timeout",
+          "required": false,
+          "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "distributor.ha-tracker.failover-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "drop_labels",
           "required": false,
           "desc": "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.",
@@ -4348,19 +4600,8 @@
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingester.native-histograms-ingestion-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "ooo_native_histograms_ingestion_enabled",
-          "required": false,
-          "desc": "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`",
-          "fieldValue": null,
           "fieldDefaultValue": true,
-          "fieldFlag": "ingester.ooo-native-histograms-ingestion-enabled",
+          "fieldFlag": "ingester.native-histograms-ingestion-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -4512,6 +4753,16 @@
         },
         {
           "kind": "field",
+          "name": "max_series_query_limit",
+          "required": false,
+          "desc": "Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-series-query-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "max_cache_freshness",
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
@@ -4641,8 +4892,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
           "fieldFlag": "query-frontend.results-cache-ttl-for-errors",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -4671,8 +4921,18 @@
           "required": false,
           "desc": "List of queries to block.",
           "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldType": "blocked_queries_config...",
+          "fieldDefaultValue": [],
+          "fieldType": "list of pattern (string), regex (bool), and, optionally, reason (string)",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "limited_queries",
+          "required": false,
+          "desc": "List of queries to limit and duration to limit them for.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldType": "list of query (string) and allowed_frequency (duration)",
           "fieldCategory": "experimental"
         },
         {
@@ -4719,23 +4979,13 @@
         },
         {
           "kind": "field",
-          "name": "instant_queries_with_subquery_spin_off",
+          "name": "subquery_spin_off_enabled",
           "required": false,
-          "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "desc": "Enable spinning off subqueries from instant queries as range queries to optimize their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of strings",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "max_future_query_window",
-          "required": false,
-          "desc": "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.max-future-query-window",
-          "fieldType": "duration",
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.subquery-spin-off-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -4770,6 +5020,17 @@
         },
         {
           "kind": "field",
+          "name": "cardinality_analysis_max_results",
+          "required": false,
+          "desc": "Maximum number of series that can be requested in a single cardinality API request.",
+          "fieldValue": null,
+          "fieldDefaultValue": 500,
+          "fieldFlag": "querier.cardinality-api-max-series-limit",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "active_series_results_max_size_bytes",
           "required": false,
           "desc": "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.",
@@ -4792,23 +5053,12 @@
         },
         {
           "kind": "field",
-          "name": "max_cost_attribution_labels_per_user",
-          "required": false,
-          "desc": "Maximum number of cost attribution labels allowed per user, the value is capped at 4.",
-          "fieldValue": null,
-          "fieldDefaultValue": 2,
-          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
-          "fieldType": "int",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "max_cost_attribution_cardinality_per_user",
+          "name": "max_cost_attribution_cardinality",
           "required": false,
           "desc": "Maximum cardinality of cost attribution labels allowed per user.",
           "fieldValue": null,
           "fieldDefaultValue": 10000,
-          "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
+          "fieldFlag": "validation.max-cost-attribution-cardinality",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -4939,6 +5189,217 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "block",
+          "name": "ruler_alertmanager_client_config",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "alertmanager_url",
+              "required": false,
+              "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-url",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-cert-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-key-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-ca-path",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "Override the expected name on the server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-server-name",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "Skip validating server certificate.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.alertmanager-client.tls-insecure-skip-verify",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cipher_suites",
+              "required": false,
+              "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-cipher-suites",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_min_version",
+              "required": false,
+              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.tls-min-version",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_username",
+              "required": false,
+              "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.basic-auth-username",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_password",
+              "required": false,
+              "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "oauth2",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "client_id",
+                  "required": false,
+                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "client_secret",
+                  "required": false,
+                  "desc": "OAuth2 client secret.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "token_url",
+                  "required": false,
+                  "desc": "Endpoint used to fetch access token.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "scopes",
+                  "required": false,
+                  "desc": "Optional scopes to include with the token request.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": {},
+                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "proxy_url",
+              "required": false,
+              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler.alertmanager-client.proxy-url",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "ruler_min_rule_evaluation_interval",
+          "required": false,
+          "desc": "Minimum allowable evaluation interval for rule groups.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ruler.min-rule-evaluation-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
@@ -5036,6 +5497,28 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.block-upload-max-block-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_max_lookback",
+          "required": false,
+          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.max-lookback",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_max_per_block_upload_concurrency",
+          "required": false,
+          "desc": "Maximum number of TSDB segment files that the compactor can upload concurrently per block.",
+          "fieldValue": null,
+          "fieldDefaultValue": 8,
+          "fieldFlag": "compactor.max-per-block-upload-concurrency",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },
@@ -5208,6 +5691,36 @@
         },
         {
           "kind": "field",
+          "name": "alertmanager_notify_hook_url",
+          "required": false,
+          "desc": "URL of a hook to invoke before a notification is sent. empty = no hook.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.notify-hook-url",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_receivers",
+          "required": false,
+          "desc": "List of receivers to enable notify hooks for. empty = all receivers.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.notify-hook-receivers",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_timeout",
+          "required": false,
+          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "alertmanager.notify-hook-timeout",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
           "name": "otel_metric_suffixes_enabled",
           "required": false,
           "desc": "Whether to enable automatic suffixes to names of metrics ingested through OTLP.",
@@ -5247,6 +5760,28 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-keep-identifying-resource-attributes",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_convert_histograms_to_nhcb",
+          "required": false,
+          "desc": "Whether to convert OTel explicit histograms into native histograms with custom buckets.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-convert-histograms-to-nhcb",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_promote_scope_metadata",
+          "required": false,
+          "desc": "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-promote-scope-metadata",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -5581,6 +6116,27 @@
               "fieldFlag": "querier.frontend-client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.frontend-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -5843,6 +6399,27 @@
               "fieldFlag": "querier.scheduler-client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.scheduler-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -6234,6 +6811,27 @@
               "fieldFlag": "query-frontend.grpc-client-config.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.grpc-client-config.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -6328,6 +6926,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "addresses_provider",
+                  "required": false,
+                  "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "miekgdns",
+                  "fieldFlag": "query-frontend.results-cache.memcached.addresses-provider",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "timeout",
                   "required": false,
                   "desc": "The socket read/write timeout.",
@@ -6345,28 +6954,6 @@
                   "fieldDefaultValue": 200000000,
                   "fieldFlag": "query-frontend.results-cache.memcached.connect-timeout",
                   "fieldType": "duration"
-                },
-                {
-                  "kind": "field",
-                  "name": "write_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "query-frontend.results-cache.memcached.write-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "read_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "query-frontend.results-cache.memcached.read-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -6532,6 +7119,17 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_ignore_startup_failures",
+                  "required": false,
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -6865,8 +7463,7 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-errors",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -6913,17 +7510,6 @@
         },
         {
           "kind": "field",
-          "name": "block_promql_experimental_functions",
-          "required": false,
-          "desc": "True to control access to specific PromQL experimental functions per tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.block-promql-experimental-functions",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -6957,17 +7543,6 @@
         },
         {
           "kind": "field",
-          "name": "spin_off_instant_subqueries_to_url",
-          "required": false,
-          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.spin-off-instant-subqueries-to-url",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_result_response_format",
           "required": false,
           "desc": "Format to use when retrieving query results from queriers. Supported values: json, protobuf",
@@ -6975,6 +7550,16 @@
           "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "cache_samples_processed_stats",
+          "required": false,
+          "desc": "Cache statistics of processed samples on results cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-samples-processed-stats",
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -6986,6 +7571,49 @@
           "fieldFlag": "query-frontend.downstream-url",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "client_cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define the cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "query-frontend.client-cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "query_engine",
+          "required": false,
+          "desc": "Query engine to use, either 'prometheus' or 'mimir'",
+          "fieldValue": null,
+          "fieldDefaultValue": "prometheus",
+          "fieldFlag": "query-frontend.query-engine",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_query_engine_fallback",
+          "required": false,
+          "desc": "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "query-frontend.enable-query-engine-fallback",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -7225,6 +7853,27 @@
             },
             {
               "kind": "field",
+              "name": "producer_record_version",
+              "required": false,
+              "desc": "The record version that this producer sends.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.kafka.producer-record-version",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ingest-storage.kafka.fetch-max-wait",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
               "name": "fetch_concurrency_max",
               "required": false,
               "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.",
@@ -7322,6 +7971,26 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.migration.distributor-send-to-ingesters-enabled",
               "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ignore_ingest_storage_errors",
+              "required": false,
+              "desc": "When enabled, errors writing to ingest storage are logged but do not affect write success or quorum. When disabled, write requests fail if ingest storage write fails.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.migration.ignore-ingest-storage-errors",
+              "fieldType": "boolean"
+            },
+            {
+              "kind": "field",
+              "name": "ingest_storage_max_wait_time",
+              "required": false,
+              "desc": "The maximum time a write request that goes through the ingest storage waits before it times out. Set to `0` to disable the timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingest-storage.migration.ingest-storage-max-wait-time",
+              "fieldType": "duration"
             }
           ],
           "fieldValue": null,
@@ -7472,7 +8141,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.storage-class",
@@ -8494,6 +9163,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_provider",
+                      "required": false,
+                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "miekgdns",
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.addresses-provider",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -8511,28 +9191,6 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.connect-timeout",
                       "fieldType": "duration"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.write-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.read-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -8698,6 +9356,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9057,6 +9726,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_provider",
+                      "required": false,
+                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "miekgdns",
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.addresses-provider",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -9074,28 +9754,6 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout",
                       "fieldType": "duration"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.write-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.read-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -9261,6 +9919,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9644,6 +10313,17 @@
                     },
                     {
                       "kind": "field",
+                      "name": "addresses_provider",
+                      "required": false,
+                      "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "miekgdns",
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.addresses-provider",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "timeout",
                       "required": false,
                       "desc": "The socket read/write timeout.",
@@ -9661,28 +10341,6 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout",
                       "fieldType": "duration"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "write_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.write-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "read_buffer_size_bytes",
-                      "required": false,
-                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": 4096,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.read-buffer-size-bytes",
-                      "fieldType": "int",
-                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -9848,6 +10506,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -11526,13 +12195,13 @@
         },
         {
           "kind": "field",
-          "name": "max_lookback",
+          "name": "upload_sparse_index_headers",
           "required": false,
-          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.",
+          "desc": "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "compactor.max-lookback",
-          "fieldType": "duration",
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.upload-sparse-index-headers",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
       ],
@@ -12696,6 +13365,27 @@
               "fieldFlag": "ruler.client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -12737,11 +13427,11 @@
           "kind": "field",
           "name": "alertmanager_url",
           "required": false,
-          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
+          "desc": "Deprecated, use limits.ruler_alertmanager_client_config.alertmanager_url instead.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "ruler.alertmanager-url",
-          "fieldType": "string"
+          "fieldType": "string",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -12786,10 +13476,9 @@
               "kind": "field",
               "name": "tls_enabled",
               "required": false,
-              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
+              "fieldDefaultValue": false,
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -12797,10 +13486,9 @@
               "kind": "field",
               "name": "tls_cert_path",
               "required": false,
-              "desc": "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-cert-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -12808,10 +13496,9 @@
               "kind": "field",
               "name": "tls_key_path",
               "required": false,
-              "desc": "Path to the key for the client certificate. Also requires the client certificate to be configured.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-key-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -12819,10 +13506,9 @@
               "kind": "field",
               "name": "tls_ca_path",
               "required": false,
-              "desc": "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-ca-path",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -12830,10 +13516,9 @@
               "kind": "field",
               "name": "tls_server_name",
               "required": false,
-              "desc": "Override the expected name on the server certificate.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-server-name",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -12841,10 +13526,9 @@
               "kind": "field",
               "name": "tls_insecure_skip_verify",
               "required": false,
-              "desc": "Skip validating server certificate.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "ruler.alertmanager-client.tls-insecure-skip-verify",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
@@ -12855,7 +13539,6 @@
               "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-cipher-suites",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -12863,10 +13546,9 @@
               "kind": "field",
               "name": "tls_min_version",
               "required": false,
-              "desc": "Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
             },
@@ -12874,21 +13556,18 @@
               "kind": "field",
               "name": "basic_auth_username",
               "required": false,
-              "desc": "HTTP Basic authentication username. It overrides the username set in the URL (if any).",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.basic-auth-username",
               "fieldType": "string"
             },
             {
-              "kind": "field",
+              "kind": "block",
               "name": "basic_auth_password",
               "required": false,
-              "desc": "HTTP Basic authentication password. It overrides the password set in the URL (if any).",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.basic-auth-password",
-              "fieldType": "string"
+              "fieldDefaultValue": null
             },
             {
               "kind": "block",
@@ -12900,50 +13579,44 @@
                   "kind": "field",
                   "name": "client_id",
                   "required": false,
-                  "desc": "OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.client_id",
                   "fieldType": "string"
                 },
                 {
-                  "kind": "field",
+                  "kind": "block",
                   "name": "client_secret",
                   "required": false,
-                  "desc": "OAuth2 client secret.",
+                  "desc": "",
                   "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.client_secret",
-                  "fieldType": "string"
+                  "fieldDefaultValue": null
                 },
                 {
                   "kind": "field",
                   "name": "token_url",
                   "required": false,
-                  "desc": "Endpoint used to fetch access token.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.token_url",
                   "fieldType": "string"
                 },
                 {
                   "kind": "field",
                   "name": "scopes",
                   "required": false,
-                  "desc": "Optional scopes to include with the token request.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
                   "fieldType": "string"
                 },
                 {
                   "kind": "field",
                   "name": "endpoint_params",
                   "required": false,
-                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "desc": "",
                   "fieldValue": null,
                   "fieldDefaultValue": {},
-                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
                   "fieldType": "map of string to string",
                   "fieldCategory": "advanced"
                 }
@@ -12955,10 +13628,9 @@
               "kind": "field",
               "name": "proxy_url",
               "required": false,
-              "desc": "Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route requests through. Applies to all requests, including auxiliary traffic, such as OAuth token requests.",
+              "desc": "",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "ruler.alertmanager-client.proxy-url",
               "fieldType": "string",
               "fieldCategory": "advanced"
             }
@@ -13733,6 +14405,27 @@
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-backoff-max-delay",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "cluster_validation",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "label",
+                      "required": false,
+                      "desc": "Optionally define the cluster validation label.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation.label",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -13982,7 +14675,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.storage-class",
@@ -14916,17 +15609,6 @@
           "blockEntries": [
             {
               "kind": "field",
-              "name": "rule_group_enabled",
-              "required": false,
-              "desc": "Enabling caching of rule group contents if a cache backend is configured.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "ruler-storage.cache.rule-group-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "backend",
               "required": false,
               "desc": "Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except \"local\". Supported values: memcached, redis.",
@@ -14953,6 +15635,17 @@
                 },
                 {
                   "kind": "field",
+                  "name": "addresses_provider",
+                  "required": false,
+                  "desc": "DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "miekgdns",
+                  "fieldFlag": "ruler-storage.cache.memcached.addresses-provider",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "timeout",
                   "required": false,
                   "desc": "The socket read/write timeout.",
@@ -14970,28 +15663,6 @@
                   "fieldDefaultValue": 200000000,
                   "fieldFlag": "ruler-storage.cache.memcached.connect-timeout",
                   "fieldType": "duration"
-                },
-                {
-                  "kind": "field",
-                  "name": "write_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "ruler-storage.cache.memcached.write-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
-                },
-                {
-                  "kind": "field",
-                  "name": "read_buffer_size_bytes",
-                  "required": false,
-                  "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": 4096,
-                  "fieldFlag": "ruler-storage.cache.memcached.read-buffer-size-bytes",
-                  "fieldType": "int",
-                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -15157,6 +15828,17 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_ignore_startup_failures",
+                  "required": false,
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -16022,13 +16704,13 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
+          "name": "grafana_alertmanager_idle_grace_period",
           "required": false,
-          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.",
+          "desc": "Duration to wait before shutting down an idle Alertmanager using an unpromoted or default configuration when strict initialization is enabled.",
           "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
-          "fieldType": "string",
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "alertmanager.grafana-alertmanager-grace-period",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {
@@ -16310,6 +16992,27 @@
               "fieldFlag": "alertmanager.alertmanager-client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager.alertmanager-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -16336,6 +17039,17 @@
           "fieldFlag": "alertmanager.enable-state-cleanup",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "strict_initialization",
+          "required": false,
+          "desc": "Skip initializing Alertmanagers for tenants without a non-default, non-empty configuration. For Grafana Alertmanager tenants, configurations not marked as 'promoted' will also be skipped.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.strict-initialization-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -16367,6 +17081,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_notify_hooks",
+          "required": false,
+          "desc": "Enable pre-notification hooks.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.notify-hooks-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
@@ -16515,7 +17240,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.storage-class",
@@ -17690,9 +18415,20 @@
         },
         {
           "kind": "field",
+          "name": "abort_if_cluster_fast_join_fails",
+          "required": false,
+          "desc": "Abort if this node fails the fast memberlist cluster joining procedure at startup. When enabled, it's guaranteed that other services, depending on memberlist, have an updated view over the cluster state when they're started.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.abort-if-fast-join-fails",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "abort_if_cluster_join_fails",
           "required": false,
-          "desc": "If this node fails to join memberlist cluster, abort.",
+          "desc": "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "memberlist.abort-if-join-fails",
@@ -17761,6 +18497,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "memberlist.message-history-buffer-bytes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "watch_prefix_buffer_size",
+          "required": false,
+          "desc": "Size of the buffered channel for the WatchPrefix function.",
+          "fieldValue": null,
+          "fieldDefaultValue": 128,
+          "fieldFlag": "memberlist.watch-prefix-buffer-size",
           "fieldType": "int",
           "fieldCategory": "advanced"
         },
@@ -18204,6 +18951,27 @@
               "fieldFlag": "query-scheduler.grpc-client-config.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -19277,7 +20045,7 @@
                   "kind": "field",
                   "name": "storage_class",
                   "required": false,
-                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
+                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.storage-class",
@@ -20172,6 +20940,27 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "client_cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define the cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "common.client-cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

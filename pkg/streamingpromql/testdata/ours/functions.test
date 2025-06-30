@@ -118,7 +118,9 @@ eval range from 0 to 7m step 1m present_over_time(some_metric_count[3m1s])
 eval range from 0 to 7m step 1m present_over_time(some_metric_count[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval_info range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+eval range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+  expect info
+  expect no_warn
   {foo="bar"} 0 0 0 0 1 2 3 _
 
 eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
@@ -127,7 +129,9 @@ eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
 
-eval_info range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+eval range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+  expect info
+  expect no_warn
   {foo="bar"} 0 1 2 3 3 3 3 _
 
 eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
@@ -136,7 +140,9 @@ eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m max_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 2 3 Inf Inf Inf Inf Inf Inf NaN 8 8 8 8 7 6
 
-eval_warn range from 0 to 10m step 1m sum_over_time(some_metric_count[3m1s])
+eval range from 0 to 10m step 1m sum_over_time(some_metric_count[3m1s])
+  expect no_info
+  expect warn
   {foo="bar"} 0 1 3 6 6 5 _ {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:9 count:7 buckets:[3 7 5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
 eval range from 0 to 5m step 1m sum_over_time(some_metric_count[3m1s])
@@ -154,7 +160,9 @@ eval range from 0 to 2m step 1m sum_over_time(some_nhcb_metric[3m1s])
 eval range from 0 to 16m step 1m sum_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 1 3 6 Inf Inf Inf NaN NaN NaN NaN NaN NaN NaN 21 13 6
 
-eval_warn range from 0 to 10m step 1m avg_over_time(some_metric_count[3m1s])
+eval range from 0 to 10m step 1m avg_over_time(some_metric_count[3m1s])
+  expect no_info
+  expect warn
   {foo="bar"} 0 0.5 1 1.5 2 2.5 _ {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:4.5 count:3.5 buckets:[1.5 3.5 2.5]}} {{schema:3 sum:5 count:3 buckets:[2 5 4]}}
 
 eval range from 0 to 5m step 1m avg_over_time(some_metric_count[3m1s])
@@ -252,6 +260,70 @@ eval range from 0 to 7m step 1m -metric
 
 clear
 
+# label_join() tests
+load 5m
+  series{label="a", opt="1", this="that"} 1.1  5.0
+  series{label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
+  series{label="c", opt="3"} NaN _
+  dup{label="a", this="a"} 1.0
+  dup{label="b", this="a"} 1.0
+
+eval range from 0 to 10m step 5m label_join(series, "export", ",", "opt", "this")
+  series{label="a", opt="1", this="that", export="1,that"} 1.1  5.0
+  series{label="b", opt="2", this="there", export="2,there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
+  series{label="c", opt="3", export="3,"} NaN _
+
+eval range from 0 to 10m step 5m label_join(series, "__name__", "", "label")
+  a{label="a", opt="1", this="that"} 1.1  5.0
+  b{label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
+  c{label="c", opt="3"} NaN _
+
+# Make sure label name exists after it was dropped
+eval instant at 0m label_join(floor(series), "__name__", "", "label")
+  a{label="a", opt="1", this="that"} 1
+  b{label="b", opt="2", this="there"} 2
+  c{label="c", opt="3"} NaN
+
+# Label name is dropped by floor after it is set
+eval instant at 0m floor(label_join(series, "__name__", "", "label"))
+  {label="a", opt="1", this="that"} 1
+  {label="b", opt="2", this="there"} 2
+  {label="c", opt="3"} NaN
+
+# Passes due to UTF-8 validation of source labels
+eval range from 0 to 10m step 5m label_join(series, "export", ",", "(opt)", "this")
+  series{export=",", label="c", opt="3"} NaN
+  series{export=",that", label="a", opt="1", this="that"} 1.1 5
+  series{export=",there", label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
+
+# Passes due to UTF-8 validation of dest labels
+eval range from 0 to 10m step 5m label_join(series, "(export)", "-", "label", "opt")
+  series{"(export)"="a-1", label="a", opt="1", this="that"} 1.1 5.0
+  series{"(export)"="b-2", label="b", opt="2", this="there"} 2.9 {{sum:4 count:23 buckets:[1 2 4]}}
+  series{"(export)"="c-3", label="c", opt="3"} NaN _
+
+clear
+
+# The following tests pass prometheus' engine when promql-delayed-name-removal is enabled.
+# (As tested in upstream/name_label_dropping.test).
+# Otherwise they fail both engines.
+
+load 5m
+  metric_total{env="1"}		0 60 120
+  another_metric_total{env="1"}	60 120 180
+
+# Allows relabeling (to-be-dropped) __name__  via label_join.
+eval_fail instant at 10m label_join(rate({env="1"}[10m]), "my_name", "_", "__name__")
+  expected_fail_message vector cannot contain metrics with the same labelset
+#	{my_name="metric_total", env="1"} 0.2
+#	{my_name="another_metric_total", env="1"} 0.2
+
+# Allows preserving __name__ via label_join.
+eval_fail instant at 10m label_join(rate({env="1"}[10m]), "__name__", "_", "__name__", "env")
+  expected_fail_message vector cannot contain metrics with the same labelset
+#	metric_total_1{env="1"} 0.2
+#	another_metric_total_1{env="1"} 0.2
+
 # label_replace() tests
 load 5m
   series{label="a"} 1.1
@@ -277,8 +349,8 @@ eval_fail instant at 0m label_replace(series, "export", "$1", "label", "[.*")
   expected_fail_message invalid regular expression in label_replace(): [.*
 
 # Invalid destination label name
-eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
-  expected_fail_message invalid destination label name in label_replace(): (export)
+eval_fail instant at 0m label_replace(series, "\xff", "$1", "label", "(.*)")
+  expected_fail_regexp invalid destination label name in label_replace\(\): .*
 
 # Make sure label name exists after it was dropped
 eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
@@ -443,13 +515,13 @@ eval range from 0 to 60m step 5m clamp_max(series, scalar(maxes))
 
 # clamp ignores any histograms
 eval range from 0 to 15m step 5m clamp(mixed_metric, 2, 5)
-	{} _ 2 2 3
+  {} _ 2 2 3
 
 eval range from 0 to 15m step 5m clamp_min(mixed_metric, 2)
-	{} _ 2 2 3
+  {} _ 2 2 3
 
 eval range from 0 to 15m step 5m clamp_max(mixed_metric, 2)
-	{} _ 1 2 2
+  {} _ 1 2 2
 
 clear
 
@@ -479,7 +551,7 @@ eval range from 0 to 24m step 6m round(series, scalar(toNearest))
 
 # round ignores any histograms
 eval range from 0 to 18m step 6m round(mixed_metric)
-	{} _ 1 2 3
+  {} _ 1 2 3
 
 clear
 
@@ -554,7 +626,9 @@ load 1m
   metric{case="nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
   metric{case="floats, nh and nhcb"} 0 1 2 3 2 1 0 _ {{schema:3 sum:0 count:2 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 0 1]}} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval_info range from 0 to 20m step 1m deriv(metric[3m1s])
+eval range from 0 to 20m step 1m deriv(metric[3m1s])
+  expect info
+  expect no_warn
   {case="all Inf"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all floats 1"} _ 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666
@@ -593,10 +667,12 @@ load 1m
   metric{case="all nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
 eval range from 0 to 8m step 1m idelta(metric[3m1s])
+  expect no_info
+  expect warn
   {case="2 floats"} _ 4 4 4
-  {case="2 floats and nh last sample"} _ 4 4 4
+  {case="2 floats and nh last sample"} _ 4
   {case="2 floats and nh middle sample"} _ _ 4 4
-  {case="2 floats and nhcb last sample"} _ 4 4 4
+  {case="2 floats and nhcb last sample"} _ 4
   {case="2 floats and nhcb middle sample"} _ _ 4 4
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN -Inf -Inf -Inf
   {case="2 floats with Inf last sample"} _ 4 Inf Inf Inf
@@ -610,29 +686,35 @@ eval range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="all Inf"} _ NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN
   {case="all floats with reset"} _ 6 -6 6 -6 6 -6 6 6
+  {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
+  {case="all nhcb"} _ {{schema:-53 count:-3 sum:14 custom_values:[5 10] buckets:[-1 -2] counter_reset_hint:gauge}} {{schema:-53 count:13 sum:-12 custom_values:[5 10] buckets:[7 6] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}}
 
 eval range from 0 to 8m step 1m irate(metric[3m1s])
+  expect no_info
+  expect warn
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
-  {case="2 floats and nh last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nh last sample"} _ 0.06666666666666667
   {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
-  {case="2 floats and nhcb last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nhcb last sample"} _ 0.06666666666666667
   {case="2 floats and nhcb middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN 0.08333333333333333 0.08333333333333333 0.08333333333333333
   {case="2 floats with Inf last sample"} _ 0.06666666666666667 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf 0.08333333333333333 0.08333333333333333 0.08333333333333333
-  {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
   {case="2 floats with NaN last sample"} _ 0.06666666666666667 NaN NaN NaN
-  {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
   {case="2 floats with missing last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats with missing middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with missing 2 middle samples"} _ _ _ 0.022222222222222223
   {case="all Inf"} _ NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN
   {case="all floats with reset"} _ 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.1
+  {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
+  {case="all nhcb"} _ {{schema:-53 count:0.03333333333333333 sum:0.25 custom_values:[5 10] buckets:[0 0.03333333333333333] counter_reset_hint:gauge}} {{schema:-53 count:0.21666666666666667 sum:-0.2 custom_values:[5 10] buckets:[0.11666666666666667 0.1] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}}
+  {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
+  {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
 
 clear
 
-# Testing irate and idelta
+# Testing delta
 # nh stands for native histogram
 # nhcb stands for native histogram custom bucket
 load 1m
@@ -687,7 +769,7 @@ clear
 
 # Test time-related functions.
 load 5m
-    histogram_sample {{schema:0 sum:1 count:1}}
+  histogram_sample {{schema:0 sum:1 count:1}}
 
 eval range from 0 to 7m step 1m year()
   {} 1970 1970 1970 1970 1970 1970 1970 1970
@@ -842,7 +924,9 @@ eval range from 0 to 2m step 1m timestamp(some_metric * 2)
   {case="histograms only"} 0 60 120
   {case="floats and histograms"} 0 60 120
 
-eval_info range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+eval range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+  expect info
+  expect no_warn
   {case="floats only"} _ 60 120
   {case="histograms only"} _ 60 120
 
@@ -871,26 +955,14 @@ load 1m
   test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
 
 # Sorting of identical values is not stable, so we exclude those from these test cases and check them below.
-eval_ordered instant at 1m sort(test_metric{case!~".*(NaN|Inf)"})
-  test_metric{case="histogram 2"} {{count:20 sum:5}}
-  test_metric{case="float 1"}     10
-  test_metric{case="histogram 1"} {{count:0 sum:12}}
-  test_metric{case="float 2"}     15
-
-eval_ordered instant at 1m sort_desc(test_metric{case!~".*(NaN|Inf)"})
-  test_metric{case="float 2"}     15
-  test_metric{case="histogram 1"} {{count:0 sum:12}}
-  test_metric{case="float 1"}     10
-  test_metric{case="histogram 2"} {{count:20 sum:5}}
-
-eval_ordered instant at 1m sort(test_metric{case=~"float.*"})
+eval_ordered instant at 1m sort(test_metric)
   test_metric{case="float with -Inf"} -Inf
   test_metric{case="float 1"}         10
   test_metric{case="float 2"}         15
   test_metric{case="float with +Inf"} +Inf
   test_metric{case="float with NaN"}  NaN
 
-eval_ordered instant at 1m sort_desc(test_metric{case=~"float.*"})
+eval_ordered instant at 1m sort_desc(test_metric)
   test_metric{case="float with +Inf"} +Inf
   test_metric{case="float 2"}         15
   test_metric{case="float 1"}         10
@@ -898,36 +970,23 @@ eval_ordered instant at 1m sort_desc(test_metric{case=~"float.*"})
   test_metric{case="float with NaN"}  NaN
 
 eval_ordered instant at 1m sort(test_metric{case=~"histogram.*"})
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}}
-  test_metric{case="histogram 1"}         {{count:0 sum:12}}
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}}
+  # Returns no results: sort() ignores histograms.
 
 eval_ordered instant at 1m sort_desc(test_metric{case=~"histogram.*"})
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}}
-  test_metric{case="histogram 1"}         {{count:0 sum:12}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}}
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}}
+  # Returns no results: sort_desc() ignores histograms.
 
 # Test the case where some series have no sample at all.
 eval_ordered instant at 1m sort(test_metric{case=~"float.*"} > 11)
   test_metric{case="float 2"}         15
   test_metric{case="float with +Inf"} +Inf
 
-# sort / sort_desc do nothing for range queries.
+# sort / sort_desc do nothing except drop histograms for range queries.
 eval range from 0 to 4m step 1m sort(test_metric)
   test_metric{case="float 1"}             0+10x4
   test_metric{case="float 2"}             0+15x4
   test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
   test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
   test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
-  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
 
 eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="float 1"}             0+10x4
@@ -935,11 +994,6 @@ eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
   test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
   test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
-  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
 
 clear
 
@@ -1006,3 +1060,197 @@ load 1m
 
 eval range from 1m to 3m step 1m quantile_over_time(scalar(quantile), metric[1m1s])
   {} 1.6 6.5 11.1
+
+clear
+
+# absent() and absent_over_time() tests
+load 6m
+  series{case="-"} _x11
+  series{case="0a"} _x11
+  series{case="0b"} _x11
+  series{case="0"} 0x11
+  series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1 _
+  series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2
+  series{case="c"} _ _ _ 3 _ _ _ 3 _ _ _
+  histo{case="0"} _x11
+  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
+
+eval instant at 0m absent(series)
+  # expected no result
+
+eval instant at 0m absent(series > Inf)
+  {} 1
+
+eval instant at 0m absent(series{case="-"})
+  {case="-"} 1
+
+eval instant at 0m absent(series{case="a"})
+  {case="a"} 1
+
+eval instant at 8m absent(series{case="a"})
+  # expected no result
+
+eval instant at 0m absent(series{case=~"(a|b)"})
+  {} 1
+
+eval instant at 8m absent(series{case=~"(a|b)"})
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(series)
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(series{case="-"})
+  {case="-"} 1x11
+
+eval range from 0s to 66m step 6m absent(series{case="0"})
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(series{case=~"(a|b)"})
+  {} 1 _ _ _ _ _ _ _ _ _ _ 1
+
+eval range from 0s to 66m step 6m absent(series{case=~"(0a|0b)"})
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent(series > Inf)
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent(non_existent_metric)
+  {} 1x11
+
+eval instant at 0m absent(histo)
+  {} 1
+
+eval instant at 6m absent(histo)
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(histo)
+  {} 1
+
+eval range from 0s to 66m step 6m absent(histo{case="0"})
+  {case="0"} 1x11
+
+eval range from 0s to 66m step 6m absent(histo{case="a"})
+  {case="a"} 1
+
+eval range from 0s to 66m step 6m absent(histo{case=~"(0|a)"})
+  {} 1
+
+# test absent_over_time()
+eval instant at 0m absent_over_time(series[10m])
+  # expected no result
+
+eval instant at 0m absent_over_time((series > Inf)[10m:1m])
+  {} 1
+
+eval instant at 0m absent_over_time(series{case="-"}[10m])
+  {case="-"} 1
+
+eval instant at 0m absent_over_time(series{case="a"}[10m])
+  {case="a"} 1
+
+eval instant at 8m absent_over_time(series{case="a"}[10m])
+  # expected no result
+
+eval instant at 0m absent_over_time(series{case=~"(a|b)"}[10m])
+  {} 1
+
+eval instant at 8m absent_over_time(series{case=~"(a|b)"}[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(series[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(series{case="-"}[10m])
+  {case="-"} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time(series{case="0"}[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(series{case=~"(a|b)"}[10m])
+  {} 1 _ _ _ _ _ _ _ _ _ _ _
+
+eval range from 0s to 66m step 6m absent_over_time(series{case=~"(0a|0b)"}[10m])
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time((series > Inf)[10m:1m])
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time(non_existent_metric[10m])
+  {} 1x11
+
+eval instant at 0m absent_over_time(histo[10m])
+  {} 1
+
+eval instant at 6m absent_over_time(histo[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(histo[10m])
+  {} 1
+
+eval range from 0s to 66m step 6m absent_over_time(histo{case="0"}[10m])
+  {case="0"} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time(histo{case="a"}[10m])
+  {case="a"} 1
+
+eval range from 0s to 66m step 6m absent_over_time(histo{case=~"(0|a)"}[10m])
+  {} 1
+
+clear
+
+# Tests for double_exponential_smoothing to trigger circular buffer boundary wrap around
+
+load 10s
+  http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
+  http_requests{job="api-server", instance="1", group="production"}	0-20x1000
+  http_requests{job="api-server", instance="2", group="production"}	0-20x998 NaN Inf
+  http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
+  http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
+  http_requests{job="api-server", instance="2", group="canary"}		0-40x1000 NaN NaN Inf Inf 0+40x1000
+
+eval range from 0 to 20000s step 2000s double_exponential_smoothing(http_requests[5000s], 0.01, 0.1)
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -4774.4112298142 -27650.83746192864 -47620 -63620 -79620
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 -6689.664952482304 10592.070195990285 23960 31960 39960
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 39800
+
+eval range from 0 to 20000s step 2000s holt_winters(http_requests[5000s], 0.01, 0.1)
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -4774.4112298142 -27650.83746192864 -47620 -63620 -79620
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 -6689.664952482304 10592.070195990285 23960 31960 39960
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 39800
+
+# Test with variation of sf and tf
+load 2000s
+  sfUp 0.1+0.1x9
+  tfUp 0.1+0.15x4 0.1+0.15x4
+  sfDown 0.9-0.1x9
+  tfDown 0.9-0.15x4 0.9-0.15x4
+
+eval range from 0 to 20000s step 2000s double_exponential_smoothing(http_requests[5000s], scalar(sfUp), scalar(tfUp))
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -15620 -31620 -47620 -63620 NaN
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 7960 15960 23960 31960 NaN
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 NaN
+
+eval range from 0 to 20000s step 2000s double_exponential_smoothing(http_requests[5000s], scalar(sfDown), scalar(tfDown))
+  {job="api-server", instance="0", group="production"} _ 6000 4000 2000 0 -2000 -2000 -2000
+  {job="api-server", instance="1", group="production"} _ -4000 -8000 -12000 -16000 -20000 -20000 -20000
+  {job="api-server", instance="2", group="production"} _ -4000 -8000 -12000 -16000 NaN NaN NaN
+  {job="api-server", instance="0", group="canary"} _ 6000 12000 18000 24000 30000 -15620 -31620 -47620 -63620 NaN
+  {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 7960 15960 23960 31960 NaN
+  {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 NaN
+
+eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0, 0.1)
+  expected_fail_message invalid smoothing factor. Expected: 0 < sf < 1, got: 0.000000
+
+eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0.01, 0)
+  expected_fail_message invalid trend factor. Expected: 0 < tf < 1, got: 0.000000
+
+clear

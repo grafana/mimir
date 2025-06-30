@@ -281,13 +281,14 @@ func (i *InspectedEntry) decodeValue(decoder decoder) (Value, error) {
 	switch i.FieldType {
 	case "duration":
 		value := decoded.AsInterface().(**duration)
-		return DurationValue(time.Duration(**value)), err
+		if value != nil && *value != nil {
+			return DurationValue(time.Duration(**value)), err
+		}
 	case "list of strings":
 		return InterfaceValue(*decoded.AsInterface().(*stringSlice)), nil
-	default:
-		// return a dereferenced typed value
-		return InterfaceValue(reflect.ValueOf(decoded.AsInterface()).Elem().Interface()), nil
 	}
+	// return a dereferenced typed value
+	return InterfaceValue(reflect.ValueOf(decoded.AsInterface()).Elem().Interface()), nil
 }
 
 func (i *InspectedEntry) decodeSlice(value *yaml.Node) (Value, error) {

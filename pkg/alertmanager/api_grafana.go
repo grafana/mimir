@@ -9,11 +9,16 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingNotify "github.com/grafana/alerting/notify"
+	alertingReceivers "github.com/grafana/alerting/receivers"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
@@ -55,6 +60,19 @@ type GrafanaAlertmanagerConfig struct {
 	Templates          map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
 }
+
+type SmtpConfig struct {
+	EhloIdentity   string            `json:"ehlo_identity"`
+	FromAddress    string            `json:"from_address"`
+	FromName       string            `json:"from_name"`
+	Host           string            `json:"host"`
+	Password       string            `json:"password"`
+	SkipVerify     bool              `json:"skip_verify"`
+	StartTLSPolicy string            `json:"start_tls_policy"`
+	StaticHeaders  map[string]string `json:"static_headers"`
+	User           string            `json:"user"`
+}
+
 type UserGrafanaConfig struct {
 	GrafanaAlertmanagerConfig GrafanaAlertmanagerConfig `json:"configuration"`
 	Hash                      string                    `json:"configuration_hash"`
@@ -62,7 +80,7 @@ type UserGrafanaConfig struct {
 	Default                   bool                      `json:"default"`
 	Promoted                  bool                      `json:"promoted"`
 	ExternalURL               string                    `json:"external_url"`
-	StaticHeaders             map[string]string         `json:"static_headers"`
+	SmtpConfig                *SmtpConfig               `json:"smtp_config,omitempty"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -317,6 +335,20 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
+	var smtpConfig *SmtpConfig
+	if cfg.SmtpConfig != nil {
+		smtpConfig = &SmtpConfig{
+			EhloIdentity:   cfg.SmtpConfig.EhloIdentity,
+			FromAddress:    cfg.SmtpConfig.FromAddress,
+			FromName:       cfg.SmtpConfig.FromName,
+			Host:           cfg.SmtpConfig.Host,
+			Password:       cfg.SmtpConfig.Password,
+			SkipVerify:     cfg.SmtpConfig.SkipVerify,
+			StartTLSPolicy: cfg.SmtpConfig.StartTlsPolicy,
+			StaticHeaders:  cfg.SmtpConfig.StaticHeaders,
+			User:           cfg.SmtpConfig.User,
+		}
+	}
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
@@ -326,7 +358,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Default:                   cfg.Default,
 			Promoted:                  cfg.Promoted,
 			ExternalURL:               cfg.ExternalUrl,
-			StaticHeaders:             cfg.StaticHeaders,
+			SmtpConfig:                smtpConfig,
 		},
 	})
 }
@@ -385,7 +417,28 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.StaticHeaders)
+	var smtpConfig *alertspb.SmtpConfig
+	if cfg.SmtpConfig != nil {
+		smtpConfig = &alertspb.SmtpConfig{
+			EhloIdentity:   cfg.SmtpConfig.EhloIdentity,
+			FromAddress:    cfg.SmtpConfig.FromAddress,
+			FromName:       cfg.SmtpConfig.FromName,
+			Host:           cfg.SmtpConfig.Host,
+			Password:       cfg.SmtpConfig.Password,
+			SkipVerify:     cfg.SmtpConfig.SkipVerify,
+			StartTlsPolicy: cfg.SmtpConfig.StartTLSPolicy,
+			StaticHeaders:  cfg.SmtpConfig.StaticHeaders,
+			User:           cfg.SmtpConfig.User,
+		}
+	}
+
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, smtpConfig)
+	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
+		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errValidatingConfig, err.Error())})
+		return
+	}
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())
@@ -418,4 +471,63 @@ func (am *MultitenantAlertmanager) DeleteUserGrafanaConfig(w http.ResponseWriter
 
 	w.WriteHeader(http.StatusOK)
 	util.WriteJSONResponse(w, successResult{Status: statusSuccess})
+}
+
+// ValidateUserGrafanaConfig validates the Grafana Alertmanager configuration.
+func validateUserGrafanaConfig(logger log.Logger, cfg alertspb.GrafanaAlertConfigDesc, limits Limits, user string) error {
+	// We don't have a valid use case for empty configurations. If a tenant does not have a
+	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
+	// config and b) start an Alertmanager instance for them if a fallback
+	// configuration is provisioned.
+	if cfg.RawConfig == "" {
+		return fmt.Errorf("configuration provided is empty, if you'd like to remove your configuration please use the delete configuration endpoint")
+	}
+
+	// Perform a similar flow of transformations that would happen in the Alertmanager on Sync & Apply.
+	grafanaConfig, err := createUsableGrafanaConfig(logger, cfg, "")
+	if err != nil {
+		return err
+	}
+
+	userAmConfig, err := definition.LoadCompat([]byte(grafanaConfig.RawConfig))
+	if err != nil {
+		return fmt.Errorf("error unmarshalling Grafana configuration: %w", err)
+	}
+
+	if l := limits.AlertmanagerMaxTemplatesCount(user); l > 0 && len(grafanaConfig.Templates) > l {
+		return fmt.Errorf(errTooManyTemplates, len(grafanaConfig.Templates), l)
+	}
+
+	if maxSize := limits.AlertmanagerMaxTemplateSize(user); maxSize > 0 {
+		for _, tmpl := range grafanaConfig.Templates {
+			if size := len(tmpl.Body); size > maxSize {
+				return fmt.Errorf(errTemplateTooBig, tmpl.GetFilename(), size, maxSize)
+			}
+		}
+	}
+
+	// Validate template files.
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0, len(grafanaConfig.Templates))
+	for _, tmpl := range grafanaConfig.Templates {
+		tmpls = append(tmpls, alertingTemplates.TemplateDefinition{
+			Name:     tmpl.Filename,
+			Template: tmpl.Body,
+			Kind:     alertingTemplates.GrafanaKind,
+		})
+	}
+	factory, err := alertingTemplates.NewFactory(tmpls, logger, "http://localhost", user) // use fake URL to avoid errors.
+	if err != nil {
+		return err
+	}
+	cached := alertingTemplates.NewCachedFactory(factory)
+
+	noopWrapper := func(integrationName string, notifier notify.Notifier) notify.Notifier { return notifier }
+	for _, rcv := range userAmConfig.Receivers {
+		_, err := buildGrafanaReceiverIntegrations(alertingReceivers.EmailSenderConfig{}, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, logger, noopWrapper)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

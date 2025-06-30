@@ -9,13 +9,21 @@ title: Grafana Mimir Remote ruler reads resources dashboard
 weight: 110
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Remote ruler reads resources dashboard
 
-The Remote ruler reads resources dashboard shows CPU, memory, disk, and other resources utilization metrics for ruler query path components when remote operational mode is enabled.
+The Remote ruler reads resources dashboard shows CPU, memory, disk, and other resource utilization metrics for ruler query path components when remote operational mode is enabled.
 
 The dashboard isolates each service on the ruler read path into its own section and displays the order in which a read request flows.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
+
+Use this dashboard for the following use cases:
+
+- Monitor resource utilization for ruler query path components when operating in remote evaluation mode.
+- Gain insight into the performance and health of the components involved in remote rule evaluations.
+- Visualize metrics like CPU usage, memory consumption, disk I/O, and network throughput for each component in real time.
 
 ## Example
 

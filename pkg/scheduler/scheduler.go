@@ -26,13 +26,13 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -49,6 +49,8 @@ import (
 
 var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
 var errFrontendDisconnected = cancellation.NewErrorf("frontend disconnected")
+
+var tracer = otel.Tracer("pkg/scheduler")
 
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
 type Scheduler struct {
@@ -86,6 +88,7 @@ type Scheduler struct {
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 type connectedFrontend struct {
@@ -159,6 +162,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		},
 		[]string{"query_component"},
 	)
+	s.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "query-scheduler", util.GRPCProtocol)
 
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
@@ -260,27 +264,22 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		case schedulerpb.ENQUEUE:
 			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 			// information, since that is a long-running request.
-			tracer := opentracing.GlobalTracer()
-			parentSpanContext, err := httpgrpcutil.GetParentSpanForRequest(tracer, msg.HttpRequest)
-			if err != nil {
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
-				break
-			}
-			enqueueSpan, reqCtx := opentracing.StartSpanFromContextWithTracer(frontendCtx, tracer, "enqueue", opentracing.ChildOf(parentSpanContext))
+			parentSpanContext, _ := httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.HttpRequest)
+			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 			case errors.Is(err, queue.ErrTooManyRequests):
-				enqueueSpan.LogKV("error", err.Error())
+				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			default:
-				enqueueSpan.LogKV("error", err.Error())
+				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
 			}
 
-			enqueueSpan.Finish()
+			enqueueSpan.End()
 		case schedulerpb.CANCEL:
 			requestKey := queue.NewSchedulerRequestKey(frontendAddress, msg.QueryID)
 			schedulerReq := s.cancelRequestAndRemoveFromPending(requestKey, "frontend cancelled query")
@@ -365,8 +364,8 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	now := time.Now()
 
-	req.ParentSpanContext = opentracing.SpanFromContext(requestContext).Context()
-	req.QueueSpan, req.Ctx = opentracing.StartSpanFromContext(ctx, "queued")
+	req.ParentSpanContext = trace.SpanContextFromContext(requestContext)
+	req.Ctx, req.QueueSpan = tracer.Start(ctx, "queued")
 	req.EnqueueTime = now
 	req.CancelFunc = cancel
 
@@ -440,6 +439,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
 		queryReq, idx, err := s.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
+			// The error returned can either be ErrQuerierShuttingDown or ErrQuerierWorkerDisconnected.
+			// ErrQuerierShuttingDown is a control-flow message between services to exit this loop.
+			// (see note in transformRequestQueueError).
+			// ErrQuerierWorkerDisconnected is caused by connection/goroutine crash;
+			// we expect this loop is no longer alive to receive the error anyway.
 			return s.transformRequestQueueError(err)
 		}
 
@@ -450,7 +454,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		queueTime := time.Since(schedulerReq.EnqueueTime)
 		additionalQueueDimensionLabels := strings.Join(schedulerReq.AdditionalQueueDimensions, ":")
 		s.queueDuration.WithLabelValues(schedulerReq.UserID, additionalQueueDimensionLabels).Observe(queueTime.Seconds())
-		schedulerReq.QueueSpan.Finish()
+		schedulerReq.QueueSpan.End()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
@@ -497,8 +501,8 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	// monitor the contexts in a select and cancel things appropriately.
 	errCh := make(chan error, 1)
 	go func() {
-		span, _ := opentracing.StartSpanFromContext(req.Ctx, "forwardRequestToQuerier")
-		span.SetTag("querier_id", querierID)
+		_, span := tracer.Start(req.Ctx, "forwardRequestToQuerier")
+		span.SetAttributes(attribute.String("querier_id", querierID))
 
 		err := querier.Send(&schedulerpb.SchedulerToQuerier{
 			UserID:          req.UserID,
@@ -516,13 +520,14 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 
 		if err != nil {
 			errCh <- fmt.Errorf("failed to send query to querier '%v': %w", querierID, err)
-			span.LogFields(otlog.Message("sending query to querier failed"), otlog.Error(err))
-			ext.Error.Set(span, true)
-			span.Finish()
+			span.AddEvent("log", trace.WithAttributes(attribute.String("msg", "sending query to querier failed")))
+			span.RecordError(err)
+			span.SetStatus(otelcodes.Error, err.Error())
+			span.End()
 			return
 		}
 
-		span.Finish()
+		span.End()
 
 		_, err = querier.Recv()
 
@@ -560,10 +565,13 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 }
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
-	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor},
-		nil)
+	opts, err := s.cfg.GRPCClientConfig.DialOption(
+		[]grpc.UnaryClientInterceptor{
+			middleware.ClientUserHeaderInterceptor,
+		},
+		nil,
+		util.NewInvalidClusterValidationReporter(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log),
+	)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return

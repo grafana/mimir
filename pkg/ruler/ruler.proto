@@ -44,6 +44,7 @@ message RulesRequest {
 
 message RulesResponse {
   repeated GroupStateDesc groups = 1;
+  repeated string warnings = 2;
 }
 
 // SyncRulesRequest is the message sent to request a ruler to re-synchronize the rules of 1+ tenants.

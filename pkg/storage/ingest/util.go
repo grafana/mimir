@@ -19,6 +19,7 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -27,6 +28,8 @@ var (
 	// Regular expression used to parse the ingester numeric ID.
 	ingesterIDRegexp = regexp.MustCompile("-([0-9]+)$")
 )
+
+var tracer = otel.Tracer("pkg/storage/ingest")
 
 // IngesterPartitionID returns the partition ID owner the the given ingester.
 func IngesterPartitionID(ingesterID string) (int32, error) {

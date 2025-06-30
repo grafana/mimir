@@ -171,7 +171,7 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 func (l *Client) loadRawRulesGroupsForUserAndNamespace(_ context.Context, userID string, namespace string) (*rulefmt.RuleGroups, error) {
 	filename := filepath.Join(l.cfg.Directory, userID, namespace)
 
-	rulegroups, errs := l.loader.Load(filename)
+	rulegroups, errs := l.loader.Load(filename, false)
 	if len(errs) > 0 {
 		return nil, errors.Wrapf(errs[0], "error parsing %s", filename)
 	}

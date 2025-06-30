@@ -4,11 +4,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-oss-multizone-values-rollout-operator
+  namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.23.0
+    helm.sh/chart: rollout-operator-0.30.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-oss-multizone-values
-    app.kubernetes.io/version: "v0.23.0"
+    app.kubernetes.io/version: "v0.28.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -23,6 +24,7 @@ spec:
       maxUnavailable: 1
   template:
     metadata:
+      namespace: "citestns"
       labels:
         app.kubernetes.io/name: rollout-operator
         app.kubernetes.io/instance: test-oss-multizone-values
@@ -43,7 +45,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: "grafana/rollout-operator:v0.23.0"
+          image: "grafana/rollout-operator:v0.28.0"
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns

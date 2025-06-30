@@ -57,7 +57,7 @@ func (c *ConsumerGroupCommand) listOffsets(_ *kingpin.ParseContext) error {
 
 	// Sort topic and partitions to get a stable output.
 	for _, entry := range offsets.Sorted() {
-		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.Offset.At))
+		c.printer.PrintLine(fmt.Sprintf("Topic: %s \tPartition: %d \tOffset: %d", entry.Topic, entry.Partition, entry.At))
 	}
 
 	return nil

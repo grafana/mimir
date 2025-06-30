@@ -7,11 +7,13 @@ title: Grafana Mimir distributor
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir distributor
 
 The distributor is a stateless component that receives time-series data from Prometheus or Grafana Alloy.
 The distributor validates the data for correctness and ensures that it is within the configured limits for a given tenant.
-The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "./ingester" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
+The distributor then divides the data into batches and sends it to multiple [ingesters](../ingester/) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
 
 ## Validation
 
@@ -36,7 +38,7 @@ The distributor validation includes the following checks:
 - Each exemplar has no more than 128 labels.
 
 {{< admonition type="note" >}}
-For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration]({{< relref "../../../configure/about-runtime-configuration" >}}).
+For each tenant, you can override the validation checks by modifying the overrides section of the [runtime configuration](../../../../configure/about-runtime-configuration/).
 {{< /admonition >}}
 
 ## Rate limiting
@@ -54,7 +56,7 @@ If any of these rates is exceeded, the distributor drops the request and returns
 Internally, these limits are implemented using a per-distributor local rate limiter.
 The local rate limiter for each distributor is configured with a limit of `limit / N`, where `N` is the number of healthy distributor replicas.
 The distributor automatically adjusts the request and ingestion rate limits if the number of distributor replicas change.
-Because these rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors]({{< relref "#load-balancing-across-distributors" >}}).
+Because these rate limits are implemented using a per-distributor local rate limiter, they require that write requests are [evenly distributed across the pool of distributors](#load-balancing-across-distributors).
 
 Use the following flags to configure the rate limits:
 
@@ -73,8 +75,8 @@ By default, Prometheus remote write doesn't retry requests on 429 HTTP response 
 
 ### Configuration
 
-The distributors form a [hash ring]({{< relref "../hash-ring" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
-To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings" >}}).
+The distributors form a [hash ring](../../hash-ring/) (called the distributors’ ring) to discover each other and enforce limits correctly.
+To configure the distributors' hash ring, refer to [configuring hash rings](../../../../configure/configure-hash-rings/).
 
 ## High-availability tracker
 
@@ -85,7 +87,7 @@ The distributor includes an HA tracker.
 When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
 This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
 
-For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../../configure/configure-high-availability-deduplication" >}}).
+For more information about HA deduplication and how to configure it, refer to [configure HA deduplication](../../../../configure/configure-high-availability-deduplication/).
 
 ## Sharding and replication
 
@@ -98,7 +100,7 @@ For each incoming series, the distributor computes a hash using the metric name,
 The computed hash is called a _token_.
 The distributor looks up the token in the hash ring to determine which ingesters to write a series to.
 
-For more information, see [hash ring]({{< relref "../hash-ring" >}}).
+For more information, see [hash ring](../../hash-ring/).
 
 #### Quorum consistency
 

@@ -10,9 +10,9 @@ weight: 120
 # Configure TSDB block upload
 
 Grafana Mimir supports uploading of historic TSDB blocks, sourced from Prometheus, Cortex, or even other
-Grafana Mimir installations. Upload from Thanos is currently not supported; for more information, see [Known limitations of TSDB block upload]({{< relref "#known-limitations-of-tsdb-block-upload" >}}).
+Grafana Mimir installations. Upload from Thanos is currently not supported; for more information, see [Known limitations of TSDB block upload](#known-limitations-of-tsdb-block-upload).
 
-To make performing block upload simple, we've built support for it into Mimir's CLI tool, [mimirtool]({{< relref "../manage/tools/mimirtool" >}}). For more information, see [mimirtool backfill]({{< relref "../manage/tools/mimirtool#backfill" >}}).
+To make performing block upload simple, we've built support for it into Mimir's CLI tool, Mimirtool. For more information, refer to [mimirtool backfill](/docs/mimir/<MIMIR_VERSION>/manage/tools/mimirtool/#backfill).
 
 Block upload is still considered experimental and is therefore disabled by default. You can enable it via the `-compactor.block-upload-enabled`
 CLI flag, or via the corresponding `limits.compactor_block_upload_enabled` configuration parameter:
@@ -47,7 +47,7 @@ If your Grafana Mimir has multi-tenancy enabled, you can still use the preceding
 TSDB block upload for all tenants. If instead you wish to enable it per tenant, you can use the
 runtime configuration to set a per-tenant override:
 
-1. Enable [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
+1. Enable [runtime configuration](../about-runtime-configuration/).
 1. Add an override for the tenant that should have TSDB block upload enabled:
 
 ```yaml
@@ -62,8 +62,8 @@ overrides:
 
 Because Thanos blocks contain unsupported labels among their metadata, they cannot be uploaded.
 
-For information about limitations that relate to importing blocks from Thanos as well as existing workarounds, see
-[Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../set-up/migrate/migrate-from-thanos-or-prometheus" >}}).
+For information about limitations that relate to importing blocks from Thanos as well as existing workarounds, refer to
+[Migrating from Thanos or Prometheus to Grafana Mimir](/docs/mimir/<MIMIR_VERSION>/set-up/migrate/migrate-from-thanos-or-prometheus/).
 
 ### The results-cache needs flushing
 

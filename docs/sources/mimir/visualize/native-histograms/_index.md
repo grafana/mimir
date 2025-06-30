@@ -13,15 +13,13 @@ title: Visualize native histograms
 weight: 100
 ---
 
-# Visualize native histograms
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
 
-{{% admonition type="note" %}}
-Native histograms are an experimental feature of Grafana Mimir.
-{{% /admonition %}}
+# Visualize native histograms
 
 Prometheus native histograms are a data type in the Prometheus ecosystem that allow you to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 To learn more about the native histograms data type and how to start sending native histograms to Grafana Mimir,
-refer to [Send native histograms to Mimir]({{< relref "../../send/native-histograms" >}}).
+refer to [Send native histograms to Mimir](../../send/native-histograms/).
 
 {{% admonition type="note" %}}
 Not all visualizations support the native histogram data type. However, you can use the Prometheus Query Language (PromQL) to derive the floating point time series from a native histogram, and then use this series in a visualization.
@@ -43,7 +41,7 @@ To query the total count of observations within a histogram, use the following q
 
 ```PromQL
 # Native histograms:
-histogram_count(sum(request_duration_seconds))
+sum(histogram_count(request_duration_seconds))
 
 # Classic histograms:
 sum(request_duration_seconds_count)
@@ -53,11 +51,15 @@ To query the total sum of observed values, use the following query:
 
 ```PromQL
 # Native histograms:
-histogram_sum(sum(request_duration_seconds))
+sum(histogram_sum(request_duration_seconds))
 
 # Classic histograms:
 sum(request_duration_seconds_sum)
 ```
+
+{{% admonition type="note" %}}
+`sum(histogram_count(request_duration_seconds))` and `histogram_count(sum(request_duration_seconds))` are equivalent in terms of query results, but the former is more efficient. This applies to `sum` with `histogram_sum` as well.
+{{% /admonition %}}
 
 ### Find rate of observations
 
@@ -65,7 +67,7 @@ To query the rate of all observations calculated over 5 minute time window, use 
 
 ```PromQL
 # Native histograms:
-histogram_count(sum(rate(request_duration_seconds[5m])))
+sum(histogram_count(rate(request_duration_seconds[5m])))
 
 # Classic histograms:
 sum(rate(request_duration_seconds_count[5m]))
@@ -77,7 +79,7 @@ To query the rate of observations between two values such as `0` and `2` seconds
 # Native histograms:
 histogram_fraction(0, 2, sum(rate(request_duration_seconds[5m])))
 *
-histogram_count(sum(rate(request_duration_seconds[5m])))
+sum(histogram_count(rate(request_duration_seconds[5m])))
 
 # Classic histograms:
 sum(rate(request_duration_seconds_bucket{le="2.5"}[5m]))

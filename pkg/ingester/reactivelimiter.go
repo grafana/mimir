@@ -25,39 +25,58 @@ type rejectionPrioritizer struct {
 // The ingester reactive limiter consists of two limiters: one for push requests and one for read requests.
 // It also includes a rejectionPrioritizer which, based on recent latencies in both limiters, decides the priority of requests to reject.
 type ingesterReactiveLimiter struct {
-	services.Service
+	service services.Service
 
 	prioritizer *rejectionPrioritizer
-	push        *priorityLimiter
-	read        *priorityLimiter
+	push        reactivelimiter.BlockingLimiter
+	read        reactivelimiter.BlockingLimiter
 }
 
+// Returns an ingesterReactiveLimiter that uses reactivelimiter.PriorityLimiters with a Prioritizer when push and read
+// limiting is enabled, else that uses reactivelimiter.BlockingLimiter if only one of these is enabled.
 func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrioritizerConfig, pushConfig *reactivelimiter.Config, readConfig *reactivelimiter.Config, logger log.Logger, registerer prometheus.Registerer) *ingesterReactiveLimiter {
-	// Create prioritizer to prioritize the rejection threshold between push and read limiters
-	prioritizer := &rejectionPrioritizer{
-		cfg:         prioritizerConfig,
-		Prioritizer: reactivelimiter.NewPrioritizer(logger),
-	}
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_ingester_rejection_rate",
-		Help: "Ingester prioritizer rejection rate.",
-	}, func() float64 {
-		return prioritizer.RejectionRate()
-	})
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_ingester_rejection_threshold",
-		Help: "Ingester prioritizer rejection threshold.",
-	}, func() float64 {
-		return float64(prioritizer.RejectionThreshold())
-	})
+	var prioritizer *rejectionPrioritizer
+	var pushLimiter reactivelimiter.BlockingLimiter
+	var readLimiter reactivelimiter.BlockingLimiter
 
-	// Create limiters that use prioritizer
+	if pushConfig.Enabled && readConfig.Enabled {
+		// Create prioritizer to prioritize the rejection threshold between push and read limiters
+		prioritizer = &rejectionPrioritizer{
+			cfg:         prioritizerConfig,
+			Prioritizer: reactivelimiter.NewPrioritizer(logger),
+		}
+
+		// Capture rejection metrics from the prioritizer
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_rejection_rate",
+			Help: "The prioritized rate at which requests should be rejected.",
+		}, func() float64 {
+			return prioritizer.RejectionRate()
+		})
+		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_rejection_threshold",
+			Help: "The priority threshold below which requests should be rejected.",
+		}, func() float64 {
+			return float64(prioritizer.RejectionThreshold())
+		})
+
+		// Create limiters that use prioritizer
+		pushLimiter = newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer)
+		readLimiter = newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer)
+	} else {
+		pushLimiter = newBlockingLimiter(pushConfig, "push", logger, registerer)
+		readLimiter = newBlockingLimiter(readConfig, "read", logger, registerer)
+	}
+
 	limiter := &ingesterReactiveLimiter{
 		prioritizer: prioritizer,
-		push:        newPriorityLimiter(pushConfig, prioritizer, reactivelimiter.PriorityHigh, "push", logger, registerer),
-		read:        newPriorityLimiter(readConfig, prioritizer, reactivelimiter.PriorityLow, "read", logger, registerer),
+		push:        pushLimiter,
+		read:        readLimiter,
 	}
-	limiter.Service = services.NewTimerService(prioritizerConfig.CalibrationInterval, nil, limiter.update, nil)
+
+	if prioritizer != nil {
+		limiter.service = services.NewTimerService(prioritizerConfig.CalibrationInterval, nil, limiter.update, nil)
+	}
 
 	return limiter
 }
@@ -67,13 +86,24 @@ func (l *ingesterReactiveLimiter) update(_ context.Context) error {
 	return nil
 }
 
+func newBlockingLimiter(cfg *reactivelimiter.Config, requestType string, logger log.Logger, registerer prometheus.Registerer) reactivelimiter.BlockingLimiter {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	limiter := reactivelimiter.NewBlockingLimiter(cfg, log.With(logger, "request_type", requestType))
+	registerReactiveLimiterMetrics(limiter, requestType, registerer)
+	return limiter
+}
+
 // A limiter that acquires permits for a specific priority.
 type priorityLimiter struct {
-	limiter  reactivelimiter.PriorityLimiter
+	reactivelimiter.PriorityLimiter
 	priority reactivelimiter.Priority
 }
 
-func newPriorityLimiter(cfg *reactivelimiter.Config, prioritizer reactivelimiter.Prioritizer, priority reactivelimiter.Priority, requestType string, logger log.Logger, registerer prometheus.Registerer) *priorityLimiter {
+// Returns a BlockingLimiter that uses a fixed priority to threshold all requests against the limiter.
+func newPriorityLimiter(cfg *reactivelimiter.Config, prioritizer reactivelimiter.Prioritizer, priority reactivelimiter.Priority, requestType string, logger log.Logger, registerer prometheus.Registerer) reactivelimiter.BlockingLimiter {
 	if !cfg.Enabled || prioritizer == nil {
 		return nil
 	}
@@ -81,39 +111,39 @@ func newPriorityLimiter(cfg *reactivelimiter.Config, prioritizer reactivelimiter
 	limiter := reactivelimiter.NewPriorityLimiter(cfg, prioritizer, log.With(logger, "requestType", requestType))
 	registerReactiveLimiterMetrics(limiter, requestType, registerer)
 	return &priorityLimiter{
-		limiter:  limiter,
-		priority: priority,
+		PriorityLimiter: limiter,
+		priority:        priority,
 	}
 }
 
 func (l *priorityLimiter) CanAcquirePermit() bool {
-	return l.limiter.CanAcquirePermit(l.priority)
+	return l.PriorityLimiter.CanAcquirePermit(l.priority)
 }
 
 func (l *priorityLimiter) AcquirePermit(ctx context.Context) (reactivelimiter.Permit, error) {
-	return l.limiter.AcquirePermit(ctx, l.priority)
+	return l.PriorityLimiter.AcquirePermit(ctx, l.priority)
 }
 
-func registerReactiveLimiterMetrics(limiter reactivelimiter.PriorityLimiter, requestType string, r prometheus.Registerer) {
+func registerReactiveLimiterMetrics(limiterMetrics reactivelimiter.Metrics, requestType string, r prometheus.Registerer) {
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_reactive_limiter_inflight_limit",
 		Help:        "Ingester reactive limiter inflight request limit.",
 		ConstLabels: map[string]string{reactiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
-		return float64(limiter.Limit())
+		return float64(limiterMetrics.Limit())
 	})
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_reactive_limiter_inflight_requests",
 		Help:        "Ingester reactive limiter inflight requests.",
 		ConstLabels: map[string]string{reactiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
-		return float64(limiter.Inflight())
+		return float64(limiterMetrics.Inflight())
 	})
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_reactive_limiter_blocked_requests",
 		Help:        "Ingester reactive limiter blocked requests.",
 		ConstLabels: map[string]string{reactiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
-		return float64(limiter.Blocked())
+		return float64(limiterMetrics.Blocked())
 	})
 }

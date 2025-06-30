@@ -34,8 +34,8 @@ const (
 var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
-	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
-	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
+
+	dnsProviders = []string{dns.GolangResolverType.String(), dns.MiekgdnsResolverType.String(), dns.MiekgdnsResolverType2.String()}
 
 	_ Cache = (*MemcachedClient)(nil)
 )
@@ -75,19 +75,15 @@ type MemcachedClientConfig struct {
 	// resolved with the DNS provider.
 	Addresses flagext.StringSliceCSV `yaml:"addresses"`
 
+	// AddressesProvider specifies the DNS provider used for resolving memcached
+	// addresses.
+	AddressesProvider dns.ResolverType `yaml:"addresses_provider" category:"experimental"`
+
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
 
 	// ConnectTimeout specifies the connection timeout.
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
-
-	// WriteBufferSizeBytes specifies the size of the write buffer (in bytes). The buffer
-	// is allocated for each connection.
-	WriteBufferSizeBytes int `yaml:"write_buffer_size_bytes" category:"experimental"`
-
-	// ReadBufferSizeBytes specifies the size of the read buffer (in bytes). The buffer
-	// is allocated for each connection.
-	ReadBufferSizeBytes int `yaml:"read_buffer_size_bytes" category:"experimental"`
 
 	// MinIdleConnectionsHeadroomPercentage specifies the minimum number of idle connections
 	// to keep open as a percentage of the number of recently used idle connections.
@@ -124,14 +120,18 @@ type MemcachedClientConfig struct {
 
 	// TLS to use to connect to the Memcached server.
 	TLS dstls.ClientConfig `yaml:",inline"`
+
+	// DNSIgnoreStartupFailures allows the client to start even if initial DNS resolution fails.
+	// When true, DNS failures are logged but client creation succeeds.
+	DNSIgnoreStartupFailures bool `yaml:"dns_ignore_startup_failures" category:"experimental"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
+	c.AddressesProvider = dns.MiekgdnsResolverType
+	f.Var(&c.AddressesProvider, prefix+"addresses-provider", fmt.Sprintf("DNS provider used for resolving memcached addresses. Available providers %s", strings.Join(dnsProviders, ", ")))
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
-	f.IntVar(&c.WriteBufferSizeBytes, prefix+"write-buffer-size-bytes", 4096, "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.")
-	f.IntVar(&c.ReadBufferSizeBytes, prefix+"read-buffer-size-bytes", 4096, "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.")
 	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
 	f.IntVar(&c.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&c.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
@@ -141,17 +141,12 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
+	f.BoolVar(&c.DNSIgnoreStartupFailures, prefix+"dns-ignore-startup-failures", true, "Allow client creation even if initial DNS resolution fails.")
 }
 
 func (c *MemcachedClientConfig) Validate() error {
 	if len(c.Addresses) == 0 {
 		return ErrNoMemcachedAddresses
-	}
-	if c.WriteBufferSizeBytes <= 0 {
-		return ErrInvalidWriteBufferSizeBytes
-	}
-	if c.ReadBufferSizeBytes <= 0 {
-		return ErrInvalidReadBufferSizeBytes
 	}
 
 	// Set async only available when MaxAsyncConcurrency > 0.
@@ -213,8 +208,6 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client := memcache.NewFromSelector(selector)
 	client.Timeout = config.Timeout
 	client.ConnectTimeout = config.ConnectTimeout
-	client.WriteBufferSizeBytes = config.WriteBufferSizeBytes
-	client.ReadBufferSizeBytes = config.ReadBufferSizeBytes
 	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage
 	client.MaxIdleConns = config.MaxIdleConnections
 
@@ -235,7 +228,21 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	if reg != nil {
 		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelCacheName: name}, reg)
 	}
-	return newMemcachedClient(logger, client, selector, config, reg, name)
+	mcClient, err := newMemcachedClient(logger, client, selector, config, reg, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start the background DNS resolution
+	go mcClient.resolveAddrsLoop()
+
+	// Do initial DNS resolution
+	if err := mcClient.resolveAddrs(); err != nil && !config.DNSIgnoreStartupFailures {
+		mcClient.Stop()
+		return nil, err
+	}
+
+	return mcClient, nil
 }
 
 func newMemcachedClient(
@@ -249,13 +256,7 @@ func newMemcachedClient(
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-
-	addressProvider := dns.NewProvider(
-		logger,
-		reg,
-		dns.MiekgdnsResolverType,
-	)
-
+	addressProvider := dns.NewProvider(logger, reg, config.AddressesProvider)
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{
@@ -276,9 +277,7 @@ func newMemcachedClient(
 		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
-			"timeout":                                  config.Timeout.String(),
-			"write_buffer_size_bytes":                  strconv.Itoa(config.WriteBufferSizeBytes),
-			"read_buffer_size_bytes":                   strconv.Itoa(config.ReadBufferSizeBytes),
+			"timeout": config.Timeout.String(),
 			"min_idle_connections_headroom_percentage": fmt.Sprintf("%f.2", config.MinIdleConnectionsHeadroomPercentage),
 			"max_idle_connections":                     strconv.Itoa(config.MaxIdleConnections),
 			"max_async_concurrency":                    strconv.Itoa(config.MaxAsyncConcurrency),
@@ -290,14 +289,6 @@ func newMemcachedClient(
 	},
 		func() float64 { return 1 },
 	)
-
-	// As soon as the client is created it must ensure that memcached server
-	// addresses are resolved, so we're going to trigger an initial addresses
-	// resolution here.
-	if err := c.resolveAddrs(); err != nil {
-		return nil, err
-	}
-	go c.resolveAddrsLoop()
 
 	return c, nil
 }
@@ -740,10 +731,10 @@ func (c *MemcachedClient) resolveAddrs() error {
 	if err := c.addressProvider.Resolve(ctx, c.config.Addresses); err != nil {
 		level.Error(c.logger).Log("msg", "failed to resolve addresses for memcached", "addresses", strings.Join(c.config.Addresses, ","), "err", err)
 	}
-	// Fail in case no server address is resolved.
+	// Return error in case no server address is resolved.
 	servers := c.addressProvider.Addresses()
 	if len(servers) == 0 {
-		return fmt.Errorf("no server address resolved for %s", c.name)
+		return fmt.Errorf("no memcached server addresses were resolved")
 	}
 
 	return c.selector.SetServers(servers...)

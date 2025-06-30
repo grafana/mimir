@@ -46,12 +46,11 @@ type ActiveSeries struct {
 	stripes [numStripes]seriesStripe
 	deleted deletedSeries
 
-	// configMutex protects matchers and lastMatchersUpdate. it used by both matchers and cat
+	// configMutex protects matchers, cat and lastMatchersUpdate. shared by matchers and cat
 	configMutex      sync.RWMutex
 	matchers         *asmodel.Matchers
 	lastConfigUpdate time.Time
-
-	cat *costattribution.ActiveSeriesTracker
+	cat              *costattribution.ActiveSeriesTracker
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
@@ -114,14 +113,14 @@ func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *
 	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.cat
 }
 
-func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
+func (c *ActiveSeries) ReloadMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, now time.Time) {
 	c.configMutex.Lock()
 	defer c.configMutex.Unlock()
-
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, c.cat)
+		c.stripes[i].reinitialize(asm, &c.deleted, cat)
 	}
 	c.matchers = asm
+	c.cat = cat
 	c.lastConfigUpdate = now
 }
 
@@ -380,6 +379,8 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 					s.activeMatchingNativeHistogramBuckets[match] -= uint32(entry.numNativeHistogramBuckets)
 				}
 			}
+			s.cat.Decrement(series, entry.numNativeHistogramBuckets)
+			s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
 			s.refs[ref] = entry
 		}
@@ -409,7 +410,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
 
-	s.cat.Increment(series, time.Unix(0, nowNanos))
+	s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 	s.refs[ref] = e
 	return e.nanos, true
 }
@@ -473,7 +474,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 				if err := idx.Series(ref, &buf, nil); err != nil {
 					s.activeSeriesAttributionFailureCounter.Add(1)
 				} else {
-					s.cat.Decrement(buf.Labels())
+					s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
 				}
 			}
 			if entry.deleted {
@@ -538,7 +539,7 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 		if err := idx.Series(ref, &buf, nil); err != nil {
 			s.activeSeriesAttributionFailureCounter.Add(1)
 		} else {
-			s.cat.Decrement(buf.Labels())
+			s.cat.Decrement(buf.Labels(), entry.numNativeHistogramBuckets)
 		}
 	}
 	if entry.numNativeHistogramBuckets >= 0 {

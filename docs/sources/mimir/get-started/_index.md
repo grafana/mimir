@@ -7,6 +7,8 @@ title: Get started with Grafana Mimir
 weight: 10
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Get started with Grafana Mimir
 
 You can get started with Grafana Mimir _imperatively_ or _declaratively_:
@@ -26,9 +28,9 @@ You can get started with Grafana Mimir _imperatively_ or _declaratively_:
 - Verify that you have installed [Docker](https://docs.docker.com/engine/install/).
 
 {{< admonition type="note" >}}
-The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode]({{< relref "../references/architecture/deployment-modes#monolithic-mode" >}}).
+The instructions that follow help you to deploy Grafana Mimir in [Monolithic mode](../references/architecture/deployment-modes/#monolithic-mode).
 
-For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes]({{< relref "../references/architecture/deployment-modes" >}}).
+For information about the different ways to deploy Grafana Mimir, refer to [Grafana Mimir deployment modes](../references/architecture/deployment-modes/).
 {{< /admonition >}}
 
 ## Download Grafana Mimir
@@ -109,7 +111,7 @@ store_gateway:
 {{< admonition type="note" >}}
 Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server to help Mimir maintainers understand how the open source community runs Mimir.
 
-To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting#disable-the-anonymous-usage-statistics-reporting" >}}).
+To opt out, refer to [Disable the anonymous usage statistics reporting](../configure/about-anonymous-usage-statistics-reporting/#disable-the-anonymous-usage-statistics-reporting).
 {{< /admonition >}}
 
 ## Run Grafana Mimir
@@ -225,5 +227,4 @@ To add a data source, refer to [Add a data source](/docs/grafana/latest/administ
 
 ## Verify success
 
-After you have completed the tasks in this _Get started_ guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/)
-as well as create dashboard panels using your newly configured Grafana Mimir data source.
+After you have completed the tasks in this _Get started_ guide, you can query metrics in [Grafana Explore](/docs/grafana/latest/explore/) and create dashboard panels using your newly configured Grafana Mimir data source.

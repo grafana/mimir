@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -52,11 +51,11 @@ func TestRulerAPI(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
-	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags())
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), RulerStorageS3Flags(), BlocksStorageFlags())
 
 	// Start Mimir components.
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
@@ -155,6 +154,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	flags := mergeFlags(
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
+		RulerStorageLocalFlags(),
 		map[string]string{
 			"-ruler-storage.local.directory": filepath.Join(e2e.ContainerSharedDir, "ruler_configs"),
 			"-ruler.poll-interval":           "2s",
@@ -221,7 +221,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -229,6 +229,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
 			// Disable rule group limit
@@ -250,11 +251,6 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	// reverse order and check that they are sorted when returned.
 	expectedGroups := make([]NGPair, 0, numRuleGroups)
 	for i := numRuleGroups - 1; i >= 0; i-- {
-		var recordNode yaml.Node
-		var exprNode yaml.Node
-
-		recordNode.SetString(fmt.Sprintf("rule_%d", i))
-		exprNode.SetString(strconv.Itoa(i))
 		ruleGroupName := fmt.Sprintf("test_%d", i)
 
 		expectedGroups = append(expectedGroups,
@@ -267,9 +263,9 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		require.NoError(t, c.SetRuleGroup(rulefmt.RuleGroup{
 			Name:     ruleGroupName,
 			Interval: 60,
-			Rules: []rulefmt.RuleNode{{
-				Record: recordNode,
-				Expr:   exprNode,
+			Rules: []rulefmt.Rule{{
+				Record: fmt.Sprintf("rule_%d", i),
+				Expr:   strconv.Itoa(i),
 			}},
 		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
 	}
@@ -295,7 +291,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
 
 	// No page size limit
-	actualGroups, token, err := c.GetPrometheusRules(0, "")
+	_, actualGroups, token, err := c.GetPrometheusRules(0, "")
 	require.NoError(t, err)
 	require.Empty(t, token)
 	require.Len(t, actualGroups, len(expectedGroups))
@@ -310,7 +306,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	var nextToken string
 	returnedGroups := make([]NGPair, 0, len(expectedGroups))
 	for i := 0; i < 4; i++ {
-		gps, token, err := c.GetPrometheusRules(2, nextToken)
+		_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 		require.NoError(t, err)
 		require.Len(t, gps, 2)
 		require.NotEmpty(t, token)
@@ -318,7 +314,7 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 		returnedGroups = append(returnedGroups, NGPair{gps[0].File, gps[0].Name}, NGPair{gps[1].File, gps[1].Name})
 		nextToken = token
 	}
-	gps, token, err := c.GetPrometheusRules(2, nextToken)
+	_, gps, token, err := c.GetPrometheusRules(2, nextToken)
 	require.NoError(t, err)
 	require.Len(t, gps, 1)
 	require.Empty(t, token)
@@ -332,8 +328,160 @@ func TestRulerAPIRulesPagination(t *testing.T) {
 	}
 
 	// Invalid max groups value
-	_, _, err = c.GetPrometheusRules(-1, "")
+	resp, _, _, err := c.GetPrometheusRules(-1, "")
 	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestRulerAPIRulesEvaluationDisabledForTenant(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	runtimeConfig := `
+overrides:
+  user-1:
+    ruler_alerting_rules_evaluation_enabled: false
+    ruler_recording_rules_evaluation_enabled: false
+`
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(runtimeConfig)))
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
+		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
+		map[string]string{
+			"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
+			"-runtime-config.reload-period": "100ms",
+			// Disable rule group limit
+			"-ruler.max-rule-groups-per-tenant": "0",
+		},
+	)
+
+	// Start rulers.
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
+	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
+
+	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+
+	// user-1 has all rules disabled
+	resp, _, _, err := c.GetPrometheusRules(0, "")
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+}
+
+func TestRulerAPIEvaluationIntervalLimits(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	runtimeConfig := `
+overrides:
+  user-1:
+    ruler_min_rule_evaluation_interval: 30s`
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(runtimeConfig)))
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
+		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
+		map[string]string{
+			"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
+			"-runtime-config.reload-period": "100ms",
+			// Disable rule group limit
+			"-ruler.max-rule-groups-per-tenant": "0",
+		},
+	)
+
+	// Start rulers.
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
+	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
+	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
+
+	user1Client, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+	user2Client, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-2")
+	require.NoError(t, err)
+
+	// User1 cannot create a group that runs faster than the interval limit
+	group := ruleGroupWithRules("group-1", time.Second,
+		recordingRule("series_1:count", "count(series_1)"),
+	)
+	require.ErrorContains(t, user1Client.SetRuleGroup(group, "namespace-1"), "400")
+
+	// User2 can create groups with arbitrarily low intervals
+	group = ruleGroupWithRules("group-2", time.Second,
+		recordingRule("series_1:count", "count(series_1)"),
+	)
+	require.NoError(t, user2Client.SetRuleGroup(group, "namespace-2"))
+
+	// User1 can still allow the ruler to decide the interval.
+	group = ruleGroupWithRules("group-0", 0,
+		recordingRule("series_1:count", "count(series_1)"),
+	)
+	require.NoError(t, user2Client.SetRuleGroup(group, "namespace-0"))
+
+	// User2's limit is changed to 10s
+	runtimeConfig = `
+overrides:
+  user-1:
+    ruler_min_rule_evaluation_interval: 30s
+  user-2:
+    ruler_min_rule_evaluation_interval: 10s`
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(runtimeConfig)))
+
+	// Block until the config updates.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(
+		e2e.Equals(2),
+		[]string{"cortex_runtime_config_hash"},
+		e2e.WaitMissingMetrics,
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "sha256", "e2cd55ae7f6c926aae885315a57c895c74b50cd758b4564b6cdba730995a853b")),
+	))
+
+	// User2 can no longer create new groups with low intervals
+	group = ruleGroupWithRules("group-3", time.Second,
+		recordingRule("series_1:count", "count(series_1)"),
+	)
+	require.ErrorContains(t, user2Client.SetRuleGroup(group, "namespace-2"), "400")
+
+	// User2 can still create other groups that pass limits.
+	group = ruleGroupWithRules("group-4", 10*time.Second,
+		recordingRule("series_1:count", "count(series_1)"),
+	)
+	require.NoError(t, user2Client.SetRuleGroup(group, "namespace-2"))
+
+	// User2 cannot update the previously created group while keeping the low interval
+	group = ruleGroupWithRules("group-2", time.Second,
+		recordingRule("series_1:count", "count(series_1) + 1"),
+	)
+	require.ErrorContains(t, user2Client.SetRuleGroup(group, "namespace-2"), "400")
+
+	// User2 can update the previously created group if they fix the interval
+	group = ruleGroupWithRules("group-2", 10*time.Second,
+		recordingRule("series_1:count", "count(series_1) + 1"),
+	)
+	require.NoError(t, user2Client.SetRuleGroup(group, "namespace-2"))
 }
 
 func TestRulerSharding(t *testing.T) {
@@ -347,27 +495,22 @@ func TestRulerSharding(t *testing.T) {
 	ruleGroups := make([]rulefmt.RuleGroup, numRulesGroups)
 	expectedNames := make([]string, numRulesGroups)
 	for i := 0; i < numRulesGroups; i++ {
-		var recordNode yaml.Node
-		var exprNode yaml.Node
-
-		recordNode.SetString(fmt.Sprintf("rule_%d", i))
-		exprNode.SetString(strconv.Itoa(i))
 		ruleName := fmt.Sprintf("test_%d", i)
 
 		expectedNames[i] = ruleName
 		ruleGroups[i] = rulefmt.RuleGroup{
 			Name:     ruleName,
 			Interval: 60,
-			Rules: []rulefmt.RuleNode{{
-				Record: recordNode,
-				Expr:   exprNode,
+			Rules: []rulefmt.Rule{{
+				Record: fmt.Sprintf("rule_%d", i),
+				Expr:   strconv.Itoa(i),
 			}},
 		}
 	}
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
@@ -375,6 +518,7 @@ func TestRulerSharding(t *testing.T) {
 		CommonStorageBackendFlags(),
 		RulerFlags(),
 		BlocksStorageFlags(),
+		RulerStorageS3Flags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
 			// Disable rule group limit
@@ -405,7 +549,7 @@ func TestRulerSharding(t *testing.T) {
 	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(numRulesGroups), "cortex_prometheus_rule_group_rules"))
 
 	// Fetch the rules and ensure they match the configured ones.
-	actualGroups, _, err := c.GetPrometheusRules(0, "")
+	_, actualGroups, _, err := c.GetPrometheusRules(0, "")
 	require.NoError(t, err)
 
 	var actualNames []string
@@ -1329,7 +1473,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert that the alert is firing
-	rules, _, err := c.GetPrometheusRules(0, "")
+	_, rules, _, err := c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 
@@ -1346,7 +1490,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert the alert is already firing
-	rules, _, err = c.GetPrometheusRules(0, "")
+	_, rules, _, err = c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 }
@@ -1537,7 +1681,7 @@ func TestRulerPerRuleConcurrency(t *testing.T) {
 	rg := rulefmt.RuleGroup{
 		Name:     "nameX",
 		Interval: 5,
-		Rules: []rulefmt.RuleNode{
+		Rules: []rulefmt.Rule{
 			recordingRule("tenant_vector_one", "count(series_1)"),
 			recordingRule("tenant_vector_two", "count(series_1)"),
 			recordingRule("tenant_vector_three", "count(series_1)"),
@@ -1696,7 +1840,7 @@ func ruleGroupWithAlertingRule(groupName string, ruleName string, expression str
 	return ruleGroupWithRules(groupName, 10, alertingRule(ruleName, expression))
 }
 
-func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulefmt.RuleNode) rulefmt.RuleGroup {
+func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulefmt.Rule) rulefmt.RuleGroup {
 	return rulefmt.RuleGroup{
 		Name:     groupName,
 		Interval: model.Duration(interval),
@@ -1722,29 +1866,17 @@ func createTestRuleGroup(opts ...testRuleGroupsOption) rulefmt.RuleGroup {
 	return rg
 }
 
-func recordingRule(record, expr string) rulefmt.RuleNode {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	recordNode.SetString(record)
-	exprNode.SetString(expr)
-
-	return rulefmt.RuleNode{
-		Record: recordNode,
-		Expr:   exprNode,
+func recordingRule(record, expr string) rulefmt.Rule {
+	return rulefmt.Rule{
+		Record: record,
+		Expr:   expr,
 	}
 }
 
-func alertingRule(alert, expr string) rulefmt.RuleNode {
-	var alertNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	alertNode.SetString(alert)
-	exprNode.SetString(expr)
-
-	return rulefmt.RuleNode{
-		Alert: alertNode,
-		Expr:  exprNode,
+func alertingRule(alert, expr string) rulefmt.Rule {
+	return rulefmt.Rule{
+		Alert: alert,
+		Expr:  expr,
 		For:   30,
 	}
 }

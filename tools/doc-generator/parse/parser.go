@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/objstore/providers/s3"
 
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -349,11 +350,11 @@ func getFieldName(field reflect.StructField) string {
 func getFieldCustomType(t reflect.Type) (string, bool) {
 	// Handle custom data types used in the config
 	switch t.String() {
-	case reflect.TypeOf(validation.LimitsMap[float64]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[float64]{}).String():
 		return "map of string to float64", true
-	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[int]{}).String():
 		return "map of string to int", true
-	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[string]{}).String():
 		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
@@ -365,8 +366,10 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
-		return "blocked_queries_config...", true
+	case reflect.TypeOf(validation.BlockedQueriesConfig{}).String():
+		return "list of pattern (string), regex (bool), and, optionally, reason (string)", true
+	case reflect.TypeOf(validation.LimitedQueriesConfig{}).String():
+		return "list of query (string) and allowed_frequency (duration)", true
 	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
 		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
@@ -439,11 +442,11 @@ func getFieldType(t reflect.Type) (string, error) {
 func getCustomFieldType(t reflect.Type) (string, bool) {
 	// Handle custom data types used in the config
 	switch t.String() {
-	case reflect.TypeOf(validation.LimitsMap[float64]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[float64]{}).String():
 		return "map of string to float64", true
-	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[int]{}).String():
 		return "map of string to int", true
-	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[string]{}).String():
 		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
@@ -455,8 +458,10 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
-		return "blocked_queries_config...", true
+	case reflect.TypeOf([]*validation.BlockedQueriesConfig{}).String():
+		return "list of pattern (string), regex (bool), and, optionally, reason (string)", true
+	case reflect.TypeOf(validation.LimitedQueriesConfig{}).String():
+		return "list of query (string) and allowed_frequency (duration)", true
 	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
 		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
@@ -490,14 +495,18 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(map[string]string{})
 	case "relabel_config...":
 		return reflect.TypeOf([]*relabel.Config{})
-	case "blocked_queries_config...":
-		return reflect.TypeOf([]*validation.BlockedQuery{})
+	case "list of pattern (string), regex (bool), and, optionally, reason (string)":
+		return reflect.TypeOf([]*validation.BlockedQueriesConfig{})
+	case "list of query (string) and allowed_frequency (duration)":
+		return reflect.TypeOf(validation.LimitedQueriesConfig{})
 	case "blocked_requests_config...":
 		return reflect.TypeOf([]*validation.BlockedRequest{})
+	case "ruler_alertmanager_client_config...":
+		return reflect.TypeOf(notifier.AlertmanagerClientConfig{})
 	case "map of string to float64":
-		return reflect.TypeOf(validation.LimitsMap[float64]{})
+		return reflect.TypeOf(flagext.LimitsMap[float64]{})
 	case "map of string to int":
-		return reflect.TypeOf(validation.LimitsMap[int]{})
+		return reflect.TypeOf(flagext.LimitsMap[int]{})
 	case "list of durations":
 		return reflect.TypeOf(tsdb.DurationList{})
 	default:

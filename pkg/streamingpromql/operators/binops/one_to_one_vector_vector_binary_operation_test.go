@@ -3,19 +3,27 @@
 package binops
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Most of the functionality of the binary operation operator is tested through the test scripts in
@@ -187,7 +195,7 @@ func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			o := &OneToOneVectorVectorBinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
@@ -199,7 +207,8 @@ func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 			}
 			for _, s := range testCase.input {
 				// Count the memory for the given floats + histograms
-				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats))+types.HPointSize*uint64(len(s.Histograms))))
+				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats)), limiter.FPointSlices))
+				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.HPointSize*uint64(len(s.Histograms)), limiter.HPointSlices))
 			}
 
 			result, err := o.mergeSingleSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
@@ -437,6 +446,295 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 				sorter := newFavourRightSideSorter(metadata, series)
 				test(t, series, metadata, sorter, testCase.expectedOrderFavouringRightSide)
 			})
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testing.T) {
+	testCases := map[string]struct {
+		leftSeries  []labels.Labels
+		rightSeries []labels.Labels
+
+		expectedOutputSeries                        []labels.Labels
+		expectLeftSideClosedAfterOutputSeriesIndex  int
+		expectRightSideClosedAfterOutputSeriesIndex int
+	}{
+		"no series on left": {
+			leftSeries: []labels.Labels{},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "2", "series", "right-2"),
+				labels.FromStrings("group", "3", "series", "right-3"),
+			},
+
+			expectedOutputSeries:                        []labels.Labels{},
+			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
+			expectRightSideClosedAfterOutputSeriesIndex: -1,
+		},
+		"no series on right": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "2", "series", "left-2"),
+				labels.FromStrings("group", "3", "series", "left-3"),
+			},
+			rightSeries: []labels.Labels{},
+
+			expectedOutputSeries:                        []labels.Labels{},
+			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
+			expectRightSideClosedAfterOutputSeriesIndex: -1,
+		},
+		"reach end of both sides at the same time": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "2", "series", "right-3"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  1,
+			expectRightSideClosedAfterOutputSeriesIndex: 1,
+		},
+		"no more matches with unmatched series still to read on both sides": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "3", "series", "right-3"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  0,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"no more matches with unmatched series still to read on left side": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  0,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"no more matches with unmatched series still to read on right side": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "1", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "3", "series", "right-3"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  0,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"no matches": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "2", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "3", "series", "right-1"),
+				labels.FromStrings("group", "4", "series", "right-2"),
+				labels.FromStrings("group", "5", "series", "right-3"),
+			},
+
+			expectedOutputSeries:                        []labels.Labels{},
+			expectLeftSideClosedAfterOutputSeriesIndex:  -1,
+			expectRightSideClosedAfterOutputSeriesIndex: -1,
+		},
+		"right side exhausted before left": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "2", "series", "left-2"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "1", "series", "right-2"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  1,
+			expectRightSideClosedAfterOutputSeriesIndex: 0,
+		},
+		"left side exhausted before right": {
+			leftSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "left-1"),
+				labels.FromStrings("group", "3", "series", "left-2"),
+				labels.FromStrings("group", "2", "series", "left-3"),
+			},
+			rightSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "series", "right-2"),
+				labels.FromStrings("group", "2", "series", "right-1"),
+				labels.FromStrings("group", "3", "series", "right-3"),
+				labels.FromStrings("group", "3", "series", "right-4"),
+			},
+
+			expectedOutputSeries: []labels.Labels{
+				labels.FromStrings("group", "1"),
+				labels.FromStrings("group", "2"),
+				labels.FromStrings("group", "3"),
+			},
+			expectLeftSideClosedAfterOutputSeriesIndex:  1,
+			expectRightSideClosedAfterOutputSeriesIndex: 2,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			if testCase.expectLeftSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectLeftSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectLeftSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			}
+
+			if testCase.expectRightSideClosedAfterOutputSeriesIndex >= len(testCase.expectedOutputSeries) {
+				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
+			}
+
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			outputSeries, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+
+			if len(testCase.expectedOutputSeries) == 0 {
+				require.Empty(t, outputSeries)
+			} else {
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
+			}
+			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
+
+			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
+			} else {
+				require.False(t, left.Closed, "left side should not be closed after SeriesMetadata, but it is")
+			}
+
+			if testCase.expectRightSideClosedAfterOutputSeriesIndex == -1 {
+				require.True(t, right.Closed, "right side should be closed after SeriesMetadata, but it is not")
+			} else {
+				require.False(t, right.Closed, "right side should not be closed after SeriesMetadata, but it is")
+			}
+
+			for outputSeriesIdx := range outputSeries {
+				_, err := o.NextSeries(ctx)
+				require.NoErrorf(t, err, "got error while reading series at index %v", outputSeriesIdx)
+
+				if outputSeriesIdx >= testCase.expectLeftSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, left.Closed, "left side should be closed after output series at index %v, but it is not", outputSeriesIdx)
+				} else {
+					require.Falsef(t, left.Closed, "left side should not be closed after output series at index %v, but it is", outputSeriesIdx)
+				}
+
+				if outputSeriesIdx >= testCase.expectRightSideClosedAfterOutputSeriesIndex {
+					require.Truef(t, right.Closed, "right side should be closed after output series at index %v, but it is not", outputSeriesIdx)
+				} else {
+					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
+				}
+			}
+
+			_, err = o.NextSeries(ctx)
+			require.Equal(t, types.EOS, err)
+
+			o.Close()
+			// Make sure we've returned everything to their pools.
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *testing.T) {
+	for _, closeAfterFirstSeries := range []bool{true, false} {
+		t.Run(fmt.Sprintf("close after first series=%v", closeAfterFirstSeries), func(t *testing.T) {
+			leftSeries := []labels.Labels{
+				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+			}
+
+			rightSeries := []labels.Labels{
+				labels.FromStrings("group", "1"),
+			}
+
+			step1 := timestamp.Time(0)
+			step2 := step1.Add(time.Minute)
+			timeRange := types.NewRangeQueryTimeRange(step1, step2, time.Minute)
+
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+			var err error
+			left1Data := types.InstantVectorSeriesData{}
+			left1Data.Floats, err = types.FPointSlicePool.Get(1, memoryConsumptionTracker)
+			require.NoError(t, err)
+			left1Data.Floats = append(left1Data.Floats, promql.FPoint{T: timestamp.FromTime(step1), F: 10})
+
+			left2Data := types.InstantVectorSeriesData{} // This series doesn't need any data.
+
+			rightData := types.InstantVectorSeriesData{}
+			rightData.Floats, err = types.FPointSlicePool.Get(2, memoryConsumptionTracker)
+			require.NoError(t, err)
+			rightData.Floats = append(rightData.Floats, promql.FPoint{T: timestamp.FromTime(step1), F: 5})
+			rightData.Floats = append(rightData.Floats, promql.FPoint{T: timestamp.FromTime(step2), F: 7})
+
+			left := &operators.TestOperator{Series: leftSeries, Data: []types.InstantVectorSeriesData{left1Data, left2Data}, MemoryConsumptionTracker: memoryConsumptionTracker}
+			right := &operators.TestOperator{Series: rightSeries, Data: []types.InstantVectorSeriesData{rightData}, MemoryConsumptionTracker: memoryConsumptionTracker}
+			vectorMatching := parser.VectorMatching{On: false}
+			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
+			require.NoError(t, err)
+
+			metadata, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
+			types.SeriesMetadataSlicePool.Put(metadata, memoryConsumptionTracker)
+
+			// Read the first series.
+			d, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+			types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+
+			if !closeAfterFirstSeries {
+				d, err = o.NextSeries(ctx)
+				require.NoError(t, err)
+				types.PutInstantVectorSeriesData(d, memoryConsumptionTracker)
+			}
+
+			// Close the operator and verify that the intermediate state is released.
+			o.Close()
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 		})
 	}
 }

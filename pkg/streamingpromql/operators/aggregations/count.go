@@ -8,8 +8,8 @@ package aggregations
 import (
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // count represents whether this aggregation is `count` (true), or `group` (false)
@@ -37,15 +37,11 @@ func (g *CountGroupAggregationGroup) groupAccumulatePoint(idx int64) {
 	g.values[idx] = 1
 }
 
-func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ types.EmitAnnotationFunc) error {
+func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ types.EmitAnnotationFunc, _ uint) error {
 	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.values == nil {
 		var err error
 		// First series with values for this group, populate it.
 		g.values, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
-		if err != nil {
-			return err
-		}
-
 		if err != nil {
 			return err
 		}
@@ -64,7 +60,7 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 	return nil
 }
 
-func (g *CountGroupAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *CountGroupAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, fv := range g.values {
 		if fv > 0 {
@@ -87,7 +83,10 @@ func (g *CountGroupAggregationGroup) ComputeOutputSeries(timeRange types.QueryTi
 		}
 	}
 
-	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
-
 	return types.InstantVectorSeriesData{Floats: floatPoints}, false, nil
+}
+
+func (g *CountGroupAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
+	types.Float64SlicePool.Put(g.values, memoryConsumptionTracker)
+	g.values = nil
 }

@@ -8,6 +8,7 @@ package commands
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -47,6 +48,7 @@ type RemoteReadCommand struct {
 
 	tenantID string
 	apiKey   string
+	apiUser  string
 
 	readTimeout time.Duration
 	tsdbPath    string
@@ -72,10 +74,15 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("remote-read-path", "Path of the remote read endpoint.").
 			Default("/prometheus/api/v1/read").
 			StringVar(&c.remoteReadPath)
-		cmd.Flag("id", "Grafana Mimir tenant ID. Used for basic auth and as X-Scope-OrgID HTTP header. Alternatively, set "+envVars.TenantID+".").
+		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").
 			Envar(envVars.TenantID).
 			Default("").
 			StringVar(&c.tenantID)
+		cmd.Flag("user",
+			fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).
+			Envar(envVars.APIUser).
+			Default("").
+			StringVar(&c.apiUser)
 		cmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
 			Envar(envVars.APIKey).
 			Default("").
@@ -205,7 +212,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 		Timeout: model.Duration(c.readTimeout),
 		HTTPClientConfig: config_util.HTTPClientConfig{
 			BasicAuth: &config_util.BasicAuth{
-				Username: c.tenantID,
+				Username: cmp.Or(c.apiUser, c.tenantID),
 				Password: config_util.Secret(c.apiKey),
 			},
 		},

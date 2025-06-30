@@ -157,6 +157,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 // This function may modify the input slice.
 func replaceInvalidChars(bSlice []byte) []byte {
 	for bIndex, b := range bSlice {
+		//nolint:staticcheck
 		if !((b >= 'a' && b <= 'z') || // a-z
 			(b >= 'A' && b <= 'Z') || // A-Z
 			(b >= '0' && b <= '9') || // 0-9

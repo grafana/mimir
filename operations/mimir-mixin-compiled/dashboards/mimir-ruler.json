@@ -600,6 +600,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -867,6 +882,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
                                     "mode": "fixed"
                                  }
                               }
@@ -1432,6 +1462,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#A9A9A9",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -1843,6 +1888,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Notifications\nShows the absolute rate of notification outcomes:\n- Sent: Successfully delivered notifications\n- Errors: Notifications that encountered errors during delivery\n- Dropped: Notifications that were dropped from the sending queue because the queue is full\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1858,12 +1904,11 @@
                            }
                         },
                         "min": 0,
-                        "noValue": 0,
                         "thresholds": {
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "short"
+                        "unit": "reqps"
                      },
                      "overrides": [ ]
                   },
@@ -1875,23 +1920,36 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]) > 0)\n> 0\n",
+                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0",
                         "format": "time_series",
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "sent",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0",
+                        "format": "time_series",
+                        "legendFormat": "errors",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0",
+                        "format": "time_series",
+                        "legendFormat": "dropped",
                         "legendLink": null
                      }
                   ],
-                  "title": "Delivery errors",
+                  "title": "Notifications",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Undelivered notifications (per tenant)\nShows the percentage of notifications that resulted in errors or were dropped, per tenant:\n- Errors: Percentage of notifications that encountered errors during delivery\n- Dropped: Percentage of notifications that were dropped from the queue\n\nBoth percentages are calculated as proportion of total notifications (sent + dropped).\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1930,13 +1988,19 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(user) (cortex_prometheus_notifications_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})\n  /\nsum by(user) (cortex_prometheus_notifications_queue_capacity{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}) > 0\n",
+                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\n(\n  sum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  +\n  sum by(user) (rate(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n)\n> 0\n",
                         "format": "time_series",
-                        "legendFormat": "{{ user }}",
+                        "legendFormat": "{{user}} - errors",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n/\n(\n  sum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  +\n  sum by(user) (rate(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n)\n> 0\n",
+                        "format": "time_series",
+                        "legendFormat": "{{user}} - dropped",
                         "legendLink": null
                      }
                   ],
-                  "title": "Queue length",
+                  "title": "Undelivered notifications (per tenant)",
                   "type": "timeseries"
                },
                {
@@ -1955,13 +2019,13 @@
                               "mode": "none"
                            }
                         },
+                        "max": 1,
                         "min": 0,
-                        "noValue": 0,
                         "thresholds": {
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "short"
+                        "unit": "percentunit"
                      },
                      "overrides": [ ]
                   },
@@ -1979,13 +2043,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (user) (increase(cortex_prometheus_notifications_dropped_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) > 0\n",
+                        "expr": "sum by(user) (cortex_prometheus_notifications_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})\n  /\nsum by(user) (cortex_prometheus_notifications_queue_capacity{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}) > 0\n",
                         "format": "time_series",
                         "legendFormat": "{{ user }}",
                         "legendLink": null
                      }
                   ],
-                  "title": "Dropped",
+                  "title": "Queue length",
                   "type": "timeseries"
                }
             ],

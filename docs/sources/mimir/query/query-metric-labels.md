@@ -7,22 +7,24 @@ keywords:
   - labels
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Query metric labels
 
-Grafana Mimir supports multiple [HTTP API]({{< relref "../references/http-api/index.md" >}}) endpoints to query metric label names and values.
+Grafana Mimir supports multiple [HTTP API](../../references/http-api/) endpoints to query metric label names and values.
 There are differences and trade-off between these API endpoints.
 
 ## Querying label names
 
 The following API endpoints find the list of label names of all (or a subset of) series stored in Mimir:
 
-- **[Get label names]({{< relref "../references/http-api/index.md#get-label-names" >}})**<br />
+- **[Get label names](../../references/http-api/#get-label-names)**<br />
   `GET,POST <prometheus-http-prefix>/api/v1/labels`
-- **[Label names cardinality]({{< relref "../references/http-api/index.md#label-names-cardinality" >}})**<br />
+- **[Label names cardinality](../../references/http-api/#label-names-cardinality)**<br />
   `GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names`
 
 {{% admonition type="note" %}}
-`<prometheus-http-prefix>` is the Prometheus HTTP prefix as documented in the [HTTP API]({{< relref "../references/http-api/index.md#path-prefixes" >}}) reference.
+`<prometheus-http-prefix>` is the Prometheus HTTP prefix as documented in the [HTTP API](../../references/http-api/#path-prefixes) reference.
 The default prefix is `/prometheus`.
 {{% /admonition %}}
 
@@ -57,13 +59,13 @@ The different API endpoints have different features, and the main differences fo
 
 The following API endpoints find the list of label values for a given label name:
 
-- **[Get label values]({{< relref "../references/http-api/index.md#get-label-values" >}})**<br />
+- **[Get label values](../../references/http-api/#get-label-values)**<br />
   `GET <prometheus-http-prefix>/api/v1/label/{name}/values`
-- **[Label values cardinality]({{< relref "../references/http-api/index.md#label-values-cardinality" >}})**<br />
+- **[Label values cardinality](../../references/http-api/#label-values-cardinality)**<br />
   `GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values`
 
 {{% admonition type="note" %}}
-`<prometheus-http-prefix>` is the Prometheus HTTP prefix as documented in the [HTTP API]({{< relref "../references/http-api/index.md#path-prefixes" >}}) reference.
+`<prometheus-http-prefix>` is the Prometheus HTTP prefix as documented in the [HTTP API](../../references/http-api/#path-prefixes) reference.
 The default prefix is `/prometheus`.
 {{% /admonition %}}
 
@@ -99,13 +101,13 @@ The different API endpoints have different features, and the main differences fo
 
 The following API endpoints have not been explicitly designed to query metric label names and values, but label names and/or values can be extracted from the response:
 
-- **[Get series by label matchers]({{< relref "../references/http-api/index.md#get-series-by-label-matchers" >}})**<br />
+- **[Get series by label matchers](../../references/http-api/#get-series-by-label-matchers)**<br />
   `GET,POST <prometheus-http-prefix>/api/v1/series`
-- **[Instant query]({{< relref "../references/http-api/index.md#instant-query" >}})**<br />
+- **[Instant query](../../references/http-api/#instant-query)**<br />
   `GET,POST <prometheus-http-prefix>/api/v1/query`
 
 {{% admonition type="note" %}}
-`<prometheus-http-prefix>` is the Prometheus HTTP prefix as documented in the [HTTP API]({{< relref "../references/http-api/index.md#path-prefixes" >}}) reference.
+`<prometheus-http-prefix>` is the Prometheus HTTP prefix as documented in the [HTTP API](../../references/http-api/#path-prefixes) reference.
 The default prefix is `/prometheus`.
 {{% /admonition %}}
 

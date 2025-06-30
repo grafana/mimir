@@ -10,16 +10,20 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
-	"github.com/grafana/mimir/pkg/util/instrumentation"
 )
 
 const (
@@ -57,6 +61,9 @@ type ClientConfig struct {
 
 	RequestDebug bool
 	UserAgent    string
+
+	// ClusterValidationLabel optionally defines the cluster validation label that should be sent with HTTP requests.
+	ClusterValidationLabel string
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
@@ -74,6 +81,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 60*time.Second, "The timeout for a single read request.")
 	f.BoolVar(&cfg.RequestDebug, "tests.send-chunks-debugging-header", false, "Request debugging on the server side via header.")
 	f.StringVar(&cfg.UserAgent, "tests.client.user-agent", defaultUserAgent, "The value the Mimir client should send in the User-Agent header.")
+	f.StringVar(&cfg.ClusterValidationLabel, "tests.client.cluster-validation.label", "", "Optionally define the cluster validation label.")
 }
 
 type Client struct {
@@ -87,13 +95,32 @@ type clientWriter interface {
 	sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error)
 }
 
-func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
-	rt := &clientRoundTripper{
+func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (*Client, error) {
+	rt := http.DefaultTransport
+	if cfg.ClusterValidationLabel != "" {
+		invalidClusterLabels := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "mimir_continuous_test_client_invalid_cluster_validation_label_requests_total",
+			Help: "Number of requests with invalid cluster validation label.",
+			ConstLabels: map[string]string{
+				"protocol": "http",
+			},
+		}, []string{"method"})
+		invalidClusterLabelReporter := func(msg string, method string) {
+			level.Warn(logger).Log("msg", msg, "method", method, "cluster_validation_label", cfg.ClusterValidationLabel)
+			invalidClusterLabels.WithLabelValues(method).Inc()
+		}
+		rt = middleware.ClusterValidationRoundTripper(cfg.ClusterValidationLabel, invalidClusterLabelReporter, rt)
+		level.Info(logger).Log("msg", "including cluster validation header with HTTP requests", "cluster_validation_label", cfg.ClusterValidationLabel)
+	} else {
+		level.Info(logger).Log("msg", "not including cluster validation header with HTTP requests")
+	}
+
+	rt = &clientRoundTripper{
 		tenantID:          cfg.TenantID,
 		basicAuthUser:     cfg.BasicAuthUser,
 		basicAuthPassword: cfg.BasicAuthPassword,
 		bearerToken:       cfg.BearerToken,
-		rt:                instrumentation.TracerTransport{},
+		rt:                otelhttp.NewTransport(rt),
 		requestDebug:      cfg.RequestDebug,
 		userAgent:         cfg.UserAgent,
 	}
@@ -275,7 +302,7 @@ type clientRoundTripper struct {
 	userAgent         string
 }
 
-// RoundTrip add the tenant ID header required by Mimir.
+// RoundTrip adds the tenant ID header required by Mimir.
 func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	options, _ := req.Context().Value(requestOptionsKey).(*requestOptions)
 	if options != nil {

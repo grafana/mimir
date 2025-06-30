@@ -22,6 +22,9 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+    {{- if .Values.federation_frontend.service.extraPorts }}
+    {{- toYaml .Values.federation_frontend.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "federation-frontend") | nindent 4 }}
 {{- end }}

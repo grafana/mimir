@@ -42,12 +42,15 @@ func randomGranularPriority(priority Priority) int {
 type PriorityLimiter interface {
 	Metrics
 
-	// AcquirePermit attempts to acquire a permit, potentially blocking up to maxExecutionTime.
+	// AcquirePermit attempts to acquire a permit, potentially blocking based on the prioriter current rejection threshold.
 	// The request priority must be greater than the current priority threshold for admission.
 	AcquirePermit(ctx context.Context, priority Priority) (Permit, error)
 
 	// CanAcquirePermit returns whether it's currently possible to acquire a permit for the priority.
 	CanAcquirePermit(priority Priority) bool
+
+	// Reset resets the limiter to its initial limit.
+	Reset()
 }
 
 func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logger) PriorityLimiter {
@@ -65,9 +68,9 @@ type priorityLimiter struct {
 }
 
 func (l *priorityLimiter) AcquirePermit(ctx context.Context, priority Priority) (Permit, error) {
-	// Generate a granular priority for the request and compare it to the prioritizer threshold
+	// Generate a granular priority for the request and check if we can acquire a permit
 	granularPriority := randomGranularPriority(priority)
-	if granularPriority < l.prioritizer.RejectionThreshold() {
+	if !l.canAcquirePermit(granularPriority) {
 		return nil, ErrExceeded
 	}
 
@@ -76,16 +79,20 @@ func (l *priorityLimiter) AcquirePermit(ctx context.Context, priority Priority) 
 }
 
 func (l *priorityLimiter) CanAcquirePermit(priority Priority) bool {
-	return randomGranularPriority(priority) >= l.prioritizer.RejectionThreshold()
+	return l.canAcquirePermit(randomGranularPriority(priority))
+}
+
+func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
+	// Threshold against the limiter's max capacity
+	_, _, _, maxBlocked := l.queueStats()
+	if l.Blocked() >= maxBlocked {
+		return false
+	}
+
+	// Threshold against the prioritizer's rejection threshold
+	return granularPriority >= l.prioritizer.RejectionThreshold()
 }
 
 func (l *priorityLimiter) RejectionRate() float64 {
 	return l.prioritizer.RejectionRate()
-}
-
-func (l *priorityLimiter) getAndResetStats() (limit, inflight, queued, rejectionThreshold, maxQueue int) {
-	limit = l.Limit()
-	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
-	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
-	return limit, l.Inflight(), l.Blocked(), rejectionThreshold, maxQueue
 }

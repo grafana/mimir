@@ -14,23 +14,25 @@ import (
 	"net/url"
 	strconv "strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
-	otgrpc "github.com/opentracing-contrib/go-grpc"
-	"github.com/opentracing-contrib/go-stdlib/nethttp"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -82,7 +84,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		require.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(nil),
 		}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -99,7 +101,149 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		assert.NotEqual(t, downstreamReqHost, addr)
 	}
 
-	testFrontend(t, config, nil, test, nil)
+	testFrontend(t, config, nil, test, nil, nil)
+}
+
+func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
+	testCases := map[string]struct {
+		serverClusterValidation clusterutil.ServerClusterValidationConfig
+		clientClusterValidation clusterutil.ClusterValidationConfig
+		expectedMetrics         string
+		serverCluster           string
+		enabled                 bool
+		softValidation          bool
+		clientCluster           string
+		expectedError           string
+		expectedStatusCode      int
+	}{
+		"if server and client have equal cluster validation labels and cluster validation is disabled no error is returned": {
+			clientCluster:      "cluster",
+			serverCluster:      "cluster",
+			enabled:            false,
+			expectedStatusCode: 200,
+		},
+		"if server and client have different cluster validation labels and cluster validation is disabled no error is returned": {
+			clientCluster:      "client-cluster",
+			serverCluster:      "server-cluster",
+			enabled:            false,
+			expectedStatusCode: 200,
+		},
+		"if server and client have equal cluster validation labels and cluster validation is enabled no error is returned": {
+			clientCluster:      "cluster",
+			serverCluster:      "cluster",
+			enabled:            true,
+			expectedStatusCode: 200,
+		},
+		"if server and client have different cluster validation labels and soft cluster validation is enabled no error is returned": {
+			clientCluster:      "client-cluster",
+			serverCluster:      "server-cluster",
+			enabled:            true,
+			softValidation:     true,
+			expectedStatusCode: 200,
+		},
+		"if server and client have different cluster validation labels and cluster validation is enabled an error is returned": {
+			clientCluster:      "client-cluster",
+			serverCluster:      "server-cluster",
+			enabled:            true,
+			softValidation:     false,
+			expectedStatusCode: 500,
+			expectedError:      `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`,
+			expectedMetrics: `
+				# HELP cortex_client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
+        	    # TYPE cortex_client_invalid_cluster_validation_label_requests_total counter
+        	    cortex_client_invalid_cluster_validation_label_requests_total{client="querier",method="<unknown-route>",protocol="http"} 1
+			`,
+		},
+		"if client has no cluster validation label and soft cluster validation is enabled no error is returned": {
+			clientCluster:      "",
+			serverCluster:      "server-cluster",
+			enabled:            true,
+			softValidation:     true,
+			expectedStatusCode: 200,
+		},
+		"if client has no cluster validation label and cluster validation is enabled an error is returned": {
+			clientCluster:      "",
+			serverCluster:      "server-cluster",
+			enabled:            true,
+			softValidation:     false,
+			expectedStatusCode: 511,
+			expectedError:      "rejected request with empty cluster validation label - it should be \\\"server-cluster\\\"",
+		},
+	}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			// Create an HTTP server listening locally. This server mocks the downstream
+			// Prometheus API-compatible server.
+			downstreamListen, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+
+			var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, err := w.Write([]byte(responseBody))
+				require.NoError(t, err)
+			})
+			logger := log.NewNopLogger()
+			if testCase.enabled {
+				reg := prometheus.NewPedanticRegistry()
+				handler = middleware.ClusterValidationMiddleware(
+					testCase.serverCluster, []string{}, testCase.softValidation,
+					middleware.NewInvalidClusterRequests(reg, "cortex"), logger,
+				).Wrap(handler)
+			}
+			downstreamServer := http.Server{
+				Handler:      handler,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+
+			defer downstreamServer.Shutdown(context.Background()) //nolint:errcheck
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				downstreamServer.Serve(downstreamListen) //nolint:errcheck
+			}()
+			t.Cleanup(wg.Wait)
+
+			// Configure the query-frontend with the mocked downstream server.
+			config := defaultFrontendConfig()
+			config.DownstreamURL = fmt.Sprintf("http://%s", downstreamListen.Addr())
+			config.ClusterValidationConfig.Label = testCase.clientCluster
+
+			reg := prometheus.NewPedanticRegistry()
+
+			// Configure the test to send a request to the query-frontend and assert on the
+			// Host HTTP header received by the downstream server.
+			test := func(addr string) {
+				req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/%s", addr, query), nil)
+				require.NoError(t, err)
+
+				ctx := context.Background()
+				req = req.WithContext(ctx)
+				err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(ctx, "1"), req)
+				require.NoError(t, err)
+
+				client := http.Client{
+					Transport: otelhttp.NewTransport(nil),
+				}
+				resp, err := client.Do(req)
+				require.NoError(t, err)
+				require.Equal(t, testCase.expectedStatusCode, resp.StatusCode)
+				defer resp.Body.Close()
+				if resp.StatusCode != 200 {
+					body, err := io.ReadAll(resp.Body)
+					require.NoError(t, err)
+					require.Contains(t, string(body), testCase.expectedError)
+
+					if testCase.expectedMetrics != "" {
+						err = testutil.GatherAndCompare(reg, strings.NewReader(testCase.expectedMetrics), "cortex_client_invalid_cluster_validation_label_requests_total")
+						require.NoError(t, err)
+					}
+				}
+			}
+
+			testFrontend(t, config, nil, test, nil, reg)
+		})
+	}
 }
 
 func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
@@ -144,7 +288,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(nil),
 		}
 
 		resp, err := client.Do(req)
@@ -163,7 +307,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 		assert.Contains(t, logs, "param_foo=bar")
 	}
 
-	testFrontend(t, config, nil, test, l)
+	testFrontend(t, config, nil, test, l, nil)
 }
 
 func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
@@ -204,7 +348,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 		assert.NoError(t, err)
 
 		client := http.Client{
-			Transport: &nethttp.Transport{},
+			Transport: otelhttp.NewTransport(nil),
 		}
 
 		resp, err := client.Do(req)
@@ -216,10 +360,10 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 		assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode, string(b))
 	}
 
-	testFrontend(t, config, nil, test, nil)
+	testFrontend(t, config, nil, test, nil, nil)
 }
 
-func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Handler, test func(addr string), l log.Logger) {
+func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Handler, test func(addr string), l log.Logger, reg prometheus.Registerer) {
 	logger := log.NewNopLogger()
 	if l != nil {
 		logger = l
@@ -238,7 +382,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	httpListen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
-	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, nil, codec)
+	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, 0, logger, reg, codec)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
 	// v1 will be nil if DownstreamURL is defined.
@@ -251,7 +395,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 	defer grpcServer.GracefulStop()
 
@@ -263,7 +407,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	r.PathPrefix("/").Handler(middleware.Merge(
 		middleware.AuthenticateUser,
 		middleware.Tracer{},
-	).Wrap(transport.NewHandler(config.Handler, rt, logger, nil, nil)))
+	).Wrap(transport.NewHandler(config.Handler, rt, logger, reg, nil)))
 
 	httpServer := http.Server{
 		Handler:      r,
@@ -276,7 +420,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	go grpcServer.Serve(grpcListen) //nolint:errcheck
 
 	var worker services.Service
-	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil)
+	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), worker))
 

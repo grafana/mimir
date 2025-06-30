@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type Selector struct {
@@ -22,6 +23,7 @@ type Selector struct {
 	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
 	Offset    int64  // In milliseconds
 	Matchers  []*labels.Matcher
+	EagerLoad bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
 
 	ExpressionPosition posrange.PositionRange
 
@@ -31,19 +33,60 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
-	querier storage.Querier
-	series  *seriesList
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	querier   storage.Querier
+	seriesSet storage.SeriesSet
+	series    *seriesList
 
 	seriesIdx int
 }
 
+func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
+	if s.EagerLoad {
+		return s.loadSeriesSet(ctx)
+	}
+
+	return nil
+}
+
 func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	defer func() {
+		// Release our reference to the series set so it can be garbage collected as soon as possible.
+		s.seriesSet = nil
+	}()
+
 	if s.series != nil {
 		return nil, errors.New("should not call Selector.SeriesMetadata() multiple times")
 	}
 
+	if !s.EagerLoad {
+		if err := s.loadSeriesSet(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	s.series = newSeriesList(s.MemoryConsumptionTracker)
+
+	for s.seriesSet.Next() {
+		s.series.Add(s.seriesSet.At())
+	}
+
+	metadata, err := s.series.ToSeriesMetadata()
+	if err != nil {
+		return nil, err
+	}
+
+	return metadata, s.seriesSet.Err()
+}
+
+func (s *Selector) loadSeriesSet(ctx context.Context) error {
+	if s.seriesSet != nil {
+		return errors.New("should not call Selector.loadSeriesSet() multiple times")
+	}
+
 	if s.LookbackDelta != 0 && s.Range != 0 {
-		return nil, errors.New("invalid Selector configuration: both LookbackDelta and Range are non-zero")
+		return errors.New("invalid Selector configuration: both LookbackDelta and Range are non-zero")
 	}
 
 	startTimestamp := s.TimeRange.StartT
@@ -79,17 +122,11 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	var err error
 	s.querier, err = s.Queryable.Querier(startTimestamp, endTimestamp)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	ss := s.querier.Select(ctx, true, hints, s.Matchers...)
-	s.series = newSeriesList()
-
-	for ss.Next() {
-		s.series.Add(ss.At())
-	}
-
-	return s.series.ToSeriesMetadata(), ss.Err()
+	s.seriesSet = s.querier.Select(ctx, true, hints, s.Matchers...)
+	return nil
 }
 
 func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunkenc.Iterator, error) {
@@ -97,15 +134,15 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 		return nil, types.EOS
 	}
 
-	s.seriesIdx++
-
 	// Only check for cancellation every 128 series. This avoids a (relatively) expensive check on every iteration, but aborts
-	// queries quickly enough when cancelled.
+	// queries quickly enough when cancelled. Note that we purposefully check for cancellation before incrementing the series
+	// index so that we check for cancellation at least once for all selectors.
 	// See https://github.com/prometheus/prometheus/pull/14118 for more explanation of why we use 128 (rather than say 100).
 	if s.seriesIdx%128 == 0 && ctx.Err() != nil {
 		return nil, context.Cause(ctx)
 	}
 
+	s.seriesIdx++
 	return s.series.Pop().Iterator(existing), nil
 }
 
@@ -118,6 +155,8 @@ func (s *Selector) Close() {
 		_ = s.querier.Close()
 		s.querier = nil
 	}
+
+	s.seriesSet = nil
 }
 
 // seriesList is a FIFO queue of storage.Series.
@@ -130,15 +169,17 @@ type seriesList struct {
 
 	lastSeriesBatch *seriesBatch
 
-	length int
+	length                   int
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
-func newSeriesList() *seriesList {
+func newSeriesList(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *seriesList {
 	firstBatch := getSeriesBatch()
 
 	return &seriesList{
-		currentSeriesBatch: firstBatch,
-		lastSeriesBatch:    firstBatch,
+		currentSeriesBatch:       firstBatch,
+		lastSeriesBatch:          firstBatch,
+		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
@@ -162,8 +203,12 @@ func (l *seriesList) Len() int {
 // ToSeriesMetadata returns a SeriesMetadata value for each series added to this seriesList.
 //
 // Calling ToSeriesMetadata after calling Pop may return an incomplete list.
-func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
-	metadata := types.GetSeriesMetadataSlice(l.length)
+func (l *seriesList) ToSeriesMetadata() ([]types.SeriesMetadata, error) {
+	metadata, err := types.SeriesMetadataSlicePool.Get(l.length, l.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
 	batch := l.currentSeriesBatch
 
 	for batch != nil {
@@ -174,7 +219,7 @@ func (l *seriesList) ToSeriesMetadata() []types.SeriesMetadata {
 		batch = batch.next
 	}
 
-	return metadata
+	return metadata, nil
 }
 
 // Pop returns the next series from the head of this seriesList, and advances

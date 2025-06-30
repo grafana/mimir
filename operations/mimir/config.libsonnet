@@ -70,7 +70,11 @@
     storage_azure_account_name: error 'must specify Azure account name',
     storage_azure_account_key: error 'must specify Azure account key',
 
-    jaeger_agent_host: null,
+    // Configure tracing library to add HTTP request headers as span attributes.
+    trace_request_headers: false,
+    // List of HTTP request headers to exclude from tracing when trace_request_headers is enabled.
+    // Thew following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
+    trace_request_exclude_headers_list: [],
 
     // Allow to configure the alertmanager disk.
     alertmanager_data_disk_size: '100Gi',
@@ -113,7 +117,7 @@
     memcached_frontend_replicas: 3,
     memcached_index_queries_replicas: 3,
     memcached_chunks_replicas: 3,
-    memcached_metadata_replicas: 1,
+    memcached_metadata_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
@@ -168,7 +172,10 @@
     query_tee_node_port: null,
 
     // Common configuration parameters
-    commonConfig:: {},
+    commonConfig:: if !$._config.trace_request_headers then {} else {
+      'server.trace-request-headers': true,
+      [if std.length($._config.trace_request_exclude_headers_list) > 0 then 'server.trace-request-headers-exclude-list']: std.join(',', std.sort($._config.trace_request_exclude_headers_list)),
+    },
 
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:
@@ -389,9 +396,9 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // 1400 rules
+        // 1700 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 70,
+        ruler_max_rule_groups_per_tenant: 85,
 
         // No retention for now.
         compactor_blocks_retention_period: '0',
@@ -405,9 +412,9 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // 2000 rules
+        // 2400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 100,
+        ruler_max_rule_groups_per_tenant: 120,
       },
 
       small_user:: {
@@ -418,9 +425,9 @@
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
 
-        // 2800 rules
+        // 3000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 140,
+        ruler_max_rule_groups_per_tenant: 150,
       },
 
       medium_user:: {
@@ -535,11 +542,6 @@
     //    will discover the query-schedulers via ring.
     query_scheduler_service_discovery_ring_read_path_enabled: true,
 
-    // Enables streaming of chunks from ingesters using blocks.
-    // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.
-    // Default value is true, left here for backwards compatibility until the flag is removed completely.
-    ingester_stream_chunks_when_using_blocks: true,
-
     // Ingester limits are put directly into runtime config, if not null. Available limits:
     //    ingester_instance_limits: {
     //      max_inflight_push_requests: 0,  // Max inflight push requests per ingester. 0 = no limit.
@@ -593,7 +595,6 @@
           overrides: $.util.removeNulls($._config.overrides),
         }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
-        + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
         + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
@@ -733,6 +734,7 @@
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
         'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
         'ruler-storage.cache.memcached.max-async-concurrency': 50,
+        'ruler-storage.cache.memcached.timeout': '500ms',
       } + if $._config.memcached_metadata_mtls_enabled then {
         'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
         'ruler-storage.cache.memcached.connect-timeout': '1s',

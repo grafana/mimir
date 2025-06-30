@@ -105,7 +105,7 @@ local filename = 'mimir-tenants.json';
           ],
           [
             'local limit ({{job}})',
-            '{{pod}}',
+            '{{%(per_instance_label)s}}' % $._config.per_instance_label,
           ],
         ) +
         $.showAllTooltip +
@@ -150,7 +150,7 @@ local filename = 'mimir-tenants.json';
           ],
           [
             'local limit ({{job}})',
-            '{{pod}}',
+            '{{%(per_instance_label)s}}' % $._config.per_instance_label,
           ],
         ) +
         $.showAllTooltip +
@@ -176,6 +176,20 @@ local filename = 'mimir-tenants.json';
             Owned series are the subset of an ingester's in-memory series that currently map to it in the ring
           |||
         ),
+      )
+    )
+
+    .addRowIf(
+      $._config.gateway_per_tenant_metrics_enabled,
+      $.row('Tenant gateway requests').addPanel(
+        $.timeseriesPanel('Reads') +
+        $.qpsPanel('cortex_per_tenant_request_total{tenant=~"$user", route=~"%s"}' % $.queries.read_http_routes_regex)
+      ).addPanel(
+        $.timeseriesPanel('Writes') +
+        $.qpsPanel('cortex_per_tenant_request_total{tenant=~"$user", route=~"%s"}' % $.queries.write_http_routes_regex)
+      ).addPanel(
+        $.timeseriesPanel('Other') +
+        $.qpsPanel('cortex_per_tenant_request_total{tenant=~"$user", route!~"%s", route!~"%s"}' % [$.queries.read_http_routes_regex, $.queries.write_http_routes_regex]),
       )
     )
 
@@ -269,9 +283,9 @@ local filename = 'mimir-tenants.json';
         local title = 'Distributor requests incoming rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          'sum(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]))'
+          'sum by (version) (label_replace(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]), "version", "1.0", "version", ""))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
-          'rate',
+          'rate (remote-write {{version}})',
         ) +
         { options+: { legend+: { showLegend: false } } } +
         $.panelDescription(

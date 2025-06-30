@@ -5,8 +5,8 @@ package functions
 import (
 	"math"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var Abs = FloatTransformationDropHistogramsFunc(math.Abs)
@@ -52,7 +52,7 @@ var Sgn = FloatTransformationDropHistogramsFunc(func(f float64) float64 {
 	return f
 })
 
-var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	for i := range seriesData.Floats {
 		seriesData.Floats[i].F = -seriesData.Floats[i].F
 	}
@@ -64,7 +64,7 @@ var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVec
 	return seriesData, nil
 }
 
-var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	outputIdx := 0
 	minArg := scalarArgsData[0]
 	maxArg := scalarArgsData[1]
@@ -101,7 +101,7 @@ func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
 		}
 	}
 
-	return func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		clampTo := scalarArgsData[0]
 
 		for step, data := range seriesData.Floats {
@@ -121,7 +121,7 @@ func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
 
 // round returns a number rounded to toNearest.
 // Ties are solved by rounding up.
-var Round InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var Round InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	toNearest := scalarArgsData[0]
 
 	for step, data := range seriesData.Floats {

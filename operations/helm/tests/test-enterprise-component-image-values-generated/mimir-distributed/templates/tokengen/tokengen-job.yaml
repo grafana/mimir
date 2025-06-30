@@ -27,7 +27,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-component-image-values-mimir
+      serviceAccountName: test-enterprise-component-image-values-mimir-tokengen
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -35,8 +35,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: tokengen
           imagePullPolicy: IfNotPresent
@@ -44,7 +42,10 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - -tokengen.token-file=/shared/admin-token
           volumeMounts:
+            - name: shared
+              mountPath: /shared
             - name: config
               mountPath: /etc/mimir
             - name: license
@@ -71,4 +72,6 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
+          emptyDir: {}
+        - name: shared
           emptyDir: {}

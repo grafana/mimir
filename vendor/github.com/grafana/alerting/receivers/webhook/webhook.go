@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -20,7 +22,6 @@ import (
 // alert notifications as webhooks.
 type Notifier struct {
 	*receivers.Base
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	images   images.Provider
 	tmpl     *templates.Template
@@ -30,11 +31,10 @@ type Notifier struct {
 
 // New is the constructor for
 // the WebHook notifier.
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, orgID int64) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, orgID int64) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
+		Base:     receivers.NewBase(meta, logger),
 		orgID:    orgID,
-		log:      logger,
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -58,6 +58,7 @@ type webhookMessage struct {
 
 // Notify implements the Notifier interface.
 func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := wn.GetLogger(ctx)
 	groupKey, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return false, err
@@ -65,10 +66,17 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 
 	as, numTruncated := truncateAlerts(wn.settings.MaxAlerts, as)
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, wn.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, wn.tmpl, as, l, &tmplErr)
+	data.TruncatedAlerts = &numTruncated
+
+	// Fail early if we can't template the URL.
+	parsedURL := tmpl(wn.settings.URL)
+	if tmplErr != nil {
+		return false, tmplErr
+	}
 
 	// Augment our Alert data with ImageURLs if available.
-	_ = images.WithStoredImages(ctx, wn.log, wn.images,
+	_ = images.WithStoredImages(ctx, l, wn.images,
 		func(index int, image images.Image) error {
 			if len(image.URL) != 0 {
 				data.Alerts[index].ImageURL = image.URL
@@ -77,39 +85,59 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		},
 		as...)
 
-	msg := &webhookMessage{
-		Version:         "1",
-		ExtendedData:    data,
-		GroupKey:        groupKey.String(),
-		TruncatedAlerts: numTruncated,
-		OrgID:           wn.orgID,
-		Title:           tmpl(wn.settings.Title),
-		Message:         tmpl(wn.settings.Message),
-	}
+	state := string(receivers.AlertStateOK)
 	if types.Alerts(as...).Status() == model.AlertFiring {
-		msg.State = string(receivers.AlertStateAlerting)
+		state = string(receivers.AlertStateAlerting)
+	}
+
+	// Provide variables to the template for use in the custom payload.
+	for k, v := range wn.settings.Payload.Vars {
+		data.Vars[k] = v
+	}
+
+	var body string
+	if wn.settings.Payload.Template != "" {
+		body = tmpl(wn.settings.Payload.Template)
+		if tmplErr != nil {
+			return false, tmplErr // TODO: Should there be an option to fallback to the default payload?
+		}
 	} else {
-		msg.State = string(receivers.AlertStateOK)
+		// We separate templating the Title and Message so we can capture any errors and reset the error state.
+		// Otherwise, if Title fails Message will not be templated either.
+		title := tmpl(wn.settings.Title)
+		if tmplErr != nil {
+			level.Warn(l).Log("msg", "failed to template webhook title", "err", tmplErr.Error())
+			tmplErr = nil // Reset the error for the next template.
+		}
+		message := tmpl(wn.settings.Message)
+		if tmplErr != nil {
+			level.Warn(l).Log("msg", "failed to template webhook message", "err", tmplErr.Error())
+			tmplErr = nil // Reset the error for the next template.
+		}
+		payload, err := json.Marshal(webhookMessage{
+			Version:         "1",
+			ExtendedData:    data,
+			GroupKey:        groupKey.String(),
+			TruncatedAlerts: numTruncated,
+			OrgID:           wn.orgID,
+			State:           state,
+			Title:           title,
+			Message:         message,
+		})
+		if err != nil {
+			return false, err
+		}
+
+		body = string(payload)
 	}
 
-	if tmplErr != nil {
-		wn.log.Warn("failed to template webhook message", "error", tmplErr.Error())
-		tmplErr = nil
+	headers, removed := OmitRestrictedHeaders(wn.settings.ExtraHeaders)
+	if len(removed) > 0 {
+		level.Debug(l).Log("msg", "removed restricted headers", "headers", removed)
 	}
 
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return false, err
-	}
-
-	headers := make(map[string]string)
 	if wn.settings.AuthorizationScheme != "" && wn.settings.AuthorizationCredentials != "" {
 		headers["Authorization"] = fmt.Sprintf("%s %s", wn.settings.AuthorizationScheme, wn.settings.AuthorizationCredentials)
-	}
-
-	parsedURL := tmpl(wn.settings.URL)
-	if tmplErr != nil {
-		return false, tmplErr
 	}
 
 	var tlsConfig *tls.Config
@@ -123,13 +151,14 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		URL:        parsedURL,
 		User:       wn.settings.User,
 		Password:   wn.settings.Password,
-		Body:       string(body),
+		Body:       body,
 		HTTPMethod: wn.settings.HTTPMethod,
 		HTTPHeader: headers,
 		TLSConfig:  tlsConfig,
+		HMACConfig: wn.settings.HMACConfig,
 	}
 
-	if err := wn.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := wn.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, err
 	}
 

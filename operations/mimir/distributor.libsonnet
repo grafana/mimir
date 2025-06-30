@@ -63,7 +63,6 @@
         ),
       )
     ),
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: std.toString(1000),
   },
 
   distributor_node_affinity_matchers:: [],
@@ -76,7 +75,7 @@
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   distributor_container::
     $.newDistributorContainer('distributor', $.distributor_args, $.distributor_env_map),

@@ -29,7 +29,7 @@ func CopyLabels(input labels.Labels) labels.Labels {
 	return input.Copy()
 }
 
-// Build a labels.Labels from LabelAdaptors, with amortized zero allocations.
+// Build a labels.Labels from LabelAdapters, with amortized zero allocations.
 func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
 	builder.Reset()
 	for _, v := range ls {

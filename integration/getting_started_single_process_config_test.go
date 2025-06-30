@@ -7,7 +7,6 @@
 package integration
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/grafana/e2e"
@@ -23,7 +22,7 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulesBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
@@ -31,13 +30,10 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
-	flags := map[string]string{
-		"-blocks-storage.s3.access-key-id":     e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-blocks-storage.s3.bucket-name":       blocksBucketName,
-		"-blocks-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":          "true",
-	}
+	flags := mergeFlags(
+		BlocksStorageS3Flags(),
+		RulerStorageS3Flags(),
+	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir))

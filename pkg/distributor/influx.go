@@ -29,8 +29,8 @@ import (
 )
 
 func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
-	spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.InfluxHandler.decodeAndConvert")
-	defer spanLogger.Span.Finish()
+	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.InfluxHandler.decodeAndConvert")
+	defer spanLogger.Finish()
 
 	spanLogger.SetTag("content_type", r.Header.Get("Content-Type"))
 	spanLogger.SetTag("content_encoding", r.Header.Get("Content-Encoding"))
@@ -142,9 +142,10 @@ func InfluxHandler(
 			} else {
 				level.Warn(logger).Log("msg", errorMsg, "response_code", httpCode, "err", err)
 			}
-			addHeaders(w, err, r, httpCode, retryCfg)
+			addErrorHeaders(w, err, r, httpCode, retryCfg)
 			w.WriteHeader(httpCode)
 		} else {
+			addSuccessHeaders(w, req.artificialDelay)
 			w.WriteHeader(http.StatusNoContent) // Needed for Telegraf, otherwise it tries to marshal JSON and considers the write a failure.
 		}
 	})

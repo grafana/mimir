@@ -77,10 +77,9 @@ func (r *prioritizer) Calibrate() {
 	r.mu.Lock()
 
 	// Compute queue stats across all registered limiters
-	var totalLimit, totalQueued, totalFreeInflight, totalRejectionThresh, totalMaxQueue int
+	var totalLimit, totalQueued, totalRejectionThresh, totalMaxQueue int
 	for _, limiter := range r.limiters {
-		limit, inflight, queued, rejectionThresh, maxQueue := limiter.getAndResetStats()
-		totalFreeInflight += limit - inflight
+		limit, queued, rejectionThresh, maxQueue := limiter.queueStats()
 		totalLimit += limit
 		totalQueued += queued
 		totalRejectionThresh += rejectionThresh
@@ -102,16 +101,6 @@ func (r *prioritizer) Calibrate() {
 		"newThresh", newThresh,
 		"limit", totalLimit,
 		"blocked", totalQueued)
-}
-
-func computeRejectionRate(queueSize, rejectionThreshold, maxQueueSize int) float64 {
-	if queueSize <= rejectionThreshold {
-		return 0
-	}
-	if queueSize >= maxQueueSize {
-		return 1
-	}
-	return float64(queueSize-rejectionThreshold) / float64(maxQueueSize-rejectionThreshold)
 }
 
 func (r *prioritizer) recordPriority(priority int) {

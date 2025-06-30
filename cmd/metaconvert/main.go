@@ -157,5 +157,5 @@ func uploadMetadata(ctx context.Context, bkt objstore.Bucket, meta block.Meta, p
 		return errors.Wrap(err, "encode meta.json")
 	}
 
-	return bkt.Upload(ctx, path, &body)
+	return bkt.Upload(ctx, path, bytes.NewReader(body.Bytes()))
 }

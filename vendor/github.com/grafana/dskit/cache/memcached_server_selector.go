@@ -12,15 +12,6 @@ import (
 	"github.com/grafana/gomemcache/memcache"
 )
 
-var (
-	addrsPool = sync.Pool{
-		New: func() interface{} {
-			addrs := make([]net.Addr, 0, 64)
-			return &addrs
-		},
-	}
-)
-
 // MemcachedJumpHashSelector implements the memcache.ServerSelector
 // interface, utilizing a jump hash to distribute keys to servers.
 //
@@ -30,9 +21,8 @@ var (
 // with consistent DNS names where the naturally sorted order
 // is predictable (ie. Kubernetes statefulsets).
 type MemcachedJumpHashSelector struct {
-	// To avoid copy and pasting all memcache server list logic,
-	// we embed it and implement our features on top of it.
-	servers memcache.ServerList
+	mu    sync.RWMutex
+	addrs []net.Addr
 }
 
 // SetServers changes a MemcachedJumpHashSelector's set of servers at
@@ -53,46 +43,35 @@ func (s *MemcachedJumpHashSelector) SetServers(servers ...string) error {
 	copy(sortedServers, servers)
 	natsort.Sort(sortedServers)
 
-	return s.servers.SetServers(sortedServers...)
+	naddr, err := memcache.ResolveServers(sortedServers)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.addrs = naddr
+	return nil
 }
 
 // PickServer returns the server address that a given item
-// should be shared onto.
+// should be sharded onto.
 func (s *MemcachedJumpHashSelector) PickServer(key string) (net.Addr, error) {
-	// Unfortunately we can't read the list of server addresses from
-	// the original implementation, so we use Each() to fetch all of them.
-	addrs := *(addrsPool.Get().(*[]net.Addr))
-	err := s.servers.Each(func(addr net.Addr) error {
-		addrs = append(addrs, addr)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	// No need of a jump hash in case of 0 or 1 servers.
-	if len(addrs) == 0 {
-		addrs = (addrs)[:0]
-		addrsPool.Put(&addrs)
+	if len(s.addrs) == 0 {
 		return nil, memcache.ErrNoServers
 	}
-	if len(addrs) == 1 {
-		picked := addrs[0]
-
-		addrs = (addrs)[:0]
-		addrsPool.Put(&addrs)
-
-		return picked, nil
+	if len(s.addrs) == 1 {
+		return s.addrs[0], nil
 	}
 
 	// Pick a server using the jump hash.
 	cs := xxhash.Sum64String(key)
-	idx := jumpHash(cs, len(addrs))
-	picked := (addrs)[idx]
-
-	addrs = (addrs)[:0]
-	addrsPool.Put(&addrs)
-
+	idx := jumpHash(cs, len(s.addrs))
+	picked := s.addrs[idx]
 	return picked, nil
 }
 
@@ -100,5 +79,12 @@ func (s *MemcachedJumpHashSelector) PickServer(key string) (net.Addr, error) {
 // If f returns a non-nil error, iteration will stop and that
 // error will be returned.
 func (s *MemcachedJumpHashSelector) Each(f func(net.Addr) error) error {
-	return s.servers.Each(f)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, a := range s.addrs {
+		if err := f(a); nil != err {
+			return err
+		}
+	}
+	return nil
 }

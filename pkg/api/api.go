@@ -187,7 +187,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
 		{Desc: "Status", Path: "/multitenant_alertmanager/status"},
-		{Desc: "Status", Path: "/multitenant_alertmanager/configs"},
+		{Desc: "Config", Path: "/multitenant_alertmanager/configs"},
 		{Desc: "Ring status", Path: "/multitenant_alertmanager/ring"},
 		{Desc: "Alertmanager", Path: "/alertmanager"},
 	})
@@ -340,6 +340,7 @@ func (a *API) RegisterIngester(i Ingester) {
 func (a *API) RegisterRuler(r *ruler.Ruler) {
 	a.indexPage.AddLinks(defaultWeight, "Ruler", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ruler/ring"},
+		{Desc: "Ruler tenants", Path: "/ruler/tenants"},
 	})
 	a.RegisterRoute("/ruler/ring", r, false, true, "GET", "POST")
 
@@ -348,6 +349,10 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 
 	// List all user rule groups
 	a.RegisterRoute("/ruler/rule_groups", http.HandlerFunc(r.ListAllRules), false, true, "GET")
+
+	// List all tenants with the rule groups
+	a.RegisterRoute("/ruler/tenants", http.HandlerFunc(r.ListAllUsers), false, true, "GET")
+	a.RegisterRoute("/ruler/tenant/{tenant}/rule_groups", http.HandlerFunc(r.ListUserRuleGroups), false, true, "GET")
 
 	ruler.RegisterRulerServer(a.server.GRPC, r)
 }
@@ -465,6 +470,10 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_series"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/active_native_histogram_metrics"), handler, true, true, "GET", "POST")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
+}
+
+func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
+	a.RegisterRoute("/api/v1/analyze", handler, true, true, "POST")
 }
 
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the

@@ -23,7 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -90,13 +90,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	createDeletionMark(t, bucketClient, "user-2", block7, now.Add(-deletionDelay).Add(-time.Hour))         // Block reached the deletion threshold.
 
 	// Blocks for user-3, marked for deletion.
-	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-3", nil, tsdb.NewTenantDeletionMark(time.Now())))
+	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-3", nil, tsdb.NewTenantDeletionMark(now)))
 	block9 := createTSDBBlock(t, bucketClient, "user-3", 10, 30, 2, nil)
 	block10 := createTSDBBlock(t, bucketClient, "user-3", 30, 50, 2, nil)
 
 	// User-4 with no more blocks, but couple of mark and debug files. Should be fully deleted.
-	user4Mark := tsdb.NewTenantDeletionMark(time.Now())
-	user4Mark.FinishedTime = util.UnixSecondsFromTime(time.Now().Add(-60 * time.Second)) // Set to check final user cleanup.
+	user4Mark := tsdb.NewTenantDeletionMark(now)
+	user4Mark.FinishedTime = util.UnixSecondsFromTime(now.Add(-60 * time.Second)) // Set to check final user cleanup.
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-4", nil, user4Mark))
 	user4DebugMetaFile := path.Join("user-4", block.DebugMetas, "meta.json")
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
@@ -429,6 +429,10 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	))
 }
 
+func updateOwnershipFunc(c *BlocksCleaner, ownFunc func(user string) (bool, error)) {
+	c.usersScanner = tsdb.NewUsersScanner(c.bucketClient, ownFunc, c.logger)
+}
+
 func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
@@ -449,25 +453,34 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	// We will simulate change of "ownUser" by counting number of replies per user. First reply will be "true",
-	// all subsequent replies will be false.
-
-	userSeen := map[string]bool{}
+	// We will simulate change of "ownUser" by updating the "ownUser" function.
 	ownUser := func(user string) (bool, error) {
-		if userSeen[user] {
-			return false, nil
-		}
-		userSeen[user] = true
 		return true, nil
 	}
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, ownUser, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.StartAsync(ctx))
+	require.NoError(t, cleaner.AwaitRunning(ctx))
+
+	// Verify that we have seen the users while in services.Starting
+	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+		# TYPE cortex_bucket_blocks_count gauge
+		cortex_bucket_blocks_count{user="user-1"} 1
+		cortex_bucket_blocks_count{user="user-2"} 1
+	`),
+		"cortex_bucket_blocks_count",
+	))
+
+	// Simulate another BlocksCleaner taking ownership of these tenants by changing "ownUser"
+	updateOwnershipFunc(cleaner, func(user string) (bool, error) {
+		return false, nil
+	})
+	require.Equal(t, cleaner.State(), services.Running)
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 
-	// Verify that we have seen the users
-	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
-
-	// But there are no metrics for any user, because we did not in fact clean them.
+	// Expect no metrics for any user, we did not in fact clean them on the second run.
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 		# TYPE cortex_bucket_blocks_count gauge
@@ -542,14 +555,11 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
-
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
-	block3 := createTSDBBlock(t, bucketClient, "user-2", ts(-10), ts(-8), 2, nil)
-	block4 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
+	block3 := createTSDBBlock(t, bucketClient, "user-2", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block4 := createTSDBBlock(t, bucketClient, "user-2", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:           time.Hour,
@@ -787,12 +797,9 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
-
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 time.Hour,
@@ -854,16 +861,162 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	))
 }
 
+func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayPeriod(t *testing.T) {
+
+	deletionDelay := time.Hour
+	parentClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient := block.BucketWithGlobalMarkers(parentClient)
+
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+
+	createDeletionMark(t, bucketClient, "user-1", block1, now.Add(-deletionDelay).Add(-time.Minute))
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+
+	ctx := context.Background()
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
+
+	makeInconsistentBlockDeletionMarkers := func(cl objstore.Bucket, user string, blockID ulid.ULID) {
+		err := cl.Delete(ctx, path.Join(user, blockID.String(), block.DeletionMarkFilename))
+		require.NoError(t, err)
+	}
+
+	// blocks are uploaded and marked for deletion. The parentClient and bucketClient are consistent across all blocks.
+	checkBlockDeletionMarker(t, "user-1", parentClient, block1, true)
+	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
+
+	// delete block markers in the parent but not the replicated global location. This mocks a partial delete of the deletion marker.
+	// both clients show marker DNE, bucketClient returns false because wrapped parent client returns false.
+	makeInconsistentBlockDeletionMarkers(parentClient, "user-1", block1)
+	checkBlockDeletionMarker(t, "user-1", parentClient, block1, false)
+	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, false)
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+
+	// cleaner.cleanUser makes the clients consistent again. block1 is marked for deletion again
+	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+			# TYPE cortex_bucket_blocks_count gauge
+			cortex_bucket_blocks_count{user="user-1"} 1
+			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
+			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
+			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 1
+			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+			# HELP cortex_compactor_blocks_cleaned_total Total number of blocks deleted.
+			# TYPE cortex_compactor_blocks_cleaned_total counter
+			cortex_compactor_blocks_cleaned_total 0
+			`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_blocks_marked_for_deletion_count",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+		"cortex_compactor_blocks_cleaned_total",
+	))
+}
+
+func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent(t *testing.T) {
+
+	deletionDelay := time.Hour
+	parentClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient := block.BucketWithGlobalMarkers(parentClient)
+
+	now := time.Now()
+
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	createDeletionMark(t, bucketClient, "user-1", block1, now.Add(-deletionDelay).Add(-time.Minute))
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+
+	ctx := context.Background()
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
+
+	// block is uploaded and marked for deletion. The parentClient and bucketClient are consistent
+	checkBlockDeletionMarker(t, "user-1", parentClient, block1, true)
+	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
+
+	// delete block in parent location, this mocks a delete of the bucket with failure to clean-up the global marker
+	err := parentClient.Delete(ctx, path.Join("user-1", block1.String()))
+	require.NoError(t, err)
+
+	// check parentClient and bucketClient have diverged
+	var foundBefore bool
+	err = bucketClient.Iter(ctx, "/user-1/markers/", func(name string) error {
+		if name == "/user-1/"+block.DeletionMarkFilepath(block1) {
+			foundBefore = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, foundBefore)
+	checkBlock(t, "user-1", parentClient, block1, false, false)
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+
+	var foundAfter bool
+	// block should not be discoverable via global markers path
+	err = bucketClient.Iter(context.Background(), "/user-1/markers/", func(name string) error {
+		if name == "/user-1/"+block.DeletionMarkFilepath(block1) {
+			foundAfter = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.False(t, foundAfter)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+			# TYPE cortex_bucket_blocks_count gauge
+			cortex_bucket_blocks_count{user="user-1"} 0
+			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
+			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
+			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
+			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+			# HELP cortex_compactor_blocks_cleaned_total Total number of blocks deleted.
+			# TYPE cortex_compactor_blocks_cleaned_total counter
+			cortex_compactor_blocks_cleaned_total 0
+			`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_blocks_marked_for_deletion_count",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+		"cortex_compactor_blocks_cleaned_total",
+	))
+}
+
 func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
-
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-2", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 time.Hour,
@@ -945,12 +1098,10 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
+	now := time.Now()
 
 	// Create a partial block.
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
 	err := bucketClient.Delete(ctx, path.Join("user-1", block1.String(), block.MetaFilename))
 	require.NoError(t, err)
 
@@ -1001,8 +1152,9 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 
 	const tenant = "user"
 
-	objectTime := time.Now().Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
-	blockID := createTSDBBlock(t, b, tenant, objectTime.UnixMilli(), time.Now().UnixMilli(), 2, nil)
+	now := time.Now()
+	objectTime := now.Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
+	blockID := createTSDBBlock(t, b, tenant, objectTime.UnixMilli(), now.UnixMilli(), 2, nil)
 	for _, f := range []string{"meta.json", "index", "chunks/000001", "tombstones"} {
 		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), objectTime, objectTime))
 	}
@@ -1462,7 +1614,10 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 	idx := bucketindex.Index{UpdatedAt: 1}
 	require.NoError(t, bucketindex.WriteIndex(ctx, bucketClient, "user-1", cfgProvider, &idx))
 
-	cleaner.instrumentBucketIndexUpdate(ctx)
+	users, err := cleaner.refreshOwnedUsers(ctx)
+	require.NoError(t, err)
+
+	cleaner.instrumentBucketIndexUpdate(ctx, users.all)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.
@@ -1470,6 +1625,14 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 		cortex_bucket_index_last_successful_update_timestamp_seconds{user="user-1"} 1
 		`),
 		"cortex_bucket_index_last_successful_update_timestamp_seconds"))
+}
+
+func tsOffset(dt time.Time, hours int) int64 {
+	return dt.Add(time.Duration(hours)*time.Hour).Unix() * 1000
+}
+
+func checkBlockDeletionMarker(t *testing.T, user string, cl objstore.Bucket, blockID ulid.ULID, deletionMarkerExists bool) {
+	checkBlock(t, user, cl, blockID, true, deletionMarkerExists)
 }
 
 type hookBucket struct {
@@ -1544,6 +1707,8 @@ type mockConfigProvider struct {
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
 	perTenantInMemoryCache       map[string]int
+	maxLookback                  map[string]time.Duration
+	maxPerBlockUploadConcurrency map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -1558,6 +1723,8 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
 		perTenantInMemoryCache:       make(map[string]int),
+		maxLookback:                  make(map[string]time.Duration),
+		maxPerBlockUploadConcurrency: make(map[string]int),
 	}
 }
 
@@ -1625,11 +1792,25 @@ func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
 }
 
+func (m *mockConfigProvider) CompactorMaxPerBlockUploadConcurrency(userID string) int {
+	if result, ok := m.maxPerBlockUploadConcurrency[userID]; ok {
+		return result
+	}
+	return 1
+}
+
+func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {
+	if result, ok := m.maxLookback[user]; ok {
+		return result
+	}
+	return 0
+}
+
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {
-	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
+	users, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		return err
 	}
 
-	return c.cleanUsers(ctx, allUsers, isDeleted, log.NewNopLogger())
+	return c.cleanUsers(ctx, users, log.NewNopLogger())
 }

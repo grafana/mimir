@@ -9,11 +9,19 @@ title: Grafana Mimir Alertmanager resources dashboard
 weight: 20
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Alertmanager resources dashboard
 
-The Alertmanager resources dashboard shows CPU, memory, disk and networking metrics for the Alertmanager.
+The Alertmanager resources dashboard shows CPU, memory, disk, and networking metrics for the Alertmanager.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+Use this dashboard for the following use cases:
+
+- Ensure the Alertmanager's performance and reliability across a multi-tenant Mimir cluster.
+- Monitor resource consumption in real time.
+- Plan future resouce allocation needs.
+
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
 

@@ -10,6 +10,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
@@ -45,7 +46,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	reg := prometheus.NewPedanticRegistry()
-	factory := newStoreGatewayClientFactory(cfg, reg)
+	factory := newStoreGatewayClientFactory(cfg, reg, log.NewNopLogger())
 
 	for i := 0; i < 2; i++ {
 		inst := ring.InstanceDesc{Addr: listener.Addr().String()}

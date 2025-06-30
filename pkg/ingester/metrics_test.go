@@ -217,7 +217,7 @@ func TestTSDBMetrics(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 			# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 			cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 9
-			
+
 			# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="user1"} 1
@@ -289,6 +289,21 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
+
+			# HELP cortex_ingester_tsdb_wal_replay_unknown_refs_total Total number of unknown series references encountered during WAL replay.
+			# TYPE cortex_ingester_tsdb_wal_replay_unknown_refs_total counter
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user1"} 12345
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="samples", user="user1"} 24690
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user2"}  85787
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="samples", user="user2"} 171574
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user3"} 999
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="samples", user="user3"} 1998
+
+			# HELP cortex_ingester_tsdb_wbl_replay_unknown_refs_total Total number of unknown series references encountered during WBL replay.
+			# TYPE cortex_ingester_tsdb_wbl_replay_unknown_refs_total counter
+			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
+			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
+			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user3"} 999
 	`))
 	require.NoError(t, err)
 }
@@ -488,7 +503,7 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
 			# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
 			cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 9
-			
+
 			# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="user1"} 1
@@ -557,6 +572,18 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
+
+			# HELP cortex_ingester_tsdb_wal_replay_unknown_refs_total Total number of unknown series references encountered during WAL replay.
+			# TYPE cortex_ingester_tsdb_wal_replay_unknown_refs_total counter
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user1"} 12345
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="samples", user="user1"} 24690
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="series", user="user2"}  85787
+			cortex_ingester_tsdb_wal_replay_unknown_refs_total{type="samples", user="user2"} 171574
+
+			# HELP cortex_ingester_tsdb_wbl_replay_unknown_refs_total Total number of unknown series references encountered during WBL replay.
+			# TYPE cortex_ingester_tsdb_wbl_replay_unknown_refs_total counter
+			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user1"} 12345
+			cortex_ingester_tsdb_wbl_replay_unknown_refs_total{type="exemplars", user="user2"} 85787
 	`))
 	require.NoError(t, err)
 }
@@ -814,6 +841,19 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of chunks that were memory-mapped.",
 	})
 	chunksMmappedTotal.Add(30 * base)
+
+	tsdbWalReplayUnknownRefsTotal := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
+		Help: "Total number of unknown series references encountered during WAL replay.",
+	}, []string{"type"})
+	tsdbWalReplayUnknownRefsTotal.WithLabelValues("series").Add(base)
+	tsdbWalReplayUnknownRefsTotal.WithLabelValues("samples").Add(base * 2)
+
+	tsdbWblReplayUnknownRefsTotal := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
+		Help: "Total number of unknown series references encountered during WBL replay pprus.",
+	}, []string{"type"})
+	tsdbWblReplayUnknownRefsTotal.WithLabelValues("exemplars").Add(base)
 
 	return r
 }

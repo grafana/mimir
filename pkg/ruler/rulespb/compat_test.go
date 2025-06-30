@@ -117,7 +117,7 @@ func TestToProto(t *testing.T) {
 			input: rulefmt.RuleGroup{
 				Name:     "group",
 				Interval: model.Duration(60 * time.Second),
-				Rules:    []rulefmt.RuleNode{},
+				Rules:    []rulefmt.Rule{},
 			},
 			expected: &RuleGroupDesc{
 				Name:            "group",
@@ -133,7 +133,7 @@ func TestToProto(t *testing.T) {
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
 				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
-				Rules:           []rulefmt.RuleNode{},
+				Rules:           []rulefmt.Rule{},
 			},
 			expected: &RuleGroupDesc{
 				Name:            "group",
@@ -149,7 +149,7 @@ func TestToProto(t *testing.T) {
 				Name:        "group",
 				Interval:    model.Duration(60 * time.Second),
 				QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Second)),
-				Rules:       []rulefmt.RuleNode{},
+				Rules:       []rulefmt.Rule{},
 			},
 			expected: &RuleGroupDesc{
 				Name:        "group",
@@ -166,7 +166,7 @@ func TestToProto(t *testing.T) {
 				Interval:        model.Duration(60 * time.Second),
 				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
 				QueryOffset:     pointerOf[model.Duration](model.Duration(2 * time.Second)),
-				Rules:           []rulefmt.RuleNode{},
+				Rules:           []rulefmt.Rule{},
 			},
 			expected: &RuleGroupDesc{
 				Name:            "group",
@@ -213,7 +213,7 @@ func TestFromProto(t *testing.T) {
 			expected: rulefmt.RuleGroup{
 				Name:     "group",
 				Interval: model.Duration(60 * time.Second),
-				Rules:    []rulefmt.RuleNode{},
+				Rules:    []rulefmt.Rule{},
 			},
 		},
 		"with evaluation delay": {
@@ -229,7 +229,7 @@ func TestFromProto(t *testing.T) {
 				Name:            "group",
 				Interval:        model.Duration(60 * time.Second),
 				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
-				Rules:           []rulefmt.RuleNode{},
+				Rules:           []rulefmt.Rule{},
 			},
 		},
 		"with query offset": {
@@ -245,7 +245,7 @@ func TestFromProto(t *testing.T) {
 				Name:        "group",
 				Interval:    model.Duration(60 * time.Second),
 				QueryOffset: pointerOf[model.Duration](model.Duration(2 * time.Second)),
-				Rules:       []rulefmt.RuleNode{},
+				Rules:       []rulefmt.Rule{},
 			},
 		},
 		"with both evaluation delay and query offset": {
@@ -263,7 +263,7 @@ func TestFromProto(t *testing.T) {
 				Interval:        model.Duration(60 * time.Second),
 				EvaluationDelay: pointerOf[model.Duration](model.Duration(5 * time.Second)),
 				QueryOffset:     pointerOf[model.Duration](model.Duration(2 * time.Second)),
-				Rules:           []rulefmt.RuleNode{},
+				Rules:           []rulefmt.Rule{},
 			},
 		},
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	tmpltext "text/template"
 
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/template"
 )
@@ -72,11 +73,7 @@ func queryFromGeneratorURL(generatorURL string) (string, error) {
 	if !ok || len(queryParam) < 1 {
 		return "", fmt.Errorf("query not found in the generator URL")
 	}
-	query, err := url.QueryUnescape(queryParam[0])
-	if err != nil {
-		return "", fmt.Errorf("failed to URL decode the query: %w", err)
-	}
-	return query, nil
+	return queryParam[0], nil
 }
 
 // WithCustomFunctions returns template.Option which adds additional template functions
@@ -95,7 +92,7 @@ func WithCustomFunctions(userID string) template.Option {
 
 // loadTemplates produces a template.Template from several in-memory template files.
 // It is adapted from FromGlobs in prometheus/alertmanager: https://github.com/prometheus/alertmanager/blob/9de8ef36755298a68b6ab20244d4369d38bdea99/template/template.go#L67-L95
-func loadTemplates(tmpls []string, options ...template.Option) (*template.Template, error) {
+func loadTemplates(tmpls []alertingTemplates.TemplateDefinition, options ...template.Option) (*template.Template, error) {
 	t, err := template.New(options...)
 	if err != nil {
 		return nil, err
@@ -118,7 +115,7 @@ func loadTemplates(tmpls []string, options ...template.Option) (*template.Templa
 	}
 
 	for _, tp := range tmpls {
-		if err := t.Parse(strings.NewReader(tp)); err != nil {
+		if err := t.Parse(strings.NewReader(tp.Template)); err != nil {
 			return nil, err
 		}
 	}

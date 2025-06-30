@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -90,12 +91,13 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 
 // The Manager manages recording and alerting rules.
 type Manager struct {
-	opts     *ManagerOptions
-	groups   map[string]*Group
-	mtx      sync.RWMutex
-	block    chan struct{}
-	done     chan struct{}
-	restored bool
+	opts                 *ManagerOptions
+	groups               map[string]*Group
+	mtx                  sync.RWMutex
+	block                chan struct{}
+	done                 chan struct{}
+	restored             bool
+	restoreNewRuleGroups bool
 
 	logger *slog.Logger
 }
@@ -124,14 +126,14 @@ type ManagerOptions struct {
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
 	RuleDependencyController  RuleDependencyController
+	// At present, manager only restores `for` state when manager is newly created which happens
+	// during restarts. This flag provides an option to restore the `for` state when new rule groups are
+	// added to an existing manager
+	RestoreNewRuleGroups bool
 
 	// GroupEvaluationContextFunc will be called to wrap Context based on the group being evaluated.
 	// Will be skipped if nil.
 	GroupEvaluationContextFunc ContextWrapFunc
-
-	// AlwaysRestoreAlertState forces all new or changed groups in calls to Update to restore.
-	// Useful when you know you will be adding alerting rules after the manager has already started.
-	AlwaysRestoreAlertState bool
 
 	Metrics *Metrics
 }
@@ -164,11 +166,12 @@ func NewManager(o *ManagerOptions) *Manager {
 	}
 
 	m := &Manager{
-		groups: map[string]*Group{},
-		opts:   o,
-		block:  make(chan struct{}),
-		done:   make(chan struct{}),
-		logger: o.Logger,
+		groups:               map[string]*Group{},
+		opts:                 o,
+		block:                make(chan struct{}),
+		done:                 make(chan struct{}),
+		logger:               o.Logger,
+		restoreNewRuleGroups: o.RestoreNewRuleGroups,
 	}
 
 	return m
@@ -192,8 +195,14 @@ func (m *Manager) Stop() {
 
 	m.logger.Info("Stopping rule manager...")
 
+	// Stop all groups asynchronously, then wait for them to finish.
+	// This is faster than stopping and waiting for each group in sequence.
 	for _, eg := range m.groups {
-		eg.stop()
+		eg.stopAsync()
+	}
+
+	for _, eg := range m.groups {
+		eg.waitStopped()
 	}
 
 	// Shut down the groups waiting multiple evaluation intervals to write
@@ -217,7 +226,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	default:
 	}
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, false, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -291,7 +300,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 
 // GroupLoader is responsible for loading rule groups from arbitrary sources and parsing them.
 type GroupLoader interface {
-	Load(identifier string) (*rulefmt.RuleGroups, []error)
+	Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error)
 	Parse(query string) (parser.Expr, error)
 }
 
@@ -299,22 +308,22 @@ type GroupLoader interface {
 // and parser.ParseExpr.
 type FileLoader struct{}
 
-func (FileLoader) Load(identifier string) (*rulefmt.RuleGroups, []error) {
-	return rulefmt.ParseFile(identifier)
+func (FileLoader) Load(identifier string, ignoreUnknownFields bool) (*rulefmt.RuleGroups, []error) {
+	return rulefmt.ParseFile(identifier, ignoreUnknownFields)
 }
 
 func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.ParseExpr(query) }
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc, ignoreUnknownFields bool, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
-	shouldRestore := !m.restored || m.opts.AlwaysRestoreAlertState
+	shouldRestore := !m.restored || m.restoreNewRuleGroups
 
 	for _, fn := range filenames {
-		rgs, errs := m.opts.GroupLoader.Load(fn)
+		rgs, errs := m.opts.GroupLoader.Load(fn, ignoreUnknownFields)
 		if errs != nil {
 			return nil, errs
 		}
@@ -327,16 +336,16 @@ func (m *Manager) LoadGroups(
 
 			rules := make([]Rule, 0, len(rg.Rules))
 			for _, r := range rg.Rules {
-				expr, err := m.opts.GroupLoader.Parse(r.Expr.Value)
+				expr, err := m.opts.GroupLoader.Parse(r.Expr)
 				if err != nil {
 					return nil, []error{fmt.Errorf("%s: %w", fn, err)}
 				}
 
 				mLabels := FromMaps(rg.Labels, r.Labels)
 
-				if r.Alert.Value != "" {
+				if r.Alert != "" {
 					rules = append(rules, NewAlertingRule(
-						r.Alert.Value,
+						r.Alert,
 						expr,
 						time.Duration(r.For),
 						time.Duration(r.KeepFiringFor),
@@ -350,7 +359,7 @@ func (m *Manager) LoadGroups(
 					continue
 				}
 				rules = append(rules, NewRecordingRule(
-					r.Record.Value,
+					r.Record,
 					expr,
 					mLabels,
 				))
@@ -446,7 +455,7 @@ type Sender interface {
 
 // SendAlerts implements the rules.NotifyFunc for a Notifier.
 func SendAlerts(s Sender, externalURL string) NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*Alert) {
+	return func(_ context.Context, expr string, alerts ...*Alert) {
 		var res []*notifier.Alert
 
 		for _, alert := range alerts {
@@ -501,7 +510,7 @@ type ConcurrentRules []int
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
-	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// SplitGroupIntoBatches returns an ordered slice of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
 	// The rules are represented by their index from the input rule group.
 	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
 
@@ -525,7 +534,7 @@ func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyControlle
 	}
 }
 
-func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
+func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
 	return c.sema.TryAcquire(1)
 }
 
@@ -578,7 +587,7 @@ func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule)
 	return false
 }
 
-func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
+func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, _ *Group) []ConcurrentRules {
 	return nil
 }
 
@@ -595,4 +604,33 @@ func FromMaps(maps ...map[string]string) labels.Labels {
 	}
 
 	return labels.FromMap(mLables)
+}
+
+// ParseFiles parses the rule files corresponding to glob patterns.
+func ParseFiles(patterns []string) error {
+	files := map[string]string{}
+	for _, pat := range patterns {
+		fns, err := filepath.Glob(pat)
+		if err != nil {
+			return fmt.Errorf("failed retrieving rule files for %q: %w", pat, err)
+		}
+		for _, fn := range fns {
+			absPath, err := filepath.Abs(fn)
+			if err != nil {
+				absPath = fn
+			}
+			cleanPath, err := filepath.EvalSymlinks(absPath)
+			if err != nil {
+				return fmt.Errorf("failed evaluating rule file path %q (pattern: %q): %w", absPath, pat, err)
+			}
+			files[cleanPath] = pat
+		}
+	}
+	for fn, pat := range files {
+		_, errs := rulefmt.ParseFile(fn, false)
+		if len(errs) > 0 {
+			return fmt.Errorf("parse rules from file %q (pattern: %q): %w", fn, pat, errors.Join(errs...))
+		}
+	}
+	return nil
 }

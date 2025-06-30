@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -30,15 +31,13 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/spanprofiler"
 	"github.com/okzk/sdnotify"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
@@ -73,13 +72,13 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
-	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -223,6 +222,19 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
+		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
+			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
+			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
+			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
+			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
+			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
+			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
+			"query_frontend_client":            &c.Frontend.ClusterValidationConfig,
+			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
+			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
+			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
+		},
 	}
 }
 
@@ -321,6 +333,19 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout; use limits.ha_tracker_update_timeout instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeoutJitterMax = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout_jitter_max; use limits.ha_tracker_update_timeout_jitter_max instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout > 0 {
+		c.LimitsConfig.HATrackerFailoverTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
 	}
 	// validate the default limits
 	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
@@ -591,7 +616,7 @@ type CommonConfigInheriter interface {
 }
 
 // UnmarshalCommonYAML provides the implementation for UnmarshalYAML functions to unmarshal the CommonConfig.
-// A list of CommonConfig inheriters can be provided
+// A list of CommonConfig inheriters can be provided.
 func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) error {
 	for _, inh := range inheriters {
 		specificStorageLocations := specificLocationsUnmarshaler{}
@@ -599,10 +624,15 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.Storage {
 			specificStorageLocations[name] = loc
 		}
+		specificClusterValidationLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.ClientClusterValidation {
+			specificClusterValidationLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
-				Storage: &specificStorageLocations,
+				Storage:                 &specificStorageLocations,
+				ClientClusterValidation: &specificClusterValidationLocations,
 			},
 		}
 
@@ -622,7 +652,12 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 	for _, inh := range inheriters {
 		inheritance := inh.CommonConfigInheritance()
 		for desc, loc := range inheritance.Storage {
-			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+			if err := inheritFlags(log, &common.Storage, loc, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
+			}
+		}
+		for desc, loc := range inheritance.ClientClusterValidation {
+			if err := inheritFlags(log, &common.ClientClusterValidation, loc, setFlags); err != nil {
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
@@ -632,11 +667,13 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
-func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
-	for f, o := range orig.Flags {
-		d, ok := dest.Flags[f]
+func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flagext.RegisteredFlagsTracker, set map[string]bool) error {
+	origFlags := orig.RegisteredFlags()
+	destFlags := dest.RegisteredFlags()
+	for f, o := range origFlags.Flags {
+		d, ok := destFlags.Flags[f]
 		if !ok {
-			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, origFlags.Prefix, o.Name, destFlags.Prefix, d.Name)
 		}
 		if !set[o.Name] {
 			// Nothing to inherit because origin was not set.
@@ -663,16 +700,19 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 }
 
 type CommonConfig struct {
-	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
+	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage map[string]*bucket.StorageBackendConfig
+	Storage                 map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -687,7 +727,8 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage *specificLocationsUnmarshaler `yaml:"storage"`
+	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
+	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -731,6 +772,7 @@ type Mimir struct {
 	AdditionalStorageQueryables      []querier.TimeRangeQueryable
 	MetadataSupplier                 querier.MetadataSupplier
 	QuerierEngine                    promql.QueryEngine
+	QueryPlanner                     *streamingpromql.QueryPlanner
 	QueryFrontendTripperware         querymiddleware.Tripperware
 	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
 	QueryFrontendCodec               querymiddleware.Codec
@@ -794,16 +836,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
-	mimir.setupObjstoreTracing()
-
-	// Injects span profiler into the tracer for cross-referencing between traces and profiles.
-	// Note, for performance reasons, span profiler only labels root spans.
-	tracer := spanprofiler.NewTracer(opentracing.GlobalTracer())
-	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
-	// gets converged into the latter.
-	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
-
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
 	if err := mimir.setupModuleManager(); err != nil {
@@ -837,13 +869,6 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	reg.MustRegister(collectors.NewGoCollector(
 		collectors.WithGoCollectorRuntimeMetrics(rules...),
 	))
-}
-
-// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
-func (t *Mimir) setupObjstoreTracing() {
-	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
-	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
 // Run starts Mimir running, and blocks until a Mimir stops.

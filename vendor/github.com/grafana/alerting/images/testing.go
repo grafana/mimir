@@ -1,159 +1,108 @@
 package images
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"testing"
-	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/types"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/alerting/models"
 )
 
-type FakeProvider struct {
-	Images []*Image
-	Bytes  []byte
+type FakeTokenStore struct {
+	Images map[string]*Image
 }
 
-func (f *FakeProvider) GetImageFileName(token string) string {
-	for _, image := range f.Images {
-		if image.Token == token {
-			return filepath.Base(image.Path)
-		}
-	}
-	return ""
+var _ TokenStore = (*FakeTokenStore)(nil)
+
+func (f FakeTokenStore) GetImage(_ context.Context, token string) (*Image, error) {
+	return f.Images[token], nil
 }
 
-// GetImage returns an image with the same token.
-func (f *FakeProvider) GetImage(_ context.Context, token string) (*Image, error) {
-	for _, img := range f.Images {
-		if img.Token == token {
-			return img, nil
-		}
-	}
-	return nil, ErrImageNotFound
+func NewFakeProvider(n int) Provider {
+	return NewTokenProvider(NewFakeTokenStore(n), log.NewNopLogger())
 }
 
-// GetImageURL returns the URL of the image associated with a given alert.
-func (f *FakeProvider) GetImageURL(_ context.Context, alert *types.Alert) (string, error) {
-	uri, err := getImageURI(alert)
-	if err != nil {
-		return "", err
-	}
-
-	for _, img := range f.Images {
-		if img.Token == uri || img.URL == uri {
-			if !img.HasURL() {
-				return "", ErrImagesNoURL
-			}
-			return img.URL, nil
-		}
-	}
-	return "", ErrImageNotFound
+func NewFakeProviderWithFile(t *testing.T, n int) Provider {
+	return NewTokenProvider(NewFakeTokenStoreWithFile(t, n), log.NewNopLogger())
 }
 
-// GetRawImage returns an io.Reader to read the bytes of the image associated with a given alert.
-func (f *FakeProvider) GetRawImage(_ context.Context, alert *types.Alert) (io.ReadCloser, string, error) {
-	uri, err := getImageURI(alert)
-	if err != nil {
-		return nil, "", err
-	}
-
-	uriString := string(uri)
-	for _, img := range f.Images {
-		if img.Token == uriString || img.URL == uriString {
-			filename := filepath.Base(img.Path)
-			return io.NopCloser(bytes.NewReader(f.Bytes)), filename, nil
-		}
-	}
-	return nil, "", ErrImageNotFound
+func NewFakeProviderWithStore(s TokenStore) Provider {
+	return NewTokenProvider(s, log.NewNopLogger())
 }
 
-// getImageURI is a helper function to retrieve the image URI from the alert annotations as a string.
-func getImageURI(alert *types.Alert) (string, error) {
-	uri, ok := alert.Annotations[models.ImageTokenAnnotation]
-	if !ok {
-		return "", ErrNoImageForAlert
-	}
-	return string(uri), nil
+func NewFakeTokenStoreFromImages(images map[string]*Image) *FakeTokenStore {
+	return &FakeTokenStore{Images: images}
 }
 
-// NewFakeProvider returns an image provider with N test images.
-// Each image has a token and a URL, but does not have a file on disk.
-func NewFakeProvider(n int) *FakeProvider {
-	p := FakeProvider{}
+// NewFakeTokenStore returns an token store with N test images.
+// Each image has a URL, but does not have a file on disk.
+// They are mapped to the token test-image-%d
+func NewFakeTokenStore(n int) *FakeTokenStore {
+	p := FakeTokenStore{
+		Images: make(map[string]*Image),
+	}
 	for i := 1; i <= n; i++ {
-		p.Images = append(p.Images, &Image{
-			Token:     fmt.Sprintf("test-image-%d", i),
-			URL:       fmt.Sprintf("https://www.example.com/test-image-%d.jpg", i),
-			CreatedAt: time.Now().UTC(),
-		})
+		token := fmt.Sprintf("test-image-%d", i)
+		p.Images[token] = &Image{
+			ID:  token,
+			URL: fmt.Sprintf("https://www.example.com/test-image-%d.jpg", i),
+			RawData: func(_ context.Context) (ImageContent, error) {
+				return ImageContent{}, ErrImagesUnavailable
+			},
+		}
 	}
 	return &p
 }
 
-// NewFakeProviderWithFile returns an image provider with N test images.
-// Each image has a token, path and a URL, where the path is 1x1 transparent
-// PNG on disk. The test should call deleteFunc to delete the images from disk
-// at the end of the test.
-// nolint:deadcode,unused
-func NewFakeProviderWithFile(t *testing.T, n int) *FakeProvider {
-	var (
-		files []string
-		p     FakeProvider
-	)
-
-	t.Cleanup(func() {
-		// remove all files from disk
-		for _, f := range files {
-			if err := os.Remove(f); err != nil {
-				t.Logf("failed to delete file: %s", err)
-			}
-		}
-	})
-
-	for i := 1; i <= n; i++ {
-		file, err := newTestImage()
-		if err != nil {
-			t.Fatalf("failed to create test image: %s", err)
-		}
-		files = append(files, file)
-		p.Images = append(p.Images, &Image{
-			Token:     fmt.Sprintf("test-image-%d", i),
-			Path:      file,
-			URL:       fmt.Sprintf("https://www.example.com/test-image-%d", i),
-			CreatedAt: time.Now().UTC(),
-		})
+// NewFakeTokenStoreWithFile returns an image provider with N test images.
+// Each image has a URL and raw data.
+// They are mapped to the token test-image-%d
+func NewFakeTokenStoreWithFile(t *testing.T, n int) *FakeTokenStore {
+	p := FakeTokenStore{
+		Images: make(map[string]*Image),
 	}
-
-	return &p
-}
-
-func newTestImage() (string, error) {
-	f, err := os.CreateTemp("", "test-image-*.png")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp image: %s", err)
-	}
-
 	// 1x1 transparent PNG
 	b, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
 	if err != nil {
-		return f.Name(), fmt.Errorf("failed to decode PNG data: %s", err)
+		t.Fatalf("failed to decode PNG data: %s", err)
 	}
 
-	if _, err := f.Write(b); err != nil {
-		return f.Name(), fmt.Errorf("failed to write to file: %s", err)
+	for i := 1; i <= n; i++ {
+		token := fmt.Sprintf("test-image-%d", i)
+		p.Images[token] = &Image{
+			ID: token,
+			RawData: func(_ context.Context) (ImageContent, error) {
+				return ImageContent{
+					Name:    fmt.Sprintf("test-image-%d.jpg", i),
+					Content: b,
+				}, nil
+			},
+		}
 	}
+	return &p
+}
 
-	if err := f.Close(); err != nil {
-		return f.Name(), fmt.Errorf("failed to close file: %s", err)
+func newAlertWithImageURL(url string) types.Alert {
+	return types.Alert{
+		Alert: model.Alert{
+			Annotations: model.LabelSet{
+				models.ImageURLAnnotation: model.LabelValue(url),
+			},
+		},
 	}
+}
 
-	return f.Name(), nil
+func newAlertWithImageToken(token string) types.Alert {
+	return types.Alert{
+		Alert: model.Alert{
+			Annotations: model.LabelSet{
+				models.ImageTokenAnnotation: model.LabelValue(token),
+			},
+		},
+	}
 }

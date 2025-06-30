@@ -32,5 +32,8 @@
        (import 'dashboards/writes-networking.libsonnet') +
        (import 'dashboards/alertmanager-resources.libsonnet')) +
 
+    (if !$._config.gem_enabled then {} else
+       (import 'dashboards/federation-frontend.libsonnet')) +
+
     { _config:: $._config + $._group_config },
 }

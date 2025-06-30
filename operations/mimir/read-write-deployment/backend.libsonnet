@@ -62,10 +62,7 @@
     $.util.resourcesRequests(1, '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin +
-    container.withEnvMixin([
-      envVar.new('JAEGER_REPORTER_MAX_QUEUE_SIZE', '1000'),
-    ]),
+    $.tracing_env_mixin,
 
   local mimir_backend_data_pvc =
     pvc.new() +

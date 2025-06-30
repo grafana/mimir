@@ -101,12 +101,12 @@ func NewManager(ctx context.Context, logger *slog.Logger, registerer prometheus.
 
 	// Register the metrics.
 	// We have to do this after setting all options, so that the name of the Manager is set.
-	if metrics, err := NewManagerMetrics(registerer, mgr.name); err == nil {
-		mgr.metrics = metrics
-	} else {
+	metrics, err := NewManagerMetrics(registerer, mgr.name)
+	if err != nil {
 		logger.Error("Failed to create discovery manager metrics", "manager", mgr.name, "err", err)
 		return nil
 	}
+	mgr.metrics = metrics
 
 	return mgr
 }
@@ -306,13 +306,13 @@ func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 
 // cleaner cleans resources associated with provider.
 func (m *Manager) cleaner(p *Provider) {
-	m.targetsMtx.Lock()
 	p.mu.RLock()
+	m.targetsMtx.Lock()
 	for s := range p.subs {
 		delete(m.targets, poolKey{s, p.name})
 	}
-	p.mu.RUnlock()
 	m.targetsMtx.Unlock()
+	p.mu.RUnlock()
 	if p.done != nil {
 		p.done()
 	}
@@ -413,9 +413,9 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	n := map[string]int{}
 
 	m.mtx.RLock()
-	m.targetsMtx.Lock()
 	for _, p := range m.providers {
 		p.mu.RLock()
+		m.targetsMtx.Lock()
 		for s := range p.subs {
 			// Send empty lists for subs without any targets to make sure old stale targets are dropped by consumers.
 			// See: https://github.com/prometheus/prometheus/issues/12858 for details.
@@ -430,9 +430,9 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 				}
 			}
 		}
+		m.targetsMtx.Unlock()
 		p.mu.RUnlock()
 	}
-	m.targetsMtx.Unlock()
 	m.mtx.RUnlock()
 
 	for setName, v := range n {

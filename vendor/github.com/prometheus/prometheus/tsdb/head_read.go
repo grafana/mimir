@@ -61,8 +61,8 @@ func (h *headIndexReader) Symbols() index.StringIter {
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
-	values, err := h.LabelValues(ctx, name, matchers...)
+func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := h.LabelValues(ctx, name, hints, matchers...)
 	if err == nil {
 		slices.Sort(values)
 	}
@@ -73,16 +73,16 @@ func (h *headIndexReader) SortedLabelValues(ctx context.Context, name string, ma
 // specific label name that are within the time range mint to maxt.
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
-func (h *headIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+func (h *headIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		return h.head.postings.LabelValues(ctx, name), nil
+		return h.head.postings.LabelValues(ctx, name, hints), nil
 	}
 
-	return labelValuesWithMatchers(ctx, h, name, matchers...)
+	return labelValuesWithMatchers(ctx, h, name, hints, matchers...)
 }
 
 // LabelNames returns all the unique label names present in the head
@@ -121,14 +121,18 @@ func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bo
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
+	notFoundSeriesCount := 0
 	// Fetch all the series only once.
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			h.head.logger.Debug("Looked up series not found")
+			notFoundSeriesCount++
 		} else {
 			series = append(series, s)
 		}
+	}
+	if notFoundSeriesCount > 0 {
+		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 	if err := p.Err(); err != nil {
 		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
@@ -154,11 +158,12 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	}
 
 	out := make([]storage.SeriesRef, 0, 128)
+	notFoundSeriesCount := 0
 
 	for p.Next() {
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
-			h.head.logger.Debug("Looked up series not found")
+			notFoundSeriesCount++
 			continue
 		}
 
@@ -168,6 +173,9 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 		}
 
 		out = append(out, storage.SeriesRef(s.ref))
+	}
+	if notFoundSeriesCount > 0 {
+		h.head.logger.Debug("Looked up series not found", "count", notFoundSeriesCount)
 	}
 
 	return index.NewListPostings(out)
@@ -496,7 +504,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 
 // oooChunk returns the chunk for the HeadChunkID by m-mapping it from the disk.
 // It never returns the head OOO chunk.
-func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
+func (s *memSeries) oooChunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, _ *sync.Pool) (chunk chunkenc.Chunk, maxTime int64, err error) {
 	// ix represents the index of chunk in the s.ooo.oooMmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstOOOChunkID) gives the slice index.
 	ix := int(id) - int(s.ooo.firstOOOChunkID)
@@ -575,10 +583,8 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, c chunkenc.Chunk, isoState *
 					continue
 				}
 			}
-			stopAfter = numSamples - (appendIDsToConsider - index)
-			if stopAfter < 0 {
-				stopAfter = 0 // Stopped in a previous chunk.
-			}
+			// Stopped in a previous chunk.
+			stopAfter = max(numSamples-(appendIDsToConsider-index), 0)
 			break
 		}
 	}

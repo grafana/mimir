@@ -13,16 +13,15 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/common/promslog"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSplitBlocks(t *testing.T) {
@@ -155,13 +154,13 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
 					// Ends up in block 1
-					newSample(startOfDay.Add(10*time.Minute).UnixMilli(), 1, nil, nil),
-					newSample(startOfDay.Add(12*time.Hour).UnixMilli(), 2, nil, nil),
+					util_test.Sample{TS: startOfDay.Add(10 * time.Minute).UnixMilli(), Val: 1},
+					util_test.Sample{TS: startOfDay.Add(12 * time.Hour).UnixMilli(), Val: 2},
 					// Ends up in block 2
-					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
-					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
+					util_test.Sample{TS: startOfDay.Add(24 * time.Hour).UnixMilli(), Val: 3},
+					util_test.Sample{TS: startOfDay.Add(36 * time.Hour).UnixMilli(), Val: 4},
 					// Ends up in block 3
-					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
+					util_test.Sample{TS: startOfDay.Add(48 * time.Hour).UnixMilli(), Val: 5},
 				})),
 			},
 		},
@@ -171,17 +170,17 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 			Chunks: []chunks.Meta{
 				// Ends up in block 1
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.UnixMilli(), 1, nil, nil),
-					newSample(startOfDay.Add(12*time.Hour).UnixMilli(), 2, nil, nil),
+					util_test.Sample{TS: startOfDay.UnixMilli(), Val: 1},
+					util_test.Sample{TS: startOfDay.Add(12 * time.Hour).UnixMilli(), Val: 2},
 				})),
 				// Ends up in block 2
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 3, nil, nil),
-					newSample(startOfDay.Add(36*time.Hour).UnixMilli(), 4, nil, nil),
+					util_test.Sample{TS: startOfDay.Add(24 * time.Hour).UnixMilli(), Val: 3},
+					util_test.Sample{TS: startOfDay.Add(36 * time.Hour).UnixMilli(), Val: 4},
 				})),
 				// Ends up in block 3
 				must(chunks.ChunkFromSamples([]chunks.Sample{
-					newSample(startOfDay.Add(48*time.Hour).UnixMilli(), 5, nil, nil),
+					util_test.Sample{TS: startOfDay.Add(48 * time.Hour).UnixMilli(), Val: 5},
 				})),
 			},
 		},
@@ -191,9 +190,9 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 			Chunks: []chunks.Meta{
 				must(chunks.ChunkFromSamples([]chunks.Sample{
 					// Ends up in block 2
-					newSample(startOfDay.Add(24*time.Hour).UnixMilli(), 1, nil, nil),
-					newSample(startOfDay.Add(25*time.Hour).UnixMilli(), 2, nil, nil),
-					newSample(startOfDay.Add(26*time.Hour).UnixMilli(), 3, nil, nil),
+					util_test.Sample{TS: startOfDay.Add(24 * time.Hour).UnixMilli(), Val: 1},
+					util_test.Sample{TS: startOfDay.Add(25 * time.Hour).UnixMilli(), Val: 2},
+					util_test.Sample{TS: startOfDay.Add(26 * time.Hour).UnixMilli(), Val: 3},
 				})),
 			},
 		},
@@ -241,39 +240,4 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
-}
-
-type sample struct {
-	t  int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
-	return sample{t, v, h, fh}
-}
-func (s sample) T() int64                      { return s.t }
-func (s sample) F() float64                    { return s.v }
-func (s sample) H() *histogram.Histogram       { return s.h }
-func (s sample) FH() *histogram.FloatHistogram { return s.fh }
-
-func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
-	default:
-		return chunkenc.ValFloat
-	}
-}
-
-func (s sample) Copy() chunks.Sample {
-	return sample{
-		s.t,
-		s.v,
-		s.h.Copy(),
-		s.fh.Copy(),
-	}
 }

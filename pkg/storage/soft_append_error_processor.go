@@ -16,20 +16,24 @@ import (
 // by keeping it all in a single place.
 type SoftAppendErrorProcessor struct {
 	// commonCallback is called irrespective of soft or hard error.
-	commonCallback                   func()
-	errOutOfBounds                   func(int64, []mimirpb.LabelAdapter)
-	errOutOfOrderSample              func(int64, []mimirpb.LabelAdapter)
-	errTooOldSample                  func(int64, []mimirpb.LabelAdapter)
-	sampleTooFarInFuture             func(int64, []mimirpb.LabelAdapter)
-	errDuplicateSampleForTimestamp   func(int64, []mimirpb.LabelAdapter)
-	maxSeriesPerUser                 func(labels []mimirpb.LabelAdapter)
-	maxSeriesPerMetric               func(labels []mimirpb.LabelAdapter)
-	errOOONativeHistogramsDisabled   func(error, int64, []mimirpb.LabelAdapter)
+	commonCallback                 func()
+	errOutOfBounds                 func(int64, []mimirpb.LabelAdapter)
+	errOutOfOrderSample            func(int64, []mimirpb.LabelAdapter)
+	errTooOldSample                func(int64, []mimirpb.LabelAdapter)
+	sampleTooFarInFuture           func(int64, []mimirpb.LabelAdapter)
+	errDuplicateSampleForTimestamp func(string, int64, []mimirpb.LabelAdapter)
+	maxSeriesPerUser               func(labels []mimirpb.LabelAdapter)
+	maxSeriesPerMetric             func(labels []mimirpb.LabelAdapter)
+	// Native histogram errors.
 	errHistogramCountMismatch        func(error, int64, []mimirpb.LabelAdapter)
 	errHistogramCountNotBigEnough    func(error, int64, []mimirpb.LabelAdapter)
 	errHistogramNegativeBucketCount  func(error, int64, []mimirpb.LabelAdapter)
 	errHistogramSpanNegativeOffset   func(error, int64, []mimirpb.LabelAdapter)
 	errHistogramSpansBucketsMismatch func(error, int64, []mimirpb.LabelAdapter)
+	// NHCB.
+	errHistogramCustomBucketsMismatch func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramCustomBucketsInvalid  func(error, int64, []mimirpb.LabelAdapter)
+	errHistogramCustomBucketsInfinite func(error, int64, []mimirpb.LabelAdapter)
 }
 
 func NewSoftAppendErrorProcessor(
@@ -38,31 +42,35 @@ func NewSoftAppendErrorProcessor(
 	errOutOfOrderSample func(int64, []mimirpb.LabelAdapter),
 	errTooOldSample func(int64, []mimirpb.LabelAdapter),
 	sampleTooFarInFuture func(int64, []mimirpb.LabelAdapter),
-	errDuplicateSampleForTimestamp func(int64, []mimirpb.LabelAdapter),
+	errDuplicateSampleForTimestamp func(string, int64, []mimirpb.LabelAdapter),
 	maxSeriesPerUser func([]mimirpb.LabelAdapter),
 	maxSeriesPerMetric func(labels []mimirpb.LabelAdapter),
-	errOOONativeHistogramsDisabled func(error, int64, []mimirpb.LabelAdapter),
 	errHistogramCountMismatch func(error, int64, []mimirpb.LabelAdapter),
 	errHistogramCountNotBigEnough func(error, int64, []mimirpb.LabelAdapter),
 	errHistogramNegativeBucketCount func(error, int64, []mimirpb.LabelAdapter),
 	errHistogramSpanNegativeOffset func(error, int64, []mimirpb.LabelAdapter),
 	errHistogramSpansBucketsMismatch func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramCustomBucketsMismatch func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramCustomBucketsInvalid func(error, int64, []mimirpb.LabelAdapter),
+	errHistogramCustomBucketsInfinite func(error, int64, []mimirpb.LabelAdapter),
 ) SoftAppendErrorProcessor {
 	return SoftAppendErrorProcessor{
-		commonCallback:                   commonCallback,
-		errOutOfBounds:                   errOutOfBounds,
-		errOutOfOrderSample:              errOutOfOrderSample,
-		errTooOldSample:                  errTooOldSample,
-		sampleTooFarInFuture:             sampleTooFarInFuture,
-		errDuplicateSampleForTimestamp:   errDuplicateSampleForTimestamp,
-		maxSeriesPerUser:                 maxSeriesPerUser,
-		maxSeriesPerMetric:               maxSeriesPerMetric,
-		errOOONativeHistogramsDisabled:   errOOONativeHistogramsDisabled,
-		errHistogramCountMismatch:        errHistogramCountMismatch,
-		errHistogramCountNotBigEnough:    errHistogramCountNotBigEnough,
-		errHistogramNegativeBucketCount:  errHistogramNegativeBucketCount,
-		errHistogramSpanNegativeOffset:   errHistogramSpanNegativeOffset,
-		errHistogramSpansBucketsMismatch: errHistogramSpansBucketsMismatch,
+		commonCallback:                    commonCallback,
+		errOutOfBounds:                    errOutOfBounds,
+		errOutOfOrderSample:               errOutOfOrderSample,
+		errTooOldSample:                   errTooOldSample,
+		sampleTooFarInFuture:              sampleTooFarInFuture,
+		errDuplicateSampleForTimestamp:    errDuplicateSampleForTimestamp,
+		maxSeriesPerUser:                  maxSeriesPerUser,
+		maxSeriesPerMetric:                maxSeriesPerMetric,
+		errHistogramCountMismatch:         errHistogramCountMismatch,
+		errHistogramCountNotBigEnough:     errHistogramCountNotBigEnough,
+		errHistogramNegativeBucketCount:   errHistogramNegativeBucketCount,
+		errHistogramSpanNegativeOffset:    errHistogramSpanNegativeOffset,
+		errHistogramSpansBucketsMismatch:  errHistogramSpansBucketsMismatch,
+		errHistogramCustomBucketsMismatch: errHistogramCustomBucketsMismatch,
+		errHistogramCustomBucketsInvalid:  errHistogramCustomBucketsInvalid,
+		errHistogramCustomBucketsInfinite: errHistogramCustomBucketsInfinite,
 	}
 }
 
@@ -86,7 +94,7 @@ func (e *SoftAppendErrorProcessor) ProcessErr(err error, ts int64, labels []mimi
 		e.sampleTooFarInFuture(ts, labels)
 		return true
 	case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
-		e.errDuplicateSampleForTimestamp(ts, labels)
+		e.errDuplicateSampleForTimestamp(err.Error(), ts, labels)
 		return true
 	case errors.Is(err, globalerror.MaxSeriesPerUser):
 		e.maxSeriesPerUser(labels)
@@ -96,9 +104,6 @@ func (e *SoftAppendErrorProcessor) ProcessErr(err error, ts int64, labels []mimi
 		return true
 
 	// Map TSDB native histogram validation errors to soft errors.
-	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-		e.errOOONativeHistogramsDisabled(err, ts, labels)
-		return true
 	case errors.Is(err, histogram.ErrHistogramCountMismatch):
 		e.errHistogramCountMismatch(err, ts, labels)
 		return true
@@ -113,6 +118,16 @@ func (e *SoftAppendErrorProcessor) ProcessErr(err error, ts int64, labels []mimi
 		return true
 	case errors.Is(err, histogram.ErrHistogramSpansBucketsMismatch):
 		e.errHistogramSpansBucketsMismatch(err, ts, labels)
+		return true
+	// NHCB.
+	case errors.Is(err, histogram.ErrHistogramCustomBucketsMismatch):
+		e.errHistogramCustomBucketsMismatch(err, ts, labels)
+		return true
+	case errors.Is(err, histogram.ErrHistogramCustomBucketsInvalid):
+		e.errHistogramCustomBucketsInvalid(err, ts, labels)
+		return true
+	case errors.Is(err, histogram.ErrHistogramCustomBucketsInfinite):
+		e.errHistogramCustomBucketsInfinite(err, ts, labels)
 		return true
 	}
 	return false

@@ -19,6 +19,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -41,6 +42,8 @@ var (
 	errEmptyNamespace      = errors.New("empty namespace")
 	errEmptyGroupName      = errors.New("empty group name")
 )
+
+var tracer = otel.Tracer("pkg/ruler/rulestore/bucketclient")
 
 // BucketRuleStore is used to support the RuleStore interface against an object storage backend. It is implemented
 // using the Thanos objstore.Bucket interface
@@ -95,7 +98,7 @@ func (b *BucketRuleStore) getRuleGroup(ctx context.Context, userID, namespace, g
 
 // ListAllUsers implements rules.RuleStore.
 func (b *BucketRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Option) ([]string, error) {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.ListAllUsers")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.ListAllUsers")
 	defer logger.Finish()
 
 	options := rulestore.CollectOptions(opts...)
@@ -117,7 +120,7 @@ func (b *BucketRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Op
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore.
 func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.ListRuleGroupsForUserAndNamespace")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.ListRuleGroupsForUserAndNamespace")
 	defer logger.Finish()
 
 	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
@@ -160,7 +163,7 @@ func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context,
 
 // LoadRuleGroups implements rules.RuleStore.
 func (b *BucketRuleStore) LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) (missing rulespb.RuleGroupList, err error) {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.LoadRuleGroups")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.LoadRuleGroups")
 	defer logger.Finish()
 
 	var (
@@ -222,7 +225,7 @@ outer:
 
 // GetRuleGroup implements rules.RuleStore.
 func (b *BucketRuleStore) GetRuleGroup(ctx context.Context, userID string, namespace string, group string) (*rulespb.RuleGroupDesc, error) {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.GetRuleGroup")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.GetRuleGroup")
 	defer logger.Finish()
 
 	return b.getRuleGroup(ctx, userID, namespace, group, nil, logger)
@@ -230,7 +233,7 @@ func (b *BucketRuleStore) GetRuleGroup(ctx context.Context, userID string, names
 
 // SetRuleGroup implements rules.RuleStore.
 func (b *BucketRuleStore) SetRuleGroup(ctx context.Context, userID string, namespace string, group *rulespb.RuleGroupDesc) error {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.SetRuleGroup")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.SetRuleGroup")
 	defer logger.Finish()
 
 	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
@@ -239,12 +242,12 @@ func (b *BucketRuleStore) SetRuleGroup(ctx context.Context, userID string, names
 		return err
 	}
 
-	return userBucket.Upload(ctx, getRuleGroupObjectKey(namespace, group.Name), bytes.NewBuffer(data))
+	return userBucket.Upload(ctx, getRuleGroupObjectKey(namespace, group.Name), bytes.NewReader(data))
 }
 
 // DeleteRuleGroup implements rules.RuleStore.
 func (b *BucketRuleStore) DeleteRuleGroup(ctx context.Context, userID string, namespace string, group string) error {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.DeleteRuleGroup")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.DeleteRuleGroup")
 	defer logger.Finish()
 
 	userBucket := bucket.NewUserBucketClient(userID, b.bucket, b.cfgProvider)
@@ -257,7 +260,7 @@ func (b *BucketRuleStore) DeleteRuleGroup(ctx context.Context, userID string, na
 
 // DeleteNamespace implements rules.RuleStore.
 func (b *BucketRuleStore) DeleteNamespace(ctx context.Context, userID string, namespace string) error {
-	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.DeleteNamespace")
+	logger, ctx := spanlogger.New(ctx, b.logger, tracer, "BucketRuleStore.DeleteNamespace")
 	defer logger.Finish()
 
 	// Disable caching when listing all rule groups for a user since listing entries are not

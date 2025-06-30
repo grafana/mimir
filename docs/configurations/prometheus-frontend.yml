@@ -11,7 +11,7 @@ target: query-frontend
 
 # We don't want the default /api/prom or /prometheus prefixes on endpoints.
 api:
-  prometheus_http_prefix: ''
+  prometheus_http_prefix: '/'
 
 server:
   http_listen_port: 9091

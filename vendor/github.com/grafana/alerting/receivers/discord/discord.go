@@ -4,20 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -71,7 +71,6 @@ type discordError struct {
 
 type Notifier struct {
 	*receivers.Base
-	log        logging.Logger
 	ns         receivers.WebhookSender
 	images     images.Provider
 	tmpl       *templates.Template
@@ -81,16 +80,15 @@ type Notifier struct {
 
 type discordAttachment struct {
 	url       string
-	reader    io.ReadCloser
+	content   []byte
 	name      string
 	alertName string
 	state     model.AlertStatus
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger, appVersion string) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger, appVersion string) *Notifier {
 	return &Notifier{
-		Base:       receivers.NewBase(meta),
-		log:        logger,
+		Base:       receivers.NewBase(meta, logger),
 		ns:         sender,
 		images:     images,
 		tmpl:       template,
@@ -100,6 +98,7 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 }
 
 func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
+	l := d.GetLogger(ctx)
 	alerts := types.Alerts(as...)
 
 	var msg discordMessage
@@ -109,11 +108,11 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 	}
 
 	var tmplErr error
-	tmpl, _ := templates.TmplText(ctx, d.tmpl, as, d.log, &tmplErr)
+	tmpl, _ := templates.TmplText(ctx, d.tmpl, as, l, &tmplErr)
 
 	msg.Content = tmpl(d.settings.Message)
 	if tmplErr != nil {
-		d.log.Warn("failed to template Discord notification content", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Discord notification content", "err", tmplErr.Error())
 		// Reset tmplErr for templating other fields.
 		tmplErr = nil
 	}
@@ -123,14 +122,14 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 		if err != nil {
 			return false, err
 		}
-		d.log.Warn("Truncated content", "key", key, "max_runes", discordMaxMessageLen)
+		level.Warn(l).Log("msg", "Truncated content", "key", key, "max_runes", discordMaxMessageLen)
 		msg.Content = truncatedMsg
 	}
 
 	if d.settings.AvatarURL != "" {
 		msg.AvatarURL = tmpl(d.settings.AvatarURL)
 		if tmplErr != nil {
-			d.log.Warn("failed to template Discord Avatar URL", "error", tmplErr.Error(), "fallback", d.settings.AvatarURL)
+			level.Warn(l).Log("msg", "failed to template Discord Avatar URL", "err", tmplErr.Error(), "fallback", d.settings.AvatarURL)
 			msg.AvatarURL = d.settings.AvatarURL
 			tmplErr = nil
 		}
@@ -145,7 +144,7 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 
 	linkEmbed.Title = tmpl(d.settings.Title)
 	if tmplErr != nil {
-		d.log.Warn("failed to template Discord notification title", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Discord notification title", "err", tmplErr.Error())
 		// Reset tmplErr for templating other fields.
 		tmplErr = nil
 	}
@@ -155,12 +154,12 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 	color, _ := strconv.ParseInt(strings.TrimLeft(receivers.GetAlertStatusColor(alerts.Status()), "#"), 16, 0)
 	linkEmbed.Color = color
 
-	ruleURL := receivers.JoinURLPath(d.tmpl.ExternalURL.String(), "/alerting/list", d.log)
+	ruleURL := receivers.JoinURLPath(d.tmpl.ExternalURL.String(), "/alerting/list", l)
 	linkEmbed.URL = ruleURL
 
 	embeds := []discordLinkEmbed{linkEmbed}
 
-	attachments := d.constructAttachments(ctx, as, discordMaxEmbeds-1)
+	attachments := d.constructAttachments(ctx, as, discordMaxEmbeds-1, l)
 	for _, a := range attachments {
 		color, _ := strconv.ParseInt(strings.TrimLeft(receivers.GetAlertStatusColor(alerts.Status()), "#"), 16, 0)
 		embed := discordLinkEmbed{
@@ -176,13 +175,13 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 	msg.Embeds = embeds
 
 	if tmplErr != nil {
-		d.log.Warn("failed to template Discord message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Discord message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
 	u := tmpl(d.settings.WebhookURL)
 	if tmplErr != nil {
-		d.log.Warn("failed to template Discord URL", "error", tmplErr.Error(), "fallback", d.settings.WebhookURL)
+		level.Warn(l).Log("msg", "failed to template Discord URL", "err", tmplErr.Error(), "fallback", d.settings.WebhookURL)
 		u = d.settings.WebhookURL
 	}
 
@@ -191,14 +190,14 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 		return false, err
 	}
 
-	cmd, err := d.buildRequest(u, body, attachments)
+	cmd, err := d.buildRequest(u, body, attachments, l)
 	if err != nil {
 		return false, err
 	}
 
 	cmd.Validation = func(body []byte, statusCode int) error {
 		if statusCode/100 != 2 {
-			d.log.Error("failed to send notification to Discord", "statusCode", statusCode, "responseBody", string(body))
+			level.Error(l).Log("msg", "failed to send notification to Discord", "statusCode", statusCode, "responseBody", string(body))
 			errBody := discordError{}
 			if err := json.Unmarshal(body, &errBody); err == nil {
 				return fmt.Errorf("the Discord API responded (status %d) with error code %d: %s", statusCode, errBody.Code, errBody.Message)
@@ -207,7 +206,7 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 		}
 		return nil
 	}
-	if err := d.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := d.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -217,29 +216,38 @@ func (d Notifier) SendResolved() bool {
 	return !d.GetDisableResolveMessage()
 }
 
-func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Alert, embedQuota int) []discordAttachment {
-	attachments := make([]discordAttachment, 0, embedQuota)
-	embedsUsed := 0
-	for _, alert := range alerts {
-		// Check if the image limit has been reached at the start of each iteration.
-		if embedsUsed >= embedQuota {
-			d.log.Warn("Discord embed quota reached, not creating more attachments for this notification", "embedQuota", embedQuota)
-			break
-		}
-
-		attachment, err := d.getAttachment(ctx, alert)
-		if err != nil {
-			if errors.Is(err, images.ErrNoImageForAlert) {
-				// There's no image for this alert, continue.
-				continue
+func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Alert, embedQuota int, l log.Logger) []*discordAttachment {
+	attachments := make([]*discordAttachment, 0, embedQuota)
+	seenName := make(map[string]*discordAttachment)
+	err := images.WithStoredImages(ctx, l, d.images,
+		func(index int, image images.Image) error {
+			// Check if the image limit has been reached at the start of each iteration.
+			if len(attachments) >= embedQuota {
+				level.Warn(l).Log("msg", "Discord embed quota reached, not creating more attachments for this notification", "embedQuota", embedQuota)
+				return images.ErrImagesDone
 			}
-			d.log.Error("failed to create an attachment for Discord", "alert", alert, "error", err)
-			continue
-		}
 
-		// We got an attachment, either using the image URL or bytes.
-		attachments = append(attachments, attachment)
-		embedsUsed++
+			alert := alerts[index]
+			if att, ok := seenName[alert.Name()]; ok { // skip attachments for the same alert name
+				if att.state != alert.Status() && att.state == model.AlertResolved { // change to firing if attachment state is firing
+					att.state = alert.Status()
+				}
+				return nil
+			}
+			attachment, err := d.getAttachment(ctx, alert, image)
+			if err != nil {
+				level.Error(l).Log("msg", "failed to create an attachment for Discord", "alert", alert, "err", err)
+				return nil
+			}
+
+			// We got an attachment, either using the image URL or bytes.
+			attachments = append(attachments, attachment)
+			seenName[alert.Name()] = attachment
+			return nil
+		}, alerts...)
+	if err != nil {
+		// We still return the attachments we managed to create before reaching the error.
+		level.Warn(l).Log("msg", "failed to create all image attachments for Discord notification", "err", err)
 	}
 
 	return attachments
@@ -247,44 +255,30 @@ func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Aler
 
 // getAttachment takes an alert and generates a Discord attachment containing an image for it.
 // If the image has no public URL, it uses the raw bytes for uploading directly to Discord.
-func (d Notifier) getAttachment(ctx context.Context, alert *types.Alert) (discordAttachment, error) {
-	attachment, err := d.getAttachmentFromURL(ctx, alert)
-	if errors.Is(err, images.ErrImagesNoURL) {
-		// There's an image but it has no public URL, use the bytes for the attachment.
-		return d.getAttachmentFromBytes(ctx, alert)
+func (d Notifier) getAttachment(ctx context.Context, alert *types.Alert, image images.Image) (*discordAttachment, error) {
+	if image.HasURL() {
+		return &discordAttachment{
+			url:       image.URL,
+			state:     alert.Status(),
+			alertName: alert.Name(),
+		}, nil
 	}
 
-	return attachment, err
-}
-
-func (d Notifier) getAttachmentFromURL(ctx context.Context, alert *types.Alert) (discordAttachment, error) {
-	url, err := d.images.GetImageURL(ctx, alert)
+	// There's an image but it has no public URL, use the bytes for the attachment.
+	r, err := image.RawData(ctx)
 	if err != nil {
-		return discordAttachment{}, err
+		return nil, err
 	}
-
-	return discordAttachment{
-		url:       url,
+	return &discordAttachment{
+		url:       "attachment://" + r.Name,
+		name:      r.Name,
+		content:   r.Content,
 		state:     alert.Status(),
 		alertName: alert.Name(),
 	}, nil
 }
 
-func (d Notifier) getAttachmentFromBytes(ctx context.Context, alert *types.Alert) (discordAttachment, error) {
-	r, name, err := d.images.GetRawImage(ctx, alert)
-	if err != nil {
-		return discordAttachment{}, err
-	}
-	return discordAttachment{
-		url:       "attachment://" + name,
-		name:      name,
-		reader:    r,
-		state:     alert.Status(),
-		alertName: alert.Name(),
-	}, nil
-}
-
-func (d Notifier) buildRequest(url string, body []byte, attachments []discordAttachment) (*receivers.SendWebhookSettings, error) {
+func (d Notifier) buildRequest(url string, body []byte, attachments []*discordAttachment, l log.Logger) (*receivers.SendWebhookSettings, error) {
 	cmd := &receivers.SendWebhookSettings{
 		URL:        url,
 		HTTPMethod: "POST",
@@ -300,7 +294,7 @@ func (d Notifier) buildRequest(url string, body []byte, attachments []discordAtt
 	defer func() {
 		if err := w.Close(); err != nil {
 			// Shouldn't matter since we already close w explicitly on the non-error path
-			d.log.Warn("failed to close multipart writer", "error", err)
+			level.Warn(l).Log("msg", "failed to close multipart writer", "err", err)
 		}
 	}()
 
@@ -314,16 +308,12 @@ func (d Notifier) buildRequest(url string, body []byte, attachments []discordAtt
 	}
 
 	for _, a := range attachments {
-		if a.reader != nil { // We have an image to upload.
-			err = func() error {
-				defer func() { _ = a.reader.Close() }()
-				part, err := w.CreateFormFile("", a.name)
-				if err != nil {
-					return err
-				}
-				_, err = io.Copy(part, a.reader)
-				return err
-			}()
+		if len(a.content) > 0 { // We have an image to upload.
+			part, err := w.CreateFormFile("", a.name)
+			if err != nil {
+				return nil, err
+			}
+			_, err = part.Write(a.content)
 			if err != nil {
 				return nil, err
 			}

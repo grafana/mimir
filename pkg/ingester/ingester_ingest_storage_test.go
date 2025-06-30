@@ -78,8 +78,7 @@ func TestIngester_Start(t *testing.T) {
 		cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
 		// Create the ingester.
-		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		require.NoError(t, err)
+		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 		ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
 		// Mock the Kafka cluster to:
@@ -288,8 +287,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			limits.IngestStorageReadConsistency = testData.readConsistencyLevel
 
 			// Create the ingester.
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(limits, nil)
 			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
 
 			// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
@@ -370,13 +368,11 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 	ctx := context.Background()
 
 	reg := prometheus.NewPedanticRegistry()
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 	// Start ingester.
 	cfg := defaultIngesterTestConfig(t)
 	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
-	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
@@ -428,13 +424,10 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 	ctx := context.Background()
 
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
-
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher) {
 		// Start ingester.
 		ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
-		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
@@ -551,8 +544,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) {
 	ctx := context.Background()
 
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 	cfg := defaultIngesterTestConfig(t)
 	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
@@ -562,7 +554,6 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	require.NoError(t, shutdownmarker.Create(shutdownmarker.GetPath(cfg.BlocksStorageConfig.TSDB.Dir)))
 
 	// Start ingester.
-	require.NoError(t, err)
 	require.NoError(t, ingester.StartAsync(ctx))
 	t.Cleanup(func() {
 		_ = services.StopAndAwaitTerminated(ctx, ingester)
@@ -579,8 +570,7 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 
 func TestIngester_compactionServiceInterval(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
 
 	ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Minute

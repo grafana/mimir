@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -477,9 +477,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
+		uerr := &UploadError{}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorIs(t, uploadErr, errUploadFailed)
+		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of index fails, block is deleted.
 		require.Equal(t, 0, len(bkt.Objects()))
@@ -488,9 +489,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
+		uerr := &UploadError{}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorIs(t, uploadErr, errUploadFailed)
+		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -501,22 +503,20 @@ func TestUploadCleanup(t *testing.T) {
 	}
 }
 
-var errUploadFailed = errors.New("upload failed")
-
 type errBucket struct {
 	objstore.Bucket
 
 	failSuffix string
 }
 
-func (eb errBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	err := eb.Bucket.Upload(ctx, name, r)
+func (eb errBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	err := eb.Bucket.Upload(ctx, name, r, opts...)
 	if err != nil {
 		return err
 	}
 
 	if strings.HasSuffix(name, eb.failSuffix) {
-		return errUploadFailed
+		return UploadError{cause: err, fileType: FileType(name)}
 	}
 	return nil
 }

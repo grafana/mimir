@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
-
-	"github.com/grafana/alerting/logging"
 )
 
 type AlertStateType string
@@ -41,6 +41,17 @@ type HTTPCfg struct {
 	Body     []byte
 	User     string
 	Password string
+}
+
+// HMACConfig contains configuration for HMAC signing of HTTP requests
+type HMACConfig struct {
+	// Secret to use for HMAC signing.
+	Secret string `json:"secret,omitempty" yaml:"secret,omitempty"`
+	// Header is the name of the header containing the HMAC signature.
+	Header string `json:"header,omitempty" yaml:"header,omitempty"`
+	// TimestampHeader is the name of the header containing the timestamp
+	// used to generate the HMAC signature. If empty, timestamp is not included.
+	TimestampHeader string `yaml:"timestampHeader,omitempty" json:"timestampHeader,omitempty"`
 }
 
 type TLSConfig struct {
@@ -76,34 +87,11 @@ func (cfg *TLSConfig) ToCryptoTLSConfig() (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
-// NewTLSClient creates a new HTTP client with the provided TLS configuration or with default settings.
-func NewTLSClient(tlsConfig *tls.Config) *http.Client {
-	nc := func(tlsConfig *tls.Config) *http.Client {
-		return &http.Client{
-			Timeout: time.Second * 30,
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-				Proxy:           http.ProxyFromEnvironment,
-				Dial: (&net.Dialer{
-					Timeout: 30 * time.Second,
-				}).Dial,
-				TLSHandshakeTimeout: 5 * time.Second,
-			},
-		}
-	}
-
-	if tlsConfig == nil {
-		return nc(&tls.Config{Renegotiation: tls.RenegotiateFreelyAsClient})
-	}
-
-	return nc(tlsConfig)
-}
-
 // SendHTTPRequest sends an HTTP request.
 // Stubbable by tests.
 //
 //nolint:unused, varcheck
-var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logger logging.Logger) ([]byte, error) {
+var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logger log.Logger) ([]byte, error) {
 	var reader io.Reader
 	if len(cfg.Body) > 0 {
 		reader = bytes.NewReader(cfg.Body)
@@ -138,7 +126,7 @@ var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logge
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			logger.Warn("failed to close response Body", "error", err)
+			level.Error(logger).Log("msg", "failed to close response Body", "err", err)
 		}
 	}()
 
@@ -148,19 +136,19 @@ var SendHTTPRequest = func(ctx context.Context, url *url.URL, cfg HTTPCfg, logge
 	}
 
 	if resp.StatusCode/100 != 2 {
-		logger.Warn("HTTP request failed", "url", request.URL.String(), "statusCode", resp.Status, "Body",
+		level.Warn(logger).Log("msg", "HTTP request failed", "url", request.URL.String(), "statusCode", resp.Status, "Body",
 			string(respBody))
 		return nil, fmt.Errorf("failed to send HTTP request - status code %d", resp.StatusCode)
 	}
 
-	logger.Debug("sending HTTP request succeeded", "url", request.URL.String(), "statusCode", resp.Status)
+	level.Debug(logger).Log("msg", "sending HTTP request succeeded", "url", request.URL.String(), "statusCode", resp.Status)
 	return respBody, nil
 }
 
-func JoinURLPath(base, additionalPath string, logger logging.Logger) string {
+func JoinURLPath(base, additionalPath string, logger log.Logger) string {
 	u, err := url.Parse(base)
 	if err != nil {
-		logger.Debug("failed to parse URL while joining URL", "url", base, "error", err.Error())
+		level.Debug(logger).Log("msg", "failed to parse URL while joining URL", "url", base, "err", err.Error())
 		return base
 	}
 

@@ -28,6 +28,9 @@ spec:
       port: 9150
       targetPort: 9150
     {{ end }}
+    {{- if .service.extraPorts }}
+    {{- toYaml .service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" $.ctx "component" $.component) | nindent 4 }}
 {{- end -}}

@@ -56,12 +56,12 @@ func (j *job) conflicts(other *job) bool {
 	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		myLabels := labelsWithoutShard(j.blocksGroup.blocks[0].Thanos.Labels)
-		otherLabels := labelsWithoutShard(other.blocksGroup.blocks[0].Thanos.Labels)
+		myLabels := labelsWithoutShard(j.blocks[0].Thanos.Labels)
+		otherLabels := labelsWithoutShard(other.blocks[0].Thanos.Labels)
 		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
-		if j.blocksGroup.blocks[0].Thanos.Downsample != other.blocksGroup.blocks[0].Thanos.Downsample {
+		if j.blocks[0].Thanos.Downsample != other.blocks[0].Thanos.Downsample {
 			return false
 		}
 	}

@@ -27,13 +27,11 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: openshift-values-mimir
+      serviceAccountName: openshift-values-mimir-tokengen
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: tokengen
           imagePullPolicy: IfNotPresent
@@ -41,7 +39,10 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - -tokengen.token-file=/shared/admin-token
           volumeMounts:
+            - name: shared
+              mountPath: /shared
             - name: config
               mountPath: /etc/mimir
             - name: license
@@ -68,4 +69,6 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
+          emptyDir: {}
+        - name: shared
           emptyDir: {}

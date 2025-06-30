@@ -20,16 +20,16 @@ import (
 )
 
 // CreateRuleGroup creates a new rule group
-func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg rwrulefmt.RuleGroup) error {
+func (c *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg rwrulefmt.RuleGroup) error {
 	payload, err := yaml.Marshal(&rg)
 	if err != nil {
 		return err
 	}
 
 	escapedNamespace := url.PathEscape(namespace)
-	path := r.apiPath + "/" + escapedNamespace
+	path := c.apiPath + "/" + escapedNamespace
 
-	res, err := r.doRequest(ctx, path, "POST", bytes.NewBuffer(payload), int64(len(payload)))
+	res, err := c.doRequest(ctx, path, "POST", bytes.NewBuffer(payload), int64(len(payload)))
 	if err != nil {
 		return err
 	}
@@ -40,12 +40,12 @@ func (r *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg 
 }
 
 // DeleteRuleGroup deletes a rule group
-func (r *MimirClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
+func (c *MimirClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
 	escapedNamespace := url.PathEscape(namespace)
 	escapedGroupName := url.PathEscape(groupName)
-	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
+	path := c.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
-	res, err := r.doRequest(ctx, path, "DELETE", nil, -1)
+	res, err := c.doRequest(ctx, path, "DELETE", nil, -1)
 	if err != nil {
 		return err
 	}
@@ -56,13 +56,13 @@ func (r *MimirClient) DeleteRuleGroup(ctx context.Context, namespace, groupName 
 }
 
 // GetRuleGroup retrieves a rule group
-func (r *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rwrulefmt.RuleGroup, error) {
+func (c *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rwrulefmt.RuleGroup, error) {
 	escapedNamespace := url.PathEscape(namespace)
 	escapedGroupName := url.PathEscape(groupName)
-	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
+	path := c.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
 	fmt.Println(path)
-	res, err := r.doRequest(ctx, path, "GET", nil, -1)
+	res, err := c.doRequest(ctx, path, "GET", nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +88,13 @@ func (r *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 }
 
 // ListRules retrieves a rule group
-func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[string][]rwrulefmt.RuleGroup, error) {
-	path := r.apiPath
+func (c *MimirClient) ListRules(ctx context.Context, namespace string) (map[string][]rwrulefmt.RuleGroup, error) {
+	path := c.apiPath
 	if namespace != "" {
 		path = path + "/" + namespace
 	}
 
-	res, err := r.doRequest(ctx, path, "GET", nil, -1)
+	res, err := c.doRequest(ctx, path, "GET", nil, -1)
 	if err != nil {
 		return nil, err
 	}
@@ -116,11 +116,11 @@ func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 }
 
 // DeleteNamespace delete all the rule groups in a namespace including the namespace itself
-func (r *MimirClient) DeleteNamespace(ctx context.Context, namespace string) error {
+func (c *MimirClient) DeleteNamespace(ctx context.Context, namespace string) error {
 	escapedNamespace := url.PathEscape(namespace)
-	path := r.apiPath + "/" + escapedNamespace
+	path := c.apiPath + "/" + escapedNamespace
 
-	res, err := r.doRequest(ctx, path, "DELETE", nil, -1)
+	res, err := c.doRequest(ctx, path, "DELETE", nil, -1)
 	if err != nil {
 		return err
 	}

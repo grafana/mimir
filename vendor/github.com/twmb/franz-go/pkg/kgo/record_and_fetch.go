@@ -6,8 +6,6 @@ import (
 	"reflect"
 	"time"
 	"unsafe"
-
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // RecordHeader contains extra information that can be sent with Records.
@@ -53,6 +51,7 @@ func (a RecordAttrs) TimestampType() int8 {
 // CompressionType signifies with which algorithm this record was compressed.
 //
 // 0 is no compression, 1 is gzip, 2 is snappy, 3 is lz4, and 4 is zstd.
+// The returned uint8 can be converted directly to a [CompressionCodecType].
 func (a RecordAttrs) CompressionType() uint8 {
 	return a.attrs & 0b0000_0111
 }
@@ -122,7 +121,7 @@ type Record struct {
 	// before the record is unbuffered.
 	ProducerEpoch int16
 
-	// ProducerEpoch is the producer ID of this message if it was produced
+	// ProducerID is the producer ID of this message if it was produced
 	// with a producer ID. An epoch and ID of 0 means it was not.
 	//
 	// For producing, this is left unset. This will be set by the client
@@ -151,42 +150,6 @@ type Record struct {
 	// producer hooks. It can also be set in a consumer hook to propagate
 	// enrichment to consumer clients.
 	Context context.Context
-
-	// recordsPool is the pool that this record was fetched from, if any.
-	//
-	// When reused, record is returned to this pool.
-	recordsPool *recordsPool
-
-	// rcBatchBuffer is used to keep track of the raw buffer that this record was
-	// derived from when consuming, after decompression.
-	//
-	// This is used to allow reusing these buffers when record pooling has been enabled
-	// via EnableRecordsPool option.
-	rcBatchBuffer *rcBuffer[byte]
-
-	// rcRawRecordsBuffer is used to keep track of the raw record buffer that this record was
-	// derived from when consuming.
-	//
-	// This is used to allow reusing these buffers when record pooling has been enabled
-	// via EnableRecordsPool option.
-	rcRawRecordsBuffer *rcBuffer[kmsg.Record]
-}
-
-// Reuse releases the record back to the pool.
-//
-//
-// Once this method has been called, any reference to the passed record should be considered invalid by the caller,
-// as it may be reused as a result of future calls to the PollFetches/PollRecords method.
-func (r *Record) Reuse() {
-	if r.rcRawRecordsBuffer != nil {
-		r.rcRawRecordsBuffer.release()
-	}
-	if r.rcBatchBuffer != nil {
-		r.rcBatchBuffer.release()
-	}
-	if r.recordsPool != nil {
-		r.recordsPool.put(r)
-	}
 }
 
 func (r *Record) userSize() int64 {
@@ -312,6 +275,9 @@ func (p *FetchPartition) EachRecord(fn func(*Record)) {
 type FetchTopic struct {
 	// Topic is the topic this is for.
 	Topic string
+	// TopicID is the ID of the topic, if your cluster supports returning
+	// topic IDs in fetch responses (Kafka 3.1+).
+	TopicID [16]byte
 	// Partitions contains individual partitions in the topic that were
 	// fetched.
 	Partitions []FetchPartition
@@ -383,8 +349,8 @@ type FetchError struct {
 //     client for.
 //
 //  3. an untyped batch parse failure; these are usually unrecoverable by
-//     restarts, and it may be best to just let the client continue. However,
-//     restarting is an option, but you may need to manually repair your
+//     restarts, and it may be best to just let the client continue.
+//     Restarting is an option, but you may need to manually repair your
 //     partition.
 //
 //  4. an injected ErrClientClosed; this is a fatal informational error that
@@ -598,6 +564,7 @@ func (fs Fetches) EachTopic(fn func(FetchTopic)) {
 	for topic, partitions := range topics {
 		fn(FetchTopic{
 			topic,
+			[16]byte{},
 			partitions,
 		})
 	}

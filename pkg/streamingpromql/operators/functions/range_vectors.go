@@ -6,6 +6,7 @@
 package functions
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -14,8 +15,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/floats"
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 var CountOverTime = FunctionOverRangeVectorDefinition{
@@ -23,7 +24,7 @@ var CountOverTime = FunctionOverRangeVectorDefinition{
 	StepFunc:               countOverTime,
 }
 
-func countOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func countOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fPointCount := step.Floats.Count()
 	hPointCount := step.Histograms.Count()
 
@@ -39,7 +40,7 @@ var LastOverTime = FunctionOverRangeVectorDefinition{
 	StepFunc: lastOverTime,
 }
 
-func lastOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func lastOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	lastFloat, floatAvailable := step.Floats.Last()
 	lastHistogram, histogramAvailable := step.Histograms.Last()
 
@@ -60,7 +61,7 @@ var PresentOverTime = FunctionOverRangeVectorDefinition{
 	StepFunc:               presentOverTime,
 }
 
-func presentOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func presentOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	if step.Floats.Any() || step.Histograms.Any() {
 		return 1, true, nil, nil
 	}
@@ -74,7 +75,7 @@ var MaxOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func maxOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
@@ -109,7 +110,7 @@ var MinOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func minOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
@@ -144,7 +145,7 @@ var SumOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func sumOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func sumOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -209,7 +210,7 @@ var AvgOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func avgOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func avgOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -359,7 +360,7 @@ var Resets = FunctionOverRangeVectorDefinition{
 }
 
 func resetsChanges(isReset bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -485,7 +486,7 @@ var Deriv = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func deriv(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func deriv(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 
 	if step.Floats.Any() && step.Histograms.Any() {
@@ -507,7 +508,7 @@ var PredictLinear = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func predictLinear(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func predictLinear(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 
 	if step.Floats.Any() && step.Histograms.Any() {
@@ -576,65 +577,150 @@ func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, i
 }
 
 var Irate = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               irateIdelta(true),
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       irateIdelta(true),
+	NeedsSeriesNamesForAnnotations: true,
 }
 
 var Idelta = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               irateIdelta(false),
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       irateIdelta(false),
+	NeedsSeriesNamesForAnnotations: true,
 }
 
 func irateIdelta(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
-		// Histograms are ignored
-		fHead, fTail := step.Floats.UnsafePoints()
-
-		lenTail := len(fTail)
-		lenHead := len(fHead)
-
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		// We need at least two samples to calculate irate or idelta
-		if lenHead+lenTail < 2 {
+		floatCount := step.Floats.Count()
+		histogramCount := step.Histograms.Count()
+
+		if floatCount+histogramCount < 2 {
 			return 0, false, nil, nil
 		}
 
-		var lastSample promql.FPoint
-		var previousSample promql.FPoint
-
-		// If tail has more than two samples, we should use the last two samples from tail.
-		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
-		// Otherwise, last two samples are all in the head.
-		if lenTail >= 2 {
-			lastSample = fTail[lenTail-1]
-			previousSample = fTail[lenTail-2]
-		} else if lenTail == 1 {
-			lastSample = fTail[0]
-			previousSample = fHead[lenHead-1]
-		} else {
-			lastSample = fHead[lenHead-1]
-			previousSample = fHead[lenHead-2]
-		}
-
-		var resultValue float64
-		if isRate && lastSample.F < previousSample.F {
-			// Counter reset.
-			resultValue = lastSample.F
-		} else {
-			resultValue = lastSample.F - previousSample.F
-		}
-
-		sampledInterval := lastSample.T - previousSample.T
-		if sampledInterval == 0 {
-			// Avoid dividing by 0.
+		if floatCount < 2 && histogramCount < 2 {
+			// Only two points are a float and a histogram.
+			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
 
-		if isRate {
-			// Convert to per-second.
-			resultValue /= float64(sampledInterval) / 1000
+		var useHistograms bool
+		lastFloat, haveFloats := step.Floats.Last()
+		lastHistogram, haveHistograms := step.Histograms.Last()
+
+		if !haveHistograms {
+			// Easy case: only have floats, and we know we have at least two of them.
+			useHistograms = false
+		} else if !haveFloats {
+			// Easy case: only have histograms, and we know we have at least two of them.
+			useHistograms = true
+		} else if lastFloat.T > lastHistogram.T {
+			// We have a mixture of histograms and floats, and the last float sample is later than the last histogram.
+			// Check that the last two samples of any kind are both floats, and if so, use them to compute the result.
+			if floatCount < 2 {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			secondLastFloat := step.Floats.PointAt(floatCount - 2)
+			if secondLastFloat.T < lastHistogram.T {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			useHistograms = false
+		} else {
+			// Same as above, but using histograms to compute the final result.
+			if histogramCount < 2 {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			secondLastHistogram := step.Histograms.PointAt(histogramCount - 2)
+			if secondLastHistogram.T < lastFloat.T {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			useHistograms = true
 		}
-		return resultValue, true, nil, nil
+
+		if useHistograms {
+			lastSample := step.Histograms.PointAt(histogramCount - 1)
+			secondLastSample := step.Histograms.PointAt(histogramCount - 2)
+
+			value, err := histogramIrateIdelta(isRate, lastSample, secondLastSample, emitAnnotation)
+			return 0, false, value, err
+		}
+
+		// Use floats.
+		lastSample := step.Floats.PointAt(floatCount - 1)
+		secondLastSample := step.Floats.PointAt(floatCount - 2)
+
+		value, ok := floatIrateIdelta(isRate, lastSample, secondLastSample)
+		return value, ok, nil, nil
 	}
+}
+
+func floatIrateIdelta(isRate bool, lastSample, secondLastSample promql.FPoint) (float64, bool) {
+	var resultValue float64
+
+	if isRate && lastSample.F < secondLastSample.F {
+		// Counter reset.
+		resultValue = lastSample.F
+	} else {
+		resultValue = lastSample.F - secondLastSample.F
+	}
+
+	sampledInterval := lastSample.T - secondLastSample.T
+	if sampledInterval == 0 {
+		// Avoid dividing by 0.
+		return 0, false
+	}
+
+	if isRate {
+		// Convert to per-second.
+		resultValue /= float64(sampledInterval) / 1000
+	}
+
+	return resultValue, true
+}
+
+func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	resultValue := lastSample.H.Copy()
+
+	if isRate && (lastSample.H.CounterResetHint == histogram.GaugeType || secondLastSample.H.CounterResetHint == histogram.GaugeType) {
+		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+	}
+
+	if !isRate && (lastSample.H.CounterResetHint != histogram.GaugeType || secondLastSample.H.CounterResetHint != histogram.GaugeType) {
+		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
+	}
+
+	if !isRate || !lastSample.H.DetectReset(secondLastSample.H) {
+		_, err := resultValue.Sub(secondLastSample.H)
+		if err != nil {
+			// Convert the error to an annotation, if we can.
+			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return nil, err
+		}
+	}
+
+	resultValue.CounterResetHint = histogram.GaugeType
+	resultValue.Compact(0)
+
+	sampledInterval := lastSample.T - secondLastSample.T
+	if sampledInterval == 0 {
+		// Avoid dividing by 0.
+		return nil, nil
+	}
+
+	if isRate {
+		// Convert to per-second.
+		resultValue.Div(float64(sampledInterval) / 1000)
+	}
+
+	return resultValue, nil
 }
 
 var StddevOverTime = FunctionOverRangeVectorDefinition{
@@ -650,7 +736,7 @@ var StdvarOverTime = FunctionOverRangeVectorDefinition{
 }
 
 func stddevStdvarOverTime(isStdDev bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		head, tail := step.Floats.UnsafePoints()
 
 		if len(head) == 0 && len(tail) == 0 {
@@ -696,7 +782,7 @@ var QuantileOverTime = FunctionOverRangeVectorDefinition{
 	UseFirstArgumentPositionForAnnotations: true,
 }
 
-func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	if !step.Floats.Any() {
 		return 0, false, nil, nil
 	}
@@ -728,5 +814,87 @@ func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.S
 		values = append(values, p.F)
 	}
 
-	return quantile(q, values), true, nil, nil
+	return floats.Quantile(q, values), true, nil, nil
+}
+
+var DoubleExponentialSmoothing = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       doubleExponentialSmoothing,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+// doubleExponentialSmoothing is similar to a weighted moving average, where
+// historical data has exponentially less influence on the current data. It also
+// accounts for trends in data. The smoothing factor (0 < sf < 1) affects how
+// historical data will affect the current data. A lower smoothing factor
+// increases the influence of historical data. The trend factor (0 < tf < 1)
+// affects how trends in historical data will affect the current data. A higher
+// trend factor increases the influence. of trends. Algorithm taken from
+// https://en.wikipedia.org/wiki/Exponential_smoothing .
+func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	if !step.Floats.Any() && !step.Histograms.Any() {
+		return 0, false, nil, nil
+	}
+
+	smoothingFactor := args[0].Samples[timeRange.PointIndex(step.StepT)].F
+	if smoothingFactor <= 0 || smoothingFactor >= 1 {
+		return 0, false, nil, fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", smoothingFactor)
+	}
+
+	trendFactor := args[1].Samples[timeRange.PointIndex(step.StepT)].F
+	if trendFactor <= 0 || trendFactor >= 1 {
+		return 0, false, nil, fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", trendFactor)
+	}
+
+	fHead, fTail := step.Floats.UnsafePoints()
+
+	if step.Floats.Any() && step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	return calculateDoubleExponentialSmoothing(fHead, fTail, smoothingFactor, trendFactor)
+}
+
+func calculateDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.FPoint, smoothingFactor float64, trendFactor float64) (float64, bool, *histogram.FloatHistogram, error) {
+	if (len(fHead) + len(fTail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	var smooth0, smooth1, estimatedTrend float64
+
+	// Initial value of smooth1 is the first sample.
+	smooth1 = fHead[0].F
+
+	// Initial estimated trend is the difference between the first and second samples.
+	// First sample will always be in the head.
+	// If we have only one point in head, the second sample is the first index in tail.
+	if len(fHead) == 1 {
+		estimatedTrend = fTail[0].F - fHead[0].F
+	} else {
+		estimatedTrend = fHead[1].F - fHead[0].F
+	}
+
+	firstPointAfterInit := true
+	accumulate := func(samples []promql.FPoint) {
+		var x, y float64
+
+		for _, sample := range samples {
+			// Scale the raw value against the smoothing factor.
+			x = smoothingFactor * sample.F
+
+			// Scale the last smoothed value for all samples after second point regardless whether they are in head or tail.
+			if firstPointAfterInit {
+				firstPointAfterInit = false
+			} else {
+				estimatedTrend = trendFactor*(smooth1-smooth0) + (1-trendFactor)*estimatedTrend
+			}
+			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
+
+			smooth0, smooth1 = smooth1, x+y
+		}
+	}
+	accumulate(fHead[1:])
+	accumulate(fTail)
+
+	return smooth1, true, nil, nil
 }

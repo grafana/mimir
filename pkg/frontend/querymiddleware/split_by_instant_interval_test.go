@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -513,49 +514,50 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 					for _, req := range reqs {
 						t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
-							reg := prometheus.NewPedanticRegistry()
-							engine := newEngine()
-							downstream := &downstreamHandler{
-								engine:                                  engine,
-								queryable:                               queryable,
-								includePositionInformationInAnnotations: true,
-							}
+							runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+								reg := prometheus.NewPedanticRegistry()
+								downstream := &downstreamHandler{
+									engine:                                  eng,
+									queryable:                               queryable,
+									includePositionInformationInAnnotations: true,
+								}
 
-							// Run the query with the normal engine
-							_, ctx := stats.ContextWithEmptyStats(context.Background())
-							expectedRes, err := downstream.Do(ctx, req)
-							require.Nil(t, err)
-							expectedPrometheusRes := expectedRes.(*PrometheusResponse)
-							sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+								// Run the query with the normal engine
+								_, ctx := stats.ContextWithEmptyStats(context.Background())
+								expectedRes, err := downstream.Do(ctx, req)
+								require.Nil(t, err)
+								expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+								require.True(t, ok)
+								sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
 
-							// Ensure the query produces some results.
-							require.NotEmpty(t, expectedPrometheusRes.Data.Result)
-							requireValidSamples(t, expectedPrometheusRes.Data.Result)
+								// Ensure the query produces some results.
+								require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+								requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
-							if testData.expectedSplitQueries > 0 {
-								// Remove position information from annotations, to mirror what we expect from the split queries below.
-								removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
-								removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
-							}
+								if testData.expectedSplitQueries > 0 {
+									// Remove position information from annotations, to mirror what we expect from the split queries below.
+									removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+									removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+								}
 
-							splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), engine, reg)
+								splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), eng, reg)
 
-							// Run the query with splitting
-							splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(ctx, "test"), req)
-							require.Nil(t, err)
+								// Run the query with splitting
+								splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(ctx, "test"), req)
+								require.Nil(t, err)
 
-							splitPrometheusRes := splitRes.(*PrometheusResponse)
-							sort.Sort(byLabels(splitPrometheusRes.Data.Result))
+								splitPrometheusRes, _ := splitRes.GetPrometheusResponse()
+								sort.Sort(byLabels(splitPrometheusRes.Data.Result))
 
-							approximatelyEquals(t, expectedPrometheusRes, splitPrometheusRes)
+								approximatelyEquals(t, expectedPrometheusRes, splitPrometheusRes)
 
-							// Assert metrics
-							expectedSucceeded := 1
-							if testData.expectedSplitQueries == 0 {
-								expectedSucceeded = 0
-							}
+								// Assert metrics
+								expectedSucceeded := 1
+								if testData.expectedSplitQueries == 0 {
+									expectedSucceeded = 0
+								}
 
-							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+								assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 						# HELP cortex_frontend_instant_query_splitting_rewrites_attempted_total Total number of instant queries the query-frontend attempted to split by interval.
 						# TYPE cortex_frontend_instant_query_splitting_rewrites_attempted_total counter
 						cortex_frontend_instant_query_splitting_rewrites_attempted_total 1
@@ -576,15 +578,16 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="subquery"} %d
 						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
 					`, testData.expectedSplitQueries, expectedSucceeded, testData.expectedSkippedNonSplittable,
-								testData.expectedSkippedSmallInterval, testData.expectedSkippedSubquery)),
-								"cortex_frontend_instant_query_splitting_rewrites_attempted_total",
-								"cortex_frontend_instant_query_split_queries_total",
-								"cortex_frontend_instant_query_splitting_rewrites_succeeded_total",
-								"cortex_frontend_instant_query_splitting_rewrites_skipped_total"))
+									testData.expectedSkippedSmallInterval, testData.expectedSkippedSubquery)),
+									"cortex_frontend_instant_query_splitting_rewrites_attempted_total",
+									"cortex_frontend_instant_query_split_queries_total",
+									"cortex_frontend_instant_query_splitting_rewrites_succeeded_total",
+									"cortex_frontend_instant_query_splitting_rewrites_skipped_total"))
 
-							// Assert query stats from context
-							queryStats := stats.FromContext(ctx)
-							assert.Equal(t, uint32(testData.expectedSplitQueries), queryStats.LoadSplitQueries())
+								// Assert query stats from context
+								queryStats := stats.FromContext(ctx)
+								assert.Equal(t, uint32(testData.expectedSplitQueries), queryStats.LoadSplitQueries())
+							})
 						})
 					}
 				})
@@ -620,27 +623,30 @@ func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			req := &PrometheusInstantQueryRequest{
-				path:      "/query",
-				time:      time.Now().UnixNano(),
-				queryExpr: parseQuery(t, "sum_over_time(metric_counter[3h])"), // splittable instant query
-				options:   tt.httpOptions,
-			}
+			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+				req := &PrometheusInstantQueryRequest{
+					path:      "/query",
+					time:      time.Now().UnixNano(),
+					queryExpr: parseQuery(t, "sum_over_time(metric_counter[3h])"), // splittable instant query
+					options:   tt.httpOptions,
+				}
 
-			// Split by interval middleware with a limit configuration of split instant query interval of 1m
-			splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), newEngine(), nil)
+				// Split by interval middleware with a limit configuration of split instant query interval of 1m
+				splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), eng, nil)
 
-			downstream := &mockHandler{}
-			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
-				Status: statusSuccess, Data: tt.data,
-			}, nil)
+				downstream := &mockHandler{}
+				downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+					Status: statusSuccess, Data: tt.data,
+				}, nil)
 
-			res, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-			require.NoError(t, err)
-			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+				res, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+				require.NoError(t, err)
+				promRes, _ := res.GetPrometheusResponse()
+				assert.Equal(t, statusSuccess, promRes.GetStatus())
 
-			downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
-			downstream.AssertNumberOfCalls(t, "Do", tt.expectedDownstreamCall)
+				downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+				downstream.AssertNumberOfCalls(t, "Do", tt.expectedDownstreamCall)
+			})
 		})
 	}
 }

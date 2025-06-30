@@ -9,6 +9,13 @@ title: Grafana Mimir Top tenants dashboard
 weight: 170
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Grafana Mimir Top tenants dashboard
 
 The Top tenants dashboard shows the top tenants based on multiple, built-in criteria.
+
+Use this dashboard for the following use cases:
+
+- Analyze tenant-specific data in a multi-tenant environment.
+- Identify tenants with high resource consumption.

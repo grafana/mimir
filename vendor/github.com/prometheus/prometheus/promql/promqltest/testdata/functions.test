@@ -218,6 +218,14 @@ clear
 load 5m
 	http_requests_total{path="/foo"}	0+10x10
 	http_requests_total{path="/bar"}	0+10x5 0+10x5
+	http_requests_nan{}               1 NaN NaN 5 11
+	http_requests_histogram{path="/a"} {{sum:2 count:2}}+{{sum:3 count:3}}x5
+	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1}} {{sum:4 count:4}}
+	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:4 count:4 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:4 count:4}}
+	http_requests_histogram{path="/e"} 0 1 2 {{sum:4 count:4}}
+	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:3 count:3 custom_values:[1] buckets:[3]}} {{schema:-53 sum:3 count:3 custom_values:[5 10] buckets:[3]}}
 
 eval instant at 50m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
@@ -227,6 +235,31 @@ eval instant at 50m irate(http_requests_total[50m])
 eval instant at 30m irate(http_requests_total[50m])
 	{path="/foo"} .03333333333333333333
 	{path="/bar"} 0
+
+eval range from 0 to 20m step 5m irate(http_requests_nan[15m1s])
+	{} _ NaN NaN NaN 0.02
+
+eval instant at 20m irate(http_requests_histogram{path="/a"}[20m])
+	{path="/a"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
+
+eval instant at 20m irate(http_requests_histogram{path="/b"}[20m])
+	{path="/b"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
+
+eval instant at 20m irate(http_requests_histogram{path="/b"}[6m])
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/c"}[20m])
+	{path="/c"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/d"}[20m])
+	{path="/d"} {{sum:0.01 count:0.01 counter_reset_hint:gauge}}
+
+eval_warn instant at 20m irate(http_requests_histogram{path="/e"}[20m])
+
+eval instant at 20m irate(http_requests_histogram{path="/f"}[20m])
+	{path="/f"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
+
+eval instant at 20m irate(http_requests_histogram{path="/g"}[20m])
+	{path="/g"} {{schema:-53 sum:0.01 count:0.01 custom_values:[5 10] buckets:[0.01]}}
 
 clear
 
@@ -259,10 +292,41 @@ clear
 load 5m
 	http_requests{path="/foo"}	0 50 100 150
 	http_requests{path="/bar"}	0 50 100 50
+	http_requests_nan{}         1 NaN NaN 5 11
+	http_requests_histogram{path="/a"} {{sum:2 count:2 counter_reset_hint:gauge}}+{{sum:1 count:3 counter_reset_hint:gauge}}x5
+	http_requests_histogram{path="/b"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/c"} 0 0 {{sum:1 count:1}} {{sum:2 count:2 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/d"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{sum:2 count:2}}
+	http_requests_histogram{path="/e"} 0 1 2 {{sum:1 count:2 counter_reset_hint:gauge}}
+	http_requests_histogram{path="/f"} 0 0 {{sum:1 count:1 counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+	http_requests_histogram{path="/g"} 0 0 {{schema:-53 sum:1 count:1 custom_values:[1] buckets:[2] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
 
 eval instant at 20m idelta(http_requests[20m])
 	{path="/foo"} 50
 	{path="/bar"} -50
+
+eval range from 0 to 20m step 5m idelta(http_requests_nan[15m1s])
+	{} _ NaN NaN NaN 6
+
+eval instant at 20m idelta(http_requests_histogram{path="/a"}[20m])
+	{path="/a"} {{sum:1 count:3 counter_reset_hint:gauge}}
+
+eval instant at 20m idelta(http_requests_histogram{path="/b"}[20m])
+	{path="/b"} {{sum:1 count:1 counter_reset_hint:gauge}}
+
+eval instant at 20m idelta(http_requests_histogram{path="/b"}[6m])
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/c"}[20m])
+	{path="/c"} {{sum:1 count:1 counter_reset_hint:gauge}}
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/d"}[20m])
+	{path="/d"} {{sum:1 count:1 counter_reset_hint:gauge}}
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/e"}[20m])
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/f"}[20m])
+
+eval_warn instant at 20m idelta(http_requests_histogram{path="/g"}[20m])
 
 clear
 
@@ -410,7 +474,7 @@ eval instant at 0m label_replace(testmetric, "dst", "", "dst", ".*")
 eval_fail instant at 0m label_replace(testmetric, "dst", "value-$1", "src", "(.*")
 
 # label_replace fails when the destination label name is not a valid Prometheus label name.
-eval_fail instant at 0m label_replace(testmetric, "invalid-label-name", "", "src", "(.*)")
+eval_fail instant at 0m label_replace(testmetric, "\xff", "", "src", "(.*)")
 
 # label_replace fails when there would be duplicated identical output label sets.
 eval_fail instant at 0m label_replace(testmetric, "src", "", "", "")
@@ -419,7 +483,7 @@ clear
 
 # Tests for vector, time and timestamp.
 load 10s
-  metric 1 1
+  metric 1 1 {{schema:0 sum:1 count:1}}
 
 eval instant at 0s timestamp(metric)
   {} 0
@@ -436,10 +500,15 @@ eval instant at 10s timestamp(metric)
 eval instant at 10s timestamp(((metric)))
   {} 10
 
+eval instant at 20s timestamp(metric)
+  {} 20
+
 # Tests for label_join.
 load 5m
   testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
   testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
+  dup{label="a", this="a"} 1.0
+  dup{label="b", this="a"} 1.0
 
 # label_join joins all src values in order.
 eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
@@ -471,6 +540,9 @@ eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
 
+eval_fail instant at 0m label_join(dup, "label", "", "this")
+  expected_fail_message vector cannot contain metrics with the same labelset
+
 clear
 
 # Tests for vector.
@@ -492,6 +564,7 @@ load 5m
 	test_clamp{src="clamp-a"}	-50
 	test_clamp{src="clamp-b"}	0
 	test_clamp{src="clamp-c"}	100
+	test_clamp{src="histogram"} {{schema:0 sum:1 count:1}}
 
 eval instant at 0m clamp_max(test_clamp, 75)
 	{src="clamp-a"}	-50
@@ -577,6 +650,7 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests{job="app-server", instance="2", group="canary"}		{{schema:0 sum:1 count:1}}x15
 
 eval_ordered instant at 50m sort(http_requests)
 	http_requests{group="production", instance="0", job="api-server"} 100
@@ -809,6 +883,8 @@ load 10s
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
   metric11 1 2 3 NaN NaN
+  metric12 1 2 3 {{schema:0 sum:1 count:1}} {{schema:0 sum:3 count:3}}
+  metric13 {{schema:0 sum:1 count:1}}x5
 
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
@@ -816,90 +892,84 @@ eval instant at 55s avg_over_time(metric[1m])
 eval instant at 55s sum_over_time(metric[1m])/count_over_time(metric[1m])
   {} 3
 
-eval instant at 1m avg_over_time(metric2[1m])
+eval instant at 55s avg_over_time(metric2[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric2[1m])/count_over_time(metric2[1m])
+eval instant at 55s sum_over_time(metric2[1m])/count_over_time(metric2[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric3[1m])
+eval instant at 55s avg_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric3[1m])/count_over_time(metric3[1m])
+eval instant at 55s sum_over_time(metric3[1m])/count_over_time(metric3[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric4[1m])
+eval instant at 55s avg_over_time(metric4[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric4[1m])/count_over_time(metric4[1m])
+eval instant at 55s sum_over_time(metric4[1m])/count_over_time(metric4[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric5[1m])
+eval instant at 55s avg_over_time(metric5[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric5[1m])/count_over_time(metric5[1m])
+eval instant at 55s sum_over_time(metric5[1m])/count_over_time(metric5[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric5b[1m])
+eval instant at 55s avg_over_time(metric5b[1m])
   {} Inf
 
-eval instant at 1m sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
+eval instant at 55s sum_over_time(metric5b[1m])/count_over_time(metric5b[1m])
   {} Inf
 
-eval instant at 1m avg_over_time(metric5c[1m])
+eval instant at 55s avg_over_time(metric5c[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
+eval instant at 55s sum_over_time(metric5c[1m])/count_over_time(metric5c[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric6[1m])
+eval instant at 55s avg_over_time(metric6[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6[1m])/count_over_time(metric6[1m])
+eval instant at 55s sum_over_time(metric6[1m])/count_over_time(metric6[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric6b[1m])
+eval instant at 55s avg_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
+eval instant at 55s sum_over_time(metric6b[1m])/count_over_time(metric6b[1m])
   {} -Inf
 
-eval instant at 1m avg_over_time(metric6c[1m])
+eval instant at 55s avg_over_time(metric6c[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
+eval instant at 55s sum_over_time(metric6c[1m])/count_over_time(metric6c[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric7[1m])
+eval instant at 55s avg_over_time(metric7[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric7[1m])/count_over_time(metric7[1m])
+eval instant at 55s sum_over_time(metric7[1m])/count_over_time(metric7[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric8[1m])
+eval instant at 55s avg_over_time(metric8[1m])
   {} 9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric8[2m])/count_over_time(metric8[2m])
+eval instant at 55s sum_over_time(metric8[1m])/count_over_time(metric8[1m])
   {} +Inf
 
-eval instant at 1m avg_over_time(metric9[1m])
+eval instant at 55s avg_over_time(metric9[1m])
   {} -9.988465674311579e+307
 
 # This overflows float64.
-eval instant at 1m sum_over_time(metric9[1m])/count_over_time(metric9[1m])
+eval instant at 55s sum_over_time(metric9[1m])/count_over_time(metric9[1m])
   {} -Inf
 
-eval instant at 45s avg_over_time(metric10[1m])
+eval instant at 55s avg_over_time(metric10[1m])
   {} 0
 
-eval instant at 1m avg_over_time(metric10[2m])
-  {} 0
-
-eval instant at 45s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
-  {} 0
-
-eval instant at 1m sum_over_time(metric10[2m])/count_over_time(metric10[2m])
+eval instant at 55s sum_over_time(metric10[1m])/count_over_time(metric10[1m])
   {} 0
 
 # NaN behavior.
@@ -909,11 +979,28 @@ eval instant at 20s avg_over_time(metric11[1m])
 eval instant at 30s avg_over_time(metric11[1m])
   {} NaN
 
-eval instant at 1m avg_over_time(metric11[1m])
+eval instant at 55s avg_over_time(metric11[1m])
   {} NaN
 
-eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
+eval instant at 55s sum_over_time(metric11[1m])/count_over_time(metric11[1m])
   {} NaN
+
+# Tests for samples with mix of floats and histograms.
+eval_warn instant at 55s sum_over_time(metric12[1m])
+	# no result.
+
+eval_warn instant at 55s avg_over_time(metric12[1m])
+	# no result.
+
+# Tests for samples with only histograms.
+eval instant at 55s sum_over_time(metric13[1m])
+	{} {{schema:0 sum:6 count:6}}
+
+eval instant at 55s avg_over_time(metric13[1m])
+	{} {{schema:0 sum:1 count:1}}
+
+eval instant at 55s sum_over_time(metric13[1m])/count_over_time(metric13[1m])
+	{} {{schema:0 sum:1 count:1}}
 
 # Test if very big intermediate values cause loss of detail.
 clear
@@ -923,8 +1010,51 @@ load 10s
 eval instant at 1m sum_over_time(metric[2m])
   {} 2
 
-eval instant at 1m avg_over_time(metric[2m])
-  {} 0.5
+# This test fails on darwin/arm64.
+# Deactivated until issue #16714 is fixed.
+# eval instant at 1m avg_over_time(metric[2m])
+#  {} 0.5
+
+# Test per-series aggregation on dense samples.
+clear
+load 1ms
+  metric 1+0x4000
+
+eval instant at 4s sum_over_time(metric[1000ms])
+  {} 1000
+
+eval instant at 4s sum_over_time(metric[1001ms])
+  {} 1001
+
+eval instant at 4s sum_over_time(metric[1002ms])
+  {} 1002
+
+eval instant at 4s sum_over_time(metric[1003ms])
+  {} 1003
+
+eval instant at 4s sum_over_time(metric[2000ms])
+  {} 2000
+
+eval instant at 4s sum_over_time(metric[2001ms])
+  {} 2001
+
+eval instant at 4s sum_over_time(metric[2002ms])
+  {} 2002
+
+eval instant at 4s sum_over_time(metric[2003ms])
+  {} 2003
+
+eval instant at 4s sum_over_time(metric[3000ms])
+  {} 3000
+
+eval instant at 4s sum_over_time(metric[3001ms])
+  {} 3001
+
+eval instant at 4s sum_over_time(metric[3002ms])
+  {} 3002
+
+eval instant at 4s sum_over_time(metric[3003ms])
+  {} 3003
 
 # Tests for stddev_over_time and stdvar_over_time.
 clear
@@ -960,10 +1090,10 @@ clear
 load 10s
 	metric 1.5990505637277868 1.5990505637277868 1.5990505637277868
 
-eval instant at 1m stdvar_over_time(metric[1m])
+eval instant at 55s stdvar_over_time(metric[1m])
 	{} 0
 
-eval instant at 1m stddev_over_time(metric[1m])
+eval instant at 55s stddev_over_time(metric[1m])
 	{} 0
 
 # Tests for mad_over_time.
@@ -981,6 +1111,36 @@ eval instant at 70s mad_over_time(metric_histogram{type="only_histogram"}[70s])
 
 eval_info instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
 	{type="mix"} 0
+
+# Tests for ts_of_max_over_time and ts_of_min_over_time. Using odd scrape interval to test for rounding bugs.
+clear
+load 10s53ms
+	metric 1 2 3 0 5 6 2 1 4
+
+eval instant at 90s ts_of_min_over_time(metric[90s])
+	{} 30.159
+
+eval instant at 90s ts_of_max_over_time(metric[90s])
+	{} 50.265
+
+# Tests for ts_of_last_over_time. Using odd load interval to test for rounding bugs.
+clear
+load 10s53ms
+	metric 1 2 3 _ _
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x4
+	metric_histogram{type="mix"} 1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}} 1
+
+eval instant at 90s ts_of_last_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric[90s])
+	{} 20.106
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="only_histogram"}[90s])
+	{type="only_histogram"} 40.212
+
+eval instant at 95s ts_of_last_over_time(metric_histogram{type="mix"}[90s])
+	{type="mix"} 50.265
 
 # Tests for quantile_over_time
 clear
@@ -1209,7 +1369,67 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
 
 clear
 
-# Test for absent()
+# Test for abs, ceil(), floor(), round().
+
+load 5m
+	data{type="positive"} 2.5
+	data{type="whole"} 2
+	data{type="negative"} -2.5
+	data{type="nwhole"} -2
+	data{type="zero"} 0
+	data{type="nzero"} -0
+	data{type="inf"} +Inf
+	data{type="ninf"} -Inf
+	data{type="nan"} NaN
+	data{type="histogram"} {{schema:0 sum:1 count:1}}
+
+eval instant at 0m abs(data)
+	{type="positive"} 2.5
+	{type="whole"} 2
+	{type="negative"} 2.5
+	{type="nwhole"} 2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} +Inf
+	{type="nan"} NaN
+
+eval instant at 0m ceil(data)
+	{type="positive"} 3
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m floor(data)
+	{type="positive"} 2
+	{type="whole"} 2
+	{type="negative"} -3
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m round(data)
+	{type="positive"} 3
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+clear
+
+# Test for absent().
 eval instant at 50m absent(nonexistent)
 	{} 1
 
@@ -1245,10 +1465,10 @@ clear
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
 	{} 1
 
-eval instant at 50m absent(max(nonexistant))
+eval instant at 50m absent(max(nonexistent))
 	{} 1
 
-eval instant at 50m absent(nonexistant > 1)
+eval instant at 50m absent(nonexistent > 1)
 	{} 1
 
 eval instant at 50m absent(a + b)
@@ -1257,7 +1477,7 @@ eval instant at 50m absent(a + b)
 eval instant at 50m absent(a and b)
 	{} 1
 
-eval instant at 50m absent(rate(nonexistant[5m]))
+eval instant at 50m absent(rate(nonexistent[5m]))
 	{} 1
 
 clear
@@ -1275,7 +1495,7 @@ eval instant at 1m absent_over_time(http_requests_total{handler!="/foo"}[5m])
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
     {} 1
 
-eval instant at 1m absent_over_time(rate(nonexistant[5m])[5m:])
+eval instant at 1m absent_over_time(rate(nonexistent[5m])[5m:])
     {} 1
 
 eval instant at 1m absent_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
@@ -1352,7 +1572,7 @@ eval instant at 1m present_over_time(http_requests_total{handler!="/foo"}[5m])
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", handler="/foobar"}[5m])
 
-eval instant at 1m present_over_time(rate(nonexistant[5m])[5m:])
+eval instant at 1m present_over_time(rate(nonexistent[5m])[5m:])
 
 eval instant at 1m present_over_time(http_requests_total{handler="/foo", handler="/bar", instance="127.0.0.1"}[5m])
 
@@ -1508,3 +1728,22 @@ load 1m
 
 eval range from 0 to 5m step 1m round(mixed_metric)
 	{} _ 1 2 3
+
+# Test scalar() with histograms.
+load 1m
+	metric{type="float", l="x"} 1
+	metric{type="float", l="y"} 2
+	metric{type="histogram", l="x"} {{schema:0 sum:1 count:1}}
+	metric{type="histogram", l="x"} {{schema:0 sum:1 count:1}}
+
+# Two floats in the vector.
+eval instant at 0m scalar(metric)
+	NaN
+
+# No floats in the vector.
+eval instant at 0m scalar({type="histogram"})
+	NaN
+
+# One float in the vector.
+eval instant at 0m scalar({l="x"})
+	1

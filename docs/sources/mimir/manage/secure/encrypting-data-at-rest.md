@@ -8,6 +8,8 @@ title: Encrypting Grafana Mimir data at rest
 weight: 30
 ---
 
+<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
+
 # Encrypting Grafana Mimir data at rest
 
 Grafana Mimir supports encrypting data at rest in object storage using server-side encryption (SSE).
@@ -34,11 +36,11 @@ You can configure AWS S3 SSE globally or for specific tenants.
 
 Configuring AWS S3 SSE globally requires setting SSE for each of the following storage backends:
 
-- [alertmanager_storage]({{< relref "../../configure/configuration-parameters#alertmanager_storage" >}})
-- [blocks_storage]({{< relref "../../configure/configuration-parameters#blocks_storage" >}})
-- [ruler_storage]({{< relref "../../configure/configuration-parameters#ruler_storage" >}})
+- [alertmanager_storage](../../../configure/configuration-parameters/#alertmanager_storage)
+- [blocks_storage](../../../configure/configuration-parameters/#blocks_storage)
+- [ruler_storage](../../../configure/configuration-parameters/#ruler_storage)
 
-For more information about AWS S3 SSE configuration parameters, refer to [s3_storage_backend]({{< relref "../../configure/configuration-parameters#s3_storage_backend" >}}).
+For more information about AWS S3 SSE configuration parameters, refer to [s3_storage_backend](../../../configure/configuration-parameters/#s3_storage_backend).
 
 The following code sample shows a snippet of a Grafana Mimir configuration file with every backend storage configured to use AWS S3 SSE with and Amazon S3-managed key.
 
@@ -78,7 +80,7 @@ You can use the following settings to override AWS S3 SSE for each tenant:
 **To configure AWS S3 SSE for a specific tenant**:
 
 1. Ensure Grafana Mimir uses a runtime configuration file by verifying that the flag `-runtime-config.file` is set to a non-null value.
-   For more information about supported runtime configuration parameters, refer to [Runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}).
+   For more information about supported runtime configuration parameters, refer to [Runtime configuration](../../../configure/about-runtime-configuration/).
 1. In the runtime configuration file, apply the `overrides.<TENANT>` SSE settings.
 
    A partial runtime configuration file that has AWS S3 SSE with Amazon S3-managed keys set for a tenant called "tenant-a" appears as follows:

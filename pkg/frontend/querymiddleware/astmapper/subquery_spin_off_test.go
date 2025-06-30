@@ -200,10 +200,10 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 		      300
 		    *
 		      (
-		          sum_over_time((increase(grafana_slo_total_rate_5m{grafana_slo_uuid="ktr6jo1nptzickyko7k98"}[5m]) < 1e+308)[3d:5m])
+		          sum_over_time((increase(grafana_slo_total_rate_5m{grafana_slo_uuid="ktr6jo1nptzickyko7k98"}[5m]) < 1e+6)[3d:5m])
 		        -
 		          sum_over_time(
-		(increase(grafana_slo_success_rate_5m{grafana_slo_uuid="ktr6jo1nptzickyko7k98"}[5m]) < 1e+308)[3d:5m]
+		(increase(grafana_slo_success_rate_5m{grafana_slo_uuid="ktr6jo1nptzickyko7k98"}[5m]) < 1e+6)[3d:5m]
 		          )
 		      )
 		  >
@@ -215,11 +215,11 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 		    *
 		      (
 		          sum_over_time(
-		            __subquery_spinoff__{__query__="(increase(grafana_slo_total_rate_5m{grafana_slo_uuid=\"ktr6jo1nptzickyko7k98\"}[5m]) < 1e+308)",__range__="72h0m0s",__step__="5m0s"}[3d]
+		            __subquery_spinoff__{__query__="(increase(grafana_slo_total_rate_5m{grafana_slo_uuid=\"ktr6jo1nptzickyko7k98\"}[5m]) < 1000000)",__range__="72h0m0s",__step__="5m0s"}[3d]
 		          )
 		        -
 		          sum_over_time(
-		            __subquery_spinoff__{__query__="(increase(grafana_slo_success_rate_5m{grafana_slo_uuid=\"ktr6jo1nptzickyko7k98\"}[5m]) < 1e+308)",__range__="72h0m0s",__step__="5m0s"}[3d]
+		            __subquery_spinoff__{__query__="(increase(grafana_slo_success_rate_5m{grafana_slo_uuid=\"ktr6jo1nptzickyko7k98\"}[5m]) < 1000000)",__range__="72h0m0s",__step__="5m0s"}[3d]
 		          )
 		      )
 		  >

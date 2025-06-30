@@ -22,6 +22,9 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    // Added default flag for GEM-specific dashboards and alerts.
+    gem_enabled: false,
+
     // This is mapping between a Mimir component name and the regular expression that should be used
     // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
     // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.
@@ -37,6 +40,7 @@
       alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
       block_builder: 'block-builder',
+      block_builder_scheduler: 'block-builder-scheduler',
       distributor: 'distributor',
       querier: 'querier',
       query_frontend: 'query-frontend',
@@ -55,6 +59,7 @@
       mimir_write: 'mimir-write',
       mimir_read: 'mimir-read',
       mimir_backend: 'mimir-backend',
+      federation_frontend: 'federation-frontend',
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
@@ -75,6 +80,7 @@
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
       ingester_partition: ['ingester.*-partition'],  // Match exclusively temporarily partition ingesters run during the migration to ingest storage.
       block_builder: ['block-builder.*'],
+      block_builder_scheduler: ['block-builder-scheduler.*'],
       distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
       querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
@@ -98,6 +104,8 @@
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
       backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
+
+      federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
@@ -113,6 +121,7 @@
       // matcher shouldn't match "mimir-write" too).
       compactor: instanceMatcher(componentNameRegexp.compactor),
       block_builder: instanceMatcher(componentNameRegexp.block_builder),
+      block_builder_scheduler: instanceMatcher(componentNameRegexp.block_builder_scheduler),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
       alertmanager_im: instanceMatcher(componentNameRegexp.alertmanager_im),
       ingester: instanceMatcher(componentNameRegexp.ingester),
@@ -144,6 +153,8 @@
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
       remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
+
+      federation_frontend: instanceMatcher(componentNameRegexp.federation_frontend),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
@@ -152,6 +163,7 @@
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
       block_builder: componentNameRegexp.block_builder,
+      block_builder_scheduler: componentNameRegexp.block_builder_scheduler,
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
@@ -181,6 +193,8 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+
+      federation_frontend: componentNameRegexp.federation_frontend,
     },
 
     // The label used to differentiate between different Kubernetes clusters.
@@ -210,6 +224,15 @@
     // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
     alert_job_prefix: '.*/',
 
+    alert_cluster_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    alert_instance_variable: '{{ $labels.%s }}' % $._config.per_instance_label,
+
+    alert_node_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
+    alert_product: $._config.product,
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
@@ -221,8 +244,9 @@
     // Whether mimir block-builder is enabled (experimental)
     block_builder_enabled: false,
 
-    // Whether mimir gateway is enabled
-    gateway_enabled: false,
+    // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
+    gateway_enabled: $._config.gem_enabled,
+    gateway_per_tenant_metrics_enabled: false,
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
@@ -237,6 +261,10 @@
     // Resource consumption threshold to accomodate node loss
     // used for baremetal deployment only
     resource_threshold: 0.66,
+
+    // Threshold for DistributorGcUsesTooMuchCpu
+    distributor_gc_cpu_threshold: 10,
+
     alertmanager_alerts: {
       kubernetes: {
         memory_allocation: |||
@@ -281,18 +309,28 @@
         actual_replicas_count:
           |||
             # Convenience rule to get the number of replicas for both a deployment and a statefulset.
-            # Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            #
+            # Notes:
+            # - Multi-zone deployments are grouped together removing the "zone-X" suffix.
+            # - To avoid "vector cannot contain metrics with the same labelset" errors we need to add an additional
+            #   label "deployment_without_zone" first, then run the aggregation, and finally rename "deployment_without_zone"
+            #   to "deployment".
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
-                kube_deployment_spec_replicas,
-                # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
-                # always matches everything and the (optional) zone is not removed.
-                "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
+                  label_replace(
+                    kube_deployment_spec_replicas,
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
+                    "deployment_without_zone", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                  )
+                )
+                or
+                sum by (%(alert_aggregation_labels)s, deployment_without_zone) (
+                  label_replace(kube_statefulset_replicas, "deployment_without_zone", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
+                ),
+                "deployment", "$1", "deployment_without_zone", "(.*)"
               )
-            )
-            or
-            sum by (%(alert_aggregation_labels)s, deployment) (
-              label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
             )
           |||,
         cpu_usage_seconds_total:
@@ -671,6 +709,10 @@
       compactor: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+      },
+      block_builder: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'block-builder',
       },
     },
 

@@ -5,16 +5,22 @@ package aggregations
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 // Most of the functionality of the aggregation operator is tested through the test scripts in
@@ -79,11 +85,13 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			aggregator := &Aggregation{
-				Inner:                   &operators.TestOperator{Series: testCase.inputSeries},
-				Grouping:                testCase.grouping,
-				metricNames:             &operators.MetricNames{},
-				aggregationGroupFactory: func() AggregationGroup { return &SumAggregationGroup{} },
+				Inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
+				Grouping:                 testCase.grouping,
+				metricNames:              &operators.MetricNames{},
+				aggregationGroupFactory:  func() AggregationGroup { return &SumAggregationGroup{} },
+				MemoryConsumptionTracker: memoryConsumptionTracker,
 			}
 
 			outputSeries, err := aggregator.SeriesMetadata(context.Background())
@@ -254,4 +262,163 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 			require.Equal(t, expectedBytes, actualBytes)
 		})
 	}
+}
+
+func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
+	inputSeries := []labels.Labels{
+		// Order series so group 1 will be the first complete group, but part of group 2 will have been loaded first.
+		labels.FromStrings("group", "2", "idx", "1"),
+		labels.FromStrings("group", "2", "idx", "2"),
+		labels.FromStrings("group", "1", "idx", "3"),
+		labels.FromStrings("group", "2", "idx", "4"),
+		labels.FromStrings("group", "3", "idx", "5"),
+	}
+
+	expectedSimpleAggregationOutputSeries := []labels.Labels{
+		labels.FromStrings("group", "1"),
+		labels.FromStrings("group", "2"),
+		labels.FromStrings("group", "3"),
+	}
+
+	rangeQueryTimeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(5*time.Minute), time.Minute)
+	instantQueryTimeRange := types.NewInstantQueryTimeRange(timestamp.Time(0))
+
+	createSimpleAggregation := func(op parser.ItemType) func(types.InstantVectorOperator, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+		return func(inner types.InstantVectorOperator, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+			return NewAggregation(inner, timeRange, []string{"group"}, false, op, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+		}
+	}
+
+	testCases := map[string]struct {
+		createOperator                func(types.InstantVectorOperator, types.QueryTimeRange, *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error)
+		instant                       bool
+		expectedSeries                []labels.Labels
+		allowExpectedSeriesInAnyOrder bool
+	}{
+		"avg": {
+			createOperator: createSimpleAggregation(parser.AVG),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"count": {
+			createOperator: createSimpleAggregation(parser.COUNT),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"group": {
+			createOperator: createSimpleAggregation(parser.GROUP),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"max": {
+			createOperator: createSimpleAggregation(parser.MAX),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"min": {
+			createOperator: createSimpleAggregation(parser.MIN),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"quantile": {
+			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+				param := scalars.NewScalarConstant(0.5, queryTimeRange, memoryConsumptionTracker, posrange.PositionRange{})
+				return NewQuantileAggregation(inner, param, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{})
+			},
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"stddev": {
+			createOperator: createSimpleAggregation(parser.STDDEV),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"stdvar": {
+			createOperator: createSimpleAggregation(parser.STDVAR),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"sum": {
+			createOperator: createSimpleAggregation(parser.SUM),
+			expectedSeries: expectedSimpleAggregationOutputSeries,
+		},
+		"count_values": {
+			createOperator: func(inner types.InstantVectorOperator, queryTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorOperator, error) {
+				labelName := operators.NewStringLiteral("value", posrange.PositionRange{})
+				return NewCountValues(inner, labelName, queryTimeRange, []string{"group"}, false, memoryConsumptionTracker, posrange.PositionRange{}), nil
+			},
+			instant:                       true,
+			allowExpectedSeriesInAnyOrder: true,
+			expectedSeries: []labels.Labels{
+				labels.FromStrings("group", "1", "value", "0"),
+				labels.FromStrings("group", "2", "value", "0"),
+				labels.FromStrings("group", "2", "value", "{count:0, sum:0}"),
+			},
+		},
+		// topk and bottomk are tested in the topkbottomk package.
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			timeRange := rangeQueryTimeRange
+
+			if testCase.instant {
+				timeRange = instantQueryTimeRange
+			}
+
+			inner := &operators.TestOperator{
+				Series: inputSeries,
+				Data: []types.InstantVectorSeriesData{
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+					createDummyData(t, true, timeRange, memoryConsumptionTracker),
+					createDummyData(t, false, timeRange, memoryConsumptionTracker),
+					{}, // The last two series won't be read, so don't bother creating series for them.
+					{},
+				},
+				MemoryConsumptionTracker: memoryConsumptionTracker,
+			}
+
+			o, err := testCase.createOperator(inner, timeRange, memoryConsumptionTracker)
+			require.NoError(t, err)
+
+			series, err := o.SeriesMetadata(ctx)
+			require.NoError(t, err)
+
+			if testCase.allowExpectedSeriesInAnyOrder {
+				require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
+			} else {
+				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
+			}
+			types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
+
+			// Read the first output series to force the creation of incomplete groups.
+			seriesData, err := o.NextSeries(ctx)
+			require.NoError(t, err)
+
+			types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+
+			// Close the operator and confirm all memory has been released.
+			o.Close()
+			require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
+		})
+	}
+}
+
+func createDummyData(t *testing.T, histograms bool, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) types.InstantVectorSeriesData {
+	d := types.InstantVectorSeriesData{}
+
+	if histograms {
+		var err error
+		d.Histograms, err = types.HPointSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		require.NoError(t, err)
+
+		for i := range timeRange.StepCount {
+			d.Histograms = append(d.Histograms, promql.HPoint{T: timeRange.IndexTime(int64(i)), H: &histogram.FloatHistogram{Count: float64(i)}})
+		}
+
+	} else {
+		var err error
+		d.Floats, err = types.FPointSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
+		require.NoError(t, err)
+
+		for i := range timeRange.StepCount {
+			d.Floats = append(d.Floats, promql.FPoint{T: timeRange.IndexTime(int64(i)), F: float64(i)})
+		}
+	}
+
+	return d
 }

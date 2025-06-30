@@ -33,11 +33,12 @@ type BenchCase struct {
 func (c BenchCase) Name() string {
 	name := c.Expr
 
-	if c.Steps == 0 {
+	switch c.Steps {
+	case 0:
 		name += ", instant query"
-	} else if c.Steps == 1 {
+	case 1:
 		name += fmt.Sprintf(", range query with %d step", c.Steps)
-	} else {
+	default:
 		name += fmt.Sprintf(", range query with %d steps", c.Steps)
 	}
 
@@ -208,9 +209,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
 		},
-		//{
-		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
-		//},
+		{
+			Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
+		},
 		{
 			Expr:             "sort(a_X)",
 			InstantQueryOnly: true,
@@ -258,10 +259,14 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "avg by (l)(nh_X)",
 		},
-		//{
-		//	Expr: "count_values('value', h_X)",
-		//  Steps: 100,
-		//},
+		{
+			Expr:  "count_values('value', h_X)", // Every sample has a different value, so this expression will produce X * 100 output series.
+			Steps: 100,
+		},
+		{
+			Expr:  "count_values('value', h_X * 0)", // Every sample has the same value (0), so this expression will produce 1 series.
+			Steps: 100,
+		},
 		{
 			Expr: "topk(1, a_X)",
 		},
@@ -270,6 +275,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "topk by (le) (5, h_X)",
+		},
+		{
+			Expr: "quantile(0.9, a_X)",
+		},
+		{
+			Expr: "quantile by (le) (0.1, h_X)",
 		},
 		// Combinations.
 		{
@@ -305,6 +316,32 @@ func TestCases(metricSizes []int) []BenchCase {
 		// Functions which have special handling inside eval()
 		{
 			Expr: "timestamp(a_X)",
+		},
+		{
+			Expr: "absent(a_X)",
+		},
+		// Test when no samples present
+		{
+			Expr: "absent(a_X > Inf)",
+		},
+		// Common subexpression elimination cases
+		{
+			Expr: "a_X + a_X",
+		},
+		{
+			Expr: "sum(a_X) + sum(a_X)",
+		},
+		{
+			Expr: "max(a_X) - min(a_X)",
+		},
+		{
+			Expr: "a_X / (a_X + b_X)",
+		},
+		{
+			Expr: "sum(a_X) / (sum(a_X) + sum(b_X))",
+		},
+		{
+			Expr: "min(a_X) / (max(a_X) + max(b_X))",
 		},
 	}
 

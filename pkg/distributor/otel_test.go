@@ -6,16 +6,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -35,6 +36,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -53,25 +55,11 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		"instance": "resource value",
 	}
 
-	md := pmetric.NewMetrics()
-	{
-		rm := md.ResourceMetrics().AppendEmpty()
-		for k, v := range resourceAttrs {
-			rm.Resource().Attributes().PutStr(k, v)
-		}
-		il := rm.ScopeMetrics().AppendEmpty()
-		m := il.Metrics().AppendEmpty()
-		m.SetName("test_metric")
-		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
-		dp.SetIntValue(123)
-		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-		dp.Attributes().PutStr("metric-attr", "metric value")
-	}
-
 	testCases := []struct {
 		name                              string
 		promoteResourceAttributes         []string
 		keepIdentifyingResourceAttributes bool
+		appendCustomMetric                func(pmetric.MetricSlice)
 		expectedLabels                    []mimirpb.LabelAdapter
 		expectedInfoLabels                []mimirpb.LabelAdapter
 	}{
@@ -272,19 +260,149 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                      "Successful conversion of cumulative non-monotonic sum",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                      "Successful conversion of cumulative monotonic sum",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(true)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric_total",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			md := pmetric.NewMetrics()
+			{
+				rm := md.ResourceMetrics().AppendEmpty()
+				for k, v := range resourceAttrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
+				scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+				metrics := scopeMetrics.Metrics()
+				if tc.appendCustomMetric == nil {
+					m := metrics.AppendEmpty()
+					m.SetName("test_metric")
+					dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+					dp.SetIntValue(123)
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+					dp.Attributes().PutStr("metric-attr", "metric value")
+				} else {
+					tc.appendCustomMetric(metrics)
+				}
+			}
+
 			converter := newOTLPMimirConverter()
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
 				converter,
-				true,
-				false,
-				false,
-				tc.promoteResourceAttributes,
-				tc.keepIdentifyingResourceAttributes,
 				md,
+				conversionOptions{
+					addSuffixes:                       true,
+					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+					promoteResourceAttributes:         tc.promoteResourceAttributes,
+				},
 				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
@@ -309,6 +427,83 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			assert.ElementsMatch(t, ts.Labels, tc.expectedLabels)
 			assert.ElementsMatch(t, targetInfo.Labels, tc.expectedInfoLabels)
 		})
+	}
+}
+
+func TestConvertOTelHistograms(t *testing.T) {
+	resourceAttrs := map[string]string{
+		"service.name":        "service name",
+		"service.namespace":   "service namespace",
+		"service.instance.id": "service ID",
+		"existent-attr":       "resource value",
+		// This one is for testing conflict with metric attribute.
+		"metric-attr": "resource value",
+		// This one is for testing conflict with auto-generated job attribute.
+		"job": "resource value",
+		// This one is for testing conflict with auto-generated instance attribute.
+		"instance": "resource value",
+	}
+
+	md := pmetric.NewMetrics()
+	{
+		rm := md.ResourceMetrics().AppendEmpty()
+		for k, v := range resourceAttrs {
+			rm.Resource().Attributes().PutStr(k, v)
+		}
+		il := rm.ScopeMetrics().AppendEmpty()
+		m := il.Metrics().AppendEmpty()
+		m.SetName("test_histogram_metric")
+		m.SetEmptyHistogram()
+		m.Histogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		dp := m.Histogram().DataPoints().AppendEmpty()
+		dp.SetCount(3)
+		dp.SetSum(17.8)
+
+		dp.BucketCounts().FromRaw([]uint64{2, 0, 1})
+		dp.ExplicitBounds().FromRaw([]float64{5, 10})
+
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp.Attributes().PutStr("metric-attr", "metric value")
+	}
+
+	for _, convertHistogramsToNHCB := range []bool{false, true} {
+		converter := newOTLPMimirConverter()
+		mimirTS, dropped, err := otelMetricsToTimeseries(
+			context.Background(),
+			converter,
+			md,
+			conversionOptions{
+				addSuffixes:             true,
+				convertHistogramsToNHCB: convertHistogramsToNHCB,
+			},
+			log.NewNopLogger(),
+		)
+		require.NoError(t, err)
+		require.Equal(t, 0, dropped)
+		if convertHistogramsToNHCB {
+			ts := make([]mimirpb.PreallocTimeseries, 0, len(mimirTS))
+			// Filter out target_info series
+			for i := range mimirTS {
+				var metricName string
+				for _, lbl := range mimirTS[i].Labels {
+					if lbl.Name == labels.MetricName {
+						metricName = lbl.Value
+						break
+					}
+				}
+				if metricName == "target_info" {
+					continue
+				}
+				ts = append(ts, mimirTS[i])
+			}
+			require.Len(t, ts, 1)
+			require.Len(t, ts[0].Histograms, 1)
+		} else {
+			require.Len(t, mimirTS, 6)
+			for i := range mimirTS {
+				require.Len(t, mimirTS[i].Histograms, 0)
+			}
+		}
 	}
 }
 
@@ -349,11 +544,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	limits, err := validation.NewOverrides(
-		validation.Limits{},
-		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-	)
-	require.NoError(b, err)
+	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(100000, nil, nil, limits, nil, RetryConfig{}, false, pushFunc, nil, nil, log.NewNopLogger())
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -481,6 +672,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 		},
 	}
 
+	const (
+		jsonContentType = "application/json"
+		pbContentType   = "application/x-protobuf"
+	)
+
 	type testCase struct {
 		name                             string
 		series                           []prompb.TimeSeries
@@ -488,7 +684,10 @@ func TestHandlerOTLPPush(t *testing.T) {
 		compression                      string
 		maxMsgSize                       int
 		verifyFunc                       func(*testing.T, *Request, testCase) error
+		requestContentType               string
 		responseCode                     int
+		responseContentType              string
+		responseContentLength            int
 		errMessage                       string
 		expectedLogs                     []string
 		expectedRetryHeader              bool
@@ -530,12 +729,24 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 	tests := []testCase{
 		{
-			name:         "Write samples. No compression",
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			metadata:     sampleMetadata,
-			responseCode: http.StatusOK,
+			name:                "Write samples. No compression",
+			maxMsgSize:          100000,
+			verifyFunc:          samplesVerifierFunc,
+			series:              sampleSeries,
+			metadata:            sampleMetadata,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
+		},
+		{
+			name:                  "Write samples. No compression. JSON format.",
+			maxMsgSize:            100000,
+			verifyFunc:            samplesVerifierFunc,
+			series:                sampleSeries,
+			metadata:              sampleMetadata,
+			requestContentType:    jsonContentType,
+			responseCode:          http.StatusOK,
+			responseContentType:   jsonContentType,
+			responseContentLength: 2,
 		},
 		{
 			name:                        "Write samples. No compression. Resource attribute promotion.",
@@ -544,6 +755,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			series:                      sampleSeries,
 			metadata:                    sampleMetadata,
 			responseCode:                http.StatusOK,
+			responseContentType:         pbContentType,
 			promoteResourceAttributes:   []string{"resource.attr"},
 			expectedAttributePromotions: map[string]string{"resource_attr": "value"},
 		},
@@ -554,6 +766,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			series:                    sampleSeries,
 			metadata:                  sampleMetadata,
 			responseCode:              http.StatusOK,
+			responseContentType:       pbContentType,
 			promoteResourceAttributes: nil,
 			resourceAttributePromotionConfig: fakeResourceAttributePromotionConfig{
 				promote: []string{"resource.attr"},
@@ -561,22 +774,24 @@ func TestHandlerOTLPPush(t *testing.T) {
 			expectedAttributePromotions: map[string]string{"resource_attr": "value"},
 		},
 		{
-			name:         "Write samples. With gzip compression",
-			compression:  "gzip",
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			metadata:     sampleMetadata,
-			responseCode: http.StatusOK,
+			name:                "Write samples. With gzip compression",
+			compression:         "gzip",
+			maxMsgSize:          100000,
+			verifyFunc:          samplesVerifierFunc,
+			series:              sampleSeries,
+			metadata:            sampleMetadata,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
 		},
 		{
-			name:         "Write samples. With lz4 compression",
-			compression:  "lz4",
-			maxMsgSize:   100000,
-			verifyFunc:   samplesVerifierFunc,
-			series:       sampleSeries,
-			metadata:     sampleMetadata,
-			responseCode: http.StatusOK,
+			name:                "Write samples. With lz4 compression",
+			compression:         "lz4",
+			maxMsgSize:          100000,
+			verifyFunc:          samplesVerifierFunc,
+			series:              sampleSeries,
+			metadata:            sampleMetadata,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
 		},
 		{
 			name:       "Write samples. No compression, request too big",
@@ -587,9 +802,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
-			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming OTLP request has been rejected because its message size of 89 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 89 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseCode:          http.StatusRequestEntityTooLarge,
+			responseContentType:   pbContentType,
+			responseContentLength: 292,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 89 bytes is larger",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 89 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:        "Write samples. Unsupported compression",
@@ -601,9 +818,28 @@ func TestHandlerOTLPPush(t *testing.T) {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
-			responseCode: http.StatusUnsupportedMediaType,
-			errMessage:   "Only \"gzip\", \"lz4\", or no compression supported",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
+			responseCode:          http.StatusUnsupportedMediaType,
+			responseContentLength: 85,
+			responseContentType:   pbContentType,
+			errMessage:            "Only \"gzip\", \"lz4\", or no compression supported",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
+		},
+		{
+			name:        "Write samples. Unsupported compression. JSON format",
+			compression: "snappy",
+			maxMsgSize:  100000,
+			series:      sampleSeries,
+			metadata:    sampleMetadata,
+			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+				_, err := pushReq.WriteRequest()
+				return err
+			},
+			requestContentType:    jsonContentType,
+			responseCode:          http.StatusUnsupportedMediaType,
+			responseContentLength: 109,
+			responseContentType:   jsonContentType,
+			errMessage:            "Only \"gzip\", \"lz4\", or no compression supported",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=415 err="rpc error: code = Code(415) desc = unsupported compression: snappy. Only \"gzip\", \"lz4\", or no compression supported" insight=true`},
 		},
 		{
 			name:        "Write samples. With gzip compression, request too big",
@@ -615,9 +851,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
-			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming OTLP request has been rejected because its message size of 104 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 104 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseCode:          http.StatusRequestEntityTooLarge,
+			responseContentType:   pbContentType,
+			responseContentLength: 293,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 104 bytes is larger",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 104 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:        "Write samples. With lz4 compression, request too big",
@@ -629,9 +867,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
-			responseCode: http.StatusRequestEntityTooLarge,
-			errMessage:   "the incoming OTLP request has been rejected because its message size of 106 bytes is larger",
-			expectedLogs: []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 106 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
+			responseCode:          http.StatusRequestEntityTooLarge,
+			responseContentType:   pbContentType,
+			responseContentLength: 293,
+			errMessage:            "the incoming OTLP request has been rejected because its message size of 106 bytes is larger",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=413 err="rpc error: code = Code(413) desc = the incoming OTLP request has been rejected because its message size of 106 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-otlp-request-size). To adjust the related limit, configure -distributor.max-otlp-request-size, or contact your service administrator." insight=true`},
 		},
 		{
 			name:       "Rate limited request",
@@ -641,10 +881,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 			verifyFunc: func(*testing.T, *Request, testCase) error {
 				return httpgrpc.Errorf(http.StatusTooManyRequests, "go slower")
 			},
-			responseCode:        http.StatusTooManyRequests,
-			errMessage:          "go slower",
-			expectedLogs:        []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
-			expectedRetryHeader: true,
+			responseCode:          http.StatusTooManyRequests,
+			responseContentType:   pbContentType,
+			responseContentLength: 14,
+			errMessage:            "go slower",
+			expectedLogs:          []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=429 err="rpc error: code = Code(429) desc = go slower" insight=true`},
+			expectedRetryHeader:   true,
 		},
 		{
 			name:       "Write histograms",
@@ -685,7 +927,8 @@ func TestHandlerOTLPPush(t *testing.T) {
 				pushReq.CleanUp()
 				return nil
 			},
-			responseCode: http.StatusOK,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
 		},
 		{
 			name:        "Write histograms. With lz4 compression",
@@ -727,24 +970,29 @@ func TestHandlerOTLPPush(t *testing.T) {
 				pushReq.CleanUp()
 				return nil
 			},
-			responseCode: http.StatusOK,
+			responseCode:        http.StatusOK,
+			responseContentType: pbContentType,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exportReq := TimeseriesToOTLPRequest(tt.series, tt.metadata)
-			req := createOTLPProtoRequest(t, exportReq, tt.compression)
+			var req *http.Request
+			if tt.requestContentType == jsonContentType {
+				req = createOTLPJSONRequest(t, exportReq, tt.compression)
+			} else {
+				req = createOTLPProtoRequest(t, exportReq, tt.compression)
+			}
 
 			testLimits := &validation.Limits{
 				PromoteOTelResourceAttributes: tt.promoteResourceAttributes,
 			}
-			limits, err := validation.NewOverrides(
+			limits := validation.NewOverrides(
 				validation.Limits{},
 				validation.NewMockTenantLimits(map[string]*validation.Limits{
 					"test": testLimits,
 				}),
 			)
-			require.NoError(t, err)
 			pusher := func(_ context.Context, pushReq *Request) error {
 				t.Helper()
 				t.Cleanup(pushReq.CleanUp)
@@ -753,19 +1001,25 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			logs := &concurrency.SyncBuffer{}
 			retryConfig := RetryConfig{Enabled: true, MinBackoff: 5 * time.Second, MaxBackoff: 5 * time.Second}
-			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, false, pusher, nil, nil, level.NewFilter(log.NewLogfmtLogger(logs), level.AllowInfo()))
+			handler := OTLPHandler(tt.maxMsgSize, nil, nil, limits, tt.resourceAttributePromotionConfig, retryConfig, false, pusher, nil, nil, util_log.MakeLeveledLogger(logs, "info"))
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 
 			assert.Equal(t, tt.responseCode, resp.Code)
+			assert.Equal(t, tt.responseContentType, resp.Header().Get("Content-Type"))
+			assert.Equal(t, strconv.Itoa(tt.responseContentLength), resp.Header().Get("Content-Length"))
 			if tt.errMessage != "" {
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)
 				respStatus := &status.Status{}
-				err = proto.Unmarshal(body, respStatus)
-				assert.NoError(t, err)
-				assert.Contains(t, respStatus.GetMessage(), tt.errMessage)
+				if tt.responseContentType == jsonContentType {
+					err = json.Unmarshal(body, respStatus)
+				} else {
+					err = proto.Unmarshal(body, respStatus)
+				}
+				require.NoError(t, err)
+				require.Contains(t, respStatus.GetMessage(), tt.errMessage)
 			}
 
 			var logLines []string
@@ -818,11 +1072,10 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
-	limits, err := validation.NewOverrides(
+	limits := validation.NewOverrides(
 		validation.Limits{},
 		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
-	require.NoError(t, err)
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()
@@ -864,11 +1117,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
-	limits, err := validation.NewOverrides(
-		validation.Limits{},
-		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
-	)
-	require.NoError(t, err)
+	limits := validation.MockDefaultOverrides()
 
 	req := createOTLPProtoRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), "")
 	resp := httptest.NewRecorder()

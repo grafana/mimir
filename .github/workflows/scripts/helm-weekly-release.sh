@@ -104,4 +104,4 @@ update_yaml_node $chart_file .version $new_chart_version
 
 make TTY='' doc
 
-echo "::set-output name=new_chart_version::$new_chart_version"
+echo "new_chart_version=$new_chart_version" >> $GITHUB_OUTPUT

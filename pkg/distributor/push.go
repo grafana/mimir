@@ -23,8 +23,10 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	promRemote "github.com/prometheus/prometheus/storage/remote"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -35,6 +37,13 @@ import (
 
 // PushFunc defines the type of the push. It is similar to http.HandlerFunc.
 type PushFunc func(ctx context.Context, req *Request) error
+
+// The PushFunc might store promRemote.WriteResponseStats in the context.
+type pushResponseStatsContextMarker struct{}
+
+var (
+	pushResponseStatsContextKey = &pushResponseStatsContextMarker{}
+)
 
 // parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
@@ -151,65 +160,70 @@ func handler(
 			}
 		}
 
-		var supplier supplierFunc
 		isRW2, err := isRemoteWrite2(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
-		if isRW2 {
-			supplier = func() (*mimirpb.WriteRequest, func(), error) {
-				// Return 415 Unsupported Media Type for remote-write v2 requests for now. This is not retryable
-				// unless the client switches to remote-write v1.
-				return nil, nil, httpgrpc.Error(http.StatusUnsupportedMediaType, "remote-write v2 is not supported")
+		supplier := func() (*mimirpb.WriteRequest, func(), error) {
+			rb := util.NewRequestBuffers(requestBufferPool)
+			var req mimirpb.PreallocWriteRequest
+
+			req.UnmarshalFromRW2 = isRW2
+
+			userID, err := tenant.TenantID(ctx)
+			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
+				return nil, nil, errors.Wrap(err, "failed to get tenant ID")
 			}
-		} else {
-			supplier = func() (*mimirpb.WriteRequest, func(), error) {
-				rb := util.NewRequestBuffers(requestBufferPool)
-				var req mimirpb.PreallocWriteRequest
 
-				userID, err := tenant.TenantID(ctx)
-				if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
-					return nil, nil, errors.Wrap(err, "failed to get tenant ID")
-				}
-
-				// userID might be empty if none was in the ctx, in this case just use the default setting.
-				if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-					// The user is not allowed to send exemplars, so there is no need to unmarshal them.
-					// Optimization to avoid the allocations required for unmarshaling exemplars.
-					req.SkipUnmarshalingExemplars = true
-				}
-
-				if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
-					// Check for httpgrpc error, default to client error if parsing failed
-					if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-						err = httpgrpc.Error(http.StatusBadRequest, err.Error())
-					}
-
-					rb.CleanUp()
-					return nil, nil, err
-				}
-
-				if allowSkipLabelNameValidation {
-					req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
-				} else {
-					req.SkipLabelValidation = false
-				}
-
-				if allowSkipLabelCountValidation {
-					req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
-				} else {
-					req.SkipLabelCountValidation = false
-				}
-
-				cleanup := func() {
-					mimirpb.ReuseSlice(req.Timeseries)
-					rb.CleanUp()
-				}
-				return &req.WriteRequest, cleanup, nil
+			// userID might be empty if none was in the ctx, in this case just use the default setting.
+			if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+				// The user is not allowed to send exemplars, so there is no need to unmarshal them.
+				// Optimization to avoid the allocations required for unmarshaling exemplars.
+				req.SkipUnmarshalingExemplars = true
 			}
+
+			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+				// Check for httpgrpc error, default to client error if parsing failed
+				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
+					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
+				}
+
+				rb.CleanUp()
+				return nil, nil, err
+			}
+
+			if allowSkipLabelNameValidation {
+				req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
+			} else {
+				req.SkipLabelValidation = false
+			}
+
+			if allowSkipLabelCountValidation {
+				req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
+			} else {
+				req.SkipLabelCountValidation = false
+			}
+
+			cleanup := func() {
+				mimirpb.ReuseSlice(req.Timeseries)
+				rb.CleanUp()
+			}
+			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
-		if err := push(ctx, req); err != nil {
+		if isRW2 {
+			ctx = contextWithWriteResponseStats(ctx)
+		}
+		err = push(ctx, req)
+		if isRW2 {
+			if err := addWriteResponseStats(ctx, w); err != nil {
+				// Should not happen, but we should not panic anyway.
+				level.Error(logger).Log("msg", "error write response stats not found in context", "err", err)
+			}
+		}
+		if err == nil {
+			addSuccessHeaders(w, req.artificialDelay)
+		} else {
 			if errors.Is(err, context.Canceled) {
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
@@ -235,7 +249,7 @@ func handler(
 				}
 				level.Error(logger).Log(msgs...)
 			}
-			addHeaders(w, err, r, code, retryCfg)
+			addErrorHeaders(w, err, r, code, retryCfg)
 			http.Error(w, validUTF8Message(msg), code)
 		}
 	})
@@ -251,7 +265,9 @@ func isRemoteWrite2(r *http.Request) (bool, error) {
 	}
 	parts := strings.Split(contentType, ";")
 	if parts[0] != appProtoContentType {
-		return false, fmt.Errorf("expected %v as the first (media) part, got %v content-type", appProtoContentType, contentType)
+		// We didn't use to check the content type so if someone wrote for
+		// example text/plain here, we'll accept and assume it is v1.
+		return false, nil
 	}
 
 	// Parse potential https://www.rfc-editor.org/rfc/rfc9110#parameter
@@ -273,6 +289,44 @@ func isRemoteWrite2(r *http.Request) (bool, error) {
 	}
 	// No "proto=" parameter, assuming v1.
 	return false, nil
+}
+
+// Consts from https://github.com/prometheus/prometheus/blob/main/storage/remote/stats.go
+const (
+	rw20WrittenSamplesHeader    = "X-Prometheus-Remote-Write-Samples-Written"
+	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Histograms-Written"
+	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Exemplars-Written"
+)
+
+func contextWithWriteResponseStats(ctx context.Context) context.Context {
+	return context.WithValue(ctx, pushResponseStatsContextKey, &promRemote.WriteResponseStats{})
+}
+
+func addWriteResponseStats(ctx context.Context, w http.ResponseWriter) error {
+	rsValue := ctx.Value(pushResponseStatsContextKey)
+	if rsValue == nil {
+		return errors.New("remote write response stats not found in context")
+	}
+	prs, ok := rsValue.(*promRemote.WriteResponseStats)
+	if !ok {
+		return errors.New("remote write response stats not of type *promRemote.WriteResponseStats")
+	}
+	headers := w.Header()
+	headers.Set(rw20WrittenSamplesHeader, strconv.Itoa(prs.Samples))
+	headers.Set(rw20WrittenHistogramsHeader, strconv.Itoa(prs.Histograms))
+	headers.Set(rw20WrittenExemplarsHeader, strconv.Itoa(prs.Exemplars))
+	return nil
+}
+
+func updateWriteResponseStatsCtx(ctx context.Context, samples, histograms, exemplars int) {
+	prs := ctx.Value(pushResponseStatsContextKey)
+	if prs == nil {
+		// Only present for RW2.0.
+		return
+	}
+	prs.(*promRemote.WriteResponseStats).Samples += samples
+	prs.(*promRemote.WriteResponseStats).Histograms += histograms
+	prs.(*promRemote.WriteResponseStats).Exemplars += exemplars
 }
 
 func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) string {
@@ -319,7 +373,14 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
+func addSuccessHeaders(w http.ResponseWriter, delay time.Duration) {
+	if delay >= 0 {
+		durationInMs := strconv.FormatFloat(float64(delay)/float64(time.Millisecond), 'f', -1, 64)
+		w.Header().Add("Server-Timing", fmt.Sprintf("artificial_delay;dur=%s", durationInMs))
+	}
+}
+
+func addErrorHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
@@ -330,10 +391,11 @@ func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode 
 			retryAttemptHeader := r.Header.Get("Retry-Attempt")
 			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.MinBackoff, retryCfg.MaxBackoff)
 			w.Header().Set("Retry-After", retrySeconds)
-			if sp := opentracing.SpanFromContext(r.Context()); sp != nil {
-				sp.SetTag("retry-after", retrySeconds)
-				sp.SetTag("retry-attempt", retryAttemptHeader)
-			}
+			sp := trace.SpanFromContext(r.Context())
+			sp.SetAttributes(
+				attribute.String("retry-after", retrySeconds),
+				attribute.String("retry-attempt", retryAttemptHeader),
+			)
 		}
 	}
 }

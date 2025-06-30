@@ -1,0 +1,18 @@
+---
+# Source: mimir-distributed/templates/extra-manifests.yaml
+apiVersion: v1
+data: |
+  object.yml: "does-my-install-need-extra-info: true"
+kind: ConfigMap
+metadata:
+  name: extra-cm-test-extra-objects-values-object
+  namespace: 'citestns'
+---
+# Source: mimir-distributed/templates/extra-manifests.yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: extra-cm-test-extra-objects-values-string
+  namespace: 'citestns'
+data: |
+  string.yml: "test.extra-objects: true"

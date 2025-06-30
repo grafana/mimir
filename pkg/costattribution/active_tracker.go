@@ -16,10 +16,18 @@ import (
 	"go.uber.org/atomic"
 )
 
+type counters struct {
+	activeSeries           atomic.Int64
+	nativeHistograms       atomic.Int64
+	nativeHistogramBuckets atomic.Int64
+}
+
 type ActiveSeriesTracker struct {
-	userID                         string
-	activeSeriesPerUserAttribution *prometheus.Desc
-	logger                         log.Logger
+	userID                                         string
+	activeSeriesPerUserAttribution                 *prometheus.Desc
+	activeNativeHistogramSeriesPerUserAttribution  *prometheus.Desc
+	activeNativeHistogramBucketsPerUserAttribution *prometheus.Desc
+	logger                                         log.Logger
 
 	labels         []string
 	overflowLabels []string
@@ -28,13 +36,13 @@ type ActiveSeriesTracker struct {
 	cooldownDuration time.Duration
 
 	observedMtx   sync.RWMutex
-	observed      map[string]*atomic.Int64
+	observed      map[string]*counters
 	overflowSince time.Time
 
-	overflowCounter atomic.Int64
+	overflowCounter counters
 }
 
-func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -48,7 +56,7 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 		userID:           userID,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
-		observed:         make(map[string]*atomic.Int64),
+		observed:         make(map[string]*counters),
 		logger:           logger,
 		overflowLabels:   overflowLabels,
 		cooldownDuration: cooldownDuration,
@@ -60,7 +68,12 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-
+	ast.activeNativeHistogramSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_series",
+		"The total number of active native histogram series per user and attribution.", variableLabels[:len(variableLabels)-1],
+		prometheus.Labels{trackerLabel: defaultTrackerName})
+	ast.activeNativeHistogramBucketsPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_buckets",
+		"The total number of active native histogram buckets per user and attribution.", variableLabels[:len(variableLabels)-1],
+		prometheus.Labels{trackerLabel: defaultTrackerName})
 	return ast
 }
 
@@ -68,7 +81,10 @@ func (at *ActiveSeriesTracker) hasSameLabels(labels []string) bool {
 	return slices.Equal(at.labels, labels)
 }
 
-func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
+// Increment increases the active series count for the given labels.
+// If nativeHistogramBucketNum is not -1, it also increments the native histogram counter and the corresponding bucket.
+// Otherwise, only the active series count is updated.
+func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nativeHistogramBucketNum int) {
 	if at == nil {
 		return
 	}
@@ -78,29 +94,45 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	at.fillKeyFromLabels(lbls, buf)
 
 	at.observedMtx.RLock()
-	as, ok := at.observed[string(buf.Bytes())]
+	c, ok := at.observed[string(buf.Bytes())]
 	if ok {
-		as.Inc()
+		c.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			c.nativeHistograms.Inc()
+			c.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		at.observedMtx.RUnlock()
 		return
 	}
 
 	if !at.overflowSince.IsZero() {
 		at.observedMtx.RUnlock()
-		at.overflowCounter.Inc()
+		at.overflowCounter.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			at.overflowCounter.nativeHistograms.Inc()
+			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		return
 	}
 
-	as, ok = at.observed[string(buf.Bytes())]
+	c, ok = at.observed[string(buf.Bytes())]
 	if ok {
-		as.Inc()
+		c.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			c.nativeHistograms.Inc()
+			c.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		at.observedMtx.RUnlock()
 		return
 	}
 
 	if !at.overflowSince.IsZero() {
 		at.observedMtx.RUnlock()
-		at.overflowCounter.Inc()
+		at.overflowCounter.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			at.overflowCounter.nativeHistograms.Inc()
+			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		return
 	}
 	at.observedMtx.RUnlock()
@@ -108,26 +140,45 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	at.observedMtx.Lock()
 	defer at.observedMtx.Unlock()
 
-	as, ok = at.observed[string(buf.Bytes())]
+	c, ok = at.observed[string(buf.Bytes())]
 	if ok {
-		as.Inc()
+		c.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			c.nativeHistograms.Inc()
+			c.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		return
 	}
 
 	if !at.overflowSince.IsZero() {
-		at.overflowCounter.Inc()
+		at.overflowCounter.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			at.overflowCounter.nativeHistograms.Inc()
+			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		return
 	}
 
 	if len(at.observed) >= at.maxCardinality {
 		at.overflowSince = now
-		at.overflowCounter.Inc()
+		at.overflowCounter.activeSeries.Inc()
+		if nativeHistogramBucketNum >= 0 {
+			at.overflowCounter.nativeHistograms.Inc()
+			at.overflowCounter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+		}
 		return
 	}
-	at.observed[string(buf.Bytes())] = atomic.NewInt64(1)
+
+	counter := &counters{}
+	counter.activeSeries.Inc()
+	if nativeHistogramBucketNum >= 0 {
+		counter.nativeHistograms.Inc()
+		counter.nativeHistogramBuckets.Add(int64(nativeHistogramBucketNum))
+	}
+	at.observed[string(buf.Bytes())] = counter
 }
 
-func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
+func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBucketNum int) {
 	if at == nil {
 		return
 	}
@@ -136,17 +187,21 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
 	defer bufferPool.Put(buf)
 	at.fillKeyFromLabels(lbls, buf)
 	at.observedMtx.RLock()
-	as, ok := at.observed[string(buf.Bytes())]
+	c, ok := at.observed[string(buf.Bytes())]
 	if ok {
-		nv := as.Dec()
+		nv := c.activeSeries.Dec()
+		if nativeHistogramBucketNum >= 0 {
+			c.nativeHistograms.Dec()
+			c.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
+		}
 		if nv > 0 {
 			at.observedMtx.RUnlock()
 			return
 		}
 		at.observedMtx.RUnlock()
 		at.observedMtx.Lock()
-		as, ok := at.observed[string(buf.Bytes())]
-		if ok && as.Load() == 0 {
+		c, ok := at.observed[string(buf.Bytes())]
+		if ok && c.activeSeries.Load() == 0 {
 			// use buf.String() instead of string(buf.Bytes()) to fix the lint issue
 			delete(at.observed, buf.String())
 		}
@@ -159,7 +214,11 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
 	defer at.observedMtx.RUnlock()
 
 	if !at.overflowSince.IsZero() {
-		at.overflowCounter.Dec()
+		at.overflowCounter.activeSeries.Dec()
+		if nativeHistogramBucketNum >= 0 {
+			at.overflowCounter.nativeHistograms.Dec()
+			at.overflowCounter.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
+		}
 		return
 	}
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
@@ -169,19 +228,42 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	at.observedMtx.RLock()
 	if !at.overflowSince.IsZero() {
 		var activeSeries int64
-		for _, as := range at.observed {
-			activeSeries += as.Load()
+		var nativeHistogram int64
+		var nhBucketNum int64
+		for _, c := range at.observed {
+			activeSeries += c.activeSeries.Load()
+			nativeHistogram += c.nativeHistograms.Load()
+			nhBucketNum += c.nativeHistogramBuckets.Load()
 		}
 		at.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
+		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
+
+		if nhcounter := float64(nativeHistogram + at.overflowCounter.nativeHistograms.Load()); nhcounter > 0 {
+			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+		}
+		if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
+			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
+		}
 		return
 	}
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
-	for key, as := range at.observed {
+	for key, c := range at.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)
-		prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(as.Load()), keys...))
+		prometheusMetrics = append(prometheusMetrics,
+			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...),
+		)
+		if nhcounter := c.nativeHistograms.Load(); nhcounter > 0 {
+			prometheusMetrics = append(prometheusMetrics,
+				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...),
+			)
+		}
+		if nbcounter := c.nativeHistogramBuckets.Load(); nbcounter > 0 {
+			prometheusMetrics = append(prometheusMetrics,
+				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...),
+			)
+		}
 	}
 	at.observedMtx.RUnlock()
 
@@ -203,4 +285,10 @@ func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.
 			buf.WriteString(missingValue)
 		}
 	}
+}
+
+func (at *ActiveSeriesTracker) cardinality() (cardinality int, overflown bool) {
+	at.observedMtx.RLock()
+	defer at.observedMtx.RUnlock()
+	return len(at.observed), !at.overflowSince.IsZero()
 }

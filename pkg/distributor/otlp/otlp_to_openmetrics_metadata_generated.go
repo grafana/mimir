@@ -33,12 +33,27 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) mimirpb.MetricMet
 		if otelMetric.Sum().IsMonotonic() {
 			metricType = mimirpb.COUNTER
 		}
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
+		if otelMetric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
+			metricType = mimirpb.UNKNOWN
+		}
 		return metricType
 	case pmetric.MetricTypeHistogram:
+		// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+		// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
+		if otelMetric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
+			return mimirpb.UNKNOWN
+		}
 		return mimirpb.HISTOGRAM
 	case pmetric.MetricTypeSummary:
 		return mimirpb.SUMMARY
 	case pmetric.MetricTypeExponentialHistogram:
+		if otelMetric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta {
+			// We're in an early phase of implementing delta support (proposal: https://github.com/prometheus/proposals/pull/48/)
+			// We don't have a proper way to flag delta metrics yet, therefore marking the metric type as unknown for now.
+			return mimirpb.UNKNOWN
+		}
 		return mimirpb.HISTOGRAM
 	}
 	return mimirpb.UNKNOWN

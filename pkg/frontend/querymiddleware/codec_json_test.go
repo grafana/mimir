@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -170,9 +171,12 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
 			httpResponse := &http.Response{
-				StatusCode:    200,
-				Header:        headers,
-				Body:          io.NopCloser(bytes.NewBuffer(body)),
+				StatusCode: 200,
+				Header:     headers,
+				Body: &prometheusReadCloser{
+					Reader:    bytes.NewBuffer(body),
+					finalizer: func() {},
+				},
 				ContentLength: int64(len(body)),
 			}
 			decoded, err := codec.DecodeMetricsQueryResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
@@ -201,21 +205,18 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
-				StatusCode:    200,
-				Header:        headers,
-				Body:          io.NopCloser(bytes.NewBuffer(body)),
+				StatusCode: 200,
+				Header:     headers,
+				Body: &prometheusReadCloser{
+					Reader:    bytes.NewBuffer(body),
+					finalizer: func() {},
+				},
 				ContentLength: int64(len(body)),
 			}
 			encoded, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
 
-			expectedJSON, err := readResponseBody(httpResponse)
-			require.NoError(t, err)
-			encodedJSON, err := readResponseBody(encoded)
-			require.NoError(t, err)
-
-			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
-			require.Equal(t, httpResponse, encoded)
+			requireEqualHttpResponse(t, httpResponse, encoded)
 
 			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
@@ -229,6 +230,26 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
 		})
 	}
+}
+
+// requireEqualHttpResponse checks the responses are the same with special handling for the Body.
+func requireEqualHttpResponse(t *testing.T, expected, actual *http.Response) {
+	// Compare all HTTP response fields except the Body
+	require.Equal(t, expected.StatusCode, actual.StatusCode)
+	require.Equal(t, expected.Header, actual.Header)
+	require.Equal(t, expected.ContentLength, actual.ContentLength)
+
+	// Verify that body types match
+	require.Equal(t, reflect.TypeOf(expected.Body), reflect.TypeOf(actual.Body))
+
+	// Read and compare the body contents
+	expectedJSON, err := readResponseBody(expected)
+	require.NoError(t, err)
+	actualJSON, err := readResponseBody(actual)
+	require.NoError(t, err)
+	require.JSONEq(t, string(expectedJSON), string(actualJSON))
+
+	// No need to reset the bodies since they're typically not used after this comparison
 }
 
 func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
@@ -331,13 +352,7 @@ func TestPrometheusCodec_JSONResponse_Labels(t *testing.T) {
 			encoded, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, decoded, tc.isSeriesResponse)
 			require.NoError(t, err)
 
-			expectedJSON, err := readResponseBody(httpResponse)
-			require.NoError(t, err)
-			encodedJSON, err := readResponseBody(encoded)
-			require.NoError(t, err)
-
-			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
-			require.Equal(t, httpResponse, encoded)
+			requireEqualHttpResponse(t, httpResponse, encoded)
 		})
 	}
 }

@@ -9,7 +9,8 @@ import (
 	"context"
 	"sort"
 
-	"github.com/oklog/ulid"
+	"github.com/cespare/xxhash/v2"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -160,9 +161,12 @@ func (f *ShardAwareDeduplicateFilter) DuplicateIDs() []ulid.ULID {
 //
 // Then B is a successor of A (A sources are subset of B sources, but not vice versa), and D is a successor of A, B and C.
 type blockWithSuccessors struct {
-	meta    *block.Meta            // If meta is nil, then this is root node of the tree.
-	shardID string                 // Shard ID label value extracted from meta. If not empty, all successors must have the same shardID.
-	sources map[ulid.ULID]struct{} // Sources extracted from meta for easier comparison.
+	meta    *block.Meta // If meta is nil, then this is root node of the tree.
+	shardID string      // Shard ID label value extracted from meta. If not empty, all successors must have the same shardID.
+
+	// Sources extracted from meta for easier comparison.
+	sources            map[ulid.ULID]struct{}
+	sourcesBloomFilter bloomFilter
 
 	successors map[ulid.ULID]*blockWithSuccessors
 }
@@ -172,8 +176,12 @@ func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 	if m != nil {
 		b.shardID = m.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
 		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
+
 		for _, bid := range m.Compaction.Sources {
-			b.sources[bid] = struct{}{}
+			if _, ok := b.sources[bid]; !ok {
+				b.sources[bid] = struct{}{}
+				b.sourcesBloomFilter.add(bid)
+			}
 		}
 	}
 	return b
@@ -191,12 +199,28 @@ func (b *blockWithSuccessors) isIncludedIn(other *blockWithSuccessors) bool {
 		return false
 	}
 
+	//
 	// All sources of this block must be in other block.
+	//
+
+	// Optimization: if the other block has less sources than this block, then it's not possible
+	// that all sources of this block are in the other block.
+	if len(other.sources) < len(b.sources) {
+		return false
+	}
+
+	// Optimization: If the bloom filter of this block is not included in the other block's bloom filter,
+	// then it's not possible that all sources of this block are in the other block.
+	if !b.sourcesBloomFilter.isIncludedIn(&other.sourcesBloomFilter) {
+		return false
+	}
+
 	for bid := range b.sources {
 		if _, ok := other.sources[bid]; !ok {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -288,4 +312,28 @@ func (b *blockWithSuccessors) getDuplicateBlocks(output map[ulid.ULID]struct{}) 
 	for _, s := range b.successors {
 		s.getDuplicateBlocks(output)
 	}
+}
+
+const bloomFilterSizeBits = 6
+const bloomFilterSizeMask = (1 << bloomFilterSizeBits) - 1
+const bloomFilterBits = 6 // log2(64)
+const bloomFilterMask = (1 << bloomFilterBits) - 1
+
+type bloomFilter [1 << bloomFilterSizeBits]uint64
+
+func (b *bloomFilter) add(bid ulid.ULID) {
+	h := xxhash.Sum64(bid[:])
+	bucket := (h >> bloomFilterBits) & bloomFilterSizeMask
+	b[bucket] |= 1 << (h & bloomFilterMask)
+}
+
+func (b *bloomFilter) isIncludedIn(other *bloomFilter) bool {
+	// Check that all bits of b are set in other.
+	for i := range b {
+		// If we have some of the bits that are missing in other, then we're not included in other.
+		if (b[i] & ^other[i]) > 0 {
+			return false
+		}
+	}
+	return true
 }

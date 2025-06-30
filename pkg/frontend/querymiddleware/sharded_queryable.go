@@ -32,7 +32,7 @@ var (
 	errNotImplemented       = errors.New("not implemented")
 )
 
-type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
+type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, Response, error)
 
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
@@ -115,7 +115,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
-func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, Response, error) {
 	query, err := query.WithQuery(queryExpr.Expr)
 	if err != nil {
 		return nil, nil, err
@@ -126,31 +126,38 @@ func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.Emb
 		return nil, nil, err
 	}
 
-	promRes, ok := resp.(*PrometheusResponse)
+	promRes, ok := resp.GetPrometheusResponse()
 	if !ok {
-		return nil, nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+		return nil, nil, errors.Errorf("error invalid response type: %T, expected a Prometheus response", resp)
 	}
 	resStreams, err := ResponseToSamples(promRes)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return resStreams, promRes, nil
+	return resStreams, resp, nil
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
 func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []astmapper.EmbeddedQuery, hints *storage.SelectHints) storage.SeriesSet {
 	streams := make([][]SampleStream, len(queries))
+	respClosers := make([]func(), len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
-		resStreams, promRes, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler)
+		resStreams, resp, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler)
 		if err != nil {
 			return err
 		}
 
+		promRes, ok := resp.GetPrometheusResponse()
+		if !ok {
+			return errors.Errorf("error invalid response type: %T, expected a Prometheus response", resp)
+		}
+
 		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
+		respClosers[idx] = resp.Close
 
 		q.responseHeaders.mergeHeaders(promRes.Headers)
 		q.annotationAccumulator.addInfos(promRes.Infos)
@@ -222,6 +229,9 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 // newSeriesSetFromEmbeddedQueriesResults returns an in memory storage.SeriesSet from embedded queries results.
 // The passed hints (if any) is used to inject stale markers at the beginning of each gap in the embedded query
 // results.
+//
+// Values (including histograms) are copied, so the supplying queries can be closed.
+// Labels *are not* copied.
 //
 // The returned storage.SeriesSet series is sorted.
 func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints) storage.SeriesSet {
@@ -302,7 +312,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 					})
 				}
 
-				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel()))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel().Copy()))
 			}
 
 			if len(histograms) > 0 && step > 0 {
@@ -322,6 +332,10 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 func ResponseToSamples(resp *PrometheusResponse) ([]SampleStream, error) {
 	if resp.Error != "" {
 		return nil, errors.New(resp.Error)
+	}
+
+	if resp.Data == nil {
+		return nil, errors.New("response data is nil")
 	}
 
 	switch resp.Data.ResultType {

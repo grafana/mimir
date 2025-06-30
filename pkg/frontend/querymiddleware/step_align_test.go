@@ -7,10 +7,12 @@ package querymiddleware
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/test"
@@ -20,6 +22,7 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		input, expected *PrometheusRangeQueryRequest
+		expectedMetrics *strings.Reader
 	}{
 		{
 			name: "no adjustment needed",
@@ -35,6 +38,11 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 				minT:  0,
 				maxT:  0,
 			},
+			expectedMetrics: strings.NewReader(`
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 0
+			`),
 		},
 
 		{
@@ -51,6 +59,14 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 				minT:  0,
 				maxT:  100,
 			},
+			expectedMetrics: strings.NewReader(`
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 1
+			# HELP cortex_query_frontend_non_step_aligned_queries_adjusted_total Number of queries whose start or end times have been adjusted to be step-aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_adjusted_total counter
+			cortex_query_frontend_non_step_aligned_queries_adjusted_total{user="123"} 1
+			`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,11 +80,13 @@ func TestStepAlignMiddleware_SingleUser(t *testing.T) {
 			limits := mockLimits{alignQueriesWithStep: true}
 			log := test.NewTestingLogger(t)
 			ctx := user.InjectOrgID(context.Background(), "123")
+			reg := prometheus.NewPedanticRegistry()
 
-			s := newStepAlignMiddleware(limits, log, prometheus.NewPedanticRegistry()).Wrap(next)
+			s := newStepAlignMiddleware(limits, log, reg).Wrap(next)
 			_, err := s.Do(ctx, tc.input)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
+			require.NoError(t, testutil.GatherAndCompare(reg, tc.expectedMetrics))
 		})
 	}
 }
@@ -78,6 +96,7 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 		name            string
 		limits          *multiTenantMockLimits
 		input, expected *PrometheusRangeQueryRequest
+		expectedMetrics *strings.Reader
 	}{
 		{
 			name: "no adjustment needed",
@@ -99,6 +118,11 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				minT:  0,
 				maxT:  0,
 			},
+			expectedMetrics: strings.NewReader(`
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 0
+			`),
 		},
 		{
 			name: "adjust start and end",
@@ -120,6 +144,15 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				minT:  0,
 				maxT:  100,
 			},
+			expectedMetrics: strings.NewReader(`
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 1
+			# HELP cortex_query_frontend_non_step_aligned_queries_adjusted_total Number of queries whose start or end times have been adjusted to be step-aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_adjusted_total counter
+			cortex_query_frontend_non_step_aligned_queries_adjusted_total{user="123"} 1
+			cortex_query_frontend_non_step_aligned_queries_adjusted_total{user="456"} 1
+			`),
 		},
 		{
 			name: "not enabled for all users",
@@ -141,6 +174,11 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 				minT:  0,
 				maxT:  0,
 			},
+			expectedMetrics: strings.NewReader(`
+			# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+			# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+			cortex_query_frontend_non_step_aligned_queries_total 1
+			`),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,11 +191,13 @@ func TestStepAlignMiddleware_MultipleUsers(t *testing.T) {
 
 			log := test.NewTestingLogger(t)
 			ctx := user.InjectOrgID(context.Background(), "123|456")
+			reg := prometheus.NewPedanticRegistry()
 
-			s := newStepAlignMiddleware(tc.limits, log, prometheus.NewPedanticRegistry()).Wrap(next)
+			s := newStepAlignMiddleware(tc.limits, log, reg).Wrap(next)
 			_, err := s.Do(ctx, tc.input)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)
+			require.NoError(t, testutil.GatherAndCompare(reg, tc.expectedMetrics))
 		})
 	}
 }

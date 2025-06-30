@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/instrument"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type instrumentMiddleware struct {
@@ -44,10 +44,7 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 func (h *instrumentMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	var resp Response
 	err := instrument.CollectedRequest(ctx, h.name, h.durationCol, instrument.ErrorCode, func(ctx context.Context) error {
-		sp := opentracing.SpanFromContext(ctx)
-		if sp != nil {
-			req.AddSpanTags(sp)
-		}
+		req.AddSpanTags(trace.SpanFromContext(ctx))
 
 		var err error
 		resp, err = h.next.Do(ctx, req)
@@ -65,10 +62,9 @@ type instrumentMiddlewareMetrics struct {
 func newInstrumentMiddlewareMetrics(registerer prometheus.Registerer) *instrumentMiddlewareMetrics {
 	return &instrumentMiddlewareMetrics{
 		duration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "frontend_query_range_duration_seconds",
-			Help:      "Total time spent in seconds doing query range requests.",
-			Buckets:   prometheus.DefBuckets,
+			Name:    "cortex_frontend_query_range_duration_seconds",
+			Help:    "Total time spent in seconds doing query range requests.",
+			Buckets: prometheus.DefBuckets,
 		}, []string{"method", "status_code"}),
 	}
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -145,27 +144,17 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 	// Create recording rule
 	// (we create the rule after pushing the data to avoid race conditions around pushing the data and evaluating the rule -
 	// Mimir guarantees that previously pushed data will be captured by the recording rule evaluation)
-	recordFloat := yaml.Node{}
-	recordFloat.SetString(testRuleNameFloat)
-	recordHisto := yaml.Node{}
-	recordHisto.SetString(testRuleNameHisto)
-
-	exprFloat := yaml.Node{}
-	exprFloat.SetString(fmt.Sprintf("%s(%s)", aggFunc, seriesNameFloat))
-	exprHisto := yaml.Node{}
-	exprHisto.SetString(fmt.Sprintf("%s(%s)", aggFunc, seriesNameHisto))
-
 	ruleGroup := rulefmt.RuleGroup{
 		Name:     "test_rule_group",
 		Interval: 1,
-		Rules: []rulefmt.RuleNode{
+		Rules: []rulefmt.Rule{
 			{
-				Record: recordFloat,
-				Expr:   exprFloat,
+				Record: testRuleNameFloat,
+				Expr:   fmt.Sprintf("%s(%s)", aggFunc, seriesNameFloat),
 			},
 			{
-				Record: recordHisto,
-				Expr:   exprHisto,
+				Record: testRuleNameHisto,
+				Expr:   fmt.Sprintf("%s(%s)", aggFunc, seriesNameHisto),
 			},
 		},
 	}
@@ -255,19 +244,13 @@ receivers:
 	require.NoError(t, client.SetAlertmanagerConfig(context.Background(), alertmanagerConfig, map[string]string{}))
 
 	// Create alerting rule
-	alert := yaml.Node{}
-	alert.SetString(testAlertName)
-
-	expr := yaml.Node{}
-	expr.SetString(fmt.Sprintf("%s(%s) > 0", aggFunc, seriesName))
-
 	ruleGroup := rulefmt.RuleGroup{
 		Name:     "test_rule_group",
 		Interval: 1,
-		Rules: []rulefmt.RuleNode{
+		Rules: []rulefmt.Rule{
 			{
-				Alert: alert,
-				Expr:  expr,
+				Alert: testAlertName,
+				Expr:  fmt.Sprintf("%s(%s) > 0", aggFunc, seriesName),
 				For:   model.Duration(1 * time.Second),
 			},
 		},

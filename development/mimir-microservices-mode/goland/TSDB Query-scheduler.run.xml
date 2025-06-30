@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="TSDB Query-scheduler" type="GoRemoteDebugConfigurationType" factoryName="Go Remote" port="18011">
+  <configuration default="false" name="TSDB Query-scheduler" type="GoRemoteDebugConfigurationType" factoryName="Go Remote" port="18008">
     <option name="disconnectOption" value="ASK" />
     <method v="2" />
   </configuration>

@@ -420,3 +420,35 @@ func (t *Template) Data(recv string, groupLabels model.LabelSet, alerts ...*type
 
 	return data
 }
+
+// Clone returns a copy of the template.
+func (t *Template) Clone() (*Template, error) {
+	txt, err := t.text.Clone()
+	if err != nil {
+		return nil, err
+	}
+	html, err := t.html.Clone()
+	if err != nil {
+		return nil, err
+	}
+	var u *url.URL
+	if t.ExternalURL != nil {
+		u = new(url.URL)
+		*u = *t.ExternalURL
+	}
+	return &Template{
+		text:        txt,
+		html:        html,
+		ExternalURL: u,
+	}, nil
+}
+
+// HTML returns the clone of HTML template.
+func (t *Template) HTML() (*tmplhtml.Template, error) {
+	return t.html.Clone()
+}
+
+// Text returns the clone of text template.
+func (t *Template) Text() (*tmpltext.Template, error) {
+	return t.text.Clone()
+}

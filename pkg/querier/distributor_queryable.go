@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -82,12 +83,16 @@ type distributorQuerier struct {
 	mint, maxt   int64
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
+
+	streamReadersMtx sync.Mutex
+	closed           bool
+	streamReaders    []*client.SeriesChunksStreamReader
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.Select")
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.Select")
 	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -122,7 +127,6 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
-
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -193,6 +197,21 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	if q.closed {
+		// We were closed while loading, give up now.
+		for _, r := range results.StreamReaders {
+			r.FreeBuffer()
+		}
+
+		return storage.ErrSeriesSet(errAlreadyClosed)
+	}
+
+	// Store the stream readers so we can free their buffers when we're done using this Querier.
+	q.streamReaders = append(q.streamReaders, results.StreamReaders...)
+
 	if len(sets) == 0 {
 		return storage.EmptySeriesSet()
 	}
@@ -204,8 +223,8 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
-	defer spanLog.Span.Finish()
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.LabelValues")
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -227,8 +246,8 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints
 }
 
 func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
-	defer spanLog.Span.Finish()
+	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.LabelNames")
+	defer spanLog.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -249,6 +268,15 @@ func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 }
 
 func (q *distributorQuerier) Close() error {
+	q.streamReadersMtx.Lock()
+	defer q.streamReadersMtx.Unlock()
+
+	q.closed = true
+
+	for _, r := range q.streamReaders {
+		r.FreeBuffer()
+	}
+
 	return nil
 }
 
@@ -280,7 +308,7 @@ type distributorExemplarQuerier struct {
 
 // Select querys for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
 func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
+	spanlog, ctx := spanlogger.New(q.ctx, q.logger, tracer, "distributorExemplarQuerier.Select")
 	defer spanlog.Finish()
 
 	spanlog.DebugLog(

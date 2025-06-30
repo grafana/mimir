@@ -12,7 +12,7 @@ import (
 	"path"
 
 	"github.com/grafana/dskit/multierror"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 )
 
@@ -35,10 +35,10 @@ func (b *globalMarkersBucket) Provider() objstore.ObjProvider {
 }
 
 // Upload implements objstore.Bucket.
-func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
 	globalMarkPath := getGlobalMarkPathFromBlockMark(name)
 	if globalMarkPath == "" {
-		return b.parent.Upload(ctx, name, r)
+		return b.parent.Upload(ctx, name, r, opts...)
 	}
 
 	// Read the marker.
@@ -48,12 +48,12 @@ func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Read
 	}
 
 	// Upload it to the original location.
-	if err := b.parent.Upload(ctx, name, bytes.NewBuffer(body)); err != nil {
+	if err := b.parent.Upload(ctx, name, bytes.NewReader(body), opts...); err != nil {
 		return err
 	}
 
 	// Upload it to the global markers location too.
-	return b.parent.Upload(ctx, globalMarkPath, bytes.NewBuffer(body))
+	return b.parent.Upload(ctx, globalMarkPath, bytes.NewReader(body), opts...)
 }
 
 // Delete implements objstore.Bucket.

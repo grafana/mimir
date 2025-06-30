@@ -3,6 +3,7 @@
 package aggregations
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
@@ -27,7 +28,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 
 	for name, group := range groups {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(4), time.Millisecond)
 
 			// First series: all histograms should be nil-ed out after returning, as they're all retained for use.
@@ -44,7 +45,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			histograms = append(histograms, promql.HPoint{T: 4, H: h4})
 			series := types.InstantVectorSeriesData{Histograms: histograms}
 
-			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil))
+			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil, 1))
 			require.Equal(t, []promql.HPoint{{T: 0, H: nil}, {T: 1, H: nil}, {T: 2, H: nil}, {T: 4, H: nil}}, series.Histograms, "all histograms retained should be nil-ed out after accumulating series")
 
 			// Second series: all histograms that are not retained should be nil-ed out after returning.
@@ -62,7 +63,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 			histograms = append(histograms, promql.HPoint{T: 4, H: h9})
 			series = types.InstantVectorSeriesData{Histograms: histograms}
 
-			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil))
+			require.NoError(t, group.AccumulateSeries(series, timeRange, memoryConsumptionTracker, nil, 1))
 
 			expected := []promql.HPoint{
 				{T: 0, H: h5},  // h5 not retained (added to h1)

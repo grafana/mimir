@@ -21,6 +21,10 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 	return tsdbutil.GenerateTestHistogram(int64(i))
 }
 
+func GenerateTestCustomBucketsHistogram(i int) *histogram.Histogram {
+	return tsdbutil.GenerateTestCustomBucketsHistogram(int64(i))
+}
+
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 	return tsdbutil.GenerateTestFloatHistogram(int64(i))
 }

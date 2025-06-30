@@ -18,11 +18,9 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -30,9 +28,10 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/uber/jaeger-client-go"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -87,7 +86,6 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	if err := cfg.Compression.Validate(); err != nil {
 		return errors.Wrap(err, "query-frontend results cache")
 	}
-
 	return nil
 }
 
@@ -145,8 +143,13 @@ type Extractor interface {
 type PrometheusResponseExtractor struct{}
 
 // Extract extracts response for specific a range from a response.
+// The from Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
-	promRes := from.(*PrometheusResponse)
+	promRes, ok := from.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -165,8 +168,13 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 
 // ResponseWithoutHeaders is useful in caching data without headers since
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
+// The supplied Response is not closed, nor is it finalizer returned as part of the new response.
+// It is the responsibility of the caller to close their input resources.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
-	promRes := resp.(*PrometheusResponse)
+	promRes, ok := resp.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -193,6 +201,9 @@ type CacheKeyGenerator interface {
 
 	// QueryRequestError should generate a cache key based on errors for the tenant ID and MetricsQueryRequest.
 	QueryRequestError(ctx context.Context, tenantID string, r MetricsQueryRequest) string
+
+	// QueryRequestLimiter should generate a cache key based on the tenant ID and MetricsQueryRequest.
+	QueryRequestLimiter(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
@@ -234,7 +245,19 @@ func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, tenantID strin
 }
 
 func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID string, r MetricsQueryRequest) string {
-	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep())
+	start := r.GetStart()
+	end := r.GetEnd()
+	if start == end {
+		// For the case of an instant query, don't rely on the query's time in the errors caching key.
+		// I.e. if a recording rule's query fails, it will likely fail on subsequent evaluations with the updated time.
+		start = 0
+		end = 0
+	}
+	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), start, end, r.GetStep())
+}
+
+func (g DefaultCacheKeyGenerator) QueryRequestLimiter(_ context.Context, tenantID string, r MetricsQueryRequest) string {
+	return fmt.Sprintf("QL:%s:%s", tenantID, r.GetQuery())
 }
 
 // shouldCacheFn checks whether the current request should go to cache
@@ -263,8 +286,8 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 		return false, notCachableReasonTooNew
 	}
 
-	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
-		return false, notCachableReasonModifiersNotCachable
+	if cachable, reason := areEvaluationTimeModifiersCachable(req, maxCacheTime, logger); !cachable {
+		return false, reason
 	}
 
 	return true, ""
@@ -287,8 +310,9 @@ var (
 	errNegativeOffset     = errors.New("negative offset")
 )
 
-// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
-func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) bool {
+// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache,
+// false otherwise. The reason for not being safe to cache is returned as a string.
+func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int64, logger log.Logger) (bool, string) {
 	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -298,17 +322,20 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	//   3. When query contains a negative offset.
 	query := r.GetQuery()
 	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
-		return true
+		return true, ""
 	}
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
-		level.Warn(logger).Log("msg", "failed to parse query, considering @ modifier as not cachable", "query", query, "err", err)
-		return false
+		return false, notCachableReasonModifiersNotCachableFailedParse
 	}
 
 	// This resolves the start() and end() used with the @ modifier.
-	expr = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	expr, err = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
+	if err != nil {
+		// We are being pessimistic in such cases.
+		return false, notCachableReasonModifiersNotCachableFailedPreprocess
+	}
 
 	end := r.GetEnd()
 	cachable := true
@@ -334,7 +361,10 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 		return nil
 	})
 
-	return cachable
+	if !cachable {
+		return false, notCachableReasonModifiersNotCachable
+	}
+	return true, ""
 }
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
@@ -379,7 +409,10 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-		accumulator.TraceId = jaegerTraceID(ctx)
+		accumulator.TraceId = otelTraceID(ctx)
+		// Calculate the samples processed per step in the subrange of the extent that is being merged with the accumulator.
+		samples := extractSamplesProcessedPerStep(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
+		accumulator.SamplesProcessedPerStep = mergeSamplesProcessedPerStep(accumulator.SamplesProcessedPerStep, samples)
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
@@ -410,16 +443,22 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	marshalled, err := types.MarshalAny(acc.Response)
+	promRes, ok := acc.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse or PrometheusResponseWithFinalizer")
+	}
+	marshalled, err := types.MarshalAny(promRes)
+
 	if err != nil {
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:            acc.Extent.Start,
-		End:              acc.Extent.End,
-		Response:         marshalled,
-		TraceId:          acc.Extent.TraceId,
-		QueryTimestampMs: acc.QueryTimestampMs,
+		Start:                   acc.Start,
+		End:                     acc.End,
+		Response:                marshalled,
+		TraceId:                 acc.TraceId,
+		QueryTimestampMs:        acc.QueryTimestampMs,
+		SamplesProcessedPerStep: acc.SamplesProcessedPerStep,
 	}), nil
 }
 
@@ -434,26 +473,34 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time) (Extent, error) {
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, perStepStats []stats.StepStat) (Extent, error) {
 	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
+
+	extentPerStepStats := make([]StepStat, len(perStepStats))
+	for i, stat := range perStepStats {
+		extentPerStepStats[i] = StepStat(stat)
+	}
+
 	return Extent{
-		Start:            req.GetStart(),
-		End:              req.GetEnd(),
-		Response:         marshalled,
-		TraceId:          jaegerTraceID(ctx),
-		QueryTimestampMs: queryTime.UnixMilli(),
+		Start:                   req.GetStart(),
+		End:                     req.GetEnd(),
+		Response:                marshalled,
+		TraceId:                 otelTraceID(ctx),
+		QueryTimestampMs:        queryTime.UnixMilli(),
+		SamplesProcessedPerStep: extentPerStepStats,
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []StepStat, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
+	var cachedPerStepStat []StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -475,17 +522,19 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
+		// Extract the per step stats for the overlap.
+		cachedPerStepStat = mergeSamplesProcessedPerStep(cachedPerStepStat, extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End)))
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -507,7 +556,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		requests = append(requests, r)
@@ -519,7 +568,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	return requests, cachedResponses, nil
+	return requests, cachedResponses, cachedPerStepStat, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -527,6 +576,8 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
+			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime)
+			extents[i].SamplesProcessedPerStep = perStepStats
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
 			if err != nil {
@@ -543,18 +594,12 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	return extents, nil
 }
 
-func jaegerTraceID(ctx context.Context) string {
-	span := opentracing.SpanFromContext(ctx)
-	if span == nil {
+func otelTraceID(ctx context.Context) string {
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	if !sc.IsValid() {
 		return ""
 	}
-
-	spanContext, ok := span.Context().(jaeger.SpanContext)
-	if !ok {
-		return ""
-	}
-
-	return spanContext.TraceID().String()
+	return sc.TraceID().String()
 }
 
 func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
@@ -638,4 +683,104 @@ func cacheHashKey(key string) string {
 
 	// Hex because memcache keys must be non-whitespace non-control ASCII
 	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.
+func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []StepStat {
+	// Validate the subrange is valid and within the extent.
+	if end < start || start < extent.Start || end > extent.End {
+		return nil
+	}
+
+	var result []StepStat
+	for _, step := range extent.SamplesProcessedPerStep {
+		if start <= step.Timestamp && step.Timestamp <= end {
+			result = append(result, step)
+		}
+	}
+
+	return result
+}
+
+func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+
+	merged := make([]StepStat, 0, len(a)+len(b))
+	i, j := 0, 0
+
+	for i < len(a) && j < len(b) {
+		if a[i].Timestamp < b[j].Timestamp {
+			merged = append(merged, a[i])
+			i++
+		} else if b[j].Timestamp < a[i].Timestamp {
+			merged = append(merged, b[j])
+			j++
+		} else {
+			// Same timestamp, take the latter value
+			merged = append(merged, b[j])
+			i++
+			j++
+		}
+	}
+
+	// Append any remaining elements
+	for ; i < len(a); i++ {
+		merged = append(merged, a[i])
+	}
+	for ; j < len(b); j++ {
+		merged = append(merged, b[j])
+	}
+
+	return merged
+}
+
+// sumSamplesProcessedPerStep sums values from multiple arrays of StepStat.
+// For duplicate timestamps, later arrays win (last array wins behavior), then values are summed.
+func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
+	if len(stats) == 0 {
+		return 0
+	}
+
+	// Fast path: single array - no duplicates possible, just sum directly
+	if len(stats) == 1 {
+		var total int64
+		for _, step := range stats[0] {
+			total += step.Value
+		}
+		return total
+	}
+
+	// Multiple arrays: handle duplicates with map (last array wins)
+	m := make(map[int64]int64)
+	for _, arr := range stats {
+		for _, step := range arr {
+			m[step.Timestamp] = step.Value
+		}
+	}
+
+	var total int64
+	for _, value := range m {
+		total += value
+	}
+
+	return total
+}
+
+// convertStatsStepStat converts []stats.StepStat to []StepStat using type casting.
+// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
+func convertStatsStepStat(processed []stats.StepStat) []StepStat {
+	if len(processed) == 0 {
+		return nil
+	}
+
+	converted := make([]StepStat, len(processed))
+	for i, stat := range processed {
+		converted[i] = StepStat(stat)
+	}
+	return converted
 }

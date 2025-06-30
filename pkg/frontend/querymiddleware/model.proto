@@ -67,6 +67,13 @@ message Extent  {
   // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
   // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
   int64 query_timestamp_ms = 6;
+  // Number of samples processed per step to create this Extent. Should be sorted by timestamp in ascending order.
+  repeated StepStat samples_processed_per_step = 7 [(gogoproto.nullable) = false];
+}
+
+message StepStat {
+  int64 timestamp = 1;
+  int64 value = 2;
 }
 
 message Options {
@@ -80,6 +87,7 @@ message Options {
 
 message QueryStatistics {
   uint64 EstimatedSeriesCount = 1;
+  string UserID = 2;
 }
 
 // CachedHTTPResponse holds a generic HTTP response in the query results cache.

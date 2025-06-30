@@ -167,8 +167,8 @@ func TestNewSampleError(t *testing.T) {
 			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleDuplicateTimestampError": {
-			err:         newSampleDuplicateTimestampError(timestamp, seriesLabels),
-			expectedMsg: `the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
+			err:         newSampleDuplicateTimestampError(fmt.Sprintf("duplicate sample for timestamp %d; overrides not allowed: existing %g, new value %g", timestamp, 1.5, 2.5), timestamp, seriesLabels),
+			expectedMsg: `duplicate sample for timestamp 1575043969; overrides not allowed: existing 1.5, new value 2.5 (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 	}
 

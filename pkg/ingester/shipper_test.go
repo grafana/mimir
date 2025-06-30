@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
@@ -49,8 +49,7 @@ func TestShipper(t *testing.T) {
 
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 	t.Run("no shipper file yet", func(t *testing.T) {
@@ -171,8 +170,8 @@ type deceivingUploadBucket struct {
 	objectBaseName string
 }
 
-func (b deceivingUploadBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	actualErr := b.Bucket.Upload(ctx, name, r)
+func (b deceivingUploadBucket) Upload(ctx context.Context, name string, r io.Reader, opts ...objstore.ObjectUploadOption) error {
+	actualErr := b.Bucket.Upload(ctx, name, r, opts...)
 	if actualErr != nil {
 		return actualErr
 	} else if path.Base(name) == b.objectBaseName {
@@ -191,8 +190,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 	bkt = deceivingUploadBucket{Bucket: bkt, objectBaseName: block.MetaFilename}
 
 	logger := log.NewLogfmtLogger(os.Stderr)
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 	// Create and upload a block
@@ -257,13 +255,12 @@ func TestIterBlockMetas(t *testing.T) {
 			Version: 1,
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
 	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
-		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		return metas[i].MinTime < metas[j].MinTime
 	}), true)
 }
 
@@ -271,8 +268,7 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	dir := t.TempDir()
 
 	inmemory := objstore.NewInMemBucket()
-	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	require.NoError(t, err)
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	s := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, inmemory, block.TestSource)
 
 	id := ulid.MustNew(1, nil)
@@ -415,8 +411,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 					OutOfOrderBlocksExternalLabelEnabled: tc.addOOOLabel,
 				},
 			}
-			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
-			require.NoError(t, err)
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
 			s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 			createBlock(t, blocksDir, tc.meta.ULID, tc.meta)

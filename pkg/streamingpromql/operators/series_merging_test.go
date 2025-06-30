@@ -3,14 +3,15 @@
 package operators
 
 import (
+	"context"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestMergeSeries(t *testing.T) {
@@ -758,7 +759,7 @@ func TestMergeSeries(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			result, conflict, err := MergeSeries(testCase.input, testCase.sourceSeriesIndices, limiting.NewMemoryConsumptionTracker(0, nil))
+			result, conflict, err := MergeSeries(testCase.input, testCase.sourceSeriesIndices, limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 
 			require.NoError(t, err)
 

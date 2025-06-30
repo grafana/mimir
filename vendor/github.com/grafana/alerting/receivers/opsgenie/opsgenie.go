@@ -8,13 +8,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/notify"
 
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/alerting/images"
-	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
@@ -38,16 +40,14 @@ var (
 type Notifier struct {
 	*receivers.Base
 	tmpl     *templates.Template
-	log      logging.Logger
 	ns       receivers.WebhookSender
 	images   images.Provider
 	settings Config
 }
 
-func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger logging.Logger) *Notifier {
+func New(cfg Config, meta receivers.Metadata, template *templates.Template, sender receivers.WebhookSender, images images.Provider, logger log.Logger) *Notifier {
 	return &Notifier{
-		Base:     receivers.NewBase(meta),
-		log:      logger,
+		Base:     receivers.NewBase(meta, logger),
 		ns:       sender,
 		images:   images,
 		tmpl:     template,
@@ -57,17 +57,18 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, send
 
 // Notify sends an alert notification to Opsgenie
 func (on *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	on.log.Debug("executing Opsgenie notification", "notification", on.Name)
+	l := on.GetLogger(ctx)
+	level.Debug(l).Log("msg", "sending notification")
 
 	alerts := types.Alerts(as...)
 	if alerts.Status() == model.AlertResolved && !on.SendResolved() {
-		on.log.Debug("not sending a trigger to Opsgenie", "status", alerts.Status(), "auto resolve", on.SendResolved())
+		level.Debug(l).Log("msg", "not sending a trigger to Opsgenie", "status", alerts.Status(), "auto resolve", on.SendResolved())
 		return true, nil
 	}
 
-	body, url, err := on.buildOpsgenieMessage(ctx, alerts, as)
+	body, url, err := on.buildOpsgenieMessage(ctx, alerts, as, l)
 	if err != nil {
-		return false, fmt.Errorf("build Opsgenie message: %w", err)
+		return false, fmt.Errorf("build message: %w", err)
 	}
 
 	if url == "" {
@@ -86,14 +87,14 @@ func (on *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		},
 	}
 
-	if err := on.ns.SendWebhook(ctx, cmd); err != nil {
+	if err := on.ns.SendWebhook(ctx, l, cmd); err != nil {
 		return false, fmt.Errorf("send notification to Opsgenie: %w", err)
 	}
 
 	return true, nil
 }
 
-func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alerts, as []*types.Alert) (payload []byte, apiURL string, err error) {
+func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alerts, as []*types.Alert, l log.Logger) (payload []byte, apiURL string, err error) {
 	key, err := notify.ExtractGroupKey(ctx)
 	if err != nil {
 		return nil, "", err
@@ -113,14 +114,14 @@ func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alert
 		return data, apiURL, err
 	}
 
-	ruleURL := receivers.JoinURLPath(on.tmpl.ExternalURL.String(), "/alerting/list", on.log)
+	ruleURL := receivers.JoinURLPath(on.tmpl.ExternalURL.String(), "/alerting/list", l)
 
 	var tmplErr error
-	tmpl, data := templates.TmplText(ctx, on.tmpl, as, on.log, &tmplErr)
+	tmpl, data := templates.TmplText(ctx, on.tmpl, as, l, &tmplErr)
 
 	message, truncated := receivers.TruncateInRunes(tmpl(on.settings.Message), opsGenieMaxMessageLenRunes)
 	if truncated {
-		on.log.Warn("Truncated message", "alert", key, "max_runes", opsGenieMaxMessageLenRunes)
+		level.Warn(l).Log("msg", "truncated message", "alert", key, "max_runes", opsGenieMaxMessageLenRunes)
 	}
 
 	description := tmpl(on.settings.Description)
@@ -148,7 +149,7 @@ func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alert
 
 	// Check for templating errors
 	if tmplErr != nil {
-		on.log.Warn("failed to template Opsgenie message", "error", tmplErr.Error())
+		level.Warn(l).Log("msg", "failed to template Opsgenie message", "err", tmplErr.Error())
 		tmplErr = nil
 	}
 
@@ -159,7 +160,7 @@ func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alert
 			details[k] = v
 		}
 		var imageUrls []string
-		_ = images.WithStoredImages(ctx, on.log, on.images,
+		_ = images.WithStoredImages(ctx, l, on.images,
 			func(_ int, image images.Image) error {
 				if len(image.URL) == 0 {
 					return nil
@@ -192,7 +193,7 @@ func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alert
 		}
 
 		if responder == (opsGenieCreateMessageResponder{}) {
-			on.log.Warn("templates in the responder were expanded to empty responder. Skipping it", "idx", idx)
+			level.Warn(l).Log("msg", "templates in the responder were expanded to empty responder. Skipping it", "idx", idx)
 			// Filter out empty responders. This is useful if you want to fill
 			// responders dynamically from alert's common labels.
 			continue
@@ -212,7 +213,7 @@ func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alert
 				teamResponders = append(teamResponders, newResponder)
 			}
 			if len(teamResponders) == 0 {
-				on.log.Warn("teams responder were expanded to 0 team responders. Skipping it", "idx", idx)
+				level.Warn(l).Log("msg", "teams responder were expanded to 0 team responders. Skipping it", "idx", idx)
 			}
 			responders = append(responders, teamResponders...)
 			continue
@@ -233,7 +234,7 @@ func (on *Notifier) buildOpsgenieMessage(ctx context.Context, alerts model.Alert
 
 	apiURL = tmpl(on.settings.APIUrl)
 	if tmplErr != nil {
-		on.log.Warn("failed to template Opsgenie URL", "error", tmplErr.Error(), "fallback", on.settings.APIUrl)
+		level.Warn(l).Log("msg", "failed to template Opsgenie URL", "err", tmplErr.Error(), "fallback", on.settings.APIUrl)
 		apiURL = on.settings.APIUrl
 	}
 

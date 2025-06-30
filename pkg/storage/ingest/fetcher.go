@@ -16,13 +16,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/instrument"
-	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kotel"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -52,6 +52,9 @@ type fetcher interface {
 	// You should use that when doing something specific to a tenant or a
 	// record and use the returned context when doing something that is common to all records.
 	PollFetches(context.Context) (kgo.Fetches, context.Context)
+
+	// Start starts the fetcher.
+	Start(ctx context.Context)
 
 	// Stop stops the fetcher.
 	Stop()
@@ -138,7 +141,7 @@ type fetchResult struct {
 	ctx          context.Context
 	fetchedBytes int
 
-	waitingToBePickedUpFromOrderedFetchesSpan opentracing.Span
+	waitingToBePickedUpFromOrderedFetchesSpan trace.Span
 }
 
 func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) {
@@ -183,14 +186,14 @@ func (fr *fetchResult) logCompletedFetch(fetchStartTime time.Time, w fetchWant) 
 }
 
 func (fr *fetchResult) startWaitingForConsumption() {
-	fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.waitingForConsumption")
+	fr.ctx, fr.waitingToBePickedUpFromOrderedFetchesSpan = tracer.Start(fr.ctx, "fetchResult.waitingForConsumption")
 }
 
 func (fr *fetchResult) finishWaitingForConsumption() {
 	if fr.waitingToBePickedUpFromOrderedFetchesSpan == nil {
-		fr.waitingToBePickedUpFromOrderedFetchesSpan, fr.ctx = opentracing.StartSpanFromContext(fr.ctx, "fetchResult.noWaitingForConsumption")
+		fr.ctx, fr.waitingToBePickedUpFromOrderedFetchesSpan = tracer.Start(fr.ctx, "fetchResult.noWaitingForConsumption")
 	}
-	fr.waitingToBePickedUpFromOrderedFetchesSpan.Finish()
+	fr.waitingToBePickedUpFromOrderedFetchesSpan.End()
 }
 
 // Merge merges older with into fr. Merge keeps most of the fields of fr and assumes they
@@ -265,7 +268,9 @@ type concurrentFetchers struct {
 	orderedFetches chan fetchResult
 
 	lastReturnedOffset int64
-	startOffsets       *genericOffsetReader[int64]
+	startOffset        int64
+	startConcurrency   int
+	startOffsetsReader *genericOffsetReader[int64]
 
 	// fetchBackoffConfig is the config to use for the backoff in case of Fetch errors.
 	// We set it here so that tests can override it run faster.
@@ -334,7 +339,9 @@ func newConcurrentFetchers(
 		metrics:                 metrics,
 		minBytesWaitTime:        minBytesWaitTime,
 		lastReturnedOffset:      startOffset - 1,
-		startOffsets:            startOffsetsReader,
+		startOffset:             startOffset,
+		startConcurrency:        concurrency,
+		startOffsetsReader:      startOffsetsReader,
 		trackCompressedBytes:    trackCompressedBytes,
 		maxBufferedBytesLimit:   maxBufferedBytesLimit,
 		tracer:                  recordsTracer(),
@@ -355,9 +362,6 @@ func newConcurrentFetchers(
 	}
 	f.topicID = topics[topic].ID
 
-	f.wg.Add(1)
-	go f.start(ctx, startOffset, concurrency)
-
 	return f, nil
 }
 
@@ -373,6 +377,12 @@ func (r *concurrentFetchers) BufferedBytes() int64 {
 
 func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
+}
+
+// Start implements fetcher.
+func (r *concurrentFetchers) Start(ctx context.Context) {
+	r.wg.Add(1)
+	go r.start(ctx, r.startOffset, r.startConcurrency)
 }
 
 // Stop implements fetcher.
@@ -539,8 +549,11 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 		return newErrorFetchResult(ctx, r.partitionID, errUnknownPartitionLeader)
 	}
 
-	// Build and send the Fetch request to the leader broker.
+	// Build the Fetch request.
 	req := r.buildFetchRequest(fw, leaderEpoch)
+	r.metrics.fetchMaxBytes.Observe(float64(req.MaxBytes))
+
+	// Send the Fetch request to the leader broker.
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -605,7 +618,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		return newErrorFetchResult(ctx, r.partitionID, fmt.Errorf("fetch request failed with error: %w", kerr.ErrorForCode(code)))
 	}
 
-	parseOptions := kgo.ProcessFetchPartitionOptions{
+	parseOptions := kgo.ProcessFetchPartitionOpts{
 		KeepControlRecords: false,
 		Offset:             startOffset,
 		IsolationLevel:     kgo.ReadUncommitted(), // we don't produce in transactions, but leaving this here so it's explicit.
@@ -618,7 +631,7 @@ func (r *concurrentFetchers) parseFetchResponse(ctx context.Context, startOffset
 		r.metrics.kprom.OnFetchBatchRead(brokerMeta, r.topicName, r.partitionID, m)
 	}
 	rawPartitionResp := resp.Topics[0].Partitions[0]
-	partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, observeMetrics)
+	partition, _ := kgo.ProcessFetchPartition(parseOptions, &rawPartitionResp, kgo.DefaultDecompressor( /* TODO: use pool? */ ), observeMetrics)
 	if partition.Err != nil {
 		// This should never happen because we already check the ErrorCode above, but we keep this double check
 		// in case Err will be set because of other reasons by kgo.ProcessRespPartition() in the future.
@@ -656,7 +669,7 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 
 	for w := range wants {
 		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
-		wantSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch")
+		wantSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch")
 		wantSpan.SetTag("start_offset", w.startOffset)
 		wantSpan.SetTag("end_offset", w.endOffset)
 
@@ -666,13 +679,13 @@ func (r *concurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 		var bufferedResult fetchResult
 
 		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			attemptSpan, ctx := spanlogger.NewWithLogger(ctx, logger, "concurrentFetcher.fetch.attempt")
+			attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
 			attemptSpan.SetTag("attempt", attempt)
 
 			// Run a single Fetch request.
 			if res := r.fetchSingle(ctx, w); res.Err != nil {
 				// We got an error. We handle it and then discard this fetch result content.
-				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsets, r.client, attemptSpan)
+				w = handleKafkaFetchErr(res.Err, w, errBackoff, r.startOffsetsReader, r.client, attemptSpan)
 			} else {
 				// We increase the count of buffered records as soon as we fetch them.
 				r.bufferedFetchedRecords.Add(int64(len(res.Records)))
