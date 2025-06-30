@@ -77,7 +77,16 @@ func TestVectorSelector_Describe(t *testing.T) {
 					ReturnSampleTimestamps: true,
 				},
 			},
-			expected: `{__name__="foo"} (return sample timestamps)`,
+			expected: `{__name__="foo"}, return sample timestamps`,
+		},
+		"one matcher, skip histogram buckets enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:             singleMatcher,
+					SkipHistogramBuckets: true,
+				},
+			},
+			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
 	}
 
@@ -280,6 +289,27 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 					},
 					ExpressionPosition:     PositionRange{Start: 1, End: 2},
 					ReturnSampleTimestamps: true,
+				},
+			},
+			expectEquivalent: false,
+		},
+
+		"one with skipping histogram buckets enabled, one without": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					SkipHistogramBuckets: true,
+					ExpressionPosition:   PositionRange{Start: 1, End: 2},
 				},
 			},
 			expectEquivalent: false,

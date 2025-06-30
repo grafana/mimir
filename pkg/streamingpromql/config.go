@@ -25,10 +25,12 @@ type EngineOpts struct {
 	EagerLoadSelectors bool `yaml:"-"`
 
 	EnableCommonSubexpressionElimination bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
+	EnableSkippingHistogramDecoding      bool `yaml:"enable_skipping_histogram_decoding" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
+	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
 }
 
 func NewTestEngineOpts() EngineOpts {
@@ -46,5 +48,6 @@ func NewTestEngineOpts() EngineOpts {
 		Pedantic: true,
 
 		EnableCommonSubexpressionElimination: true,
+		EnableSkippingHistogramDecoding:      true,
 	}
 }
