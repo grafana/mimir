@@ -345,7 +345,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250628202857-d5733a04a538
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250630073342-cb2ea4c6e5ec
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
