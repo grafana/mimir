@@ -671,15 +671,36 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		metricName := firstSeries.Metric.Get(labels.MetricName)
 		return enh.Out, annotations.New().Add(annotations.NewMixedFloatsHistogramsWarning(metricName, args[0].PositionRange()))
 	}
+	// For the average calculation of histograms, we use incremental mean
+	// calculation without the help of Kahan summation (but this should
+	// change, see https://github.com/prometheus/prometheus/issues/14105 ).
+	// For floats, we improve the accuracy with the help of Kahan summation.
+	// For a while, we assumed that incremental mean calculation combined
+	// with Kahan summation (see
+	// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
+	// for inspiration) is generally the preferred solution. However, it
+	// then turned out that direct mean calculation (still in combination
+	// with Kahan summation) is often more accurate. See discussion in
+	// https://github.com/prometheus/prometheus/issues/16714 . The problem
+	// with the direct mean calculation is that it can overflow float64 for
+	// inputs on which the incremental mean calculation works just fine. Our
+	// current approach is therefore to use direct mean calculation as long
+	// as we do not overflow (or underflow) the running sum. Once the latter
+	// would happen, we switch to incremental mean calculation. This seems
+	// to work reasonably well, but note that a deeper understanding would
+	// be needed to find out if maybe an earlier switch to incremental mean
+	// calculation would be better in terms of accuracy. Also, we could
+	// apply a number of additional means to improve the accuracy, like
+	// processing the values in a particular order. For now, we decided that
+	// the current implementation is accurate enough for practical purposes.
 	if len(firstSeries.Floats) == 0 {
 		// The passed values only contain histograms.
 		vec, err := aggrHistOverTime(vals, enh, func(s Series) (*histogram.FloatHistogram, error) {
-			count := 1
 			mean := s.Histograms[0].H.Copy()
-			for _, h := range s.Histograms[1:] {
-				count++
-				left := h.H.Copy().Div(float64(count))
-				right := mean.Copy().Div(float64(count))
+			for i, h := range s.Histograms[1:] {
+				count := float64(i + 2)
+				left := h.H.Copy().Div(count)
+				right := mean.Copy().Div(count)
 				toAdd, err := left.Sub(right)
 				if err != nil {
 					return mean, err
@@ -703,51 +724,34 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}
 	return aggrOverTime(vals, enh, func(s Series) float64 {
 		var (
-			sum, mean, count, kahanC float64
-			incrementalMean          bool
+			// Pre-set the 1st sample to start the loop with the 2nd.
+			sum, count      = s.Floats[0].F, 1.
+			mean, kahanC    float64
+			incrementalMean bool
 		)
-		for _, f := range s.Floats {
-			count++
+		for i, f := range s.Floats[1:] {
+			count = float64(i + 2)
 			if !incrementalMean {
 				newSum, newC := kahanSumInc(f.F, sum, kahanC)
 				// Perform regular mean calculation as long as
-				// the sum doesn't overflow and (in any case)
-				// for the first iteration (even if we start
-				// with ±Inf) to not run into division-by-zero
-				// problems below.
-				if count == 1 || !math.IsInf(newSum, 0) {
+				// the sum doesn't overflow.
+				if !math.IsInf(newSum, 0) {
 					sum, kahanC = newSum, newC
 					continue
 				}
-				// Handle overflow by reverting to incremental calculation of the mean value.
+				// Handle overflow by reverting to incremental
+				// calculation of the mean value.
 				incrementalMean = true
 				mean = sum / (count - 1)
-				kahanC /= count - 1
+				kahanC /= (count - 1)
 			}
-			if math.IsInf(mean, 0) {
-				if math.IsInf(f.F, 0) && (mean > 0) == (f.F > 0) {
-					// The `mean` and `f.F` values are `Inf` of the same sign.  They
-					// can't be subtracted, but the value of `mean` is correct
-					// already.
-					continue
-				}
-				if !math.IsInf(f.F, 0) && !math.IsNaN(f.F) {
-					// At this stage, the mean is an infinite. If the added
-					// value is neither an Inf or a Nan, we can keep that mean
-					// value.
-					// This is required because our calculation below removes
-					// the mean value, which would look like Inf += x - Inf and
-					// end up as a NaN.
-					continue
-				}
-			}
-			correctedMean := mean + kahanC
-			mean, kahanC = kahanSumInc(f.F/count-correctedMean/count, mean, kahanC)
+			q := (count - 1) / count
+			mean, kahanC = kahanSumInc(f.F/count, q*mean, q*kahanC)
 		}
 		if incrementalMean {
 			return mean + kahanC
 		}
-		return (sum + kahanC) / count
+		return sum/count + kahanC/count
 	}), nil
 }
 
@@ -772,7 +776,7 @@ func funcLastOverTime(vals []parser.Value, _ parser.Expressions, enh *EvalNodeHe
 		h = el.Histograms[len(el.Histograms)-1]
 	}
 
-	if h.H == nil || h.T < f.T {
+	if h.H == nil || (len(el.Floats) > 0 && h.T < f.T) {
 		return append(enh.Out, Sample{
 			Metric: el.Metric,
 			F:      f.F,
@@ -1389,9 +1393,11 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
+		hf, hfAnnos := HistogramFraction(lower, upper, sample.H, sample.Metric.Get(model.MetricNameLabel), args[0].PositionRange())
+		annos.Merge(hfAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        HistogramFraction(lower, upper, sample.H),
+			F:        hf,
 			DropName: true,
 		})
 	}
@@ -1435,9 +1441,11 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		if !enh.enableDelayedNameRemoval {
 			sample.Metric = sample.Metric.DropReserved(schema.IsMetadataLabel)
 		}
+		hq, hqAnnos := HistogramQuantile(q, sample.H, sample.Metric.Get(model.MetricNameLabel), args[0].PositionRange())
+		annos.Merge(hqAnnos)
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        HistogramQuantile(q, sample.H),
+			F:        hq,
 			DropName: true,
 		})
 	}
@@ -1568,7 +1576,7 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
-	if !ev.nameValidationScheme.IsValidLabelName(dst) {
+	if !model.LabelName(dst).IsValid(ev.validationScheme) {
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
 
@@ -1616,12 +1624,12 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 	)
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
-		if !ev.nameValidationScheme.IsValidLabelName(src) {
+		if !model.LabelName(src).IsValid(ev.validationScheme) {
 			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
-	if !ev.nameValidationScheme.IsValidLabelName(dst) {
+	if !model.LabelName(dst).IsValid(ev.validationScheme) {
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 

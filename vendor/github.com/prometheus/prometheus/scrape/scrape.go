@@ -46,7 +46,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/logging"
@@ -104,7 +103,7 @@ type scrapePool struct {
 	scrapeFailureLogger    FailureLogger
 	scrapeFailureLoggerMtx sync.RWMutex
 
-	validationScheme validation.NamingScheme
+	validationScheme model.ValidationScheme
 	escapingScheme   model.EscapingScheme
 }
 
@@ -150,12 +149,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
-	validationScheme := cfg.MetricNameValidationScheme
-	if err := validationScheme.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid metric name validation scheme: %w", err)
+	if cfg.MetricNameValidationScheme == model.UnsetValidation {
+		return nil, errors.New("cfg.MetricNameValidationScheme must be set in scrape configuration")
 	}
-	var escapingScheme model.EscapingScheme
-	escapingScheme, err = model.ToEscapingScheme(cfg.MetricNameEscapingScheme)
+	escapingScheme, err := config.ToEscapingScheme(cfg.MetricNameEscapingScheme, cfg.MetricNameValidationScheme)
 	if err != nil {
 		return nil, fmt.Errorf("invalid metric name escaping scheme, %w", err)
 	}
@@ -326,11 +323,10 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.config = cfg
 	oldClient := sp.client
 	sp.client = client
-	validationScheme := cfg.MetricNameValidationScheme
-	if err := validationScheme.Validate(); err != nil {
-		return fmt.Errorf("invalid metric name validation scheme: %w", err)
+	if cfg.MetricNameValidationScheme == model.UnsetValidation {
+		return errors.New("cfg.MetricNameValidationScheme must be set in scrape configuration")
 	}
-	sp.validationScheme = validationScheme
+	sp.validationScheme = cfg.MetricNameValidationScheme
 	var escapingScheme model.EscapingScheme
 	escapingScheme, err = model.ToEscapingScheme(cfg.MetricNameEscapingScheme)
 	if err != nil {
@@ -927,7 +923,7 @@ type scrapeLoop struct {
 	timeout                  time.Duration
 	alwaysScrapeClassicHist  bool
 	convertClassicHistToNHCB bool
-	validationScheme         validation.NamingScheme
+	validationScheme         model.ValidationScheme
 	escapingScheme           model.EscapingScheme
 	fallbackScrapeProtocol   string
 
@@ -1249,7 +1245,7 @@ func newScrapeLoop(ctx context.Context,
 	passMetadataInContext bool,
 	metrics *scrapeMetrics,
 	skipOffsetting bool,
-	validationScheme validation.NamingScheme,
+	validationScheme model.ValidationScheme,
 	escapingScheme model.EscapingScheme,
 	fallbackScrapeProtocol string,
 ) *scrapeLoop {

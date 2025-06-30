@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
@@ -49,6 +49,11 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 			grouping:             []string{"env"},
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "foo", "bar"),
 			expectedOutputSeries: labels.FromStrings("env", "prod", "value", "123"),
+		},
+		"grouping with 'by', single utf8 grouping label, input does have grouping label": {
+			grouping:             []string{"env😀"},
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env😀", "prod", "foo", "bar"),
+			expectedOutputSeries: labels.FromStrings("env😀", "prod", "value", "123"),
 		},
 		"grouping with 'by', multiple grouping labels, input has only metric name": {
 			grouping:             []string{"cluster", "env"},
@@ -108,6 +113,12 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 			grouping:             []string{"env"},
 			without:              true,
 			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env", "prod", "a-label", "a-value", "f-label", "f-value"),
+			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "f-label", "f-value", "value", "123"),
+		},
+		"grouping with 'without', single utf8 grouping label, input does have grouping label": {
+			grouping:             []string{"env😀"},
+			without:              true,
+			inputSeries:          labels.FromStrings(labels.MetricName, "my_metric", "env😀", "prod", "a-label", "a-value", "f-label", "f-value"),
 			expectedOutputSeries: labels.FromStrings("a-label", "a-value", "f-label", "f-value", "value", "123"),
 		},
 		"grouping with 'without', multiple grouping labels, input has only metric name": {
@@ -231,7 +242,7 @@ func TestCountValues_GroupLabelling(t *testing.T) {
 				testCase.without,
 				memoryConsumptionTracker,
 				posrange.PositionRange{},
-				validation.LegacyNamingScheme,
+				model.UTF8Validation,
 			)
 
 			metadata, err := aggregator.SeriesMetadata(context.Background())

@@ -22,8 +22,7 @@ import (
 	"unsafe"
 
 	proto "github.com/gogo/protobuf/proto"
-
-	"github.com/prometheus/prometheus/model/validation"
+	"github.com/prometheus/common/model"
 )
 
 type MetricStreamingDecoder struct {
@@ -42,14 +41,17 @@ type MetricStreamingDecoder struct {
 	mData  []byte
 	labels []pos
 
-	namingScheme validation.NamingScheme
+	validationScheme model.ValidationScheme
 }
 
+// Option for the MetricStreamingDecoder.
 type Option func(*MetricStreamingDecoder)
 
-func WithNamingScheme(scheme validation.NamingScheme) Option {
+// WithValidationScheme sets the metric/label name validation scheme. Defaults to
+// UTF8Validation.
+func WithValidationScheme(scheme model.ValidationScheme) Option {
 	return func(m *MetricStreamingDecoder) {
-		m.namingScheme = scheme
+		m.validationScheme = scheme
 	}
 }
 
@@ -64,11 +66,11 @@ func WithNamingScheme(scheme validation.NamingScheme) Option {
 // TODO(bwplotka): io.Reader approach is possible too, but textparse has access to whole scrape for now.
 func NewMetricStreamingDecoder(data []byte, opts ...Option) *MetricStreamingDecoder {
 	msd := &MetricStreamingDecoder{
-		in:           data,
-		MetricFamily: &MetricFamily{},
-		Metric:       &Metric{},
-		metrics:      make([]pos, 0, 100),
-		namingScheme: validation.UTF8NamingScheme,
+		in:               data,
+		MetricFamily:     &MetricFamily{},
+		Metric:           &Metric{},
+		metrics:          make([]pos, 0, 100),
+		validationScheme: model.UTF8Validation,
 	}
 	for _, opt := range opts {
 		opt(msd)
@@ -178,7 +180,7 @@ type scratchBuilder interface {
 // structs tailored for streaming decoding.
 func (m *MetricStreamingDecoder) Label(b scratchBuilder) error {
 	for _, l := range m.labels {
-		if err := parseLabel(m.mData[l.start:l.end], b, m.namingScheme.IsValidLabelName); err != nil {
+		if err := parseLabel(m.mData[l.start:l.end], b, m.validationScheme); err != nil {
 			return err
 		}
 	}
@@ -187,7 +189,7 @@ func (m *MetricStreamingDecoder) Label(b scratchBuilder) error {
 
 // parseLabel is essentially LabelPair.Unmarshal but directly adding into scratch builder
 // and reusing strings.
-func parseLabel(dAtA []byte, b scratchBuilder, validate func(string) bool) error {
+func parseLabel(dAtA []byte, b scratchBuilder, validationScheme model.ValidationScheme) error {
 	var name, value string
 	l := len(dAtA)
 	iNdEx := 0
@@ -248,7 +250,7 @@ func parseLabel(dAtA []byte, b scratchBuilder, validate func(string) bool) error
 				return io.ErrUnexpectedEOF
 			}
 			name = yoloString(dAtA[iNdEx:postIndex])
-			if !validate(name) {
+			if !model.LabelName(name).IsValid(validationScheme) {
 				return fmt.Errorf("invalid label name: %s", name)
 			}
 			iNdEx = postIndex

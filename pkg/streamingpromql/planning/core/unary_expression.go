@@ -73,7 +73,7 @@ func (u *UnaryExpression) OperatorFactory(children []types.Operator, timeRange t
 
 	switch child := children[0].(type) {
 	case types.InstantVectorOperator:
-		functionParams := functions.InstantVectorFunctionOperatorParams{
+		functionParams := &functions.InstantVectorFunctionOperatorParams{
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
 			NameValidationScheme:     params.NameValidationScheme,

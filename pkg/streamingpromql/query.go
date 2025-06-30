@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -47,7 +47,7 @@ type Query struct {
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
 	lookbackDelta            time.Duration
-	nameValidationScheme     validation.NamingScheme
+	nameValidationScheme     model.ValidationScheme
 
 	// Time range of the top-level query.
 	// Subqueries may use a different range.
@@ -61,7 +61,7 @@ type Query struct {
 
 func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, timeRange types.QueryTimeRange, originalExpression string) (*Query, error) {
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0, validation.UTF8NamingScheme)
+		opts = promql.NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -88,7 +88,7 @@ func (e *Engine) newQuery(ctx context.Context, queryable storage.Queryable, opts
 		topLevelQueryTimeRange:   timeRange,
 		lookbackDelta:            lookbackDelta,
 		originalExpression:       originalExpression,
-		nameValidationScheme:     opts.NameValidationScheme(),
+		nameValidationScheme:     opts.ValidationScheme(),
 	}
 
 	return q, nil

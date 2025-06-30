@@ -23,6 +23,8 @@ import (
         "github.com/prometheus/prometheus/model/value"
         "github.com/prometheus/prometheus/model/histogram"
         "github.com/prometheus/prometheus/promql/parser/posrange"
+
+        "github.com/prometheus/common/model"
 )
 
 %}
@@ -376,14 +378,14 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !yylex.(*parser).nameValidationScheme.IsValidLabelName($1.Val) {
+                        if !model.LabelName($1.Val).IsValid(yylex.(*parser).validationScheme) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1
                         }
                 | STRING {
                         unquoted := yylex.(*parser).unquoteString($1.Val)
-                        if !yylex.(*parser).nameValidationScheme.IsValidLabelName(unquoted) {
+                        if !model.LabelName(unquoted).IsValid(yylex.(*parser).validationScheme) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", unquoted)
                         }
                         $$ = $1

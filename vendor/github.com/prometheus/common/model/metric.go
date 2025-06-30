@@ -27,17 +27,15 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	// NameEscapingScheme defines the default way that names will be escaped when
-	// presented to systems that do not support UTF-8 names. If the Content-Type
-	// "escaping" term is specified, that will override this value.
-	// NameEscapingScheme should not be set to the NoEscaping value. That string
-	// is used in content negotiation to indicate that a system supports UTF-8 and
-	// has that feature enabled.
-	NameEscapingScheme = UnderscoreEscaping
-)
+// NameEscapingScheme defines the default way that names will be escaped when
+// presented to systems that do not support UTF-8 names. If the Content-Type
+// "escaping" term is specified, that will override this value.
+// NameEscapingScheme should not be set to the NoEscaping value. That string
+// is used in content negotiation to indicate that a system supports UTF-8 and
+// has that feature enabled.
+var NameEscapingScheme = UnderscoreEscaping
 
-// NameValidationScheme is a Go enum for determining how metric and label names will
+// ValidationScheme is a Go enum for determining how metric and label names will
 // be validated by this library.
 type ValidationScheme int
 
@@ -207,8 +205,7 @@ func (m Metric) FastFingerprint() Fingerprint {
 }
 
 // IsValidMetricName returns true iff name matches the pattern of MetricNameRE
-// for legacy names, and iff it's valid UTF-8 if the UTF8Validation scheme is
-// selected.
+// for legacy names, and iff it's valid UTF-8 if scheme is UTF8Validation.
 func IsValidMetricName(n LabelValue, scheme ValidationScheme) bool {
 	switch scheme {
 	case LegacyValidation:
@@ -219,12 +216,12 @@ func IsValidMetricName(n LabelValue, scheme ValidationScheme) bool {
 		}
 		return utf8.ValidString(string(n))
 	default:
-		panic(fmt.Sprintf("Invalid name validation scheme requested: %d", scheme))
+		panic(fmt.Sprintf("Invalid name validation scheme requested: %s", scheme.String()))
 	}
 }
 
 // IsValidLegacyMetricName is similar to IsValidMetricName but always uses the
-// legacy validation scheme regardless of the value of NameValidationScheme.
+// legacy validation scheme.
 // This function, however, does not use MetricNameRE for the check but a much
 // faster hardcoded implementation.
 func IsValidLegacyMetricName(n string) bool {

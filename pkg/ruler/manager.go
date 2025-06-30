@@ -439,9 +439,9 @@ func (r *DefaultMultiTenantManager) ValidateRuleGroup(userID string, g rulefmt.R
 		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead", g.Name))
 	}
 
-	namingScheme := r.limits.NameValidationScheme(userID)
+	validationScheme := r.limits.ValidationScheme(userID)
 	for i, r := range g.Rules {
-		for _, err := range r.Validate(node.Rules[i], namingScheme) {
+		for _, err := range r.Validate(node.Rules[i], validationScheme) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

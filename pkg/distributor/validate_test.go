@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	prom_validation "github.com/prometheus/prometheus/model/validation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	grpcstatus "google.golang.org/grpc/status"
@@ -38,7 +37,7 @@ type validateLabelsCfg struct {
 	maxLabelNamesPerInfoSeries int
 	maxLabelNameLength         int
 	maxLabelValueLength        int
-	namingScheme               prom_validation.NamingScheme
+	validationScheme           model.ValidationScheme
 }
 
 func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
@@ -57,8 +56,8 @@ func (v validateLabelsCfg) MaxLabelValueLength(_ string) int {
 	return v.maxLabelValueLength
 }
 
-func (v validateLabelsCfg) NameValidationScheme(_ string) prom_validation.NamingScheme {
-	return v.namingScheme
+func (v validateLabelsCfg) ValidationScheme(_ string) model.ValidationScheme {
+	return v.validationScheme
 }
 
 type validateMetadataCfg struct {
@@ -84,13 +83,13 @@ func TestValidateLabels(t *testing.T) {
 	legacyConfig := validateLabelsCfg{
 		maxLabelNamesPerSeries:     3,
 		maxLabelNamesPerInfoSeries: 4,
-		maxLabelNameLength:         24,
-		maxLabelValueLength:        24,
-		namingScheme:               prom_validation.LegacyNamingScheme,
+		maxLabelNameLength:         25,
+		maxLabelValueLength:        25,
+		validationScheme:           model.LegacyValidation,
 	}
 
 	utf8Config := legacyConfig
-	utf8Config.namingScheme = prom_validation.UTF8NamingScheme
+	utf8Config.validationScheme = model.UTF8Validation
 
 	limits := catestutils.NewMockCostAttributionLimits(0, userID, "team")
 	careg := prometheus.NewRegistry()
@@ -503,6 +502,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	cfg.maxLabelNameLength = 10
 	cfg.maxLabelNamesPerSeries = 10
 	cfg.maxLabelValueLength = 10
+	cfg.validationScheme = model.LegacyValidation
 
 	userID := "testUser"
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{

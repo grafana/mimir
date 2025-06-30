@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+
+	"github.com/prometheus/common/model"
 )
 
 type yySymType struct {
@@ -1325,7 +1327,7 @@ yydefault:
 	case 59:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
-			if !yylex.(*parser).nameValidationScheme.IsValidLabelName(yyDollar[1].item.Val) {
+			if !model.LabelName(yyDollar[1].item.Val).IsValid(yylex.(*parser).validationScheme) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", yyDollar[1].item.Val)
 			}
 			yyVAL.item = yyDollar[1].item
@@ -1334,7 +1336,7 @@ yydefault:
 		yyDollar = yyS[yypt-1 : yypt+1]
 		{
 			unquoted := yylex.(*parser).unquoteString(yyDollar[1].item.Val)
-			if !yylex.(*parser).nameValidationScheme.IsValidLabelName(unquoted) {
+			if !model.LabelName(unquoted).IsValid(yylex.(*parser).validationScheme) {
 				yylex.(*parser).addParseErrf(yyDollar[1].item.PositionRange(), "invalid label name for grouping: %q", unquoted)
 			}
 			yyVAL.item = yyDollar[1].item

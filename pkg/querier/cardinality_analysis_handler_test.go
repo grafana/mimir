@@ -705,6 +705,10 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				url:                  "/label_values",
 				expectedErrorMessage: "'label_names[]' param is required",
 			},
+			"label_names param is invalid": {
+				url:                  "/label_values?label_names[]=\xff\xfe",
+				expectedErrorMessage: "invalid 'label_names' param '\xff\xfe'",
+			},
 			"multiple selector params are provided": {
 				url:                  "/label_values?label_names[]=hello&selector=foo&selector=bar",
 				expectedErrorMessage: "multiple 'selector' params are not allowed",

@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/model/validation"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
@@ -1380,10 +1379,10 @@ func (o *Overrides) SubquerySpinOffEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).SubquerySpinOffEnabled
 }
 
-// NameValidationScheme returns the validation scheme to use for a particular tenant.
-func (o *Overrides) NameValidationScheme(_ string) validation.NamingScheme {
+// ValidationScheme returns the validation scheme to use for a particular tenant.
+func (o *Overrides) ValidationScheme(_ string) model.ValidationScheme {
 	// TODO(juliusmh): make this configurable by tenant
-	return validation.LegacyNamingScheme
+	return model.LegacyValidation
 }
 
 // CardinalityAnalysisMaxResults returns the maximum number of results that

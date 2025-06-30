@@ -85,7 +85,7 @@ func (f *FunctionCall) ChildrenLabels() []string {
 func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	instantVectorFactory, ok := functions.InstantVectorFunctionOperatorFactories[f.FunctionName]
 	if ok {
-		functionParams := functions.InstantVectorFunctionOperatorParams{
+		functionParams := &functions.InstantVectorFunctionOperatorParams{
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
 			NameValidationScheme:     params.NameValidationScheme,

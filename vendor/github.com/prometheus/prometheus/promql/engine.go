@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -152,17 +151,17 @@ type PrometheusQueryOpts struct {
 	enablePerStepStats bool
 	// Lookback delta duration for this query.
 	lookbackDelta time.Duration
-	// nameValidationScheme for validating metric/label names
-	nameValidationScheme validation.NamingScheme
+	// validationScheme for metric/label names.
+	validationScheme model.ValidationScheme
 }
 
 var _ QueryOpts = &PrometheusQueryOpts{}
 
-func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration, namingScheme validation.NamingScheme) QueryOpts {
+func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration, validationScheme model.ValidationScheme) QueryOpts {
 	return &PrometheusQueryOpts{
-		enablePerStepStats:   enablePerStepStats,
-		lookbackDelta:        lookbackDelta,
-		nameValidationScheme: namingScheme,
+		enablePerStepStats: enablePerStepStats,
+		lookbackDelta:      lookbackDelta,
+		validationScheme:   validationScheme,
 	}
 }
 
@@ -174,8 +173,8 @@ func (p *PrometheusQueryOpts) LookbackDelta() time.Duration {
 	return p.lookbackDelta
 }
 
-func (p *PrometheusQueryOpts) NameValidationScheme() validation.NamingScheme {
-	return p.nameValidationScheme
+func (p *PrometheusQueryOpts) ValidationScheme() model.ValidationScheme {
+	return p.validationScheme
 }
 
 type QueryOpts interface {
@@ -183,8 +182,8 @@ type QueryOpts interface {
 	EnablePerStepStats() bool
 	// Lookback delta duration for this query.
 	LookbackDelta() time.Duration
-	// NameValidationScheme to use
-	NameValidationScheme() validation.NamingScheme
+	// ValidationScheme to use for metric and label names.
+	ValidationScheme() model.ValidationScheme
 }
 
 // query implements the Query interface.
@@ -202,8 +201,9 @@ type query struct {
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
-	cancel               func()
-	nameValidationScheme validation.NamingScheme
+	cancel func()
+	// validationScheme used for metric and label names.
+	validationScheme model.ValidationScheme
 
 	// The engine against which the query is executed.
 	ng *Engine
@@ -530,9 +530,8 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
-	// Default to empty QueryOpts if not provided.
 	if opts == nil {
-		opts = NewPrometheusQueryOpts(false, 0, validation.UTF8NamingScheme)
+		opts = NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -547,13 +546,13 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
-		q:                    qs,
-		stmt:                 es,
-		ng:                   ng,
-		stats:                stats.NewQueryTimers(),
-		sampleStats:          stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
-		queryable:            q,
-		nameValidationScheme: opts.NameValidationScheme(),
+		q:                qs,
+		stmt:             es,
+		ng:               ng,
+		stats:            stats.NewQueryTimers(),
+		sampleStats:      stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
+		queryable:        q,
+		validationScheme: opts.ValidationScheme(),
 	}
 	return &es.Expr, qry
 }
@@ -758,7 +757,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
-			nameValidationScheme:     query.nameValidationScheme,
+			validationScheme:         query.validationScheme,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -817,9 +816,9 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
-		querier:                  querier,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
-		nameValidationScheme:     query.nameValidationScheme,
+		querier:                  querier,
+		validationScheme:         query.validationScheme,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1094,7 +1093,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
-	nameValidationScheme     validation.NamingScheme
+	validationScheme         model.ValidationScheme
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1694,7 +1693,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if e.Op == parser.COUNT_VALUES {
 			valueLabel := param.(*parser.StringLiteral)
-			if !ev.nameValidationScheme.IsValidLabelName(valueLabel.Val) {
+			if !model.LabelName(valueLabel.Val).IsValid(ev.validationScheme) {
 				ev.errorf("invalid label name %s", valueLabel)
 			}
 			if !e.Without {
@@ -2100,7 +2099,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
-			nameValidationScheme:     ev.nameValidationScheme,
+			validationScheme:         ev.validationScheme,
 		}
 
 		if e.Step != 0 {
@@ -2147,7 +2146,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
-			nameValidationScheme:     ev.nameValidationScheme,
+			validationScheme:         ev.validationScheme,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples
@@ -3122,6 +3121,38 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			}
 
 		case parser.AVG:
+			// For the average calculation of histograms, we use
+			// incremental mean calculation without the help of
+			// Kahan summation (but this should change, see
+			// https://github.com/prometheus/prometheus/issues/14105
+			// ). For floats, we improve the accuracy with the help
+			// of Kahan summation. For a while, we assumed that
+			// incremental mean calculation combined with Kahan
+			// summation (see
+			// https://stackoverflow.com/questions/61665473/is-it-beneficial-for-precision-to-calculate-the-incremental-mean-average
+			// for inspiration) is generally the preferred solution.
+			// However, it then turned out that direct mean
+			// calculation (still in combination with Kahan
+			// summation) is often more accurate. See discussion in
+			// https://github.com/prometheus/prometheus/issues/16714
+			// . The problem with the direct mean calculation is
+			// that it can overflow float64 for inputs on which the
+			// incremental mean calculation works just fine. Our
+			// current approach is therefore to use direct mean
+			// calculation as long as we do not overflow (or
+			// underflow) the running sum. Once the latter would
+			// happen, we switch to incremental mean calculation.
+			// This seems to work reasonably well, but note that a
+			// deeper understanding would be needed to find out if
+			// maybe an earlier switch to incremental mean
+			// calculation would be better in terms of accuracy.
+			// Also, we could apply a number of additional means to
+			// improve the accuracy, like processing the values in a
+			// particular order. For now, we decided that the
+			// current implementation is accurate enough for
+			// practical purposes, in particular given that changing
+			// the order of summation would be hard, given how the
+			// PromQL engine implements aggregations.
 			group.groupCount++
 			if h != nil {
 				group.hasHistogram = true
@@ -3162,29 +3193,11 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.floatMean = group.floatValue / (group.groupCount - 1)
 					group.floatKahanC /= group.groupCount - 1
 				}
-				if math.IsInf(group.floatMean, 0) {
-					if math.IsInf(f, 0) && (group.floatMean > 0) == (f > 0) {
-						// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
-						// can't be subtracted, but the value of `floatMean` is correct
-						// already.
-						break
-					}
-					if !math.IsInf(f, 0) && !math.IsNaN(f) {
-						// At this stage, the mean is an infinite. If the added
-						// value is neither an Inf or a Nan, we can keep that mean
-						// value.
-						// This is required because our calculation below removes
-						// the mean value, which would look like Inf += x - Inf and
-						// end up as a NaN.
-						break
-					}
-				}
-				currentMean := group.floatMean + group.floatKahanC
+				q := (group.groupCount - 1) / group.groupCount
 				group.floatMean, group.floatKahanC = kahanSumInc(
-					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-					f/group.groupCount-currentMean/group.groupCount,
-					group.floatMean,
-					group.floatKahanC,
+					f/group.groupCount,
+					q*group.floatMean,
+					q*group.floatKahanC,
 				)
 			}
 
@@ -3260,7 +3273,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			case aggr.incrementalMean:
 				aggr.floatValue = aggr.floatMean + aggr.floatKahanC
 			default:
-				aggr.floatValue = (aggr.floatValue + aggr.floatKahanC) / aggr.groupCount
+				aggr.floatValue = aggr.floatValue/aggr.groupCount + aggr.floatKahanC/aggr.groupCount
 			}
 
 		case parser.COUNT:
