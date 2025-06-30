@@ -16,13 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const (
-	// If a ruler is unable to heartbeat the ring, its better to quickly remove it and resume
-	// the evaluation of all rules since the worst case scenario is that some rulers will
-	// receive duplicate/out-of-order sample errors.
-	ringAutoForgetUnhealthyPeriods = 2
-)
-
 var (
 	// RuleEvalRingOp is the operation used for distributing rule groups between rulers.
 	RuleEvalRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceState) bool {

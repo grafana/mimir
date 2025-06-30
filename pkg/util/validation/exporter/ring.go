@@ -37,7 +37,7 @@ const (
 // ringOp is used as an instance state filter when obtaining instances from the
 // ring. Instances in the LEAVING state are included to help minimise the number
 // of leader changes during rollout and scaling operations. These instances will
-// be forgotten after ringAutoForgetUnhealthyPeriods (see
+// be forgotten after AutoForgetUnhealthyPeriods (see
 // `KeepInstanceInTheRingOnShutdown`).
 var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 
