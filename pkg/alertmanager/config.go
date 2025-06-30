@@ -88,18 +88,20 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 
 	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword:  string(g.SMTPAuthPassword),
-		AuthUser:      g.SMTPAuthUsername,
-		CertFile:      g.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes:  []string{"text/html"},
-		EhloIdentity:  g.SMTPHello,
-		ExternalURL:   externalURL.String(),
-		FromAddress:   g.SMTPFrom,
-		FromName:      "Grafana",
-		Host:          g.SMTPSmarthost.String(),
-		KeyFile:       g.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:    !g.SMTPRequireTLS,
-		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
+		AuthPassword: string(g.SMTPAuthPassword),
+		AuthUser:     g.SMTPAuthUsername,
+		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes: []string{"text/html"},
+		EhloIdentity: g.SMTPHello,
+		ExternalURL:  externalURL.String(),
+		FromAddress:  g.SMTPFrom,
+		FromName:     "Grafana",
+		Host:         g.SMTPSmarthost.String(),
+		KeyFile:      g.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:   !g.SMTPRequireTLS,
+		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
+
+		// TODO: Remove once it's sent in SmtpConfig.
 		StaticHeaders: gCfg.StaticHeaders,
 	}
 
