@@ -43,6 +43,8 @@ var (
 type RingConfig struct {
 	Common util.CommonRingConfig `yaml:",inline"`
 
+	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
+
 	NumTokens int `yaml:"num_tokens" category:"advanced"`
 
 	// Used for testing
@@ -55,6 +57,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	const kvStorePrefix = "rulers/"
 	const componentPlural = "rulers"
 	cfg.Common.RegisterFlags(flagNamePrefix, kvStorePrefix, componentPlural, f, logger)
+
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 2, "How many consecutive timeout periods an unhealthy instance in the ring will be automatically removed after. Set to 0 to disable auto-forget.")
 
 	f.IntVar(&cfg.NumTokens, flagNamePrefix+"num-tokens", 128, "Number of tokens for each ruler.")
 }

@@ -29,10 +29,13 @@ const (
 // to the user.
 type RingConfig struct {
 	Common util.CommonRingConfig `yaml:",inline"`
+
+	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
 }
 
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.Common.RegisterFlags("distributor.ring.", "collectors/", "distributors", f, logger)
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "distributor.ring.auto-forget-unhealthy-periods", 10, "How many consecutive timeout periods an unhealthy instance in the ring will be automatically removed after. Set to 0 to disable auto-forget.")
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {

@@ -30,10 +30,6 @@ const (
 	// only one token is needed.
 	ringNumTokens = 1
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an
-	// unhealthy instance in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 4
-
 	// leaderToken is the special token that makes the owner the ring leader.
 	leaderToken = 0
 )
@@ -56,6 +52,8 @@ type RingConfig struct {
 	// Ring stability (used to decrease token reshuffling on scale-up).
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
 	WaitStabilityMaxDuration time.Duration `yaml:"wait_stability_max_duration" category:"advanced"`
+
+	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
 }
 
 // RegisterFlags configures this RingConfig to the given flag set and sets defaults.
@@ -71,6 +69,9 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// Ring stability flags.
 	f.DurationVar(&c.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.")
 	f.DurationVar(&c.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.")
+
+	// Auto-forget
+	f.IntVar(&c.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 4, "How many consecutive timeout periods an unhealthy instance in the ring will be automatically removed after. Set to 0 to disable auto-forget.")
 }
 
 // toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.
@@ -143,7 +144,9 @@ func newRing(config RingConfig, logger log.Logger, reg prometheus.Registerer) (*
 
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*config.Common.HeartbeatTimeout, delegate, logger)
+	if config.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(config.AutoForgetUnhealthyPeriods)*config.Common.HeartbeatTimeout, delegate, logger)
+	}
 
 	lifecyclerConfig, err := config.toBasicLifecyclerConfig(logger)
 	if err != nil {

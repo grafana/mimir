@@ -36,8 +36,9 @@ const (
 	// set on the components running the store-gateway ring client.
 	sharedOptionWithRingClient = " This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."
 
-	ringFlagsPrefix          = "store-gateway.sharding-ring."
-	ringHeartbeatTimeoutFlag = ringFlagsPrefix + "heartbeat-timeout"
+	ringFlagsPrefix                    = "store-gateway.sharding-ring."
+	ringAutoForgetUnhealthyPeriodsFlag = ringFlagsPrefix + "auto-forget-unhealthy-periods"
+	ringHeartbeatTimeoutFlag           = ringFlagsPrefix + "heartbeat-timeout"
 )
 
 var (
@@ -65,14 +66,15 @@ var (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	KVStore              kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."`
-	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period" category:"advanced"`
-	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
-	ReplicationFactor    int           `yaml:"replication_factor" category:"advanced"`
-	TokensFilePath       string        `yaml:"tokens_file_path"`
-	NumTokens            int           `yaml:"num_tokens" category:"advanced"`
-	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled"`
-	AutoForgetEnabled    bool          `yaml:"auto_forget_enabled"`
+	KVStore                    kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."`
+	HeartbeatPeriod            time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout           time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	AutoForgetEnabled          bool          `yaml:"auto_forget_enabled" category:"deprecated"`
+	AutoForgetUnhealthyPeriods int           `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
+	ReplicationFactor          int           `yaml:"replication_factor" category:"advanced"`
+	TokensFilePath             string        `yaml:"tokens_file_path"`
+	NumTokens                  int           `yaml:"num_tokens" category:"advanced"`
+	ZoneAwarenessEnabled       bool          `yaml:"zone_awareness_enabled"`
 
 	// Wait ring stability.
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
@@ -106,11 +108,12 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.KVStore.RegisterFlagsWithPrefix(ringFlagsPrefix, "collectors/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, ringFlagsPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, ringHeartbeatTimeoutFlag, time.Minute, "The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, ringFlagsPrefix+"auto-forget-unhealthy-periods", 10, "How many consecutive timeout periods an unhealthy instance in the ring will be automatically removed after. Set to 0 to disable auto-forget.")
+	f.BoolVar(&cfg.AutoForgetEnabled, ringFlagsPrefix+"auto-forget-enabled", true, fmt.Sprintf("When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -%s times the configured -%s. This setting is deprecated, set -%s to 0 to disable auto-forget.", ringAutoForgetUnhealthyPeriodsFlag, ringHeartbeatTimeoutFlag, ringAutoForgetUnhealthyPeriodsFlag))
 	f.IntVar(&cfg.ReplicationFactor, ringFlagsPrefix+"replication-factor", 3, "The replication factor to use when sharding blocks."+sharedOptionWithRingClient)
 	f.StringVar(&cfg.TokensFilePath, ringFlagsPrefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, ringFlagsPrefix+"zone-awareness-enabled", false, "True to enable zone-awareness and replicate blocks across different availability zones."+sharedOptionWithRingClient)
 	f.IntVar(&cfg.NumTokens, ringFlagsPrefix+"num-tokens", ringNumTokensDefault, "Number of tokens for each store-gateway.")
-	f.BoolVar(&cfg.AutoForgetEnabled, ringFlagsPrefix+"auto-forget-enabled", true, fmt.Sprintf("When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than %d times the configured -%s.", ringAutoForgetUnhealthyPeriods, ringHeartbeatTimeoutFlag))
 
 	// Wait stability flags.
 	f.DurationVar(&cfg.WaitStabilityMinDuration, ringFlagsPrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value.")
