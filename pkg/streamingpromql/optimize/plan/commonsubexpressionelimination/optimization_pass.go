@@ -31,6 +31,7 @@ import (
 type OptimizationPass struct {
 	duplicationNodesIntroduced prometheus.Counter
 	selectorsEliminated        prometheus.Counter
+	selectorsInspected         prometheus.Counter
 }
 
 func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
@@ -42,6 +43,10 @@ func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
 		selectorsEliminated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated",
 			Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
+		}),
+		selectorsInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected",
+			Help: "Number of selectors inspected by the common subexpression elimination optimization pass, before elimination.",
 		}),
 	}
 }
@@ -60,6 +65,7 @@ func (e *OptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan) (*
 		return nil, err
 	}
 
+	e.selectorsInspected.Add(float64(len(paths)))
 	e.selectorsEliminated.Add(float64(selectorsEliminated))
 
 	return plan, nil
