@@ -440,7 +440,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		}
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, smtpConfig)
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.SmtpFrom, cfg.StaticHeaders, smtpConfig)
 	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
 		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
