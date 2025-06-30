@@ -93,6 +93,7 @@ func NewCluster(opts ...Opt) (*Cluster, error) {
 		logger:          new(nopLogger),
 		clusterID:       "kfake",
 		defaultNumParts: 10,
+		listenFn:        net.Listen,
 
 		minSessionTimeout: 6 * time.Second,
 		maxSessionTimeout: 5 * time.Minute,
@@ -172,7 +173,7 @@ func NewCluster(opts ...Opt) (*Cluster, error) {
 			port = cfg.ports[i]
 		}
 		var ln net.Listener
-		ln, err = newListener(port, c.cfg.tls)
+		ln, err = newListener(port, c.cfg.tls, c.cfg.listenFn)
 		if err != nil {
 			return nil, err
 		}
@@ -228,8 +229,8 @@ func (c *Cluster) Close() {
 	}
 }
 
-func newListener(port int, tc *tls.Config) (net.Listener, error) {
-	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+func newListener(port int, tc *tls.Config, fn func(network, address string) (net.Listener, error)) (net.Listener, error) {
+	l, err := fn("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return nil, err
 	}
@@ -1033,7 +1034,7 @@ func (c *Cluster) AddNode(nodeID int32, port int) (int32, int, error) {
 			port = 0
 		}
 		var ln net.Listener
-		if ln, err = newListener(port, c.cfg.tls); err != nil {
+		if ln, err = newListener(port, c.cfg.tls, c.cfg.listenFn); err != nil {
 			return
 		}
 		_, strPort, _ := net.SplitHostPort(ln.Addr().String())

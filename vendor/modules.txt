@@ -1372,7 +1372,7 @@ github.com/twmb/franz-go/pkg/sasl/plain
 # github.com/twmb/franz-go/pkg/kadm v1.15.0
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250620172413-c17130ef7765
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250625174842-669b18eeee83
 ## explicit; go 1.23.8
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.11.2
