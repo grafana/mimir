@@ -122,7 +122,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
-			NamingScheme:     rrConf.MetricNameValidationScheme,
+			ValidationScheme: rrConf.MetricNameValidationScheme,
 		})
 		if err != nil {
 			return err

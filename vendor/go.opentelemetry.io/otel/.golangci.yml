@@ -66,6 +66,8 @@ linters:
               desc: Do not use cross-module internal packages.
             - pkg: go.opentelemetry.io/otel/internal/internaltest
               desc: Do not use cross-module internal packages.
+            - pkg: go.opentelemetry.io/otel/internal/matchers
+              desc: Do not use cross-module internal packages.
         otlp-internal:
           files:
             - '!**/exporters/otlp/internal/**/*.go'
@@ -188,10 +190,6 @@ linters:
       - legacy
       - std-error-handling
     rules:
-      - linters:
-          - revive
-        path: schema/v.*/types/.*
-        text: avoid meaningless package names
       # TODO: Having appropriate comments for exported objects helps development,
       # even for objects in internal packages. Appropriate comments for all
       # exported objects should be added and this exclusion removed.

@@ -32,6 +32,12 @@ const (
 	// MetricNameLabel is the label name indicating the metric name of a
 	// timeseries.
 	MetricNameLabel = "__name__"
+	// MetricTypeLabel is the label name indicating the metric type of
+	// timeseries as per the PROM-39 proposal.
+	MetricTypeLabel = "__type__"
+	// MetricUnitLabel is the label name indicating the metric unit of
+	// timeseries as per the PROM-39 proposal.
+	MetricUnitLabel = "__unit__"
 
 	// SchemeLabel is the name of the label that holds the scheme on which to
 	// scrape a target.
@@ -98,8 +104,7 @@ var LabelNameRE = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]*$")
 type LabelName string
 
 // IsValid returns true iff the name matches the pattern of LabelNameRE when
-// NameValidationScheme is set to LegacyValidation, or valid UTF-8 if
-// NameValidationScheme is set to UTF8Validation.
+// scheme is LegacyValidation, or valid UTF-8 if it is UTF8Validation.
 func (ln LabelName) IsValid(scheme ValidationScheme) bool {
 	if len(ln) == 0 {
 		return false
@@ -110,7 +115,7 @@ func (ln LabelName) IsValid(scheme ValidationScheme) bool {
 	case UTF8Validation:
 		return utf8.ValidString(string(ln))
 	default:
-		panic(fmt.Sprintf("Invalid name validation scheme requested: %d", scheme))
+		panic(fmt.Sprintf("Invalid name validation scheme requested: %s", scheme.String()))
 	}
 }
 

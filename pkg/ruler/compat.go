@@ -15,11 +15,11 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -217,7 +217,7 @@ type RulesLimits interface {
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(userID string) int64
 	RulerAlertmanagerClientConfig(userID string) notifierCfg.AlertmanagerClientConfig
 	RulerMinRuleEvaluationInterval(userID string) time.Duration
-	NameValidationScheme(userID string) validation.NamingScheme
+	ValidationScheme(userID string) model.ValidationScheme
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries *prometheus.CounterVec, remoteQuerier bool) rules.QueryFunc {

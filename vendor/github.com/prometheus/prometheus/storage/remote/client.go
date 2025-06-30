@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -38,7 +39,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
@@ -123,7 +123,7 @@ type Client struct {
 	writeProtoMsg    config.RemoteWriteProtoMsg
 	writeCompression compression.Type // Not exposed by ClientConfig for now.
 
-	namingScheme validation.NamingScheme
+	validationScheme model.ValidationScheme
 }
 
 // ClientConfig configures a client.
@@ -139,7 +139,8 @@ type ClientConfig struct {
 	WriteProtoMsg    config.RemoteWriteProtoMsg
 	ChunkedReadLimit uint64
 	RoundRobinDNS    bool
-	NamingScheme     validation.NamingScheme
+	// ValidationScheme for label and metric names. Defaults to utf8.
+	ValidationScheme model.ValidationScheme
 }
 
 // ReadClient will request the STREAMED_XOR_CHUNKS method of remote read but can
@@ -170,7 +171,7 @@ func NewReadClient(name string, conf *ClientConfig, optFuncs ...config_util.HTTP
 		readQueries:         remoteReadQueries.WithLabelValues(name, conf.URL.String()),
 		readQueriesTotal:    remoteReadQueriesTotal.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
 		readQueriesDuration: remoteReadQueryDuration.MustCurryWith(prometheus.Labels{remoteName: name, endpoint: conf.URL.String()}),
-		namingScheme:        conf.NamingScheme,
+		validationScheme:    cmp.Or(conf.ValidationScheme, model.UTF8Validation),
 	}, nil
 }
 
@@ -451,5 +452,5 @@ func (c *Client) handleSampledResponse(req *prompb.ReadRequest, httpResp *http.R
 	// This client does not batch queries so there's always only 1 result.
 	res := resp.Results[0]
 
-	return FromQueryResult(sortSeries, res, WithNameValidation(c.namingScheme)), nil
+	return FromQueryResult(sortSeries, res, WithNameValidation(c.validationScheme)), nil
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/tenant"
-	prom_validation "github.com/prometheus/prometheus/model/validation"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 
@@ -25,64 +25,64 @@ func NameValidatingEngine(engine promql.QueryEngine, limits *validation.Override
 	return &nameValidatingEngine{engine: engine, limits: limits}
 }
 
-type optsWithNamingScheme struct {
+type optsWithValidationScheme struct {
 	promql.QueryOpts
-	namingScheme prom_validation.NamingScheme
+	validationScheme model.ValidationScheme
 }
 
-func (o optsWithNamingScheme) EnablePerStepStats() bool {
+func (o optsWithValidationScheme) EnablePerStepStats() bool {
 	return o.QueryOpts.EnablePerStepStats()
 }
 
-func (o optsWithNamingScheme) LookbackDelta() time.Duration {
+func (o optsWithValidationScheme) LookbackDelta() time.Duration {
 	return o.QueryOpts.LookbackDelta()
 }
 
-func (o optsWithNamingScheme) NameValidationScheme() prom_validation.NamingScheme {
-	return o.namingScheme
+func (o optsWithValidationScheme) ValidationScheme() model.ValidationScheme {
+	return o.validationScheme
 }
 
 func (e nameValidatingEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	namingScheme, err := e.getNamingScheme(ctx)
+	validationScheme, err := e.getValidationScheme(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0, prom_validation.UTF8NamingScheme)
+		opts = promql.NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
-	opts = &optsWithNamingScheme{
-		QueryOpts:    opts,
-		namingScheme: namingScheme,
+	opts = &optsWithValidationScheme{
+		QueryOpts:        opts,
+		validationScheme: validationScheme,
 	}
 	return e.engine.NewInstantQuery(ctx, q, opts, qs, ts)
 }
 
 func (e nameValidatingEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	namingScheme, err := e.getNamingScheme(ctx)
+	validationScheme, err := e.getValidationScheme(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0, prom_validation.UTF8NamingScheme)
+		opts = promql.NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
-	opts = &optsWithNamingScheme{
-		QueryOpts:    opts,
-		namingScheme: namingScheme,
+	opts = &optsWithValidationScheme{
+		QueryOpts:        opts,
+		validationScheme: validationScheme,
 	}
 	return e.engine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 }
 
-// getNamingScheme retrieves the name validation scheme to use from a context containing tenant IDs.
+// getValidationScheme retrieves the name validation scheme to use from a context containing tenant IDs.
 // Returns legacy validation scheme if at least one tenant uses legacy validation.
-func (e nameValidatingEngine) getNamingScheme(ctx context.Context) (prom_validation.NamingScheme, error) {
+func (e nameValidatingEngine) getValidationScheme(ctx context.Context) (model.ValidationScheme, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return "", err
+		return model.UnsetValidation, err
 	}
 	for _, tenantID := range tenantIDs {
-		if e.limits.NameValidationScheme(tenantID) == prom_validation.LegacyNamingScheme {
-			return prom_validation.LegacyNamingScheme, nil
+		if e.limits.ValidationScheme(tenantID) == model.LegacyValidation {
+			return model.LegacyValidation, nil
 		}
 	}
-	return prom_validation.UTF8NamingScheme, nil
+	return model.UTF8Validation, nil
 }

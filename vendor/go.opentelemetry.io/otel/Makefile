@@ -293,7 +293,7 @@ semconv-generate: $(SEMCONVKIT)
 		--param tag=$(TAG) \
 		go \
 		/home/weaver/target
-	$(SEMCONVKIT) -semconv "$(SEMCONVPKG)" -tag "$(TAG)"
+	$(SEMCONVKIT) -output "$(SEMCONVPKG)/$(TAG)" -tag "$(TAG)"
 
 .PHONY: gorelease
 gorelease: $(OTEL_GO_MOD_DIRS:%=gorelease/%)
