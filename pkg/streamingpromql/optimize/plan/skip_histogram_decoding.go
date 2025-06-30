@@ -30,12 +30,10 @@ func (s *SkipHistogramDecodingOptimizationPass) Apply(ctx context.Context, plan 
 	return plan, nil
 }
 
-func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, skipHistogramBuckets bool, childOfDuplicateNode bool, duplicatedSelectors map[planning.Node]bool) {
+func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, skipHistogramBuckets bool, childOfDuplicateNode bool, duplicatedSelectors duplicatedSelectorTracker) {
 	if vs, ok := node.(*core.VectorSelector); ok {
 		if childOfDuplicateNode {
-			otherInstancesCanSkipBuckets, seenOtherInstancesAlready := duplicatedSelectors[node]
-			skipHistogramBuckets = skipHistogramBuckets && (otherInstancesCanSkipBuckets || !seenOtherInstancesAlready)
-			duplicatedSelectors[node] = skipHistogramBuckets
+			skipHistogramBuckets = duplicatedSelectors.canSkipHistogramBuckets(node, skipHistogramBuckets)
 		}
 
 		vs.SkipHistogramBuckets = skipHistogramBuckets
@@ -45,9 +43,7 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 
 	if ms, ok := node.(*core.MatrixSelector); ok {
 		if childOfDuplicateNode {
-			otherInstancesCanSkipBuckets, seenOtherInstancesAlready := duplicatedSelectors[node]
-			skipHistogramBuckets = skipHistogramBuckets && (otherInstancesCanSkipBuckets || !seenOtherInstancesAlready)
-			duplicatedSelectors[node] = skipHistogramBuckets
+			skipHistogramBuckets = duplicatedSelectors.canSkipHistogramBuckets(node, skipHistogramBuckets)
 		}
 
 		ms.SkipHistogramBuckets = skipHistogramBuckets
@@ -73,4 +69,13 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 	for _, child := range node.Children() {
 		s.applyToNode(child, skipHistogramBuckets, childOfDuplicateNode, duplicatedSelectors)
 	}
+}
+
+type duplicatedSelectorTracker map[planning.Node]bool
+
+func (t duplicatedSelectorTracker) canSkipHistogramBuckets(node planning.Node, pathSeenAllowsSkippingHistogramBuckets bool) bool {
+	otherInstancesCanSkipBuckets, seenOtherInstancesAlready := t[node]
+	skipHistogramBuckets := pathSeenAllowsSkippingHistogramBuckets && (otherInstancesCanSkipBuckets || !seenOtherInstancesAlready)
+	t[node] = skipHistogramBuckets
+	return skipHistogramBuckets
 }
