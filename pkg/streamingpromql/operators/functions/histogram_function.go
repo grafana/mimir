@@ -141,16 +141,20 @@ func NewHistogramFractionFunction(
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
 ) *HistogramFunction {
+	innerSeriesMetricNames := &operators.MetricNames{}
+
 	return &HistogramFunction{
 		f: &histogramFraction{
 			upperArg:                 upper,
 			lowerArg:                 lower,
 			memoryConsumptionTracker: memoryConsumptionTracker,
+			innerSeriesMetricNames:   innerSeriesMetricNames,
+			innerExpressionPosition:  inner.ExpressionPosition(),
 		},
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		annotations:              annotations,
-		innerSeriesMetricNames:   &operators.MetricNames{},
+		innerSeriesMetricNames:   innerSeriesMetricNames,
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
 	}
@@ -429,7 +433,12 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 				}
 			}
 
-			res := h.f.ComputeNativeHistogramResult(pointIdx, currentHistogram)
+			res, annos := h.f.ComputeNativeHistogramResult(pointIdx, g.lastInputSeriesIdx, currentHistogram)
+
+			if annos != nil {
+				h.annotations.Merge(annos)
+			}
+
 			floatPoints = append(floatPoints, promql.FPoint{
 				T: h.timeRange.IndexTime(int64(pointIdx)),
 				F: res,
@@ -488,7 +497,7 @@ func (g bucketGroupSorter) Swap(i, j int) {
 type histogramFunction interface {
 	LoadArguments(ctx context.Context) error
 	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
-	ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64
+	ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations)
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	Close()
 }
@@ -529,16 +538,17 @@ func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, series
 
 	if forcedMonotonicity {
 		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-			q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex), q.innerExpressionPosition,
+			q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex),
+			q.innerExpressionPosition,
 		))
 	}
 
 	return res
 }
 
-func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64 {
+func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations) {
 	ph := q.phValues.Samples[pointIndex].F
-	return promql.HistogramQuantile(ph, h)
+	return promql.HistogramQuantile(ph, h, q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex), q.innerExpressionPosition)
 }
 
 func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PrepareParams) error {
@@ -559,6 +569,8 @@ type histogramFraction struct {
 	upperValues types.ScalarData
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	innerSeriesMetricNames   *operators.MetricNames
+	innerExpressionPosition  posrange.PositionRange
 }
 
 func (f *histogramFraction) LoadArguments(ctx context.Context) error {
@@ -583,11 +595,11 @@ func (f *histogramFraction) ComputeClassicHistogramResult(pointIndex int, _ int,
 	return promql.BucketFraction(lower, upper, buckets)
 }
 
-func (f *histogramFraction) ComputeNativeHistogramResult(pointIndex int, h *histogram.FloatHistogram) float64 {
+func (f *histogramFraction) ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations) {
 	lower := f.lowerValues.Samples[pointIndex].F
 	upper := f.upperValues.Samples[pointIndex].F
 
-	return promql.HistogramFraction(lower, upper, h)
+	return promql.HistogramFraction(lower, upper, h, f.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex), f.innerExpressionPosition)
 }
 
 func (f *histogramFraction) Prepare(ctx context.Context, params *types.PrepareParams) error {
