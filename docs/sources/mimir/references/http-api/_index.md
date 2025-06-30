@@ -352,7 +352,7 @@ Entry point for the [Influx HTTP](https://docs.influxdata.com/influxdb/v1/tools/
 This endpoint accepts an HTTP POST request with a body that contains a request encoded in `text/plain` and is optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find more information on the protocol in [InfluxDB line protocol](https://docs.influxdata.com/influxdb/v1/write_protocols/line_protocol_tutorial/).
 
-Requires [authentication](#authentication).
+This endpoint requires [authentication](#authentication).
 
 ### Distributor ring status
 
