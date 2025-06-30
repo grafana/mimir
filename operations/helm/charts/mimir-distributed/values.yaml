@@ -816,12 +816,14 @@ alertmanager:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-alertmanager-zone-a" for zone-b, "mimir-alertmanager-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: true
+        # NOTE: Alertmanager does not support prepared downscale functionality
+        prepareDownscale: false
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -837,12 +839,14 @@ alertmanager:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
-        downscaleLeader: null
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-alertmanager-zone-a" for zone-b, "mimir-alertmanager-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: mimir-alertmanager-zone-a
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: true
+        # NOTE: Alertmanager does not support prepared downscale functionality
+        prepareDownscale: false
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -858,12 +862,14 @@ alertmanager:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
-        downscaleLeader: null
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-alertmanager-zone-a" for zone-b, "mimir-alertmanager-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: mimir-alertmanager-zone-b
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: true
+        # NOTE: Alertmanager does not support prepared downscale functionality
+        prepareDownscale: false
 
 distributor:
   # -- Whether to render the manifests related to the distributor component.
@@ -1194,9 +1200,10 @@ ingester:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -1215,9 +1222,10 @@ ingester:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
         downscaleLeader: mimir-ingester-zone-a
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -1236,9 +1244,10 @@ ingester:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-ingester-zone-a" for zone-b, "mimir-ingester-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
         downscaleLeader: mimir-ingester-zone-b
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -2337,9 +2346,10 @@ store_gateway:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
@@ -2358,10 +2368,11 @@ store_gateway:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
-        downscaleLeader: null
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: mimir-store-gateway-zone-a
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
@@ -2379,10 +2390,11 @@ store_gateway:
         storageClass: null
         # -- noDownscale adds a label that can be used by the rollout-operator as documented in the rollout-operator repo: https://github.com/grafana/rollout-operator#webhooks
         noDownscale: false
-        # -- downscaleLeader is an Annotation used by the rollout-operator
-        # If defined, downscaleLeader: <downscaleLeader>
-        # If undefined or set to null (the default), no Annotation is set
-        downscaleLeader: null
+        # -- downscaleLeader is an Annotation used by the rollout-operator to coordinate downscaling across zones.
+        # Set to the StatefulSet name that should lead downscaling for this component (typically the previous zone).
+        # Example: "mimir-store-gateway-zone-a" for zone-b, "mimir-store-gateway-zone-b" for zone-c.
+        # If undefined or set to null (the default), this zone won't be designated as a downscale leader.
+        downscaleLeader: mimir-store-gateway-zone-b
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
         prepareDownscale: true
 
