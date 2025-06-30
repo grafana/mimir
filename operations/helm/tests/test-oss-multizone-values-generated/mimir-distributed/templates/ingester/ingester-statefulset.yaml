@@ -171,6 +171,7 @@ metadata:
     zone: zone-b
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/rollout-downscale-leader: mimir-ingester-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -327,6 +328,7 @@ metadata:
     zone: zone-c
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/rollout-downscale-leader: mimir-ingester-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
