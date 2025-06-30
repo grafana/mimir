@@ -72,20 +72,11 @@ To manage runtime configuration with the Helm chart, add the following stanza to
 
 ```yaml
 runtimeConfig:
-  ingester_limits: # limits that each ingester replica enforces
-    max_ingestion_rate: _`<SAMPLE_VALUE>`_
-    max_series: _`<PLACEHOLDER>`_
-    max_tenants: _`<PLACEHOLDER>`_
-    max_inflight_push_requests: _`<PLACEHOLDER>`_
-  distributor_limits: # limits that each distributor replica enforces
-    max_ingestion_rate: _`<PLACEHOLDER>`_
-    max_inflight_push_requests: _`<PLACEHOLDER>`_
-    max_inflight_push_requests_bytes: _`<PLACEHOLDER>`_
   overrides:
     tenant-1: # limits for tenant-1 that the whole cluster enforces
-      ingestion_tenant_shard_size: _`<PLACEHOLDER>`_
-      max_global_series_per_user: _`<PLACEHOLDER>`_
-      max_fetched_series_per_query: _`<PLACEHOLDER>`_
+      ingestion_tenant_shard_size: _`<SAMPLE_VALUE>`_
+      max_global_series_per_user: _`<SAMPLE_VALUE>`_
+      max_fetched_series_per_query: _`<SAMPLE_VALUE>`_
 ```
 
 For more information about runtime configuration in Grafana Mimir, refer to [About Grafana Mimir runtime configuration](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
