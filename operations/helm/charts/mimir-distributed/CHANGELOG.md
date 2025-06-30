@@ -58,7 +58,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add extra values for KEDA autoscaling to support authentication, `ignoreNullValues`, `unsafeSsl`, and `PromQLLabelSelector`. #10265
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
-* [ENHANCEMENT] Add values for setting annotations and labels for rollout-operator. #6733
+* [ENHANCEMENT] Add values for setting annotations and labels for rollout-operator. #6733 #11924
 
 ## 5.6.0
 
