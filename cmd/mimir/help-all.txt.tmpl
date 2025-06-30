@@ -2210,7 +2210,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
-    	[experimental] Enable skipping histogram decoding when evaluating queries. Only applies if query planner is enabled. (default true)
+    	[experimental] Enable skipping decoding native histograms when evaluating queries that do not require full histograms. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration

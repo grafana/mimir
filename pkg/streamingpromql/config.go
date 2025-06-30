@@ -30,7 +30,7 @@ type EngineOpts struct {
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
-	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping histogram decoding when evaluating queries. Only applies if query planner is enabled.")
+	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
 }
 
 func NewTestEngineOpts() EngineOpts {

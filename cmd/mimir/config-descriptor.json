@@ -2289,7 +2289,7 @@
               "kind": "field",
               "name": "enable_skipping_histogram_decoding",
               "required": false,
-              "desc": "Enable skipping histogram decoding when evaluating queries. Only applies if query planner is enabled.",
+              "desc": "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
