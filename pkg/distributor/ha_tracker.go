@@ -142,7 +142,7 @@ type HATrackerConfig struct {
 	// This is a potentially high cardinality metric, so it is disabled by default.
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
 
-	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Note that memberlist support is experimental."`
+	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi."`
 
 	DeprecatedHATrackerTimeoutsConfig `yaml:",inline"`
 }

@@ -96,7 +96,7 @@ func mangleBuckets(b promql.Buckets) promql.Buckets {
 const maxExpectedBucketsPerHistogram = 64 // There isn't much science to this
 
 var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) []promql.Bucket {
+	pool.NewBucketedPool(maxExpectedBucketsPerHistogram, func(size int) promql.Buckets {
 		return make([]promql.Bucket, 0, size)
 	}),
 	limiter.BucketSlices,
@@ -169,7 +169,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 	if err != nil {
 		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(innerSeries, h.memoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries, h.memoryConsumptionTracker)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
@@ -252,8 +252,7 @@ func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVector
 	defer func() {
 		// Reset the group before returning to the pool
 		thisGroup.lastInputSeriesIdx = 0
-		pointBucketPool.Put(thisGroup.pointBuckets, h.memoryConsumptionTracker)
-		thisGroup.pointBuckets = nil
+		pointBucketPool.Put(&thisGroup.pointBuckets, h.memoryConsumptionTracker)
 		thisGroup.nativeHistograms = nil
 		thisGroup.remainingSeriesCount = 0
 		bucketGroupPool.Put(thisGroup)
@@ -298,7 +297,7 @@ func (h *HistogramFunction) accumulateUntilGroupComplete(ctx context.Context, g 
 
 		// We are done with the FPoints, so return these now
 		// HPoints are returned to the pool after computeOutputSeriesForGroup is finished with them as they may be copied to a group.
-		types.FPointSlicePool.Put(s.Floats, h.memoryConsumptionTracker)
+		types.FPointSlicePool.Put(&s.Floats, h.memoryConsumptionTracker)
 		h.currentInnerSeriesIndex++
 	}
 	return nil
@@ -439,12 +438,12 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 
 	// Return any retained native histogram to the pool
 	if g.nativeHistograms != nil {
-		types.HPointSlicePool.Put(g.nativeHistograms, h.memoryConsumptionTracker)
+		types.HPointSlicePool.Put(&g.nativeHistograms, h.memoryConsumptionTracker)
 	}
 
 	// We are done with all the point buckets, so return all those to the pool too
 	for _, b := range g.pointBuckets {
-		bucketSliceBucketedPool.Put(b, h.memoryConsumptionTracker)
+		bucketSliceBucketedPool.Put(&b, h.memoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{Floats: floatPoints}, nil
@@ -548,8 +547,7 @@ func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PreparePa
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
 
-	types.FPointSlicePool.Put(q.phValues.Samples, q.memoryConsumptionTracker)
-	q.phValues.Samples = nil
+	types.FPointSlicePool.Put(&q.phValues.Samples, q.memoryConsumptionTracker)
 }
 
 type histogramFraction struct {
@@ -602,9 +600,6 @@ func (f *histogramFraction) Close() {
 	f.lowerArg.Close()
 	f.upperArg.Close()
 
-	types.FPointSlicePool.Put(f.lowerValues.Samples, f.memoryConsumptionTracker)
-	f.lowerValues.Samples = nil
-
-	types.FPointSlicePool.Put(f.upperValues.Samples, f.memoryConsumptionTracker)
-	f.upperValues.Samples = nil
+	types.FPointSlicePool.Put(&f.lowerValues.Samples, f.memoryConsumptionTracker)
+	types.FPointSlicePool.Put(&f.upperValues.Samples, f.memoryConsumptionTracker)
 }

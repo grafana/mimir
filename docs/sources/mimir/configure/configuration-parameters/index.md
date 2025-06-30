@@ -858,8 +858,8 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
   [enable_elected_replica_metric: <boolean> | default = false]
 
-  # Backend storage to use for the ring. Note that memberlist support is
-  # experimental.
+  # Backend storage to use for the ring. Supported values are: consul, etcd,
+  # inmemory, memberlist, multi.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -3212,20 +3212,20 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Timeout used when connecting to other nodes to send packet.
 # CLI flag: -memberlist.packet-dial-timeout
-[packet_dial_timeout: <duration> | default = 2s]
+[packet_dial_timeout: <duration> | default = 500ms]
 
 # (advanced) Timeout for writing 'packet' data.
 # CLI flag: -memberlist.packet-write-timeout
-[packet_write_timeout: <duration> | default = 5s]
+[packet_write_timeout: <duration> | default = 500ms]
 
 # (advanced) Maximum number of concurrent writes to other nodes.
 # CLI flag: -memberlist.max-concurrent-writes
-[max_concurrent_writes: <int> | default = 3]
+[max_concurrent_writes: <int> | default = 5]
 
 # (advanced) Timeout for acquiring one of the concurrent write slots. After this
 # time, the message will be dropped.
 # CLI flag: -memberlist.acquire-writer-timeout
-[acquire_writer_timeout: <duration> | default = 250ms]
+[acquire_writer_timeout: <duration> | default = 1s]
 
 # (advanced) Enable TLS on the memberlist transport layer.
 # CLI flag: -memberlist.tls-enabled

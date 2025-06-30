@@ -18548,7 +18548,7 @@
           "required": false,
           "desc": "Timeout used when connecting to other nodes to send packet.",
           "fieldValue": null,
-          "fieldDefaultValue": 2000000000,
+          "fieldDefaultValue": 500000000,
           "fieldFlag": "memberlist.packet-dial-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -18559,7 +18559,7 @@
           "required": false,
           "desc": "Timeout for writing 'packet' data.",
           "fieldValue": null,
-          "fieldDefaultValue": 5000000000,
+          "fieldDefaultValue": 500000000,
           "fieldFlag": "memberlist.packet-write-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -18570,7 +18570,7 @@
           "required": false,
           "desc": "Maximum number of concurrent writes to other nodes.",
           "fieldValue": null,
-          "fieldDefaultValue": 3,
+          "fieldDefaultValue": 5,
           "fieldFlag": "memberlist.max-concurrent-writes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -18581,7 +18581,7 @@
           "required": false,
           "desc": "Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped.",
           "fieldValue": null,
-          "fieldDefaultValue": 250000000,
+          "fieldDefaultValue": 1000000000,
           "fieldFlag": "memberlist.acquire-writer-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"

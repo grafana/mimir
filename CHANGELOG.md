@@ -23,6 +23,13 @@
   * Moved `distributor.ha_tracker.ha_tracker_update_timeout` to `limits.ha_tracker.ha_tracker_update_timeout`
   * Moved `distributor.ha_tracker.ha_tracker_update_timeout_jitter_max` to `limits.ha_tracker.ha_tracker_update_timeout_jitter_max`
   * Moved `distributor.ha_tracker.ha_tracker_failover_timeout` to `limits.ha_tracker.ha_tracker_failover_timeout`
+* [CHANGE] Distributor: `Memberlist` marked as stable as an option for backend storage for the HA tracker. #11861
+* [CHANGE] Memberlist: Apply new default configuration values for MemberlistKV. This unlocks using it as backend storage for the HA Tracker. We have observed better performance with these defaults across different production loads. #11874
+  * `memberlist.packet-dial-timeout`: `500ms`
+  * `memberlist.packet-write-timeout`: `500ms`
+  * `memberlist.max-concurrent-writes`: `5`
+  * `memberlist.acquire-writer-timeout`: `1s`
+    These defaults perform better but may cause long-running packets to be dropped in high-latency networks.
 * [FEATURE] Distributor: Experimental support for Prometheus Remote-Write 2.0 protocol. Limitations: Created timestamp is ignored, per series metadata is merged on metric family level automatically, ingestion might fail if client sends ProtoBuf fields out of order. The label `version` is added to the metric `cortex_distributor_requests_in_total` with a value of either `1.0` or `2.0` depending on the detected Remote-Write protocol. #11100 #11101 #11192 #11143
 * [FEATURE] Query-frontend: expand `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` configuration options to cache non-transient response failures for instant queries. #11120
 * [FEATURE] Query-frontend: Allow use of Mimir Query Engine (MQE) via the experimental CLI flags `-query-frontend.query-engine` or `-query-frontend.enable-query-engine-fallback` or corresponding YAML. #11417 #11775
@@ -31,6 +38,7 @@
 * [FEATURE] distributor: Allow configuring tenant-specific HA tracker failover timeouts. #11774
 * [FEATURE] OTLP: Add experimental support for promoting OTel scope metadata (name, version, schema URL, attributes) to metric labels, prefixed with `otel_scope_`. Enable via the `-distributor.otel-promote-scope-metadata` flag. #11795
 * [ENHANCEMENT] Dashboards: Add "Influx write requests" row to Writes Dashboard. #11731
+* [ENHANCEMENT] Mixin: Add `MimirHighVolumeLevel1BlocksQueried` alert that fires when level 1 blocks are queried for more than 6 hours, indicating potential compactor performance issues. #11803
 * [ENHANCEMENT] Querier: Make the maximum series limit for cardinality API requests configurable on a per-tenant basis with the `cardinality_analysis_max_results` option. #11456
 * [ENHANCEMENT] Dashboards: Add "Queries / sec by read path" to Queries Dashboard. #11640
 * [ENHANCEMENT] Dashboards: Add "Added Latency" row to Writes Dashboard. #11579
@@ -92,6 +100,7 @@
   * `cortex_ingest_storage_writer_kafka_request_throttled_seconds`: measures how long Kafka requests have been throttled by the Kafka client.
 * [ENHANCEMENT] Distributor: Add per-user `cortex_distributor_sample_delay_seconds` to track delay of ingested samples with regard to wall clock. #11573
 * [ENHANCEMENT] Distributor: added circuit breaker to not produce Kafka records at all if the context is already canceled / expired. This applied only when experimental ingest storage is enabled. #11768
+* [ENHANCEMENT] Compactor: Optimize the planning phase for tenants with a very large number of blocks, such as tens or hundreds of thousands, at the cost of making it slightly slower for tenants with a very a small number of blocks. #11819
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
@@ -128,7 +137,7 @@
 * [ENHANCEMENT] Alerts: Add alerts for invalid cluster validation labels. #11255 #11282 #11413
 * [ENHANCEMENT] Dashboards: Improve "Kafka 100th percentile end-to-end latency when ingesters are running (outliers)" panel, computing the baseline latency on `max(10, 10%)` of ingesters instead of a fixed 10 replicas. #11581
 * [ENHANCEMENT] Dashboards: Add "per-query memory consumption" and "fallback to Prometheus' query engine" panels to the Queries dashboard. #11626
-* [ENHANCEMENT] Alerts: add `MimirGoThreadsTooHigh` alert. #11836
+* [ENHANCEMENT] Alerts: Add `MimirGoThreadsTooHigh` alert. #11836 #11845
 * [ENHANCEMENT] Dashboards: Add autoscaling row for ruler query-frontends to `Mimir / Remote ruler reads` dashboard. #11838
 * [CHANGE] Alerts: Update query for `MimirBucketIndexNotUpdated`. Use `max_over_time` to prevent alert firing when pods rotate. #11311, #11426
 * [CHANGE] Alerts: Make alerting threshold for `DistributorGcUsesTooMuchCpu` configurable. #11508.
