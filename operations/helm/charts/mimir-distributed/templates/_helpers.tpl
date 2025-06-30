@@ -609,9 +609,9 @@ which allows us to keep generating everything for the default zone.
 {{- $sortedZoneNames := $zoneNames | sortAlpha -}}
 
 {{- range $idx, $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
-{{- /* Compute dynamic downscaleLeader: previous zone in sorted list for ingester and store-gateway */ -}}
-{{- $dynamicDownscaleLeader := "" -}}
-{{- if and (ne $.component "alertmanager") (gt (len $sortedZoneNames) 1) -}}
+{{- /* Determine downscaleLeader: prefer values.yaml setting, fallback to dynamic computation */ -}}
+{{- $downscaleLeader := $rolloutZone.downscaleLeader -}}
+{{- if and (not $downscaleLeader) (ne $.component "alertmanager") (gt (len $sortedZoneNames) 1) -}}
 {{- $currentZoneIdx := 0 -}}
 {{- range $i, $zoneName := $sortedZoneNames -}}
 {{- if eq $zoneName $rolloutZone.name -}}
@@ -620,7 +620,7 @@ which allows us to keep generating everything for the default zone.
 {{- end -}}
 {{- if gt $currentZoneIdx 0 -}}
 {{- $previousZone := index $sortedZoneNames (sub $currentZoneIdx 1) -}}
-{{- $dynamicDownscaleLeader = printf "mimir-%s-%s" $.component $previousZone -}}
+{{- $downscaleLeader = include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component "rolloutZoneName" $previousZone) -}}
 {{- end -}}
 {{- end -}}
 
@@ -630,7 +630,7 @@ which allows us to keep generating everything for the default zone.
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
   "noDownscale"  $rolloutZone.noDownscale
-  "downscaleLeader" (ternary $dynamicDownscaleLeader $rolloutZone.downscaleLeader (ne $dynamicDownscaleLeader ""))
+  "downscaleLeader" $downscaleLeader
   "prepareDownscale" $rolloutZone.prepareDownscale
   ) -}}
 {{- end -}}
