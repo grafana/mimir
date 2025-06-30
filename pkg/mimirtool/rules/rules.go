@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 
@@ -256,8 +256,8 @@ func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode) []error {
 func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 	for i, r := range g.Rules {
-		// TODO(juliusmh):
-		for _, err := range r.Validate(node.Rules[i], validation.LegacyNamingScheme) {
+		// TODO(juliusmh): fixed to legacy validation
+		for _, err := range r.Validate(node.Rules[i], model.LegacyValidation) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert

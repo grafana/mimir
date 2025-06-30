@@ -14,6 +14,7 @@
 package v1
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -45,7 +46,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -200,7 +200,9 @@ type API struct {
 	Queryable         storage.SampleAndChunkQueryable
 	QueryEngine       promql.QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
-	NamingScheme      validation.NamingScheme
+
+	// ValidationScheme for metric and label names. Defaults to model.UTF8Validation.
+	ValidationScheme model.ValidationScheme
 
 	scrapePoolsRetriever  func(context.Context) ScrapePoolsRetriever
 	targetRetriever       func(context.Context) TargetRetriever
@@ -272,7 +274,7 @@ func NewAPI(
 		QueryEngine:       qe,
 		Queryable:         q,
 		ExemplarQueryable: eq,
-		NamingScheme:      validation.UTF8NamingScheme,
+		ValidationScheme:  model.UTF8Validation,
 
 		scrapePoolsRetriever:  spsr,
 		targetRetriever:       tr,
@@ -465,7 +467,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	opts, err := extractQueryOpts(r, api.NamingScheme)
+	opts, err := extractQueryOpts(r, cmp.Or(api.ValidationScheme, model.UTF8Validation))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -531,7 +533,7 @@ func (api *API) parseQuery(r *http.Request) apiFuncResult {
 	return apiFuncResult{data: translateAST(expr), err: nil, warnings: nil, finalizer: nil}
 }
 
-func extractQueryOpts(r *http.Request, scheme validation.NamingScheme) (promql.QueryOpts, error) {
+func extractQueryOpts(r *http.Request, scheme model.ValidationScheme) (promql.QueryOpts, error) {
 	var duration time.Duration
 
 	if strDuration := r.FormValue("lookback_delta"); strDuration != "" {
@@ -590,7 +592,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	opts, err := extractQueryOpts(r, api.NamingScheme)
+	opts, err := extractQueryOpts(r, cmp.Or(api.ValidationScheme, model.UTF8Validation))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -785,7 +787,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		name = model.UnescapeName(name, model.ValueEncodingEscaping)
 	}
 
-	if !api.NamingScheme.IsValidLabelName(name) {
+	if !model.LabelName(name).IsValid(cmp.Or(api.ValidationScheme, model.UTF8Validation)) {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 

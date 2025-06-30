@@ -40,7 +40,7 @@ var _ types.InstantVectorOperator = &FunctionOverInstantVector{}
 func NewFunctionOverInstantVector(
 	inner types.InstantVectorOperator,
 	scalarArgs []types.ScalarOperator,
-	params InstantVectorFunctionOperatorParams,
+	params *InstantVectorFunctionOperatorParams,
 	f FunctionOverInstantVectorDefinition,
 ) *FunctionOverInstantVector {
 	return &FunctionOverInstantVector{

@@ -16,7 +16,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	prom_validation "github.com/prometheus/prometheus/model/validation"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -391,7 +390,7 @@ type labelValidationConfig interface {
 	MaxLabelNamesPerInfoSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
-	NameValidationScheme(userID string) prom_validation.NamingScheme
+	ValidationScheme(userID string) model.ValidationScheme
 }
 
 func removeNonASCIIChars(in string) (out string) {
@@ -423,9 +422,9 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		return errors.New(noMetricNameMsgFormat)
 	}
 
-	namingScheme := cfg.NameValidationScheme(userID)
+	validationScheme := cfg.ValidationScheme(userID)
 
-	if !namingScheme.IsValidMetricName(unsafeMetricName) {
+	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName), validationScheme) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
@@ -451,7 +450,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	maxLabelValueLength := cfg.MaxLabelValueLength(userID)
 	lastLabelName := ""
 	for _, l := range ls {
-		if !skipLabelValidation && !namingScheme.IsValidLabelName(l.Name) {
+		if !skipLabelValidation && !model.LabelName(l.Name).IsValid(validationScheme) {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
 			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))

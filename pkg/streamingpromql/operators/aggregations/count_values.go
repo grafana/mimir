@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/validation"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -40,7 +40,7 @@ type CountValues struct {
 	labelsBytesBuffer []byte
 	valueBuffer       []byte
 
-	nameValidationScheme validation.NamingScheme
+	nameValidationScheme model.ValidationScheme
 }
 
 var _ types.InstantVectorOperator = &CountValues{}
@@ -53,7 +53,7 @@ func NewCountValues(
 	without bool,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
-	nameValidationScheme validation.NamingScheme,
+	nameValidationScheme model.ValidationScheme,
 ) *CountValues {
 	if without {
 		grouping = append(grouping, labels.MetricName)
@@ -158,7 +158,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 func (c *CountValues) loadLabelName() error {
 	c.resolvedLabelName = c.LabelName.GetValue()
-	if !c.nameValidationScheme.IsValidLabelName(c.resolvedLabelName) {
+	if !model.LabelName(c.resolvedLabelName).IsValid(c.nameValidationScheme) {
 		return fmt.Errorf("invalid label name %q", c.resolvedLabelName)
 	}
 

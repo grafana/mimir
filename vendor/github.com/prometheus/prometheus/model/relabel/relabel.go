@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/validation"
 )
 
 var (
@@ -102,7 +101,7 @@ type Config struct {
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty" json:"action,omitempty"`
 	// MetricNameValidationScheme to use when validating labels.
-	MetricNameValidationScheme validation.NamingScheme `yaml:"metric_name_validation_scheme,omitempty" json:"metricNameValidationScheme,omitempty"`
+	MetricNameValidationScheme model.ValidationScheme `yaml:"-" json:"-"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -118,7 +117,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (c *Config) Validate(defaultNamingScheme validation.NamingScheme) error {
+func (c *Config) Validate() error {
 	if c.Action == "" {
 		return errors.New("relabel action cannot be empty")
 	}
@@ -129,29 +128,33 @@ func (c *Config) Validate(defaultNamingScheme validation.NamingScheme) error {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
 
-	c.MetricNameValidationScheme = c.MetricNameValidationScheme.WithDefault(defaultNamingScheme)
-	if err := c.MetricNameValidationScheme.Validate(); err != nil {
-		return err
+	if c.MetricNameValidationScheme == model.UnsetValidation {
+		return errors.New("MetricNameValidationScheme must be set in relabel configuration")
 	}
 
-	namingScheme := c.MetricNameValidationScheme
-	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !namingScheme.IsValidLabelName(c.TargetLabel) {
+	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid(c.MetricNameValidationScheme) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
-	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !namingScheme.IsValidLabelName(c.TargetLabel) {
+	isValidLabelNameWithRegexVarFn := func(value string) bool {
+		// UTF-8 allows ${} characters, so standard validation allow $variables by default.
+		// TODO(bwplotka): Relabelling users cannot put $ and ${<...>} characters in metric names or values.
+		// Design escaping mechanism to allow that, once valid use case appears.
+		return model.LabelName(value).IsValid(c.MetricNameValidationScheme)
+	}
+	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !isValidLabelNameWithRegexVarFn(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !namingScheme.IsValidLabelName(c.TargetLabel) {
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid(c.MetricNameValidationScheme) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !namingScheme.IsValidLabelName(c.Replacement) {
+	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
-	if c.Action == HashMod && !namingScheme.IsValidLabelName(c.TargetLabel) {
+	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid(c.MetricNameValidationScheme) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
@@ -323,8 +326,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			break
 		}
 		target := string(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
-		namingScheme := cfg.MetricNameValidationScheme
-		if !namingScheme.IsValidLabelName(target) {
+		if !model.LabelName(target).IsValid(cfg.MetricNameValidationScheme) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)
