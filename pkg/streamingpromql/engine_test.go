@@ -55,6 +55,7 @@ var (
 func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
+	parser.EnableExperimentalFunctions = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -66,15 +67,11 @@ func init() {
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	parser.Functions["info"].Experimental = false
-	parser.Functions["sort_by_label"].Experimental = false
-	parser.Functions["sort_by_label_desc"].Experimental = false
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"info(metric{})":                       "'info' function",
-		`sort_by_label(metric{}, "test")`:      "'sort_by_label' function",
-		`sort_by_label_desc(metric{}, "test")`: "'sort_by_label_desc' function",
+		"info(metric{})": "'info' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
