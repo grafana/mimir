@@ -68,13 +68,24 @@ This command shows the differences between the running installation and the inst
 
 You can also use the Helm chart to manage runtime configuration files. Runtime configuration files contain configuration parameters and are periodically reloaded while Mimir is running. This process allows you to change a subset of Grafana Mimir’s configuration without having to restart the Grafana Mimir component or instance.
 
-To manage runtime configuration with the Helm chart, add the following stanza to <location>:
+To manage runtime configuration with the Helm chart, add the following stanza to your Helm values file:
 
 ```yaml
-runtime_config: <reasonable placeholder values>
+runtimeConfig:
+  ingester_limits: # limits that each ingester replica enforces
+    max_ingestion_rate: _`<SAMPLE_VALUE>`_
+    max_series: _`<PLACEHOLDER>`_
+    max_tenants: _`<PLACEHOLDER>`_
+    max_inflight_push_requests: _`<PLACEHOLDER>`_
+  distributor_limits: # limits that each distributor replica enforces
+    max_ingestion_rate: _`<PLACEHOLDER>`_
+    max_inflight_push_requests: _`<PLACEHOLDER>`_
+    max_inflight_push_requests_bytes: _`<PLACEHOLDER>`_
   overrides:
-    tenant_a:
-      ingestion_rate: 123
+    tenant-1: # limits for tenant-1 that the whole cluster enforces
+      ingestion_tenant_shard_size: _`<PLACEHOLDER>`_
+      max_global_series_per_user: _`<PLACEHOLDER>`_
+      max_fetched_series_per_query: _`<PLACEHOLDER>`_
 ```
 
 For more information about runtime configuration in Grafana Mimir, refer to [About Grafana Mimir runtime configuration](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/about-runtime-configuration/).
