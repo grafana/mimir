@@ -61,6 +61,7 @@ RUN GO111MODULE=on \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
 	go install github.com/open-policy-agent/conftest@v0.42.1 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
+	go install github.com/tailscale/go-cache-plugin/cmd/go-cache-plugin@v0.1.1 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
