@@ -44,6 +44,16 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 		amCfg.AlertmanagerConfig.Global = cfg.Global
 	}
 
+	// If configured, use the SMTP From address sent by Grafana.
+	// TODO: Remove once it's sent in the SmtpConfig field.
+	if gCfg.SmtpFrom != "" {
+		if amCfg.AlertmanagerConfig.Global == nil {
+			defaultGlobals := config.DefaultGlobalConfig()
+			amCfg.AlertmanagerConfig.Global = &defaultGlobals
+		}
+		amCfg.AlertmanagerConfig.Global.SMTPFrom = gCfg.SmtpFrom
+	}
+
 	// We want to:
 	// 1. Remove duplicate receivers and keep the last receiver occurrence if there are conflicts. This is based on the upstream implementation.
 	// 2. Maintain a consistent ordering and preferably original ordering. Otherwise, change detection will be impacted.
@@ -78,18 +88,19 @@ func createUsableGrafanaConfig(logger log.Logger, gCfg alertspb.GrafanaAlertConf
 	}
 
 	emailCfg := alertingReceivers.EmailSenderConfig{
-		AuthPassword: string(g.SMTPAuthPassword),
-		AuthUser:     g.SMTPAuthUsername,
-		CertFile:     g.HTTPConfig.TLSConfig.CertFile,
-		ContentTypes: []string{"text/html"},
-		EhloIdentity: g.SMTPHello,
-		ExternalURL:  externalURL.String(),
-		FromAddress:  g.SMTPFrom,
-		FromName:     "Grafana",
-		Host:         g.SMTPSmarthost.String(),
-		KeyFile:      g.HTTPConfig.TLSConfig.KeyFile,
-		SkipVerify:   !g.SMTPRequireTLS,
-		SentBy:       fmt.Sprintf("Mimir v%s", version.Version),
+		AuthPassword:  string(g.SMTPAuthPassword),
+		AuthUser:      g.SMTPAuthUsername,
+		CertFile:      g.HTTPConfig.TLSConfig.CertFile,
+		ContentTypes:  []string{"text/html"},
+		EhloIdentity:  g.SMTPHello,
+		ExternalURL:   externalURL.String(),
+		FromAddress:   g.SMTPFrom,
+		FromName:      "Grafana",
+		Host:          g.SMTPSmarthost.String(),
+		KeyFile:       g.HTTPConfig.TLSConfig.KeyFile,
+		SkipVerify:    !g.SMTPRequireTLS,
+		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
+		StaticHeaders: gCfg.StaticHeaders,
 	}
 
 	// Patch the base config with the custom SMTP config sent by Grafana.

@@ -81,6 +81,10 @@ type UserGrafanaConfig struct {
 	Promoted                  bool                      `json:"promoted"`
 	ExternalURL               string                    `json:"external_url"`
 	SmtpConfig                *SmtpConfig               `json:"smtp_config,omitempty"`
+
+	// TODO: Remove once everythins is sent in SmtpConfig.
+	SmtpFrom      string            `json:"smtp_from"`
+	StaticHeaders map[string]string `json:"static_headers"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -359,6 +363,10 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Promoted:                  cfg.Promoted,
 			ExternalURL:               cfg.ExternalUrl,
 			SmtpConfig:                smtpConfig,
+
+			// TODO: Remove once everything is sent in SmtpConfig.
+			SmtpFrom:      cfg.SmtpFrom,
+			StaticHeaders: cfg.StaticHeaders,
 		},
 	})
 }
