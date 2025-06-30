@@ -170,6 +170,9 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+
+      # DUMMY CHANGE TO TRIGGER CI TO GET BASELINE TIMING
+
       # We use retry logic for tests to handle flaky tests that might fail intermittently.
       # The retry action will run the test command up to max_attempts times if it fails.
       # This helps reduce CI failures caused by temporary issues, timing problems, or race conditions.
