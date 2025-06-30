@@ -1299,9 +1299,7 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset counters and ensure control channel is empty
 			concurrentQueries.Store(0)
-			for len(controlChan) > 0 {
-				<-controlChan
-			}
+			controlChan = make(chan struct{})
 
 			// Create handler with configurable concurrency
 			handler := RemoteReadHandler(q, log.NewNopLogger(), Config{MaxConcurrentRemoteReadQueries: tt.maxConcurrency})
