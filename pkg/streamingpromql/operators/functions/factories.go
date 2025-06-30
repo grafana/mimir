@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/prometheus/prometheus/model/validation"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -25,7 +25,7 @@ type InstantVectorFunctionOperatorFactory func(
 type InstantVectorFunctionOperatorParams struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
-	NameValidationScheme     validation.NamingScheme
+	NameValidationScheme     model.ValidationScheme
 	ExpressionPosition       posrange.PositionRange
 	TimeRange                types.QueryTimeRange
 }
