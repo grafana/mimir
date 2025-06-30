@@ -177,6 +177,12 @@ jobs:
       - name: Install go-cache-plugin
         run: go install github.com/tailscale/go-cache-plugin/cmd/go-cache-plugin@v0.1.1
 
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+
       - name: Log in to AWS
         uses: grafana/shared-workflows/actions/aws-auth@aws-auth/v1.0.2
         with:
