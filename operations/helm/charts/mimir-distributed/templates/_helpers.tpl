@@ -601,14 +601,36 @@ which allows us to keep generating everything for the default zone.
 {{- end -}}
 {{- $replicaPerZone := div (add $requestedReplicas $numberOfZones -1) $numberOfZones -}}
 
+{{- /* Collect and sort zone names for dynamic downscaleLeader computation */ -}}
+{{- $zoneNames := list -}}
+{{- range $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
+{{- $zoneNames = append $zoneNames $rolloutZone.name -}}
+{{- end -}}
+{{- $sortedZoneNames := $zoneNames | sortAlpha -}}
+
 {{- range $idx, $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
+{{- /* Compute dynamic downscaleLeader: previous zone in sorted list for ingester and store-gateway */ -}}
+{{- $dynamicDownscaleLeader := "" -}}
+{{- if and (ne $.component "alertmanager") (gt (len $sortedZoneNames) 1) -}}
+{{- $currentZoneIdx := 0 -}}
+{{- range $i, $zoneName := $sortedZoneNames -}}
+{{- if eq $zoneName $rolloutZone.name -}}
+{{- $currentZoneIdx = $i -}}
+{{- end -}}
+{{- end -}}
+{{- if gt $currentZoneIdx 0 -}}
+{{- $previousZone := index $sortedZoneNames (sub $currentZoneIdx 1) -}}
+{{- $dynamicDownscaleLeader = printf "mimir-%s-%s" $.component $previousZone -}}
+{{- end -}}
+{{- end -}}
+
 {{- $_ := set $zonesMap $rolloutZone.name (dict
   "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
   "noDownscale"  $rolloutZone.noDownscale
-  "downscaleLeader" $rolloutZone.downscaleLeader
+  "downscaleLeader" (ternary $dynamicDownscaleLeader $rolloutZone.downscaleLeader (ne $dynamicDownscaleLeader ""))
   "prepareDownscale" $rolloutZone.prepareDownscale
   ) -}}
 {{- end -}}
