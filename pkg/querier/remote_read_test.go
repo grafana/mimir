@@ -1343,7 +1343,7 @@ func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
 				maxObserved = max(current, maxObserved)
 
 				// Check that we never exceed the expected limit
-				require.LessOrEqual(t, current, tt.expectedMaxConcurrent,
+				require.LessOrEqualf(t, current, tt.expectedMaxConcurrent,
 					"concurrent queries (%d) exceeded limit (%d)", current, tt.expectedMaxConcurrent)
 
 				// Return true when we've reached the expected concurrency
