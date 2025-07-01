@@ -7,12 +7,14 @@ package storegateway
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"sync"
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
@@ -20,13 +22,54 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+type ParquetShardReaderCloser interface {
+	storage.ParquetShard
+	io.Closer
+}
+
+// ParquetShardReader implements the storage.ParquetShard and io.Closer interfaces
+// in order to control custom lifecycle logic for compatibility with lazy & pooled readers.
+type parquetBucketShardReader struct {
+	block *parquetBucketBlock
+}
+
+func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
+	r.block.pendingReaders.Add(1)
+	return r.block.shardReaderCloser.LabelsFile()
+}
+
+func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
+	r.block.pendingReaders.Add(1)
+	return r.block.shardReaderCloser.ChunksFile()
+}
+
+func (r *parquetBucketShardReader) TSDBSchema() (*schema.TSDBSchema, error) {
+	return r.block.shardReaderCloser.TSDBSchema()
+}
+
+func (r *parquetBucketShardReader) Close() error {
+	errs := multierror.New()
+
+	// TODO figure out what we actually want to do here.
+	//   Labels and chunks are not always read together, so we won't always have two pending readers.
+	//   Possible that we need separate reader types just like the main branch logic does.
+
+	// TODO Actually closing the files should be handled in the reader pool - need to verify logic there.
+	//errs.Add(r.block.shardReaderCloser.LabelsFile().Close())
+	r.block.pendingReaders.Done()
+
+	//errs.Add(r.block.shardReaderCloser.ChunksFile().Close())
+	r.block.pendingReaders.Done()
+	return errs.Err()
+}
+
 // parquetBucketBlock wraps access to the block's storage.ParquetShard interface
 // with metadata, metrics and caching [etc once we fill in capabilities].
 type parquetBucketBlock struct {
-	meta        *block.Meta
-	blockLabels labels.Labels
-	storage.ParquetShard
-	localDir string
+	meta              *block.Meta
+	blockLabels       labels.Labels
+	shardReaderCloser ParquetShardReaderCloser
+	localDir          string
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
@@ -38,16 +81,20 @@ type parquetBucketBlock struct {
 
 func newParquetBucketBlock(
 	meta *block.Meta,
-	shard storage.ParquetShard,
+	shardReaderCloser ParquetShardReaderCloser,
 	localDir string,
 ) *parquetBucketBlock {
 	return &parquetBucketBlock{
 		meta: meta,
 		// Inject the block ID as a label to allow to match blocks by ID.
-		blockLabels:  labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
-		ParquetShard: shard,
-		localDir:     localDir,
+		blockLabels:       labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
+		shardReaderCloser: shardReaderCloser,
+		localDir:          localDir,
 	}
+}
+
+func (b *parquetBucketBlock) ShardReader() ParquetShardReaderCloser {
+	return &parquetBucketShardReader{block: b}
 }
 
 // matchLabels verifies whether the block matches the given matchers.
@@ -73,13 +120,14 @@ func (b *parquetBucketBlock) MarkQueried() {
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
 func (b *parquetBucketBlock) Close() error {
+	fmt.Println("closing parquet bucket block ", b.meta.ULID)
 	b.closedMtx.Lock()
 	b.closed = true
 	b.closedMtx.Unlock()
 
 	b.pendingReaders.Wait()
 
-	return nil // TODO manage reader opening and closing through pools like indexheader does.
+	return b.shardReaderCloser.Close()
 }
 
 // parquetBlockSet holds all blocks.
