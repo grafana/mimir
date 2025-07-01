@@ -118,7 +118,7 @@ func TestStatsRenderer(t *testing.T) {
 
 	api.Register(promRouter)
 
-	runQuery := func(expr string) *mimir_stats.Stats {
+	runQuery := func(expr string) *mimir_stats.SafeStats {
 		rec := httptest.NewRecorder()
 
 		req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/query_range?query=%s&start=%d&end=%d&step=%ds", expr, start.Unix(), end.Unix(), int(step.Seconds())), nil)

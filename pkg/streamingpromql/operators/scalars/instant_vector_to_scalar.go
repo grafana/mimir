@@ -49,7 +49,7 @@ func (i *InstantVectorToScalar) GetValues(ctx context.Context) (types.ScalarData
 		return types.ScalarData{}, err
 	}
 
-	defer types.BoolSlicePool.Put(seenPoint, i.MemoryConsumptionTracker)
+	defer types.BoolSlicePool.Put(&seenPoint, i.MemoryConsumptionTracker)
 	seenPoint = seenPoint[:i.TimeRange.StepCount]
 
 	output, err := types.FPointSlicePool.Get(i.TimeRange.StepCount, i.MemoryConsumptionTracker)
@@ -96,7 +96,7 @@ func (i *InstantVectorToScalar) getInnerSeriesCount(ctx context.Context) (int, e
 		return 0, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(metadata, i.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&metadata, i.MemoryConsumptionTracker)
 
 	seriesCount := len(metadata)
 

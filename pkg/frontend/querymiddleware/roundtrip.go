@@ -85,6 +85,8 @@ type Config struct {
 	ExtraPropagateHeaders []string `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
+
+	CacheSamplesProcessedStats bool `yaml:"cache_samples_processed_stats"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -100,6 +102,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache.")
 	cfg.ResultsCache.RegisterFlags(f)
 }
 
@@ -120,7 +123,6 @@ func (cfg *Config) Validate() error {
 	if !slices.Contains(allFormats, cfg.QueryResultResponseFormat) {
 		return fmt.Errorf("unknown query result response format '%s'. Supported values: %s", cfg.QueryResultResponseFormat, strings.Join(allFormats, ", "))
 	}
-
 	return nil
 }
 
@@ -449,6 +451,7 @@ func newQueryMiddlewares(
 		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
+			cfg.CacheSamplesProcessedStats,
 			cfg.SplitQueriesByInterval,
 			limits,
 			codec,

@@ -249,10 +249,10 @@ SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
 LATEST_BUILD_IMAGE_TAG ?= pr11747-73ebde0521
 
-# TTY is parameterized to allow Google Cloud Builder to run builds,
-# as it currently disallows TTY devices. This value needs to be overridden
-# in any custom cloudbuild.yaml files
-TTY := --tty
+# TTY is parameterized to allow CI and scripts to run builds,
+# as it currently disallows TTY devices.
+# Auto-detect TTY availability: use --tty if stdin is a TTY, otherwise empty
+TTY := $(shell test -t 0 && echo --tty || echo)
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
@@ -272,7 +272,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests generate-otlp: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -620,6 +620,14 @@ check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
+.PHONY: generate-otlp
+generate-otlp:
+	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
+
+.PHONY: check-generated-otlp-code
+check-generated-otlp-code: generate-otlp
+	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)
+
 endif
 
 .PHONY: check-makefiles
@@ -764,9 +772,6 @@ integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
-
 # Those vars are needed for packages target
 export VERSION
 
@@ -790,11 +795,3 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
-
-.PHONY: generate-otlp
-generate-otlp:
-	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
-
-.PHONY: check-generated-otlp-code
-check-generated-otlp-code: generate-otlp
-	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)

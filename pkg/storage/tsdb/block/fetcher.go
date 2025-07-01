@@ -56,8 +56,6 @@ func (s *FetcherMetrics) ResetTx() {
 }
 
 const (
-	fetcherSubSys = "blocks_meta"
-
 	CorruptedMeta = "corrupted-meta-json"
 	NoMeta        = "no-meta-json"
 	LoadedMeta    = "loaded"
@@ -85,27 +83,25 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 	var m FetcherMetrics
 
 	m.Syncs = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Subsystem: fetcherSubSys,
-		Name:      "syncs_total",
-		Help:      "Total blocks metadata synchronization attempts",
+		Name: "blocks_meta_syncs_total",
+		Help: "Total blocks metadata synchronization attempts",
 	})
 	m.SyncFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Subsystem: fetcherSubSys,
-		Name:      "sync_failures_total",
-		Help:      "Total blocks metadata synchronization failures",
+		Name: "blocks_meta_sync_failures_total",
+		Help: "Total blocks metadata synchronization failures",
 	})
 	m.SyncDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Subsystem: fetcherSubSys,
-		Name:      "sync_duration_seconds",
-		Help:      "Duration of the blocks metadata synchronization in seconds",
-		Buckets:   []float64{0.01, 1, 10, 100, 300, 600, 1000},
+		Name: "blocks_meta_sync_duration_seconds",
+		Help: "Duration of the blocks metadata synchronization in seconds",
+		// We've seen the syncing taking even hours in extreme cases. We configure the buckets to
+		// make sure we can track such high latency.
+		Buckets: []float64{0.01, 1, 10, 100, 300, 600, 1200, 2400, 3600, 7200, 14400, 21600},
 	})
 	m.Synced = extprom.NewTxGaugeVec(
 		reg,
 		prometheus.GaugeOpts{
-			Subsystem: fetcherSubSys,
-			Name:      "synced",
-			Help:      "Number of block metadata synced",
+			Name: "blocks_meta_synced",
+			Help: "Number of block metadata synced",
 		},
 		[]string{"state"},
 		append([][]string{

@@ -40,4 +40,12 @@ message Stats {
   uint64 samples_processed = 11;
   // The number of subqueries that were spun off as actual range queries in order to execute the full query
   uint32 spun_off_subqueries = 12;
+  // SamplesProcessedPerStep represents the number of samples scanned per step timestamp while evaluating a query.
+  repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
+}
+
+// StepStat represents a sample count at a specific timestamp
+message StepStat {
+  int64 timestamp = 1;  // Unix timestamp in milliseconds
+  int64 value = 2;      // Number of samples at this timestamp
 }

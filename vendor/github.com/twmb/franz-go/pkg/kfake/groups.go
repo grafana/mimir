@@ -167,6 +167,7 @@ start:
 	case g.reqCh <- creq:
 	case <-g.quitCh:
 		goto start
+	case <-g.c.die:
 	}
 }
 
@@ -184,6 +185,8 @@ func (gs *groups) handleHijack(group string, creq *clientReq) bool {
 	case g.reqCh <- creq:
 		return true
 	case <-g.quitCh:
+		return false
+	case <-g.c.die:
 		return false
 	}
 }
@@ -218,6 +221,7 @@ start:
 	case g.reqCh <- creq:
 	case <-g.quitCh:
 		goto start
+	case <-g.c.die:
 	}
 }
 
@@ -577,6 +581,8 @@ func (g *group) manage(detachNew func()) {
 		select {
 		case <-g.quitCh:
 			return
+		case <-g.c.die:
+			return
 		case creq := <-g.reqCh:
 			var kresp kmsg.Response
 			switch creq.kreq.(type) {
@@ -612,6 +618,8 @@ func (g *group) waitControl(fn func()) bool {
 	wfn := func() { fn(); close(wait) }
 	select {
 	case <-g.quitCh:
+		return false
+	case <-g.c.die:
 		return false
 	case g.controlCh <- wfn:
 		<-wait
@@ -960,6 +968,7 @@ func (g *group) rebalance() {
 		g.tRebalance = time.AfterFunc(time.Duration(rebalanceTimeoutMs)*time.Millisecond, func() {
 			select {
 			case <-g.quitCh:
+			case <-g.c.die:
 			case g.controlCh <- func() {
 				g.completeRebalance()
 			}:
@@ -1081,6 +1090,7 @@ func (g *group) atSessionTimeout(m *groupMember, fn func()) {
 	tfn := func() {
 		select {
 		case <-g.quitCh:
+		case <-g.c.die:
 		case g.controlCh <- func() {
 			if time.Since(m.last) >= timeout {
 				fn()

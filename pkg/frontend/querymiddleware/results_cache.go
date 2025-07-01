@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
-	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -32,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -86,7 +86,6 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	if err := cfg.Compression.Validate(); err != nil {
 		return errors.Wrap(err, "query-frontend results cache")
 	}
-
 	return nil
 }
 
@@ -474,24 +473,30 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, samplesProcessed uint64) (Extent, error) {
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, perStepStats []stats.StepStat) (Extent, error) {
 	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
+
+	extentPerStepStats := make([]StepStat, len(perStepStats))
+	for i, stat := range perStepStats {
+		extentPerStepStats[i] = StepStat(stat)
+	}
+
 	return Extent{
 		Start:                   req.GetStart(),
 		End:                     req.GetEnd(),
 		Response:                marshalled,
 		TraceId:                 otelTraceID(ctx),
 		QueryTimestampMs:        queryTime.UnixMilli(),
-		SamplesProcessedPerStep: approximateSamplesProcessedPerStep(req.GetStart(), req.GetEnd(), req.GetStep(), samplesProcessed),
+		SamplesProcessedPerStep: extentPerStepStats,
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, uint64, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []StepStat, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
@@ -517,14 +522,14 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, 0, err
+				return nil, nil, nil, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, nil, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
@@ -551,7 +556,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, nil, err
 		}
 
 		requests = append(requests, r)
@@ -563,13 +568,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	// Track samples processed from cache
-	var cachedSamplesProcessed uint64 = 0
-	for _, stepStat := range cachedPerStepStat {
-		cachedSamplesProcessed += uint64(stepStat.Value)
-	}
-
-	return requests, cachedResponses, cachedSamplesProcessed, nil
+	return requests, cachedResponses, cachedPerStepStat, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -686,24 +685,6 @@ func cacheHashKey(key string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// approximateSamplesProcessedPerStep approximates the samples processed per step from the total samples processed.
-// We had to use approximation, because MQE doesn't support per step stats yet.
-func approximateSamplesProcessedPerStep(start int64, end int64, step int64, samplesProcessed uint64) []StepStat {
-	numSteps := (end-start)/step + 1
-	// approxPerStep is not float because:
-	// 1. Real per step stats always have integer values. Having int in approximation will simplify migration to per step stats from engine
-	// 2. approxPerStep is rounded with math.Ceil, because in most of the real-life scenarios, samplesProcessed / numSteps is > 1.
-	approxPerStep := int64(math.Ceil(float64(samplesProcessed) / float64(numSteps)))
-	perStepStats := make([]StepStat, 0, numSteps)
-	for i := int64(0); i < numSteps; i++ {
-		perStepStats = append(perStepStats, StepStat{
-			Timestamp: start + i*step,
-			Value:     approxPerStep,
-		})
-	}
-	return perStepStats
-}
-
 // extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.
 func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []StepStat {
 	// Validate the subrange is valid and within the extent.
@@ -756,4 +737,50 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 	}
 
 	return merged
+}
+
+// sumSamplesProcessedPerStep sums values from multiple arrays of StepStat.
+// For duplicate timestamps, later arrays win (last array wins behavior), then values are summed.
+func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
+	if len(stats) == 0 {
+		return 0
+	}
+
+	// Fast path: single array - no duplicates possible, just sum directly
+	if len(stats) == 1 {
+		var total int64
+		for _, step := range stats[0] {
+			total += step.Value
+		}
+		return total
+	}
+
+	// Multiple arrays: handle duplicates with map (last array wins)
+	m := make(map[int64]int64)
+	for _, arr := range stats {
+		for _, step := range arr {
+			m[step.Timestamp] = step.Value
+		}
+	}
+
+	var total int64
+	for _, value := range m {
+		total += value
+	}
+
+	return total
+}
+
+// convertStatsStepStat converts []stats.StepStat to []StepStat using type casting.
+// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
+func convertStatsStepStat(processed []stats.StepStat) []StepStat {
+	if len(processed) == 0 {
+		return nil
+	}
+
+	converted := make([]StepStat, len(processed))
+	for i, stat := range processed {
+		converted[i] = StepStat(stat)
+	}
+	return converted
 }

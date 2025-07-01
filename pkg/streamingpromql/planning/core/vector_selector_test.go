@@ -70,6 +70,15 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"} @ 123456 (1970-01-01T00:02:03.456Z) offset 1h0m0s`,
 		},
+		"one matcher, returning sample timestamps": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:               singleMatcher,
+					ReturnSampleTimestamps: true,
+				},
+			},
+			expected: `{__name__="foo"} (return sample timestamps)`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -250,6 +259,27 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 						{Name: "__name__", Type: labels.MatchEqual, Value: "bar"},
 					},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"one returning sample timestamps, one not": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition:     PositionRange{Start: 1, End: 2},
+					ReturnSampleTimestamps: false,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition:     PositionRange{Start: 1, End: 2},
+					ReturnSampleTimestamps: true,
 				},
 			},
 			expectEquivalent: false,

@@ -50,6 +50,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	cfg1.Common.KVStore.Mock = ringStore
 	cfg1.Common.HeartbeatPeriod = 1 * time.Second
 	cfg1.Common.HeartbeatTimeout = 15 * time.Second
+	cfg1.AutoForgetUnhealthyPeriods = 10
 
 	cfg1.Common.InstanceID = "instance-1"
 	cfg1.Common.InstanceAddr = "127.0.0.1"
@@ -115,7 +116,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	// no other instance should be the leader now.
 	require.False(t, i2IsLeader)
 
-	// After a certain period of time (ringAutoForgetUnhealthyPeriods *
+	// After a certain period of time (cfg.AutoForgetUnhealthyPeriods *
 	// cfg.HeartbeatTimeout) the instance's heartbeat will expire. If the instance
 	// becomes healthy again during this period (e.g. during rollout), it will rejoin
 	// the ring and resume its function as the leader. Otherwise, it will be
@@ -125,7 +126,7 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		instance := desc.Ingesters[l1.GetInstanceID()]
-		instance.Timestamp = time.Now().Add(-ringAutoForgetUnhealthyPeriods * cfg1.Common.HeartbeatTimeout).Unix()
+		instance.Timestamp = time.Now().Add(-time.Duration(cfg1.AutoForgetUnhealthyPeriods+1) * cfg1.Common.HeartbeatTimeout).Unix()
 		desc.Ingesters[l1.GetInstanceID()] = instance
 		return desc, true, nil
 	}))

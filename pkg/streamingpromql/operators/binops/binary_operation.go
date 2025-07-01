@@ -146,7 +146,7 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 		filteredData.Floats = data.Floats[:nextOutputFloatIndex]
 	} else {
 		// We don't have any float points to return, return the original slice to the pool.
-		types.FPointSlicePool.Put(data.Floats, memoryConsumptionTracker)
+		types.FPointSlicePool.Put(&data.Floats, memoryConsumptionTracker)
 	}
 
 	nextOutputHistogramIndex := 0
@@ -171,7 +171,7 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 		filteredData.Histograms = data.Histograms[:nextOutputHistogramIndex]
 	} else {
 		// We don't have any histogram points to return, return the original slice to the pool.
-		types.HPointSlicePool.Put(data.Histograms, memoryConsumptionTracker)
+		types.HPointSlicePool.Put(&data.Histograms, memoryConsumptionTracker)
 	}
 
 	return filteredData, nil
@@ -418,16 +418,16 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 
 	// Cleanup the unused slices.
 	if canReturnLeftFPointSlice {
-		types.FPointSlicePool.Put(left.Floats, e.memoryConsumptionTracker)
+		types.FPointSlicePool.Put(&left.Floats, e.memoryConsumptionTracker)
 	}
 	if canReturnLeftHPointSlice {
-		types.HPointSlicePool.Put(left.Histograms, e.memoryConsumptionTracker)
+		types.HPointSlicePool.Put(&left.Histograms, e.memoryConsumptionTracker)
 	}
 	if canReturnRightFPointSlice {
-		types.FPointSlicePool.Put(right.Floats, e.memoryConsumptionTracker)
+		types.FPointSlicePool.Put(&right.Floats, e.memoryConsumptionTracker)
 	}
 	if canReturnRightHPointSlice {
-		types.HPointSlicePool.Put(right.Histograms, e.memoryConsumptionTracker)
+		types.HPointSlicePool.Put(&right.Histograms, e.memoryConsumptionTracker)
 	}
 
 	return types.InstantVectorSeriesData{

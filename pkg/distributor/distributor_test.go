@@ -5997,9 +5997,9 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			distributorCfg.HATrackerConfig = HATrackerConfig{
 				EnableHATracker: true,
 				KVStore:         kv.Config{Mock: mock},
-				UpdateTimeout:   100 * time.Millisecond,
-				FailoverTimeout: time.Second,
 			}
+			cfg.limits.HATrackerUpdateTimeout = model.Duration(100 * time.Millisecond)
+			cfg.limits.HATrackerFailoverTimeout = model.Duration(time.Second)
 			if cfg.limits.HAMaxClusters == 0 {
 				cfg.limits.HAMaxClusters = 100
 			}

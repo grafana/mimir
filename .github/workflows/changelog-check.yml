@@ -31,10 +31,23 @@ jobs:
         if: steps.check-label.outputs.skip == 'false'
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
+          MAIN_CHANGELOG_FOUND=false
+          HELM_CHANGELOG_FOUND=false
+          
           if grep -q "#${PR_NUMBER}" CHANGELOG.md; then
             echo "✅ PR #${PR_NUMBER} is referenced in CHANGELOG.md"
+            MAIN_CHANGELOG_FOUND=true
+          fi
+          
+          if grep -q "#${PR_NUMBER}" operations/helm/charts/mimir-distributed/CHANGELOG.md; then
+            echo "✅ PR #${PR_NUMBER} is referenced in helm CHANGELOG.md"
+            HELM_CHANGELOG_FOUND=true
+          fi
+          
+          if [ "$MAIN_CHANGELOG_FOUND" = true ] || [ "$HELM_CHANGELOG_FOUND" = true ]; then
+            echo "✅ PR #${PR_NUMBER} is referenced in at least one changelog"
           else
-            echo "❌ PR #${PR_NUMBER} is not referenced in CHANGELOG.md"
-            echo "Please add an entry for this PR in CHANGELOG.md or add one of these labels if this change doesn't require a changelog entry: 'changelog-not-needed', 'dependency-update', 'vendored-mimir-prometheus-update', 'helm-weekly-release'"
+            echo "❌ PR #${PR_NUMBER} is not referenced in CHANGELOG.md or operations/helm/charts/mimir-distributed/CHANGELOG.md"
+            echo "Please add an entry for this PR in the appropriate changelog or add one of these labels if this change doesn't require a changelog entry: 'changelog-not-needed', 'dependency-update', 'vendored-mimir-prometheus-update', 'helm-weekly-release'"
             exit 1
           fi

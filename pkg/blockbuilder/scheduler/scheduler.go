@@ -97,8 +97,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 		s.metrics.fetchOffsetsFailed.Inc()
 		return fmt.Errorf("fetch committed offsets: %w", err)
 	}
-	level.Debug(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
-
+	level.Info(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
 	s.mu.Lock()
 	c.Each(func(o kadm.Offset) {
 		ps := s.getPartitionState(o.Topic, o.Partition)

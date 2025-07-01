@@ -124,7 +124,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(innerSeries, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries, a.MemoryConsumptionTracker)
 
 	if len(innerSeries) == 0 {
 		// No input series == no output series.

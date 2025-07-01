@@ -52,9 +52,10 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 }
 
 type tsdbBuilderMetrics struct {
-	processSamplesDiscarded  *prometheus.CounterVec
-	compactAndUploadDuration *prometheus.HistogramVec
-	compactAndUploadFailed   *prometheus.CounterVec
+	processSamplesDiscarded            *prometheus.CounterVec
+	compactAndUploadDuration           *prometheus.HistogramVec
+	compactAndUploadFailed             *prometheus.CounterVec
+	lastSuccessfulCompactAndUploadTime *prometheus.GaugeVec
 }
 
 func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
@@ -74,6 +75,11 @@ func newTSDBBBuilderMetrics(reg prometheus.Registerer) tsdbBuilderMetrics {
 	m.compactAndUploadFailed = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_blockbuilder_tsdb_compact_and_upload_failed_total",
 		Help: "Total number of failures compacting and uploading a tsdb of one partition.",
+	}, []string{"partition"})
+
+	m.lastSuccessfulCompactAndUploadTime = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds",
+		Help: "Unix timestamp (in seconds) of the last successful tsdb block compacted and uploaded to the object storage on a partition.",
 	}, []string{"partition"})
 
 	return m

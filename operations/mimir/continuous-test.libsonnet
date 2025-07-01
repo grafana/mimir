@@ -30,7 +30,7 @@ local k = import 'ksonnet-util/kausal.libsonnet';
     ]) +
     k.util.resourcesRequests('1', '512Mi') +
     k.util.resourcesLimits(null, '1Gi') +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   continuous_test_deployment: if !$._config.continuous_test_enabled then null else
     deployment.new('continuous-test', 1, [$.continuous_test_container]) +

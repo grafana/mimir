@@ -143,7 +143,11 @@ jobs:
           
           echo "Dependencies updated successfully"
 
+      - name: Regenerate OTLP files
+        run: make generate-otlp
+
       - name: Create Pull Request
+        id: create_pull_request
         uses: peter-evans/create-pull-request@4e1beaa7521e8b457b572c090b25bd3db56bf1c5 # v5.0.3
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -163,3 +167,19 @@ jobs:
           base: ${{ steps.branch-names.outputs.mimir_branch }}
           labels: vendored-mimir-prometheus-update
           delete-branch: true
+
+      - name: Close Old Vendor PRs
+        run: |
+          prs=$(gh pr list --state open --json number --search 'label:vendored-mimir-prometheus-update' --base $BASE_BRANCH --jq '.[].number')
+          echo "The following Mimir automatic vendor PRs are open: $prs"
+          for pr in $prs; do
+            if [ $pr == ${PULL_REQUEST_NUMBER} ]; then
+              continue
+            fi
+            gh pr comment $pr -b "This pull request has been automatically closed because it has been superseded by #${PULL_REQUEST_NUMBER}."
+            gh pr close $pr --delete-branch
+          done
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          BASE_BRANCH: ${{ steps.branch-names.outputs.mimir_branch }}
+          PULL_REQUEST_NUMBER: ${{ steps.create_pull_request.outputs.pull-request-number }}

@@ -945,39 +945,6 @@
             },
             {
               "kind": "field",
-              "name": "ha_tracker_update_timeout",
-              "required": false,
-              "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
-              "fieldValue": null,
-              "fieldDefaultValue": 15000000000,
-              "fieldFlag": "distributor.ha-tracker.update-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_update_timeout_jitter_max",
-              "required": false,
-              "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
-              "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
-              "fieldFlag": "distributor.ha-tracker.update-timeout-jitter-max",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "ha_tracker_failover_timeout",
-              "required": false,
-              "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout",
-              "fieldValue": null,
-              "fieldDefaultValue": 30000000000,
-              "fieldFlag": "distributor.ha-tracker.failover-timeout",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "enable_elected_replica_metric",
               "required": false,
               "desc": "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.",
@@ -1306,6 +1273,36 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_update_timeout",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_update_timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_update_timeout_jitter_max",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_update_timeout_jitter_max.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ha_tracker_failover_timeout",
+              "required": false,
+              "desc": "Deprecated. Use limits.ha_tracker_failover_timeout.",
+              "fieldValue": null,
+              "fieldDefaultValue": null,
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -1756,6 +1753,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "distributor.ring.instance-enable-ipv6",
               "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "distributor.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
               "fieldCategory": "advanced"
             }
           ],
@@ -4337,6 +4345,39 @@
         },
         {
           "kind": "field",
+          "name": "ha_tracker_update_timeout",
+          "required": false,
+          "desc": "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "distributor.ha-tracker.update-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_update_timeout_jitter_max",
+          "required": false,
+          "desc": "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 5000000000,
+          "fieldFlag": "distributor.ha-tracker.update-timeout-jitter-max",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "ha_tracker_failover_timeout",
+          "required": false,
+          "desc": "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "distributor.ha-tracker.failover-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "drop_labels",
           "required": false,
           "desc": "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.",
@@ -5741,6 +5782,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-convert-histograms-to-nhcb",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "otel_promote_scope_metadata",
+          "required": false,
+          "desc": "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-promote-scope-metadata",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -7509,6 +7561,16 @@
           "fieldDefaultValue": "protobuf",
           "fieldFlag": "query-frontend.query-result-response-format",
           "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "cache_samples_processed_stats",
+          "required": false,
+          "desc": "Cache statistics of processed samples on results cache.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.cache-samples-processed-stats",
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -12126,6 +12188,17 @@
               "fieldFlag": "compactor.ring.wait-active-instance-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "compactor.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -12514,6 +12587,28 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_enabled",
+              "required": false,
+              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "replication_factor",
               "required": false,
               "desc": "The replication factor to use when sharding blocks. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.",
@@ -12552,16 +12647,6 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "store-gateway.sharding-ring.zone-awareness-enabled",
-              "fieldType": "boolean"
-            },
-            {
-              "kind": "field",
-              "name": "auto_forget_enabled",
-              "required": false,
-              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
               "fieldType": "boolean"
             },
             {
@@ -14021,6 +14106,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ruler.ring.instance-enable-ipv6",
               "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ruler.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
               "fieldCategory": "advanced"
             },
             {
@@ -18486,7 +18582,7 @@
           "required": false,
           "desc": "Timeout used when connecting to other nodes to send packet.",
           "fieldValue": null,
-          "fieldDefaultValue": 2000000000,
+          "fieldDefaultValue": 500000000,
           "fieldFlag": "memberlist.packet-dial-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -18497,7 +18593,7 @@
           "required": false,
           "desc": "Timeout for writing 'packet' data.",
           "fieldValue": null,
-          "fieldDefaultValue": 5000000000,
+          "fieldDefaultValue": 500000000,
           "fieldFlag": "memberlist.packet-write-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -18508,7 +18604,7 @@
           "required": false,
           "desc": "Maximum number of concurrent writes to other nodes.",
           "fieldValue": null,
-          "fieldDefaultValue": 3,
+          "fieldDefaultValue": 5,
           "fieldFlag": "memberlist.max-concurrent-writes",
           "fieldType": "int",
           "fieldCategory": "advanced"
@@ -18519,7 +18615,7 @@
           "required": false,
           "desc": "Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped.",
           "fieldValue": null,
-          "fieldDefaultValue": 250000000,
+          "fieldDefaultValue": 1000000000,
           "fieldFlag": "memberlist.acquire-writer-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -19288,6 +19384,17 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "query-scheduler.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "instance_id",
               "required": false,
               "desc": "Instance ID to register in the ring.",
@@ -19827,6 +19934,17 @@
               "fieldDefaultValue": 300000000000,
               "fieldFlag": "overrides-exporter.ring.wait-stability-max-duration",
               "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 4,
+              "fieldFlag": "overrides-exporter.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
               "fieldCategory": "advanced"
             }
           ],

@@ -149,7 +149,7 @@ func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
 }
 
 type QueryDetails struct {
-	QuerierStats *stats.Stats
+	QuerierStats *stats.SafeStats
 
 	// Start and End are the parsed start and end times of the unmodified user request.
 	Start, End time.Time
@@ -161,9 +161,9 @@ type QueryDetails struct {
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
-	// SamplesProcessedFromCache represents the total number of samples processed by queriers to produce the result
-	// that has been stored in the query-frontend cache and then fetched to produce the current full query result.
-	SamplesProcessedFromCache uint64
+	// SamplesProcessedCacheAdjusted represents the total number of samples processed by queriers to produce the query result.
+	// It includes samples has been stored in the query-frontend cache and then fetched to produce the current full query result.
+	SamplesProcessedCacheAdjusted uint64
 }
 
 type contextKey int
@@ -174,8 +174,8 @@ var ctxKey = contextKey(0)
 // The returned context also has querier stats.Stats injected. The stats pointer in the context
 // and the stats pointer in the QueryDetails are the same.
 func ContextWithEmptyDetails(ctx context.Context) (*QueryDetails, context.Context) {
-	stats, ctx := stats.ContextWithEmptyStats(ctx)
-	details := &QueryDetails{QuerierStats: stats}
+	s, ctx := stats.ContextWithEmptyStats(ctx)
+	details := &QueryDetails{QuerierStats: s}
 	ctx = context.WithValue(ctx, ctxKey, details)
 	return details, ctx
 }

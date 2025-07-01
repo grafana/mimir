@@ -59,6 +59,7 @@ type OTLPHandlerLimits interface {
 	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 	OTelConvertHistogramsToNHCB(id string) bool
+	OTelPromoteScopeMetadata(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -131,6 +132,10 @@ func OTLPHandler(
 			level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
 			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 			return
+		}
+		if labelValueTooLongErr := (LabelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
+			// Translate from Mimir to OTel domain terminology
+			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
 		}
 		var (
 			httpCode int
@@ -277,11 +282,26 @@ func newOTLPParser(
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 		convertHistogramsToNHCB := limits.OTelConvertHistogramsToNHCB(tenantID)
+		promoteScopeMetadata := limits.OTelPromoteScopeMetadata(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
-		metrics, metricsDropped, err := otelMetricsToTimeseries(ctx, otlpConverter, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, convertHistogramsToNHCB, otlpReq.Metrics(), spanLogger)
+		metrics, metricsDropped, err := otelMetricsToTimeseries(
+			ctx,
+			otlpConverter,
+			otlpReq.Metrics(),
+			conversionOptions{
+				addSuffixes:                       addSuffixes,
+				enableCTZeroIngestion:             enableCTZeroIngestion,
+				enableStartTimeQuietZero:          enableStartTimeQuietZero,
+				keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+				convertHistogramsToNHCB:           convertHistogramsToNHCB,
+				promoteScopeMetadata:              promoteScopeMetadata,
+				promoteResourceAttributes:         promoteResourceAttributes,
+			},
+			spanLogger,
+		)
 		if metricsDropped > 0 {
 			discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(metricsDropped)) // "group" label is empty here as metrics couldn't be parsed
 		}
@@ -469,7 +489,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
 					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
-					MetricFamilyName: namer.Build(translatorMetricFromOtelMetric(metric)),
+					MetricFamilyName: namer.Build(otlp.TranslatorMetricFromOtelMetric(metric)),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -481,50 +501,31 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-// copied from https://github.com/prometheus/prometheus/blob/main/storage/remote/otlptranslator/prometheusremotewrite/metrics_to_prw.go
-// TODO(zenador): remove this after making that function public
-func translatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
-	m := otlptranslator.Metric{
-		Name: metric.Name(),
-		Unit: metric.Unit(),
-		Type: otlptranslator.MetricTypeUnknown,
-	}
-	switch metric.Type() {
-	case pmetric.MetricTypeGauge:
-		m.Type = otlptranslator.MetricTypeGauge
-	case pmetric.MetricTypeSum:
-		if metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative {
-			m.Type = otlptranslator.MetricTypeMonotonicCounter
-		} else {
-			m.Type = otlptranslator.MetricTypeNonMonotonicCounter
-		}
-	case pmetric.MetricTypeSummary:
-		m.Type = otlptranslator.MetricTypeSummary
-	case pmetric.MetricTypeHistogram:
-		m.Type = otlptranslator.MetricTypeHistogram
-	case pmetric.MetricTypeExponentialHistogram:
-		m.Type = otlptranslator.MetricTypeExponentialHistogram
-	}
-	return m
+type conversionOptions struct {
+	addSuffixes                       bool
+	enableCTZeroIngestion             bool
+	enableStartTimeQuietZero          bool
+	keepIdentifyingResourceAttributes bool
+	convertHistogramsToNHCB           bool
+	promoteScopeMetadata              bool
+	promoteResourceAttributes         []string
 }
 
 func otelMetricsToTimeseries(
 	ctx context.Context,
 	converter *otlpMimirConverter,
-	addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero bool,
-	promoteResourceAttributes []string,
-	keepIdentifyingResourceAttributes bool,
-	convertHistogramsToNHCB bool,
 	md pmetric.Metrics,
+	opts conversionOptions,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, int, error) {
 	settings := otlp.Settings{
-		AddMetricSuffixes:                   addSuffixes,
-		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
-		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
-		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:             convertHistogramsToNHCB,
+		AddMetricSuffixes:                   opts.addSuffixes,
+		EnableCreatedTimestampZeroIngestion: opts.enableCTZeroIngestion,
+		EnableStartTimeQuietZero:            opts.enableStartTimeQuietZero,
+		PromoteResourceAttributes:           otlp.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:   opts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:             opts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                opts.promoteScopeMetadata,
 	}
 	mimirTS := converter.ToTimeseries(ctx, md, settings, logger)
 
@@ -677,4 +678,15 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 	}
 
 	return firstSpan.Offset - 1, buckets
+}
+
+type otelAttributeValueTooLongError struct {
+	LabelValueTooLongError
+}
+
+func (e otelAttributeValueTooLongError) Error() string {
+	return fmt.Sprintf(
+		"received a metric whose attribute value length exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
+		e.Limit, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series),
+	)
 }

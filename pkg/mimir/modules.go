@@ -424,12 +424,13 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	}
 
 	serv, err := NewRuntimeManager(&t.Cfg, "mimir-runtime-config", prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
-	if err == nil {
-		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
-		// anything in the start/stopping phase. Thus we can create it as part of runtime config
-		// setup without any service instance of its own.
-		t.TenantLimits = newTenantLimits(serv)
+	if err != nil {
+		return nil, err
 	}
+	// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
+	// anything in the start/stopping phase. Thus we can create it as part of runtime config
+	// setup without any service instance of its own.
+	t.TenantLimits = newTenantLimits(serv)
 
 	t.RuntimeConfig = serv
 	t.API.RegisterRuntimeConfig(runtimeConfigHandler(t.RuntimeConfig, t.Cfg.LimitsConfig), validation.UserLimitsHandler(t.Cfg.LimitsConfig, t.TenantLimits))
@@ -450,7 +451,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
-	return serv, err
+	return serv, nil
 }
 
 func (t *Mimir) initOverrides() (serv services.Service, err error) {

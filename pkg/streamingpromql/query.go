@@ -193,7 +193,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
+		defer types.SeriesMetadataSlicePool.Put(&series, q.memoryConsumptionTracker)
 
 		v, err := q.populateMatrixFromRangeVectorOperator(ctx, root, series)
 		if err != nil {
@@ -206,7 +206,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
-		defer types.SeriesMetadataSlicePool.Put(series, q.memoryConsumptionTracker)
+		defer types.SeriesMetadataSlicePool.Put(&series, q.memoryConsumptionTracker)
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
@@ -368,8 +368,8 @@ func (q *Query) populateMatrixFromRangeVectorOperator(ctx context.Context, o typ
 		}
 
 		if len(floats) == 0 && len(histograms) == 0 {
-			types.FPointSlicePool.Put(floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(histograms, q.memoryConsumptionTracker)
+			types.FPointSlicePool.Put(&floats, q.memoryConsumptionTracker)
+			types.HPointSlicePool.Put(&histograms, q.memoryConsumptionTracker)
 			continue
 		}
 
@@ -397,7 +397,7 @@ func (q *Query) populateMatrixFromScalarOperator(d types.ScalarData) promql.Matr
 }
 
 func (q *Query) populateScalarFromScalarOperator(d types.ScalarData) promql.Scalar {
-	defer types.FPointSlicePool.Put(d.Samples, q.memoryConsumptionTracker)
+	defer types.FPointSlicePool.Put(&d.Samples, q.memoryConsumptionTracker)
 
 	p := d.Samples[0]
 
@@ -420,13 +420,13 @@ func (q *Query) Close() {
 	switch v := q.result.Value.(type) {
 	case promql.Matrix:
 		for _, s := range v {
-			types.FPointSlicePool.Put(s.Floats, q.memoryConsumptionTracker)
-			types.HPointSlicePool.Put(s.Histograms, q.memoryConsumptionTracker)
+			types.FPointSlicePool.Put(&s.Floats, q.memoryConsumptionTracker)
+			types.HPointSlicePool.Put(&s.Histograms, q.memoryConsumptionTracker)
 		}
 
 		types.PutMatrix(v)
 	case promql.Vector:
-		types.VectorPool.Put(v, q.memoryConsumptionTracker)
+		types.VectorPool.Put(&v, q.memoryConsumptionTracker)
 	case promql.Scalar:
 		// Nothing to do, we already returned the slice in populateScalarFromScalarOperator.
 	case promql.String:
@@ -453,12 +453,12 @@ func (q *Query) Statement() parser.Statement {
 func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
-		// TODO: Returned promstats.QuerySamples won't report TotalSamplesPerStepMap() properly.
-		// See this for details: https://github.com/grafana/mimir/pull/11416#discussion_r2110930357
 		Samples: &promstats.QuerySamples{
 			TotalSamples:        q.stats.TotalSamples,
 			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
 			EnablePerStepStats:  q.stats.EnablePerStepStats,
+			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
+			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
 		},
 	}
 }

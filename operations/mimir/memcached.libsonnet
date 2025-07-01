@@ -9,6 +9,7 @@ memcached {
 
   memcached+:: {
     cpu_limits:: null,
+    exporter_cpu_limits:: null,
     deployment: {},
     statefulSet+:
       (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),

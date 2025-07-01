@@ -32,7 +32,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945
 * [CHANGE] Memcached: Set a timeout of `500ms` for the `ruler-storage` cache instead of the default `200ms`. #11231
 * [CHANGE] All: Environment variable `JAEGER_REPORTER_MAX_QUEUE_SIZE` is no longer set. Components will use OTel's default value of `2048` unless explicitly configured. You can still configure `JAEGER_REPORTER_MAX_QUEUE_SIZE` if you configure tracing using Jaeger env vars, and you can always set `OTEL_BSP_MAX_QUEUE_SIZE` OTel configuration. #11700
-* [CHANGE] Update rollout-operator to latest release. #11748
+* [CHANGE] Update rollout-operator to latest release, this includes support for `OTEL_` tracing environment variables. #11748 #11794
+* [CHANGE] Memcached: Set resource requests for the Memcached Prometheus exporter by default. #11933
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
@@ -58,6 +59,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add extra values for KEDA autoscaling to support authentication, `ignoreNullValues`, `unsafeSsl`, and `PromQLLabelSelector`. #10265
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
+* [ENHANCEMENT] Add values for setting annotations and labels for rollout-operator. #6733
 
 ## 5.6.0
 

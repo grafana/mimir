@@ -78,7 +78,7 @@
       $.util.resourcesRequests('2', '10Gi') +
       $.util.resourcesLimits(null, '15Gi') +
       $.util.readinessProbe +
-      $.jaeger_mixin
+      $.tracing_env_mixin
     else {},
 
   alertmanager_statefulset:

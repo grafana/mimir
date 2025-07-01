@@ -51,7 +51,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_regexp_matcher_optimized_count 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.Stats{},
+				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond),
 				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
@@ -82,7 +82,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_queries_consistency_total{consistency="strong",user="test"} 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.Stats{},
+				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond),
 				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
@@ -100,6 +100,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 					parseQuery(t, `sum(metric{app="test",namespace=~"short"})`),
 					Options{},
 					nil,
+					"",
 				)},
 			},
 			expectedMetrics: `
@@ -111,7 +112,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_regexp_matcher_optimized_count 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.Stats{},
+				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          start.Truncate(time.Millisecond),
 				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
@@ -160,7 +161,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_regexp_matcher_optimized_count 2
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.Stats{},
+				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond).Add(-30 * time.Minute),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
 				MinT:         start.Truncate(time.Millisecond).Add(-30 * time.Minute).Add(time.Millisecond), // query range is left-open, but minT is inclusive
@@ -200,7 +201,7 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_regexp_matcher_optimized_count 1
 			`,
 			expectedQueryDetails: QueryDetails{
-				QuerierStats: &querier_stats.Stats{},
+				QuerierStats: &querier_stats.SafeStats{},
 				Start:        start.Truncate(time.Millisecond),
 				End:          end.Truncate(time.Millisecond).Add(10 * time.Minute),
 				MinT:         start.Truncate(time.Millisecond).Add(time.Millisecond), // query range is left-open, but minT is inclusive
