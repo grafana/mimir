@@ -7,12 +7,14 @@ package storegateway
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"sync"
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus-community/parquet-common/schema"
 	"github.com/prometheus-community/parquet-common/storage"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
@@ -20,13 +22,62 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+type ParquetShardReaderCloser interface {
+	storage.ParquetShard
+	io.Closer
+}
+
+// ParquetShardReader implements the storage.ParquetShard and io.Closer interfaces
+// in order to control custom lifecycle logic for compatibility with lazy & pooled readers.
+type parquetBucketShardReader struct {
+	block             *parquetBucketBlock
+	readersMu         sync.Mutex
+	labelsFileReaders int
+	chunksFileReaders int
+}
+
+func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	r.labelsFileReaders++
+	r.block.pendingReaders.Add(1)
+	return r.block.shardReaderCloser.LabelsFile()
+}
+
+func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	r.chunksFileReaders++
+	r.block.pendingReaders.Add(1)
+	return r.block.shardReaderCloser.ChunksFile()
+}
+
+func (r *parquetBucketShardReader) TSDBSchema() (*schema.TSDBSchema, error) {
+	return r.block.shardReaderCloser.TSDBSchema()
+}
+
+func (r *parquetBucketShardReader) Close() error {
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	errs := multierror.New()
+
+	// TODO Actually closing the files should be handled in the reader pool - need to verify logic there.
+	if totalReaders := r.labelsFileReaders + r.chunksFileReaders; totalReaders > 0 {
+		for i := 0; i < totalReaders; i++ {
+			r.block.pendingReaders.Done()
+		}
+	}
+
+	return errs.Err()
+}
+
 // parquetBucketBlock wraps access to the block's storage.ParquetShard interface
 // with metadata, metrics and caching [etc once we fill in capabilities].
 type parquetBucketBlock struct {
-	meta        *block.Meta
-	blockLabels labels.Labels
-	storage.ParquetShard
-	localDir string
+	meta              *block.Meta
+	blockLabels       labels.Labels
+	shardReaderCloser ParquetShardReaderCloser
+	localDir          string
 
 	pendingReaders sync.WaitGroup
 	closedMtx      sync.RWMutex
@@ -38,16 +89,20 @@ type parquetBucketBlock struct {
 
 func newParquetBucketBlock(
 	meta *block.Meta,
-	shard storage.ParquetShard,
+	shardReaderCloser ParquetShardReaderCloser,
 	localDir string,
 ) *parquetBucketBlock {
 	return &parquetBucketBlock{
 		meta: meta,
 		// Inject the block ID as a label to allow to match blocks by ID.
-		blockLabels:  labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
-		ParquetShard: shard,
-		localDir:     localDir,
+		blockLabels:       labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
+		shardReaderCloser: shardReaderCloser,
+		localDir:          localDir,
 	}
+}
+
+func (b *parquetBucketBlock) ShardReader() ParquetShardReaderCloser {
+	return &parquetBucketShardReader{block: b}
 }
 
 // matchLabels verifies whether the block matches the given matchers.
@@ -79,7 +134,7 @@ func (b *parquetBucketBlock) Close() error {
 
 	b.pendingReaders.Wait()
 
-	return nil // TODO manage reader opening and closing through pools like indexheader does.
+	return b.shardReaderCloser.Close()
 }
 
 // parquetBlockSet holds all blocks.
