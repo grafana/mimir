@@ -30,16 +30,25 @@ type ParquetShardReaderCloser interface {
 // ParquetShardReader implements the storage.ParquetShard and io.Closer interfaces
 // in order to control custom lifecycle logic for compatibility with lazy & pooled readers.
 type parquetBucketShardReader struct {
-	block *parquetBucketBlock
+	block             *parquetBucketBlock
+	readersMu         sync.Mutex
+	labelsFileReaders int
+	chunksFileReaders int
 }
 
 func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
-	// r.block.pendingReaders.Add(1)
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	r.labelsFileReaders++
+	r.block.pendingReaders.Add(1)
 	return r.block.shardReaderCloser.LabelsFile()
 }
 
 func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
-	// r.block.pendingReaders.Add(1)
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
+	r.chunksFileReaders++
+	r.block.pendingReaders.Add(1)
 	return r.block.shardReaderCloser.ChunksFile()
 }
 
@@ -48,18 +57,17 @@ func (r *parquetBucketShardReader) TSDBSchema() (*schema.TSDBSchema, error) {
 }
 
 func (r *parquetBucketShardReader) Close() error {
+	r.readersMu.Lock()
+	defer r.readersMu.Unlock()
 	errs := multierror.New()
 
-	// TODO figure out what we actually want to do here.
-	//   Labels and chunks are not always read together, so we won't always have two pending readers.
-	//   Possible that we need separate reader types just like the main branch logic does.
-
 	// TODO Actually closing the files should be handled in the reader pool - need to verify logic there.
-	//errs.Add(r.block.shardReaderCloser.LabelsFile().Close())
-	// r.block.pendingReaders.Done()
+	if totalReaders := r.labelsFileReaders + r.chunksFileReaders; totalReaders > 0 {
+		for i := 0; i < totalReaders; i++ {
+			r.block.pendingReaders.Done()
+		}
+	}
 
-	//errs.Add(r.block.shardReaderCloser.ChunksFile().Close())
-	// r.block.pendingReaders.Done()
 	return errs.Err()
 }
 
