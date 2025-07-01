@@ -80,7 +80,9 @@ type readerRequest struct {
 // If the attempt succeeded, then inUse must be signalled when the reader is no longer in use.
 type loadedReader struct {
 	reader Reader
-	inUse  *sync.WaitGroup
+
+	// nolint:unused
+	inUse *sync.WaitGroup
 
 	err error
 }
