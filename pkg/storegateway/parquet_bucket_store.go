@@ -195,6 +195,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 
 	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
+	level.Info(s.logger).Log("msg", "about to start opening blocks")
+
 	bucketBlocks, shardReaders := s.openParquetBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
 	for _, shardReader := range shardReaders {
@@ -206,6 +208,8 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 		"blocks", len(bucketBlocks),
 		"num_shards", len(shardReaders),
 	)
+
+	level.Info(s.logger).Log("msg", "opened parquet shards for reading", "blocks", len(bucketBlocks), "num_shards", len(shardReaders))
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
@@ -240,6 +244,7 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 	if req.StreamingChunksBatchSize > 0 {
 		seriesLoadStart := time.Now()
 		var streamingSeriesCount int
+		level.Info(s.logger).Log("msg", "beginning to send streaming series")
 		streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, labelsIt)
 		if err != nil {
 			return err
@@ -250,12 +255,14 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 			"num_series", streamingSeriesCount,
 			"duration", time.Since(seriesLoadStart),
 		)
+		level.Info(s.logger).Log("msg", "sent streaming series")
 
 		if streamingSeriesCount == 0 {
 			// There is no series to send chunks for.
 			return nil
 		}
 		err = s.sendStreamingChunks(req, srv, chunksIt, stats, streamingSeriesCount)
+		level.Info(s.logger).Log("msg", "sent streaming chunks")
 	} else {
 		// Non-streaming mode, send all series and chunks in one go.
 		err = s.sendSeriesChunks(req, srv, labelsIt, chunksIt, stats)
@@ -617,6 +624,8 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		"skipChunks", req.SkipChunks,
 	)
 
+	level.Info(s.logger).Log("msg", "createLabelsAndChunksIterators", "blocks", len(parquetBlocks), "num_shards", len(shardReaders), "hints", hints, "matchers", matchers, "numLabels", len(lbls), "numAggrChks", len(aggrChunks), "skipChunks", req.SkipChunks)
+
 	labelsIt := &concreteIterator[labels.Labels]{items: lbls}
 	if req.SkipChunks {
 		return labelsIt, nil, nil
@@ -652,6 +661,7 @@ func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.Seri
 		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
 
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
+			level.Info(s.logger).Log("msg", "sending first batch of series")
 			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
 			if err != nil {
 				return 0, err
@@ -663,11 +673,13 @@ func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.Seri
 		return 0, errors.Wrap(labelsIt.Err(), "expand series set")
 	}
 
+	level.Info(s.logger).Log("msg", "sending stats")
 	// We need to send stats before sending IsEndOfSeriesStream=true.
 	if err := s.sendStats(srv, stats); err != nil {
 		return 0, err
 	}
 
+	level.Info(s.logger).Log("msg", "sending end of stream")
 	// Send any remaining series and signal that there are no more series.
 	seriesBatch.IsEndOfSeriesStream = true
 	err = s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)

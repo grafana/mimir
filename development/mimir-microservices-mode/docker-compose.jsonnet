@@ -22,7 +22,7 @@ std.manifestYamlDoc({
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
     ring: 'memberlist',
 
-    enable_continuous_test: true,
+    enable_continuous_test: false,
 
     // If true, a load generator is started.
     enable_load_generator: false,
@@ -40,7 +40,7 @@ std.manifestYamlDoc({
     enable_query_tee: false,
 
     // If true, start parquet-converter
-    enable_parquet: false,
+    enable_parquet: true,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
