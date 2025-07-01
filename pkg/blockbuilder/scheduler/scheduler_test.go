@@ -150,6 +150,35 @@ func TestStartup(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, a1spec)
 	require.Equal(t, "ingest/65/256", a1key.id)
+
+	requireGaps(t, sched.register.(*prometheus.Registry), 0, 0)
+}
+
+func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int, msgAndArgs ...any) {
+	t.Helper()
+
+	var b strings.Builder
+
+	if planned != 0 || committed != 0 {
+		b.WriteString(`# HELP cortex_blockbuilder_scheduler_job_gap_detected The number of times an unexpected gap was detected between jobs.
+		# TYPE cortex_blockbuilder_scheduler_job_gap_detected counter
+		`)
+
+		if planned != 0 {
+			b.WriteString(fmt.Sprintf(
+				"cortex_blockbuilder_scheduler_job_gap_detected{offset=\"planned\"} %d\n", planned))
+		}
+		if committed != 0 {
+			b.WriteString(fmt.Sprintf(
+				"cortex_blockbuilder_scheduler_job_gap_detected{offset=\"committed\"} %d\n", committed))
+		}
+	}
+
+	require.NoError(t,
+		promtest.GatherAndCompare(reg, strings.NewReader(b.String()),
+			"cortex_blockbuilder_scheduler_job_gap_detected"),
+		msgAndArgs...,
+	)
 }
 
 // Verify that we skip jobs that are before the committed offset due to either extraneous bug situations
@@ -1038,4 +1067,79 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_StartupRace(t *testing.T) {
 	sched.enqueuePendingJobs()
 	assert.Equal(t, 0, pt.pendingJobs.Len())
 	assert.Equal(t, 1, sched.jobs.count(), "the job should NOT have been ignored because it isn't fully behind the commit")
+}
+
+func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+
+	reg := sched.register.(*prometheus.Registry)
+
+	part := int32(1)
+	pt := sched.getPartitionState("ingest", part)
+	// Assume at startup we compute this set of job specs:
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 0, EndOffset: 30})
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 30, EndOffset: 40})
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 40, EndOffset: 50})
+
+	assert.Equal(t, 3, pt.pendingJobs.Len())
+	assert.Equal(t, 0, sched.jobs.count())
+	pt.planned.offset()
+	assert.Equal(t, int64(0), pt.planned.offset())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 3, sched.jobs.count())
+	assert.Equal(t, int64(50), pt.planned.offset())
+
+	requireGaps(t, reg, 0, 0)
+
+	// this one introduces a gap:
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 60, EndOffset: 70})
+
+	assert.Equal(t, 1, pt.pendingJobs.Len())
+	assert.Equal(t, 3, sched.jobs.count())
+	assert.Equal(t, int64(50), pt.planned.offset())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
+	assert.Equal(t, int64(70), pt.planned.offset())
+
+	requireGaps(t, reg, 1, 0)
+
+	// the gap may not be the first job:
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 70, EndOffset: 80})
+	// (gap)
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 100, EndOffset: 110})
+	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 110, EndOffset: 120})
+
+	assert.Equal(t, 3, pt.pendingJobs.Len())
+	assert.Equal(t, 4, sched.jobs.count())
+	assert.Equal(t, int64(70), pt.planned.offset())
+	sched.enqueuePendingJobs()
+	assert.Equal(t, 0, pt.pendingJobs.Len())
+	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
+	assert.Equal(t, int64(120), pt.planned.offset())
+
+	requireGaps(t, reg, 2, 0)
+
+	// Now simulate completing these jobs and expect commit gaps where appropriate.
+	expectedStart := int64(0)
+	commitGaps := 0
+
+	for j := 0; ; j++ {
+		k, spec, err := sched.assignJob("w0")
+		if errors.Is(err, errNoJobAvailable) {
+			break
+		}
+		require.NoError(t, err)
+		require.NoError(t, sched.updateJob(k, "w0", true, spec))
+
+		if spec.StartOffset != expectedStart {
+			commitGaps++
+		}
+
+		expectedStart = spec.EndOffset
+		requireGaps(t, reg, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
+	}
 }

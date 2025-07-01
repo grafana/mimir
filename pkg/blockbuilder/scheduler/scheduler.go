@@ -333,6 +333,8 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 			}
 			// Otherwise, it was successful.
 			ps.pendingJobs.Remove(e)
+			// (In the case of a newly planned job, we don't have an epoch yet.)
+			ps.planned.advance(jobKey{jobID, 0}, *spec)
 		}
 	}
 
@@ -889,8 +891,8 @@ type advancingOffset struct {
 
 // advance moves the offset forward by the given job spec. Advancements are
 // expected to be monotonically increasing and contiguous. Advance will not
-// allow backwards movement. If a gap is detected, a warning is logged, a
-// metric is incremented and the offset is not advanced.
+// allow backwards movement. If a gap is detected, a warning is logged and a
+// metric is incremented.
 func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
 	if o.beyondSpec(spec) {
 		level.Warn(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
