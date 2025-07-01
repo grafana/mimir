@@ -1057,6 +1057,12 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -usage-tracker.partitions int
     	Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker. (default 64)
+  -usage-tracker.snapshot-cleanup-interval duration
+    	Interval to clean up old snapshots. (default 1h0m0s)
+  -usage-tracker.snapshot-cleanup-interval-jitter float
+    	Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1. (default 0.25)
+  -usage-tracker.snapshot-interval-jitter float
+    	Jitter to apply to the snapshot interval. This is a percentage of the snapshot interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1. (default 0.1)
   -usage-tracker.snapshot-storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -usage-tracker.snapshot-storage.azure.account-name string
@@ -1133,6 +1139,128 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -usage-tracker.snapshot-storage.swift.username string
     	OpenStack Swift username.
+  -usage-tracker.snapshots-metadata.reader.address string
+    	The Kafka backend address.
+  -usage-tracker.snapshots-metadata.reader.auto-create-topic-default-partitions int
+    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
+  -usage-tracker.snapshots-metadata.reader.auto-create-topic-enabled
+    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
+  -usage-tracker.snapshots-metadata.reader.client-id string
+    	The Kafka client ID.
+  -usage-tracker.snapshots-metadata.reader.consume-from-position-at-startup string
+    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
+  -usage-tracker.snapshots-metadata.reader.consume-from-timestamp-at-startup int
+    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
+  -usage-tracker.snapshots-metadata.reader.consumer-group string
+    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
+  -usage-tracker.snapshots-metadata.reader.consumer-group-offset-commit-interval duration
+    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
+  -usage-tracker.snapshots-metadata.reader.dial-timeout duration
+    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+  -usage-tracker.snapshots-metadata.reader.fetch-concurrency-max int
+    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
+  -usage-tracker.snapshots-metadata.reader.fetch-max-wait duration
+    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
+  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-batch-size int
+    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
+  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-estimated-bytes-per-sample int
+    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
+  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-max int
+    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
+  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-queue-capacity int
+    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
+  -usage-tracker.snapshots-metadata.reader.ingestion-concurrency-target-flushes-per-shard int
+    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
+  -usage-tracker.snapshots-metadata.reader.last-produced-offset-poll-interval duration
+    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
+  -usage-tracker.snapshots-metadata.reader.last-produced-offset-retry-timeout duration
+    	How long to retry a failed request to get the last produced offset. (default 10s)
+  -usage-tracker.snapshots-metadata.reader.max-buffered-bytes int
+    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
+  -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup duration
+    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -usage-tracker.snapshots-metadata.reader.producer-max-buffered-bytes int
+    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
+  -usage-tracker.snapshots-metadata.reader.producer-max-record-size-bytes int
+    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
+  -usage-tracker.snapshots-metadata.reader.sasl-password string
+    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
+  -usage-tracker.snapshots-metadata.reader.sasl-username string
+    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
+  -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup duration
+    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.snapshots-metadata.reader.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.reader.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
+  -usage-tracker.snapshots-metadata.reader.topic string
+    	The Kafka topic name.
+  -usage-tracker.snapshots-metadata.reader.use-compressed-bytes-as-fetch-max-bytes
+    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
+  -usage-tracker.snapshots-metadata.reader.wait-strong-read-consistency-timeout duration
+    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
+  -usage-tracker.snapshots-metadata.reader.write-clients int
+    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
+  -usage-tracker.snapshots-metadata.reader.write-timeout duration
+    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
+  -usage-tracker.snapshots-metadata.writer.address string
+    	The Kafka backend address.
+  -usage-tracker.snapshots-metadata.writer.auto-create-topic-default-partitions int
+    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir creates the topic with this number of partitions. When the value is -1 the Kafka broker uses the default number of partitions (num.partitions configuration). (default -1)
+  -usage-tracker.snapshots-metadata.writer.auto-create-topic-enabled
+    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir fails to start. (default true)
+  -usage-tracker.snapshots-metadata.writer.client-id string
+    	The Kafka client ID.
+  -usage-tracker.snapshots-metadata.writer.consume-from-position-at-startup string
+    	From which position to start consuming the partition at startup. Supported options: last-offset, start, end, timestamp. (default "last-offset")
+  -usage-tracker.snapshots-metadata.writer.consume-from-timestamp-at-startup int
+    	Milliseconds timestamp after which the consumption of the partition starts at startup. Only applies when consume-from-position-at-startup is timestamp
+  -usage-tracker.snapshots-metadata.writer.consumer-group string
+    	The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.
+  -usage-tracker.snapshots-metadata.writer.consumer-group-offset-commit-interval duration
+    	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
+  -usage-tracker.snapshots-metadata.writer.dial-timeout duration
+    	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+  -usage-tracker.snapshots-metadata.writer.fetch-concurrency-max int
+    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. Set to 0 to disable.
+  -usage-tracker.snapshots-metadata.writer.fetch-max-wait duration
+    	The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned. (default 5s)
+  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-batch-size int
+    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
+  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-estimated-bytes-per-sample int
+    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
+  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-max int
+    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
+  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-queue-capacity int
+    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
+  -usage-tracker.snapshots-metadata.writer.ingestion-concurrency-target-flushes-per-shard int
+    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
+  -usage-tracker.snapshots-metadata.writer.last-produced-offset-poll-interval duration
+    	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
+  -usage-tracker.snapshots-metadata.writer.last-produced-offset-retry-timeout duration
+    	How long to retry a failed request to get the last produced offset. (default 10s)
+  -usage-tracker.snapshots-metadata.writer.max-buffered-bytes int
+    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
+  -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup duration
+    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -usage-tracker.snapshots-metadata.writer.producer-max-buffered-bytes int
+    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
+  -usage-tracker.snapshots-metadata.writer.producer-max-record-size-bytes int
+    	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
+  -usage-tracker.snapshots-metadata.writer.sasl-password string
+    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
+  -usage-tracker.snapshots-metadata.writer.sasl-username string
+    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
+  -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup duration
+    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -usage-tracker.snapshots-metadata.writer.target-consumer-lag-at-startup and -usage-tracker.snapshots-metadata.writer.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
+  -usage-tracker.snapshots-metadata.writer.topic string
+    	The Kafka topic name.
+  -usage-tracker.snapshots-metadata.writer.use-compressed-bytes-as-fetch-max-bytes
+    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
+  -usage-tracker.snapshots-metadata.writer.wait-strong-read-consistency-timeout duration
+    	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
+  -usage-tracker.snapshots-metadata.writer.write-clients int
+    	The number of Kafka clients used by producers. When the configured number of clients is greater than 1, partitions are sharded among Kafka clients. A higher number of clients may provide higher write throughput at the cost of additional Metadata requests pressure to Kafka. (default 1)
+  -usage-tracker.snapshots-metadata.writer.write-timeout duration
+    	How long to wait for an incoming write request to be successfully committed to the Kafka backend. (default 10s)
+  -usage-tracker.target-snapshot-file-size-bytes int
+    	Target size of a snapshot file in bytes. This is used to determine when to create a new snapshot file. It should be greater than 0. (default 104857600)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int

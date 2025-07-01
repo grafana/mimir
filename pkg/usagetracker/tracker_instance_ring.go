@@ -22,18 +22,15 @@ import (
 const (
 	InstanceRingKey  = "usage-tracker-instances"
 	InstanceRingName = "usage-tracker-instances"
-
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 4
 )
 
 // InstanceRingConfig masks the ring lifecycler config which contains many options not really required by the usage-tracker ring.
 // This config is used to strip down the config to the minimum, and avoid confusion to the user.
 type InstanceRingConfig struct {
-	KVStore          kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. When usage-tracker is enabled, this option needs be set on usage-trackers and distributors."`
-	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
-	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	KVStore                    kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. When usage-tracker is enabled, this option needs be set on usage-trackers and distributors."`
+	HeartbeatPeriod            time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout           time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	AutoForgetUnhealthyPeriods int           `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
 
 	// Instance details
 	InstanceID             string   `yaml:"instance_id" doc:"default=<hostname>" category:"advanced"`
@@ -60,6 +57,7 @@ func (cfg *InstanceRingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger)
 	cfg.KVStore.RegisterFlagsWithPrefix("usage-tracker.instance-ring.", "collectors/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, "usage-tracker.instance-ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, "usage-tracker.instance-ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which usage-trackers are considered unhealthy within the ring.")
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "usage-tracker.auto-forget-unhealthy-periods", 4, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
@@ -121,7 +119,9 @@ func NewInstanceRingLifecycler(cfg InstanceRingConfig, logger log.Logger, reg pr
 	var delegate ring.BasicLifecyclerDelegate
 	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, 1)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.HeartbeatTimeout, delegate, logger)
+	if cfg.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.HeartbeatTimeout, delegate, logger)
+	}
 
 	lifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, InstanceRingName, InstanceRingKey, kvStore, delegate, logger, reg)
 	if err != nil {
