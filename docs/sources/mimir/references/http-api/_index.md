@@ -44,6 +44,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Get tenant limits](#get-tenant-limits) | _All services_ | `GET /api/v1/user_limits` |
 | [Remote write](#remote-write) | Distributor | `POST /api/v1/push` |
 | [OTLP](#otlp) | Distributor | `POST /otlp/v1/metrics` |
+| [Influx](#influx) | Distributor | `POST /api/v1/push/influx/write` |
 | [Tenants stats](#tenants-stats) | Distributor | `GET /distributor/all_user_stats` |
 | [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
@@ -335,6 +336,23 @@ This endpoint accepts an HTTP POST request with a body that contains a request e
 You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
 
 Requires [authentication](#authentication).
+
+### Influx
+
+```
+POST /api/v1/push/influx/write
+```
+
+{{% admonition type="note" %}}
+To send Influx data to Grafana Cloud, refer to [Send or visualize InfluxDB metrics](https://grafana.com/docs/grafana-cloud/send-data/metrics/metrics-influxdb/).
+{{% /admonition %}}
+
+Entry point for the [Influx HTTP](https://docs.influxdata.com/influxdb/v1/tools/api/#write-http-endpoint).
+
+This endpoint accepts an HTTP POST request with a body that contains a request encoded in `text/plain` and is optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
+You can find more information on the protocol in [InfluxDB line protocol](https://docs.influxdata.com/influxdb/v1/write_protocols/line_protocol_tutorial/).
+
+This endpoint requires [authentication](#authentication).
 
 ### Distributor ring status
 

@@ -86,8 +86,7 @@ var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSerie
 	}
 	seriesData.Floats = seriesData.Floats[:outputIdx]
 	// Histograms are dropped from clamp
-	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
-	seriesData.Histograms = nil
+	types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)
 	return seriesData, nil
 }
 
@@ -113,8 +112,7 @@ func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
 			seriesData.Floats[step].F = clampFunc(val, data.F)
 		}
 		// Histograms are dropped from clamp
-		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
-		seriesData.Histograms = nil
+		types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)
 		return seriesData, nil
 	}
 }
@@ -135,7 +133,6 @@ var Round InstantVectorSeriesFunction = func(seriesData types.InstantVectorSerie
 		seriesData.Floats[step].F = math.Floor(data.F*toNearestInverse+0.5) / toNearestInverse
 	}
 	// Histograms are dropped from Round
-	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
-	seriesData.Histograms = nil
+	types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)
 	return seriesData, nil
 }

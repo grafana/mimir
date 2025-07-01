@@ -821,8 +821,6 @@ Usage of ./cmd/mimir/mimir:
     	Optionally add request headers to tracing spans.
   -server.trace-request-headers-exclude-list string
     	Comma separated list of headers to exclude from tracing spans. Only used if server.trace-request-headers is true. The following headers are always excluded: Authorization, Cookie, X-Csrf-Token.
-  -store-gateway.sharding-ring.auto-forget-enabled
-    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -store-gateway.sharding-ring.etcd.endpoints string
