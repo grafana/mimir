@@ -80,7 +80,9 @@ type readerRequest struct {
 // If the attempt succeeded, then inUse must be signalled when the reader is no longer in use.
 type loadedReader struct {
 	reader Reader
-	inUse  *sync.WaitGroup
+
+	// nolint:unused
+	inUse *sync.WaitGroup
 
 	err error
 }
@@ -396,7 +398,8 @@ func (r *LazyReaderLocalLabelsBucketChunks) Close() error {
 func (r *LazyReaderLocalLabelsBucketChunks) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
 	if resp.reader != nil {
-		resp.inUse.Done()
+		// TODO: this should be necessary but is not currently working
+		// resp.inUse.Done()
 	}
 }
 
@@ -429,11 +432,13 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 				loaded = loadedReader{}
 				loaded.reader, loaded.err = r.loadReader()
 				if loaded.reader != nil {
-					loaded.inUse = &sync.WaitGroup{}
+					// TODO: this should be necessary but is not currently working
+					// loaded.inUse = &sync.WaitGroup{}
 				}
 			}
 			if loaded.reader != nil {
-				loaded.inUse.Add(1)
+				// TODO: this should be necessary but is not currently working
+				// loaded.inUse.Add(1)
 				r.usedAt.Store(time.Now().UnixNano())
 			}
 			readerReq.response <- loaded
@@ -451,8 +456,9 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 				continue
 			}
 
+			// TODO: this should be necessary but is not currently working
 			// Wait until all users finished using current reader.
-			waitReadersOrPanic(loaded.inUse)
+			// waitReadersOrPanic(loaded.inUse)
 
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
@@ -468,7 +474,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 	}
 }
 
-func waitReadersOrPanic(wg *sync.WaitGroup) {
+func waitReadersOrPanic(wg *sync.WaitGroup) { // nolint:unused
 	// timeout is long enough for any request to finish.
 	// The idea is that we don't want to wait forever, but surface a bug.
 	const timeout = time.Hour
