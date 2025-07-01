@@ -1326,6 +1326,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
       volumes:
       - name: memcached-ca-cert
         secret:
@@ -1402,6 +1408,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
       volumes:
       - name: memcached-ca-cert
         secret:
@@ -1478,6 +1490,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
       volumes:
       - name: memcached-ca-cert
         secret:
@@ -1554,6 +1572,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
       volumes:
       - name: memcached-ca-cert
         secret:
