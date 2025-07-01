@@ -284,6 +284,8 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Install git-restore-mtime
+        run: sudo apt-get install git-restore-mtime
       - name: Set up distributed Go build cache
         uses: ./.github/actions/go-build-caching
       - name: Download Archive with Docker Images
