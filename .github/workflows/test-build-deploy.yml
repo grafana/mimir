@@ -58,6 +58,9 @@ jobs:
     needs: prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -204,6 +207,9 @@ jobs:
       - prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -259,6 +265,9 @@ jobs:
       matrix:
         test_group_id:    [0, 1, 2, 3, 4, 5]
         test_group_total: [6]
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@v5
