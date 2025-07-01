@@ -95,7 +95,7 @@
 * [ENHANCEMENT] Distributor: added circuit breaker to not produce Kafka records at all if the context is already canceled / expired. This applied only when experimental ingest storage is enabled. #11768
 * [ENHANCEMENT] Compactor: Optimize the planning phase for tenants with a very large number of blocks, such as tens or hundreds of thousands, at the cost of making it slightly slower for tenants with a very a small number of blocks. #11819
 * [ENHANCEMENT] Query-frontend: Accurate tracking of samples processed from cache. #11719
-* [ENHANCEMENT] otlp: Stick to OLTP vocabulary on invalid label value length error. #11889
+* [ENHANCEMENT] otlp: Stick to OTLP vocabulary on invalid label value length error. #11889
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
