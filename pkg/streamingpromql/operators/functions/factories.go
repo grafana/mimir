@@ -539,17 +539,8 @@ func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
 		for i := 1; i < len(args); i++ {
 			l, ok := args[i].(types.StringOperator)
 			if !ok {
-				var suffix string
-				if i == 1 {
-					suffix = "nd"
-				} else if i == 2 {
-					suffix = "rd"
-				} else {
-					suffix = "th"
-				}
-
 				// Should be caught by the PromQL parser, but we check here for safety.
-				return nil, fmt.Errorf("expected a string for %d%s argument, got %T", i+1, suffix, args[i])
+				return nil, fmt.Errorf("expected a string for argument %d, got %T", i+1, args[i])
 			}
 
 			labels = append(labels, l.GetValue())
