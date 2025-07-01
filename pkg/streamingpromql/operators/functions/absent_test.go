@@ -29,10 +29,7 @@ func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result1.Floats)
 	require.Len(t, result1.Floats, 1)
-
-	if result1.Floats != nil {
-		types.FPointSlicePool.Put(result1.Floats, memTracker)
-	}
+	types.FPointSlicePool.Put(&result1.Floats, memTracker)
 
 	// Second call should return EOS.
 	result2, err := a.NextSeries(ctx)

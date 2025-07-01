@@ -98,7 +98,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 
 		// We're going to create a new slice, so return this one to the pool.
 		// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-		defer types.FPointSlicePool.Put(second.Floats, memoryConsumptionTracker)
+		defer types.FPointSlicePool.Put(&second.Floats, memoryConsumptionTracker)
 
 		if len(second.Floats) == 0 {
 			// We've reached the end of all series with floats.
@@ -126,7 +126,7 @@ func mergeOneSideFloats(data []types.InstantVectorSeriesData, sourceSeriesIndice
 	// We're going to create a new slice, so return this one to the pool.
 	// We'll return the other slices in the for loop below.
 	// We must defer here, rather than at the end, as the merge loop below reslices Floats.
-	defer types.FPointSlicePool.Put(data[0].Floats, memoryConsumptionTracker)
+	defer func(s []promql.FPoint) { types.FPointSlicePool.Put(&s, memoryConsumptionTracker) }(data[0].Floats)
 
 	// Re-slice the data with just the series with floats to make the rest of our job easier
 	// Because we aren't re-sorting here it doesn't matter that sourceSeriesIndices remains longer.
@@ -321,7 +321,7 @@ func mergeOneSideHistograms(data []types.InstantVectorSeriesData, sourceSeriesIn
 
 func clearAndReturnHPointSlice(s []promql.HPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
 	clear(s)
-	types.HPointSlicePool.Put(s, memoryConsumptionTracker)
+	types.HPointSlicePool.Put(&s, memoryConsumptionTracker)
 }
 
 type MergeConflict struct {
