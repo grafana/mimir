@@ -181,7 +181,7 @@ jobs:
           ./aws/install
 
       - name: Log in to AWS
-        uses: grafana/shared-workflows/actions/aws-auth@aws-auth/v1.0.2
+        uses: grafana/shared-workflows/actions/aws-auth@00d299431c9a644561141d48c7f5ea0bd1b380df
         with:
           aws-region: "us-east-2"
           role-arn: "arn:aws:iam::366620023056:role/github-actions/hackathon-13-mimir-ci-cache-access-role"
