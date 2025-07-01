@@ -1397,7 +1397,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
-			// and we have five series and each of the series has SeriesMetadata.
+			// and we have five series and each of the series has labels of the same size.
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
 			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        0,
