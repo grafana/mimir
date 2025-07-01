@@ -125,6 +125,16 @@ mimir:
     activity_tracker:
       filepath: /active-query-tracker/activity.log
 
+    {{- if .Values.tls.mimir.enabled }}
+    server:
+      tls_cipher_suites: {{ .Values.tls.mimir.server.tls_cipher_suites }}
+      tls_min_version: {{ .Values.tls.mimir.server.tls_min_version }}
+      http_tls_config:
+        {{- include "mimir.serverTlsConfig" . | nindent 4 }}
+      grpc_tls_config:
+        {{- include "mimir.serverTlsConfig" . | nindent 4 }}
+    {{- end }}
+
     {{- if .Values.enterprise.enabled }}
     admin_api:
       leader_election:
@@ -132,6 +142,8 @@ mimir:
         ring:
           kvstore:
             store: "memberlist"
+        client_config:
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
 
     admin_client:
       storage:
@@ -148,6 +160,7 @@ mimir:
         cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.adminCacheAddress" . }}
             max_item_size: {{ mul (index .Values "admin-cache").maxItemMemory 1024 1024 }}
       {{- end }}
@@ -164,6 +177,8 @@ mimir:
       {{- if .Values.alertmanager.fallbackConfig }}
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
       {{- end }}
+      alertmanager_client:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
 
     {{- if .Values.minio.enabled }}
     alertmanager_storage:
@@ -192,6 +207,7 @@ mimir:
         chunks_cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.chunksCacheAddress" . }}
             max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
             timeout: 750ms
@@ -201,6 +217,7 @@ mimir:
         index_cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
             timeout: 750ms
@@ -210,6 +227,7 @@ mimir:
         metadata_cache:
           backend: memcached
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: {{ include "mimir.metadataCacheAddress" . }}
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
             max_idle_connections: 150
@@ -256,6 +274,7 @@ mimir:
       results_cache:
         backend: memcached
         memcached:
+          {{- include "memcached.clientTlsConfig" . | nindent 6 }}
           timeout: 500ms
           addresses: {{ include "mimir.resultsCacheAddress" . }}
           max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
@@ -268,10 +287,15 @@ mimir:
       {{- if .Values.enterprise.enabled }}
       log_query_request_headers: X-Access-Policy-Name,X-Token-Name
       {{- end }}
+      grpc_client_config:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
 
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
+      query_scheduler_grpc_client_config:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
       {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- else }}
@@ -282,34 +306,45 @@ mimir:
     gateway:
       proxy:
         admin_api:
-          url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         alertmanager:
-          url: http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         compactor:
-          url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         default:
-          url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
         distributor:
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
           url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
         {{- end }}
         ingester:
-          url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
         {{ if .Values.federation_frontend.enabled }}
-          url: http://{{ template "mimir.fullname" . }}-federation-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-federation-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{ else }}
-          url: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{ end }}
         ruler:
-          url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         store_gateway:
-          url: http://{{ template "mimir.fullname" . }}-store-gateway-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-store-gateway-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
         graphite_write_proxy:
-          url: http://{{ template "mimir.fullname" . }}-graphite-write-proxy.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-graphite-write-proxy.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         graphite_querier:
-          url: http://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
+          url: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{- end}}
     {{- end }}
 
@@ -329,12 +364,14 @@ mimir:
       grpc_client_config:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
 
     {{- if .Values.enterprise.enabled }}
     instrumentation:
       enabled: {{ and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
     {{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
       distributor_client:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
         address: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
     {{- end }}
 
@@ -363,18 +400,27 @@ mimir:
       # which allows us to process more sharded queries in parallel when requested, but not overload
       # queriers during non-sharded queries.
       max_concurrent: 16
+      store_gateway_client:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
 
     query_scheduler:
       # Increase from default of 100 to account for queries created by query sharding
       max_outstanding_requests_per_tenant: 800
-
+      grpc_client_config:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
     ruler:
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
+      alertmanager_url: dnssrvnoa+{{ template "mimir.internalProtocol" . }}://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
+      alertmanager_client:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
+      ruler_client:
+        {{- include "mimir.clientTlsConfig" . | nindent 4 }}
       enable_api: true
       rule_path: /data
       {{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
       query_frontend:
         address: dns:///{{ template "mimir.fullname" . }}-ruler-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+        grpc_client_config:
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
       {{- end }}
 
     {{- if or (.Values.minio.enabled) (index .Values "metadata-cache" "enabled") }}
@@ -392,6 +438,7 @@ mimir:
       cache:
         backend: memcached
         memcached:
+          {{- include "memcached.clientTlsConfig" . | nindent 6 }}
           addresses: {{ include "mimir.metadataCacheAddress" . }}
           max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
           timeout: 500ms
@@ -424,11 +471,12 @@ mimir:
 
       write_proxy:
         distributor_client:
+          {{- include "mimir.clientTlsConfig" . | nindent 6 }}
           address: dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
 
       querier:
         remote_read:
-          query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
+          query_address: {{ template "mimir.internalProtocol" . }}://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
         proxy_bad_requests: false
 
         schemas:
@@ -436,10 +484,12 @@ mimir:
           default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
         aggregation_cache:
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-aggr-cache.{{ .Release.Namespace}}.svc:11211
             timeout: 1s
         metric_name_cache:
           memcached:
+            {{- include "memcached.clientTlsConfig" . | nindent 8 }}
             addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
             timeout: 1s
     {{- end}}
@@ -704,6 +754,7 @@ alertmanager:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for alermeneger pods
@@ -956,6 +1007,7 @@ distributor:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for distributor pods
@@ -1107,6 +1159,7 @@ ingester:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 60
 
   # -- SecurityContext override for ingester pods
@@ -1315,11 +1368,13 @@ overrides_exporter:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
   readinessProbe:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   resources:
@@ -1434,6 +1489,7 @@ ruler:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for ruler pods
@@ -1559,6 +1615,7 @@ ruler_querier:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for ruler-querier pods
@@ -1676,6 +1733,7 @@ ruler_query_frontend:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for query-fronted pods
@@ -1766,6 +1824,7 @@ ruler_query_scheduler:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for ruler-query-scheduler pods
@@ -1900,6 +1959,7 @@ querier:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for querier pods
@@ -2019,6 +2079,7 @@ query_frontend:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for query-fronted pods
@@ -2110,6 +2171,7 @@ query_scheduler:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   # -- SecurityContext override for query-scheduler pods
@@ -2261,6 +2323,7 @@ store_gateway:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 60
 
   # -- SecurityContext override for store-gateway pods
@@ -2497,6 +2560,7 @@ compactor:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 60
 
   # -- SecurityContext override for compactor pods
@@ -2574,6 +2638,23 @@ memcachedExporter:
   #   memcached.tls.insecure-skip-verify: false
   #   memcached.tls.server-name: memcached
   extraArgs: {}
+
+  # -- Base config file for memcached_exporter as per https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md
+  # To modify the resulting configuration, either copy and alter 'memcachedExporter.config' as a whole or use the 'memcachedExporter.structuredConfig' to add and modify certain YAML elements.
+  config: |
+    {{- include "memcachedExporter.serverTlsConfig" . | nindent 2 }}
+
+  # -- Additional structured values on top of the text based 'memcachedExporter.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'memcachedExporter.config'.
+  structuredConfig: {}
+
+  # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
+  useExternalConfig: false
+
+  # -- Defines what kind of object stores the configuration, a ConfigMap or a Secret.
+  configStorageType: ConfigMap
+
+  # -- Name of the Secret or ConfigMap that contains the configuration (used for naming even if config is internal).
+  externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "component" "memcached-exporter-config") }}'
 
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
@@ -3201,6 +3282,7 @@ nginx:
     httpGet:
       path: /
       port: http-metric
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 15
     timeoutSeconds: 1
 
@@ -3604,6 +3686,7 @@ gateway:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 15
     timeoutSeconds: 1
 
@@ -4314,6 +4397,7 @@ admin_api:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
 
   resources:
@@ -4469,11 +4553,13 @@ graphite:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
     readinessProbe:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
 
     annotations: {}
@@ -4549,11 +4635,13 @@ graphite:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
     readinessProbe:
       httpGet:
         path: /ready
         port: http-metrics
+        scheme: '{{ include "mimir.internalProtocol" . | upper }}'
       initialDelaySeconds: 45
 
     annotations: {}
@@ -4802,6 +4890,7 @@ federation_frontend:
     httpGet:
       path: /ready
       port: http-metrics
+      scheme: '{{ include "mimir.internalProtocol" . | upper }}'
     initialDelaySeconds: 45
   # -- Service configuration
   service:
@@ -4949,3 +5038,60 @@ continuous_test:
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
+
+# # -- TLS configuration for all internal components
+tls:
+  mimir:
+    # -- Enable TLS for all Mimir components
+    enabled: false
+    client:
+      # -- Path to the client certificate, which will be used for authenticating with the server
+      cert_path: "/etc/mimir/certificates/client.crt"
+      # -- Path to the key for the client certificate
+      key_path: "/etc/mimir/certificates/client.key"
+      # -- Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used
+      ca_path: "/etc/mimir/certificates/root.crt"
+      # -- Override the expected name on the server certificate
+      server_name: ""
+      # -- Skip validating server certificate
+      insecure_skip_verify: false
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suites: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      min_version: ""
+    server:
+      # -- Path to the server certificate file
+      cert_path: "/etc/mimir/certificates/server.crt"
+      # -- Path to the server key file
+      key_path: "/etc/mimir/certificates/server.key"
+      # -- Path to the CA certificate file
+      ca_path: "/etc/mimir/certificates/root.crt"
+      # -- Type of client authentication to use. Valid values: NoClientCert, RequestClientCert, RequireAnyClientCert, VerifyClientCertIfGiven, RequireAndVerifyClientCert
+      client_auth_type: ""
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suites: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      min_version: ""
+  memcached:
+    # -- Enable TLS for all Memcached components
+    enabled: false
+    client:
+      # -- Path to the client certificate, which will be used for authenticating with the server
+      cert_path: "/etc/mimir/certificates/client.crt"
+      # -- Path to the key for the client certificate
+      key_path: "/etc/mimir/certificates/client.key"
+      # -- Path to the CA certificates to validate server certificate against
+      ca_path: "/etc/mimir/certificates/root.crt"
+      # -- Override the expected name on the server certificate
+      server_name: ""
+      # -- Skip validating server certificate
+      insecure_skip_verify: false
+      # -- Comma-separated list of cipher suites to use. If blank, the default Go cipher suites are used
+      cipher_suits: ""
+      # -- Minimum TLS version to use. If blank, the Go TLS minimum version is used
+      min_version: ""
+    server:
+      # -- Path to the server certificate file
+      cert_path: "/etc/mimir/certificates/server.crt"
+      # -- Path to the server key file
+      key_path: "/etc/mimir/certificates/server.key"

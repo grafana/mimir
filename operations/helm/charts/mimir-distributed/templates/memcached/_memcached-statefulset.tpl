@@ -73,6 +73,10 @@ spec:
       {{- end }}
       {{- end }}
       volumes:
+        {{- if and (not $.ctx.Values.memcachedExporter.useExternalConfig) (include "memcachedExporter.hasConfig" $.ctx) }}
+        - name: memcached-exporter-config
+          {{- include "memcachedExporter.configVolume" $.ctx | nindent 10 }}
+        {{- end }}
         {{- with .extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -105,7 +109,12 @@ spec:
               name: client
           args:
             - -m {{ .allocatedMemory }}
+            {{- if $.ctx.Values.tls.memcached.enabled }}
+            - --enable-ssl
+            - --extended=modern,ssl_chain_cert={{ $.ctx.Values.tls.memcached.server.cert_path}},ssl_key={{ $.ctx.Values.tls.memcached.server.key_path}}{{ with .extraExtendedOptions }},{{ . }}{{ end }}
+            {{- else }}
             - --extended=modern{{ with .extraExtendedOptions }},{{ . }}{{ end }}
+            {{- end }}
             - -I {{ .maxItemMemory }}m
             - -c {{ .connectionLimit }}
             - -v
@@ -143,6 +152,19 @@ spec:
           args:
             - "--memcached.address=localhost:{{ .port }}"
             - "--web.listen-address=0.0.0.0:9150"
+            {{- if and (not $.ctx.Values.memcachedExporter.useExternalConfig) (include "memcachedExporter.hasConfig" $.ctx) }}
+            - "--web.config.file=/etc/memcached-exporter/web-config.yaml"
+            {{- end }}
+            {{- if $.ctx.Values.tls.memcached.enabled }}
+            - "--memcached.tls.enable"
+            - "--memcached.tls.cert-file={{ $.ctx.Values.tls.memcached.client.cert_path}}"
+            - "--memcached.tls.key-file={{ $.ctx.Values.tls.memcached.client.key_path}}"
+            - "--memcached.tls.ca-file={{ $.ctx.Values.tls.memcached.client.ca_path}}"
+            - "--memcached.tls.server-name={{ $.ctx.Values.tls.memcached.client.server_name}}"
+            {{- if $.ctx.Values.tls.memcached.client.insecure_skip_verify }}
+            - "--memcached.tls.insecure-skip-verify"
+            {{- end }}
+            {{- end }}
             {{- range $key, $value := $.ctx.Values.memcachedExporter.extraArgs }}
             - "--{{ $key }}{{ if $value }}={{ $value }}{{ end }}"
             {{- end }}
@@ -150,15 +172,17 @@ spec:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
-          {{- if or .extraVolumeMounts $.ctx.Values.global.extraVolumeMounts }}
           volumeMounts:
+            {{- if and (not $.ctx.Values.memcachedExporter.useExternalConfig) (include "memcachedExporter.hasConfig" $.ctx) }}
+            - name: memcached-exporter-config
+              mountPath: /etc/memcached-exporter
+            {{- end }}
             {{- with .extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with $.ctx.Values.global.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- end }}
       {{- end }}
 {{- end -}}
 {{- end -}}

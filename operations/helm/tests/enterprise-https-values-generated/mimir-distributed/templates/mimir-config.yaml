@@ -61,6 +61,7 @@ data:
             max_idle_connections: 150
             max_item_size: 1048576
             timeout: 750ms
+            tls_enabled: false
         index_cache:
           backend: memcached
           memcached:
@@ -68,12 +69,14 @@ data:
             max_idle_connections: 150
             max_item_size: 5242880
             timeout: 750ms
+            tls_enabled: false
         metadata_cache:
           backend: memcached
           memcached:
             addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
             max_idle_connections: 150
             max_item_size: 1048576
+            tls_enabled: false
         sync_dir: /data/tsdb-sync
       s3:
         bucket_name: blocks
@@ -133,6 +136,8 @@ data:
         tls_insecure_skip_verify: false
         tls_key_path: /certs/tls.key
         tls_server_name: gem.grafana.com
+      query_scheduler_grpc_client_config:
+        tls_enabled: false
       scheduler_address: enterprise-https-values-mimir-query-scheduler-headless.citestns.svc:9095
     gateway:
       proxy:
@@ -286,6 +291,7 @@ data:
           addresses: dnssrvnoa+enterprise-https-values-mimir-metadata-cache.citestns.svc.cluster.local.:11211
           max_item_size: 1048576
           timeout: 500ms
+          tls_enabled: false
       s3:
         bucket_name: ruler
     runtime_config:

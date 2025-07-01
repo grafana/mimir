@@ -66,6 +66,7 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
+              scheme: 'HTTP'
             initialDelaySeconds: 15
             timeoutSeconds: 1
           resources:
