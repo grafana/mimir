@@ -207,12 +207,6 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 			return &promql.Result{Err: err}
 		}
 		defer types.SeriesMetadataSlicePool.Put(&series, q.memoryConsumptionTracker)
-		// TODO: place this as part of Put call above.
-		defer func() {
-			for _, s := range series {
-				q.memoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(s.Labels)
-			}
-		}()
 
 		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
