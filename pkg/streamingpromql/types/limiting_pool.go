@@ -238,7 +238,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(s))*p.elementSize, p.source)
+	tracker.DecreaseMemoryConsumption(uint64(cap(*s))*p.elementSize, p.source)
 	if p.onPutHook != nil {
 		p.onPutHook(*s, tracker)
 	}
