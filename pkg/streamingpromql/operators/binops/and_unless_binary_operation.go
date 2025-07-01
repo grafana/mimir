@@ -152,7 +152,7 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 	}
 
 	// Clear up labels that we don't need anymore.
-	clear(leftMetadata[:nextOutputSeriesIndex])
+	clear(leftMetadata[nextOutputSeriesIndex:])
 
 	return leftMetadata[:nextOutputSeriesIndex]
 }
