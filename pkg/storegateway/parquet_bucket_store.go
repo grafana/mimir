@@ -318,25 +318,18 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	var blocks []*parquetBucketBlock
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
-		blocks = append(blocks, b)
-	})
 
-	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-		var parquetShards []parquetstorage.ParquetShard
-		for _, b := range blocks {
-			parquetShards = append(parquetShards, b.ShardReader())
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+			return []parquetstorage.ParquetShard{b.ShardReader()}, nil
 		}
-		return parquetShards, nil
-	}
 
-	for _, b := range blocks {
 		g.Go(func() error {
-			// We need to keep the block open until we finish iterating over it.
-			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+			// TODO: this closes the entire block, causing future filter() calls to skip it.
+			// This close should be scoped to the reader.
+			// defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
 
 			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
@@ -364,7 +357,7 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 
 			return nil
 		})
-	}
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -431,23 +424,18 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	var blocks []*parquetBucketBlock
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
-		blocks = append(blocks, b)
-	})
 
-	for _, b := range blocks {
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+			return []parquetstorage.ParquetShard{b.ShardReader()}, nil
+		}
+
 		g.Go(func() error {
-			// We need to keep the block open until we finish iterating over it.
-			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
-
-			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-				var parquetShards []parquetstorage.ParquetShard
-				parquetShards = append(parquetShards, b.ShardReader())
-				return parquetShards, nil
-			}
+			// TODO: this closes the entire block, causing future filter() calls to skip it.
+			// This close should be scoped to the reader.
+			// defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
 
 			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
@@ -474,7 +462,7 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 
 			return nil
 		})
-	}
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
