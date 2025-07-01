@@ -1754,6 +1754,17 @@
               "fieldFlag": "distributor.ring.instance-enable-ipv6",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "distributor.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -12177,6 +12188,17 @@
               "fieldFlag": "compactor.ring.wait-active-instance-timeout",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "compactor.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -12565,6 +12587,28 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_enabled",
+              "required": false,
+              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "store-gateway.sharding-ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "replication_factor",
               "required": false,
               "desc": "The replication factor to use when sharding blocks. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.",
@@ -12603,16 +12647,6 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "store-gateway.sharding-ring.zone-awareness-enabled",
-              "fieldType": "boolean"
-            },
-            {
-              "kind": "field",
-              "name": "auto_forget_enabled",
-              "required": false,
-              "desc": "When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "store-gateway.sharding-ring.auto-forget-enabled",
               "fieldType": "boolean"
             },
             {
@@ -14072,6 +14106,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ruler.ring.instance-enable-ipv6",
               "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ruler.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
               "fieldCategory": "advanced"
             },
             {
@@ -19339,6 +19384,17 @@
             },
             {
               "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "query-scheduler.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "instance_id",
               "required": false,
               "desc": "Instance ID to register in the ring.",
@@ -19878,6 +19934,17 @@
               "fieldDefaultValue": 300000000000,
               "fieldFlag": "overrides-exporter.ring.wait-stability-max-duration",
               "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "auto_forget_unhealthy_periods",
+              "required": false,
+              "desc": "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.",
+              "fieldValue": null,
+              "fieldDefaultValue": 4,
+              "fieldFlag": "overrides-exporter.ring.auto-forget-unhealthy-periods",
+              "fieldType": "int",
               "fieldCategory": "advanced"
             }
           ],

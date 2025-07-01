@@ -435,6 +435,11 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
+    # (advanced) Number of consecutive timeout periods an unhealthy instance in
+    # the ring is automatically removed after. Set to 0 to disable auto-forget.
+    # CLI flag: -overrides-exporter.ring.auto-forget-unhealthy-periods
+    [auto_forget_unhealthy_periods: <int> | default = 4]
+
   # Comma-separated list of metrics to include in the exporter. Allowed metric
   # names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay,
   # max_global_series_per_user, max_global_series_per_metric,
@@ -993,6 +998,11 @@ ring:
   # (advanced) Enable using a IPv6 instance address. (default false)
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
+
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # CLI flag: -distributor.ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 10]
 
 instance_limits:
   # (advanced) Max ingestion rate (samples/sec) that this distributor will
@@ -1903,6 +1913,11 @@ ring:
   # CLI flag: -query-scheduler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # CLI flag: -query-scheduler.ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 10]
+
   # (advanced) Instance ID to register in the ring.
   # CLI flag: -query-scheduler.ring.instance-id
   [instance_id: <string> | default = "<hostname>"]
@@ -2143,6 +2158,11 @@ ring:
   # (advanced) Enable using a IPv6 instance address. (default false)
   # CLI flag: -ruler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
+
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # CLI flag: -ruler.ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 2]
 
   # (advanced) Number of tokens for each ruler.
   # CLI flag: -ruler.ring.num-tokens
@@ -5083,6 +5103,11 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # CLI flag: -compactor.ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 10]
+
 # (advanced) The sorting to use when deciding which compaction jobs should run
 # first for a given tenant. Supported values are:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
@@ -5155,6 +5180,21 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
+  # (deprecated) When enabled, a store-gateway is automatically removed from the
+  # ring after failing to heartbeat the ring for a period longer than the
+  # configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times
+  # the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting
+  # is deprecated. Set
+  # -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable
+  # auto-forget.
+  # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
+  [auto_forget_enabled: <boolean> | default = true]
+
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
+  # CLI flag: -store-gateway.sharding-ring.auto-forget-unhealthy-periods
+  [auto_forget_unhealthy_periods: <int> | default = 10]
+
   # (advanced) The replication factor to use when sharding blocks. This option
   # needs be set both on the store-gateway, querier and ruler when running in
   # microservices mode.
@@ -5175,12 +5215,6 @@ sharding_ring:
   # querier and ruler when running in microservices mode.
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
-
-  # When enabled, a store-gateway is automatically removed from the ring after
-  # failing to heartbeat the ring for a period longer than 10 times the
-  # configured -store-gateway.sharding-ring.heartbeat-timeout.
-  # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
-  [auto_forget_enabled: <boolean> | default = true]
 
   # (advanced) Minimum time to wait for ring stability at startup, if set to
   # positive value.
