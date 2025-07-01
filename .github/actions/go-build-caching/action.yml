@@ -1,0 +1,22 @@
+name: Set up distributed Go build cache
+runs:
+  using: composite
+  steps:
+    # Reset the modification time of every file based on when it was last changed in Git.
+    # This is required for caching to be effective, as Go uses the mtime of files to compute the cache key.
+    - name: Restore mtime of files based on Git commit time
+      shell: bash
+      run: git -c diff.renameLimit=2275 restore-mtime
+
+    - name: Log in to AWS
+      uses: grafana/shared-workflows/actions/aws-auth@00d299431c9a644561141d48c7f5ea0bd1b380df
+      with:
+        aws-region: "us-east-2"
+        role-arn: "arn:aws:iam::366620023056:role/github-actions/hackathon-13-mimir-ci-cache-access-role"
+        pass-claims: "repository_owner, repository_name, job_workflow_ref, ref, event_name"
+        set-creds-in-environment: true
+
+    - name: Set up go-cache-plugin
+      shell: bash
+      run: |
+        echo 'GOCACHEPROG=go-cache-plugin --cache-dir=/tmp/.go-cache-plugin --bucket=hackathon-13-mimir-ci-cache --region=us-east-2 --metrics' >> "$GITHUB_ENV"

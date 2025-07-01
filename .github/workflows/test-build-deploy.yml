@@ -71,6 +71,8 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Set up distributed Go build cache
+        uses: ./.github/actions/go-build-caching
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
@@ -177,22 +179,8 @@ jobs:
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
 
-      # Reset the modification time of every file based on when it was last changed in Git.
-      # This is required for caching to be effective, as Go uses the mtime of files to compute the cache key.
-      - name: Restore mtime of files based on Git commit time
-        run: git -c diff.renameLimit=2275 restore-mtime
-
-      - name: Log in to AWS
-        uses: grafana/shared-workflows/actions/aws-auth@00d299431c9a644561141d48c7f5ea0bd1b380df
-        with:
-          aws-region: "us-east-2"
-          role-arn: "arn:aws:iam::366620023056:role/github-actions/hackathon-13-mimir-ci-cache-access-role"
-          pass-claims: "repository_owner, repository_name, job_workflow_ref, ref, event_name"
-          set-creds-in-environment: true
-
-      - name: Set up go-cache-plugin
-        run: |
-          echo 'GOCACHEPROG=go-cache-plugin --cache-dir=/tmp/.go-cache-plugin --bucket=hackathon-13-mimir-ci-cache --region=us-east-2 --metrics' >> "$GITHUB_ENV"
+      - name: Set up distributed Go build cache
+        uses: ./.github/actions/go-build-caching
 
       # We use retry logic for tests to handle flaky tests that might fail intermittently.
       # The retry action will run the test command up to max_attempts times if it fails.
@@ -234,6 +222,8 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Set up distributed Go build cache
+        uses: ./.github/actions/go-build-caching
       - name: Build Multiarch Docker Images Locally
         # Ignore mimir-build-image and mimir-rules-action.
         run: |
@@ -285,6 +275,8 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Set up distributed Go build cache
+        uses: ./.github/actions/go-build-caching
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
         with:
