@@ -396,7 +396,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) Close() error {
 func (r *LazyReaderLocalLabelsBucketChunks) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
 	if resp.reader != nil {
-		resp.inUse.Done()
+		// resp.inUse.Done()
 	}
 }
 
@@ -429,11 +429,11 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 				loaded = loadedReader{}
 				loaded.reader, loaded.err = r.loadReader()
 				if loaded.reader != nil {
-					loaded.inUse = &sync.WaitGroup{}
+					// loaded.inUse = &sync.WaitGroup{}
 				}
 			}
 			if loaded.reader != nil {
-				loaded.inUse.Add(1)
+				// loaded.inUse.Add(1)
 				r.usedAt.Store(time.Now().UnixNano())
 			}
 			readerReq.response <- loaded
@@ -452,7 +452,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 			}
 
 			// Wait until all users finished using current reader.
-			waitReadersOrPanic(loaded.inUse)
+			// waitReadersOrPanic(loaded.inUse)
 
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {

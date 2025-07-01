@@ -34,12 +34,12 @@ type parquetBucketShardReader struct {
 }
 
 func (r *parquetBucketShardReader) LabelsFile() *storage.ParquetFile {
-	r.block.pendingReaders.Add(1)
+	// r.block.pendingReaders.Add(1)
 	return r.block.shardReaderCloser.LabelsFile()
 }
 
 func (r *parquetBucketShardReader) ChunksFile() *storage.ParquetFile {
-	r.block.pendingReaders.Add(1)
+	// r.block.pendingReaders.Add(1)
 	return r.block.shardReaderCloser.ChunksFile()
 }
 
@@ -56,10 +56,10 @@ func (r *parquetBucketShardReader) Close() error {
 
 	// TODO Actually closing the files should be handled in the reader pool - need to verify logic there.
 	//errs.Add(r.block.shardReaderCloser.LabelsFile().Close())
-	r.block.pendingReaders.Done()
+	// r.block.pendingReaders.Done()
 
 	//errs.Add(r.block.shardReaderCloser.ChunksFile().Close())
-	r.block.pendingReaders.Done()
+	// r.block.pendingReaders.Done()
 	return errs.Err()
 }
 
