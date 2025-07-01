@@ -180,7 +180,7 @@ jobs:
       # Reset the modification time of every file based on when it was last changed in Git.
       # This is required for caching to be effective, as Go uses the mtime of files to compute the cache key.
       - name: Restore mtime of files based on Git commit time
-        run: git restore-mtime
+        run: git -c diff.renameLimit=2275 restore-mtime
 
       - name: Log in to AWS
         uses: grafana/shared-workflows/actions/aws-auth@00d299431c9a644561141d48c7f5ea0bd1b380df
