@@ -435,9 +435,8 @@ overrides_exporter:
     # CLI flag: -overrides-exporter.ring.wait-stability-max-duration
     [wait_stability_max_duration: <duration> | default = 5m]
 
-    # (advanced) How many consecutive timeout periods an unhealthy instance in
-    # the ring will be automatically removed after. Set to 0 to disable
-    # auto-forget.
+    # (advanced) Number of consecutive timeout periods an unhealthy instance in
+    # the ring is automatically removed after. Set to 0 to disable auto-forget.
     # CLI flag: -overrides-exporter.ring.auto-forget-unhealthy-periods
     [auto_forget_unhealthy_periods: <int> | default = 4]
 
@@ -1000,8 +999,8 @@ ring:
   # CLI flag: -distributor.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) How many consecutive timeout periods an unhealthy instance in the
-  # ring will be automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
   # CLI flag: -distributor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -1914,8 +1913,8 @@ ring:
   # CLI flag: -query-scheduler.ring.heartbeat-timeout
   [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) How many consecutive timeout periods an unhealthy instance in the
-  # ring will be automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
   # CLI flag: -query-scheduler.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -2160,8 +2159,8 @@ ring:
   # CLI flag: -ruler.ring.instance-enable-ipv6
   [instance_enable_ipv6: <boolean> | default = false]
 
-  # (advanced) How many consecutive timeout periods an unhealthy instance in the
-  # ring will be automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
   # CLI flag: -ruler.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 2]
 
@@ -5104,8 +5103,8 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
-  # (advanced) How many consecutive timeout periods an unhealthy instance in the
-  # ring will be automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
   # CLI flag: -compactor.ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 
@@ -5185,14 +5184,14 @@ sharding_ring:
   # ring after failing to heartbeat the ring for a period longer than the
   # configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times
   # the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting
-  # is deprecated, set
+  # is deprecated. Set
   # -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable
   # auto-forget.
   # CLI flag: -store-gateway.sharding-ring.auto-forget-enabled
   [auto_forget_enabled: <boolean> | default = true]
 
-  # (advanced) How many consecutive timeout periods an unhealthy instance in the
-  # ring will be automatically removed after. Set to 0 to disable auto-forget.
+  # (advanced) Number of consecutive timeout periods an unhealthy instance in
+  # the ring is automatically removed after. Set to 0 to disable auto-forget.
   # CLI flag: -store-gateway.sharding-ring.auto-forget-unhealthy-periods
   [auto_forget_unhealthy_periods: <int> | default = 10]
 

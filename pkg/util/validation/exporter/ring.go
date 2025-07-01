@@ -71,7 +71,7 @@ func (c *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the overrides-exporter ring keeps changing after this period of time, it will start anyway.")
 
 	// Auto-forget
-	f.IntVar(&c.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 4, "How many consecutive timeout periods an unhealthy instance in the ring will be automatically removed after. Set to 0 to disable auto-forget.")
+	f.IntVar(&c.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 4, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
 }
 
 // toBasicLifecyclerConfig transforms a RingConfig into configuration that can be used to create a BasicLifecycler.

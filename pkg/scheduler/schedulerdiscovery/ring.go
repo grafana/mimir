@@ -67,7 +67,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.KVStore.RegisterFlagsWithPrefix("query-scheduler.ring.", "collectors/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, "query-scheduler.ring.heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, "query-scheduler.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which query-schedulers are considered unhealthy within the ring."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "query-scheduler.ring.auto-forget-unhealthy-periods", 10, "How many consecutive timeout periods an unhealthy instance in the ring will be automatically removed after. Set to 0 to disable auto-forget.")
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, "query-scheduler.ring.auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
 
 	// Instance flags
 	cfg.InstanceInterfaceNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
