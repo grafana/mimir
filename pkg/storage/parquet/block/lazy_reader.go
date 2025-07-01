@@ -284,6 +284,8 @@ func (r *LazyReaderLocalLabelsBucketChunks) LabelsFile() *storage.ParquetFile {
 		level.Error(r.logger).Log("msg", "failed to get labels file from lazy reader", "err", loaded.err)
 		return nil
 	}
+	// TODO: what if the underlying reader gets closed while we are still using the file?
+	defer loaded.inUse.Done()
 	return loaded.reader.LabelsFile()
 }
 
@@ -294,6 +296,9 @@ func (r *LazyReaderLocalLabelsBucketChunks) ChunksFile() *storage.ParquetFile {
 		level.Error(r.logger).Log("msg", "failed to get chunks file from lazy reader", "err", loaded.err)
 		return nil
 	}
+	// TODO: what if the underlying reader gets closed while we are still using the file?
+	defer loaded.inUse.Done()
+
 	return loaded.reader.ChunksFile()
 }
 
@@ -302,6 +307,8 @@ func (r *LazyReaderLocalLabelsBucketChunks) TSDBSchema() (*schema.TSDBSchema, er
 	if loaded.err != nil {
 		return nil, errors.Wrap(loaded.err, "get TSDB schema from lazy reader")
 	}
+	// TODO: what if the underlying reader gets closed while we are still using the schema?
+	defer loaded.inUse.Done()
 	return loaded.reader.TSDBSchema()
 }
 
@@ -396,7 +403,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) Close() error {
 func (r *LazyReaderLocalLabelsBucketChunks) waitAndCloseReader(req readerRequest) {
 	resp := <-req.response
 	if resp.reader != nil {
-		// resp.inUse.Done()
+		resp.inUse.Done()
 	}
 }
 
@@ -429,11 +436,11 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 				loaded = loadedReader{}
 				loaded.reader, loaded.err = r.loadReader()
 				if loaded.reader != nil {
-					// loaded.inUse = &sync.WaitGroup{}
+					loaded.inUse = &sync.WaitGroup{}
 				}
 			}
 			if loaded.reader != nil {
-				// loaded.inUse.Add(1)
+				loaded.inUse.Add(1)
 				r.usedAt.Store(time.Now().UnixNano())
 			}
 			readerReq.response <- loaded
@@ -452,7 +459,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) controlLoop() {
 			}
 
 			// Wait until all users finished using current reader.
-			// waitReadersOrPanic(loaded.inUse)
+			waitReadersOrPanic(loaded.inUse)
 
 			r.metrics.unloadCount.Inc()
 			if err := loaded.reader.Close(); err != nil {
