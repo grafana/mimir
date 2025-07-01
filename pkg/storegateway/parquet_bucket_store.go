@@ -150,7 +150,7 @@ func (s *ParquetBucketStore) stop(err error) error {
 	errs.Add(s.closeAllBlocks())
 	// The snapshotter depends on the reader pool, so we close the snapshotter first.
 	// errs.Add(services.StopAndAwaitTerminated(context.Background(), nil)) // TODO insert snapshotter
-	// errs.Add(services.StopAndAwaitTerminated(context.Background(), nil)) // TODO insert index reader pool
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.readerPool))
 	return errs.Err()
 }
 
@@ -195,16 +195,16 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 
 	logSeriesRequestToSpan(srv.Context(), s.logger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
-	shards := s.openParquetShardsForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
+	bucketBlocks, shardReaders := s.openParquetBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
-	for _, shard := range shards {
-		defer runutil.CloseWithLogOnErr(s.logger, shard, "close block shard")
+	for _, shardReader := range shardReaders {
+		defer runutil.CloseWithLogOnErr(s.logger, shardReader, "close parquet block shard reader")
 	}
 
 	spanLogger.DebugLog(
 		"msg", "opened parquet shards for reading",
-		"blocks", len(s.blockSet.sortedBlocks),
-		"num_shards", len(shards),
+		"blocks", len(bucketBlocks),
+		"num_shards", len(shardReaders),
 	)
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
@@ -218,9 +218,9 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 	var (
 		resHints = &hintspb.SeriesResponseHints{}
 	)
-	for _, shard := range shards {
-		resHints.AddQueriedBlock(shard.meta.ULID)
-		shard.MarkQueried()
+	for _, bucketBlock := range bucketBlocks {
+		resHints.AddQueriedBlock(bucketBlock.meta.ULID)
+		bucketBlock.MarkQueried()
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
@@ -231,7 +231,7 @@ func (s *ParquetBucketStore) Series(req *storepb.SeriesRequest, srv storegateway
 
 	start := time.Now()
 
-	labelsIt, chunksIt, err := s.createLabelsAndChunksIterators(ctx, req, shards, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+	labelsIt, chunksIt, err := s.createLabelsAndChunksIterators(ctx, req, bucketBlocks, shardReaders, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	if err != nil {
 		return err
 	}
@@ -318,25 +318,17 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	var blocks []*parquetBucketBlock
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
-		blocks = append(blocks, b)
-	})
 
-	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-		var parquetShards []parquetstorage.ParquetShard
-		for _, shard := range blocks {
-			parquetShards = append(parquetShards, shard)
+		shard := b.ShardReader()
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+			return []parquetstorage.ParquetShard{shard}, nil
 		}
-		return parquetShards, nil
-	}
 
-	for _, b := range blocks {
 		g.Go(func() error {
-			// We need to keep the block open until we finish iterating over it.
-			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+			defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
 
 			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
@@ -364,7 +356,7 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 
 			return nil
 		})
-	}
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -431,23 +423,17 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 	var sets [][]string
 	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 
-	var blocks []*parquetBucketBlock
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *parquetBucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
-		blocks = append(blocks, b)
-	})
 
-	for _, b := range blocks {
+		shard := b.ShardReader()
+		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
+			return []parquetstorage.ParquetShard{shard}, nil
+		}
+
 		g.Go(func() error {
-			// We need to keep the block open until we finish iterating over it.
-			defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
-
-			shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-				var parquetShards []parquetstorage.ParquetShard
-				parquetShards = append(parquetShards, b)
-				return parquetShards, nil
-			}
+			defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
 
 			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
@@ -474,7 +460,7 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 
 			return nil
 		})
-	}
+	})
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -508,12 +494,19 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 }
 
 // Placeholder methods for parquet-specific functionality
-func (s *ParquetBucketStore) openParquetShardsForReading(_ context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) []*parquetBucketBlock {
+func (s *ParquetBucketStore) openParquetBlocksForReading(ctx context.Context, _ bool, minTime, maxTime int64, reqBlockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*parquetBucketBlock, map[ulid.ULID]ParquetShardReaderCloser) {
+	_, span := tracer.Start(ctx, "parquet_bucket_store_open_blocks_for_reading")
+	defer span.End()
+
 	var blocks []*parquetBucketBlock
+	shardReaders := make(map[ulid.ULID]ParquetShardReaderCloser)
+
 	s.blockSet.filter(minTime, maxTime, reqBlockMatchers, func(b *parquetBucketBlock) {
 		blocks = append(blocks, b)
+		shardReaders[b.meta.ULID] = b.ShardReader()
+
 	})
-	return blocks
+	return blocks, shardReaders
 }
 
 func (s *ParquetBucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
@@ -552,7 +545,8 @@ func (s *ParquetBucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesSer
 func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
-	shards []*parquetBucketBlock,
+	parquetBlocks []*parquetBucketBlock,
+	shardReaders map[ulid.ULID]ParquetShardReaderCloser,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
 	chunksLimiter ChunksLimiter,
@@ -563,8 +557,8 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 
 	shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
 		var parquetShards []parquetstorage.ParquetShard
-		for _, shard := range shards {
-			parquetShards = append(parquetShards, shard)
+		for _, shardReader := range shardReaders {
+			parquetShards = append(parquetShards, shardReader)
 		}
 		return parquetShards, nil
 	}
@@ -600,7 +594,8 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 
 	spanLogger.DebugLog(
 		"msg", "createLabelsAndChunksIterators",
-		"shards", len(shards),
+		"blocks", len(parquetBlocks),
+		"num_shards", len(shardReaders),
 		"hints", hints,
 		"matchers", matchers,
 		"numLabels", len(lbls),
@@ -608,12 +603,12 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		"skipChunks", req.SkipChunks,
 	)
 
-	labelsIt := &concreteIterator[labels.Labels]{items: lbls}
+	labelsIt := newConcreteIterator(lbls)
 	if req.SkipChunks {
 		return labelsIt, nil, nil
 	}
 
-	return labelsIt, &concreteIterator[[]storepb.AggrChunk]{items: aggrChunks}, nil
+	return labelsIt, newConcreteIterator(aggrChunks), nil
 }
 
 func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats, labelsIt iterator[labels.Labels]) (numSeries int, err error) {
@@ -1154,7 +1149,15 @@ type concreteIterator[T any] struct {
 	curr  int
 }
 
+func newConcreteIterator[T any](items []T) *concreteIterator[T] {
+	return &concreteIterator[T]{
+		items: items,
+		curr:  -1,
+	}
+}
+
 func (it *concreteIterator[T]) Next() bool {
+	it.curr++
 	return it.curr < len(it.items)
 }
 
