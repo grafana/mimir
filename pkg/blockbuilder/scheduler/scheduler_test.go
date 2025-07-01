@@ -61,6 +61,9 @@ func mustScheduler(t *testing.T) (*BlockBuilderScheduler, *kgo.Client) {
 func TestStartup(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	// (a new scheduler starts in observation mode.)
+	sched.getPartitionState("ingest", 64).initCommit(1000)
+	sched.getPartitionState("ingest", 65).initCommit(256)
+	sched.getPartitionState("ingest", 66).initCommit(57)
 
 	{
 		_, _, err := sched.assignJob("w0")
@@ -77,6 +80,7 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   64,
 			StartOffset: 1000,
+			EndOffset:   1100,
 		},
 	}
 	j2 := job[schedulerpb.JobSpec]{
@@ -88,6 +92,7 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   65,
 			StartOffset: 256,
+			EndOffset:   300,
 		},
 	}
 	j3 := job[schedulerpb.JobSpec]{
@@ -99,6 +104,7 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   66,
 			StartOffset: 57,
+			EndOffset:   100,
 		},
 	}
 
@@ -139,17 +145,17 @@ func TestStartup(t *testing.T) {
 	}
 
 	// And we can resume normal operation:
-	e := sched.jobs.add("ingest/65/256", schedulerpb.JobSpec{
+	e := sched.jobs.add("ingest/65/300", schedulerpb.JobSpec{
 		Topic:       "ingest",
 		Partition:   65,
-		StartOffset: 256,
-		EndOffset:   9111,
+		StartOffset: 300,
+		EndOffset:   400,
 	})
 	require.NoError(t, e)
 	a1key, a1spec, err := sched.assignJob("w0")
 	require.NoError(t, err)
 	require.NotZero(t, a1spec)
-	require.Equal(t, "ingest/65/256", a1key.id)
+	require.Equal(t, "ingest/65/300", a1key.id)
 
 	requireGaps(t, sched.register.(*prometheus.Registry), 0, 0)
 }
