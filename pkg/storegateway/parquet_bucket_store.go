@@ -1176,7 +1176,11 @@ type concreteIterator[T any] struct {
 }
 
 func (it *concreteIterator[T]) Next() bool {
-	return it.curr < len(it.items)
+	if it.curr >= len(it.items) {
+		return false
+	}
+	it.curr++
+	return true
 }
 
 func (a *concreteIterator[T]) Err() error {
@@ -1184,7 +1188,7 @@ func (a *concreteIterator[T]) Err() error {
 }
 
 func (a *concreteIterator[T]) At() T {
-	return a.items[a.curr]
+	return a.items[a.curr-1]
 }
 
 // TimeRange returns the minimum and maximum timestamp of data available in the store.
