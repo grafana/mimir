@@ -322,14 +322,13 @@ func (s *ParquetBucketStore) LabelNames(ctx context.Context, req *storepb.LabelN
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
+		shard := b.ShardReader()
 		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{b.ShardReader()}, nil
+			return []parquetstorage.ParquetShard{shard}, nil
 		}
 
 		g.Go(func() error {
-			// TODO: this closes the entire block, causing future filter() calls to skip it.
-			// This close should be scoped to the reader.
-			// defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+			defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
 
 			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
@@ -428,14 +427,13 @@ func (s *ParquetBucketStore) LabelValues(ctx context.Context, req *storepb.Label
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
+		shard := b.ShardReader()
 		shardsFinder := func(ctx context.Context, mint, maxt int64) ([]parquetstorage.ParquetShard, error) {
-			return []parquetstorage.ParquetShard{b.ShardReader()}, nil
+			return []parquetstorage.ParquetShard{shard}, nil
 		}
 
 		g.Go(func() error {
-			// TODO: this closes the entire block, causing future filter() calls to skip it.
-			// This close should be scoped to the reader.
-			// defer runutil.CloseWithLogOnErr(s.logger, b, "close block shard")
+			defer runutil.CloseWithLogOnErr(s.logger, shard, "close shard")
 
 			decoder := schema.NewPrometheusParquetChunksDecoder(chunkenc.NewPool())
 			parquetQueryable, err := queryable.NewParquetQueryable(decoder, shardsFinder)
