@@ -617,12 +617,12 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 		"skipChunks", req.SkipChunks,
 	)
 
-	labelsIt := &concreteIterator[labels.Labels]{items: lbls}
+	labelsIt := newConcreteIterator(lbls)
 	if req.SkipChunks {
 		return labelsIt, nil, nil
 	}
 
-	return labelsIt, &concreteIterator[[]storepb.AggrChunk]{items: aggrChunks}, nil
+	return labelsIt, newConcreteIterator(aggrChunks), nil
 }
 
 func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats, labelsIt iterator[labels.Labels]) (numSeries int, err error) {
@@ -1163,12 +1163,16 @@ type concreteIterator[T any] struct {
 	curr  int
 }
 
-func (it *concreteIterator[T]) Next() bool {
-	if it.curr >= len(it.items) {
-		return false
+func newConcreteIterator[T any](items []T) *concreteIterator[T] {
+	return &concreteIterator[T]{
+		items: items,
+		curr:  -1,
 	}
+}
+
+func (it *concreteIterator[T]) Next() bool {
 	it.curr++
-	return true
+	return it.curr < len(it.items)
 }
 
 func (a *concreteIterator[T]) Err() error {
@@ -1176,7 +1180,7 @@ func (a *concreteIterator[T]) Err() error {
 }
 
 func (a *concreteIterator[T]) At() T {
-	return a.items[a.curr-1]
+	return a.items[a.curr]
 }
 
 // TimeRange returns the minimum and maximum timestamp of data available in the store.
