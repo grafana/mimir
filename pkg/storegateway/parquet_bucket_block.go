@@ -128,7 +128,6 @@ func (b *parquetBucketBlock) MarkQueried() {
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
 func (b *parquetBucketBlock) Close() error {
-	fmt.Println("closing parquet bucket block ", b.meta.ULID)
 	b.closedMtx.Lock()
 	b.closed = true
 	b.closedMtx.Unlock()
