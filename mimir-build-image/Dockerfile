@@ -13,7 +13,7 @@ ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-co
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
-RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
+RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS git-restore-mtime && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
 RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
@@ -45,6 +45,12 @@ ENV SKOPEO_VERSION=v1.15.1
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
     DISABLE_DOCS=1 make -C /go/src/github.com/containers/skopeo install && \
     rm -rf /go/pkg /go/src /root/.cache
+
+ENV AWS_CLI_VERSION=2.27.36
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m)-$AWS_CLI_VERSION.zip" -o "/tmp/awscliv2.zip" && \
+    unzip -qq /tmp/awscliv2.zip && \
+    ./aws/install && \
+    rm -rf /tmp/awscliv2.zip ./aws
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
