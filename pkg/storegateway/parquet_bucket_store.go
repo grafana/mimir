@@ -150,7 +150,7 @@ func (s *ParquetBucketStore) stop(err error) error {
 	errs.Add(s.closeAllBlocks())
 	// The snapshotter depends on the reader pool, so we close the snapshotter first.
 	// errs.Add(services.StopAndAwaitTerminated(context.Background(), nil)) // TODO insert snapshotter
-	// errs.Add(services.StopAndAwaitTerminated(context.Background(), nil)) // TODO insert index reader pool
+	errs.Add(services.StopAndAwaitTerminated(context.Background(), s.readerPool))
 	return errs.Err()
 }
 
