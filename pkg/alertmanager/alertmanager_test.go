@@ -684,6 +684,14 @@ func TestGrafanaAlertmanager(t *testing.T) {
                         "url": %q,
                         "message": %q
                     },
+                }],
+                "webhook_configs": [{
+                    "url": "http://example.com/prometheus"
+                }],
+                "email_configs": [{
+                    "to": "test@example.com",
+                    "from": "alert@example.com", 
+                    "smarthost": "localhost:587"
                 }]
             }],
         }`, s.URL, `{{ template "test" . }}`)
@@ -729,6 +737,23 @@ func TestGrafanaAlertmanager(t *testing.T) {
 			return false
 		}
 	}, 5*time.Second, 100*time.Millisecond)
+
+	// Verify that the configuration includes both Grafana and Prometheus integrations
+	rr := httptest.NewRecorder()
+	am.GetReceiversHandler(rr, nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	result := []alertingmodels.Receiver{}
+	err = json.Unmarshal(rr.Body.Bytes(), &result)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+
+	receiver := result[0]
+	require.Equal(t, "test_receiver", receiver.Name)
+	require.True(t, receiver.Active)
+
+	// Should have both Grafana and Prometheus integrations (1 Grafana webhook + 1 Prometheus webhook + 1 Prometheus email)
+	require.GreaterOrEqual(t, len(receiver.Integrations), 3)
 
 	// Ensure templates are correctly built for empty/noop/blackhole notifiers.
 	cfgRaw = `{

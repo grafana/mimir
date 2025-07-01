@@ -690,14 +690,11 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 }
 
 func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmplProvider alertingNotify.TemplatesProvider, logger log.Logger, wrapper alertingNotify.WrapNotifierFunc, opts ...alertingHttp.ClientOption) ([]*nfstatus.Integration, error) {
-	// The decrypt functions and the context are used to decrypt the configuration.
-	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
+	_, err := tmplProvider.GetTemplate(alertingTemplates.GrafanaKind)
 	if err != nil {
 		return nil, err
 	}
-
-	tmpl, err := tmplProvider.GetTemplate(alertingTemplates.GrafanaKind)
+	_, err = tmplProvider.GetTemplate(alertingTemplates.MimirKind)
 	if err != nil {
 		return nil, err
 	}
@@ -707,20 +704,23 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		return nil, err
 	}
 
-	integrations, err := alertingNotify.BuildGrafanaReceiverIntegrations(
-		rCfg,
-		tmpl,
-		&images.URLProvider{},
-		logger,
-		emailSender,
-		wrapper,
+	integrations, err := alertingNotify.BuildReceiverIntegrations(
 		1, // orgID is always 1.
+		rcv,
+		tmplProvider,
+		&images.URLProvider{},
+		alertingNotify.NoopDecrypt,
+		alertingNotify.NoopDecode,
+		emailSender,
+		opts,
+		wrapper,
 		version.Version,
-		opts...,
+		logger,
 	)
 	if err != nil {
 		return nil, err
 	}
+
 	return integrations, nil
 }
 
