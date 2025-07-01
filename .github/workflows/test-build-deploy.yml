@@ -191,8 +191,7 @@ jobs:
 
       - name: Set up go-cache-plugin
         run: |
-          echo 'GOCACHEPROG="go-cache-plugin --cache-dir=/tmp/.go-cache-plugin --bucket=hackathon-13-mimir-ci-cache --region=us-east-2 --metrics"' >> "$GITHUB_ENV"
-          go-cache-plugin version
+          echo 'GOCACHEPROG=go-cache-plugin --cache-dir=/tmp/.go-cache-plugin --bucket=hackathon-13-mimir-ci-cache --region=us-east-2 --metrics' >> "$GITHUB_ENV"
 
       # We use retry logic for tests to handle flaky tests that might fail intermittently.
       # The retry action will run the test command up to max_attempts times if it fails.
