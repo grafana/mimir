@@ -62,7 +62,7 @@ type OTLPHandlerLimits interface {
 	OTelPromoteScopeMetadata(id string) bool
 }
 
-type OtlpPushWrapper func(ctx context.Context, req pmetricotlp.ExportRequest)
+type OtlpPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
@@ -73,7 +73,7 @@ func OTLPHandler(
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
 	enableStartTimeQuietZero bool,
-	otlpPushWrappers []OtlpPushWrapper,
+	otlpPushMiddlewares []OtlpPushMiddleware,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -93,7 +93,7 @@ func OTLPHandler(
 
 		otlpConverter := newOTLPMimirConverter()
 
-		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError, otlpPushWrappers)
+		parser := newOTLPParser(limits, resourceAttributePromotionConfig, otlpConverter, enableStartTimeQuietZero, pushMetrics, discardedDueToOtelParseError, otlpPushMiddlewares)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
@@ -171,7 +171,7 @@ func newOTLPParser(
 	enableStartTimeQuietZero bool,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
-	otlpPushWrappers []OtlpPushWrapper,
+	otlpPushMiddlewares []OtlpPushMiddleware,
 ) parserFunc {
 	return func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
@@ -268,11 +268,14 @@ func newOTLPParser(
 			return err
 		}
 
-		for _, wrapper := range otlpPushWrappers {
-			wrapper(ctx, otlpReq)
-		}
-
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
+
+		for _, middleware := range otlpPushMiddlewares {
+			err := middleware(ctx, &otlpReq)
+			if err != nil {
+				return err
+			}
+		}
 
 		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
