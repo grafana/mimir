@@ -661,7 +661,7 @@ func (s *ParquetBucketStore) sendStreamingSeriesLabelsAndStats(req *storepb.Seri
 		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
 
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
-			level.Info(s.logger).Log("msg", "sending first batch of series")
+			level.Info(s.logger).Log("msg", "sending first batch of series", "numSeries", numSeries, "batchSize", len(seriesBatch.Series), "streamingChunksBatchSize", req.StreamingChunksBatchSize, "labelsItHasNext", labelsIt.Next())
 			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)
 			if err != nil {
 				return 0, err
