@@ -81,6 +81,13 @@ func (m mockChunkQuerier) Select(ctx context.Context, sorted bool, hints *storag
 	return storage.ErrChunkSeriesSet(errors.New("the Select() function has not been mocked in the test"))
 }
 
+func (m mockChunkQuerier) Close() error {
+	if m.ChunkQuerier != nil {
+		return m.ChunkQuerier.Close()
+	}
+	return nil
+}
+
 type partiallyFailingSeriesSet struct {
 	ss        storage.SeriesSet
 	failAfter int
