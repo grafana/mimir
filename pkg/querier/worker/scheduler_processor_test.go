@@ -6,11 +6,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -825,7 +827,7 @@ func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
 	return nil
 }
 
-func prepareResponseWriterTest(t *testing.T, ctx context.Context, maxMessageSize int) (*responseWriter, *frontendForQuerierMockServer, *querier_stats.Stats) {
+func prepareResponseWriterTest(t *testing.T, ctx context.Context, maxMessageSize int, streamingEnabled bool) (*responseWriter, *frontendForQuerierMockServer, *querier_stats.Stats) {
 	logger := log.NewNopLogger()
 	frontend := newFrontendForQuerierMock(t)
 	poolConfig := client.PoolConfig{
@@ -841,13 +843,13 @@ func prepareResponseWriterTest(t *testing.T, ctx context.Context, maxMessageSize
 	stats.SamplesProcessed += 100
 
 	const queryID = uint64(1234)
-	w := newResponseWriter(ctx, logger, queryID, frontend.addr, stats, false, pool, maxMessageSize)
+	w := newResponseWriter(ctx, logger, queryID, frontend.addr, stats, streamingEnabled, pool, maxMessageSize)
 
 	return w, frontend, stats
 }
 
 func TestResponseWriter_StreamingDisabled_HappyPath(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 	w.Header().Set("User-Agent", "foo")
 	w.WriteHeader(http.StatusTeapot)
 
@@ -874,8 +876,8 @@ func TestResponseWriter_StreamingDisabled_HappyPath(t *testing.T) {
 	requireSingleNonStreamingResponse(t, w, frontend, expected)
 }
 
-func TestResponseWriter_StreamingDisabledButResponseContainsStreamingHeader(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+func TestResponseWriter_StreamingDisabled_StreamingResponseHeaderSet(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 	w.Header().Set("User-Agent", "foo")
 	w.Header().Set(ResponseStreamingEnabledHeader, "true")
 	w.Header().Set("Authorization", "root")
@@ -904,7 +906,7 @@ func TestResponseWriter_StreamingDisabledButResponseContainsStreamingHeader(t *t
 
 func TestResponseWriter_StreamingDisabled_PayloadTooLarge(t *testing.T) {
 	maxMessageSize := 8
-	w, frontend, _ := prepareResponseWriterTest(t, context.Background(), maxMessageSize)
+	w, frontend, _ := prepareResponseWriterTest(t, context.Background(), maxMessageSize, false)
 	w.Header().Set("User-Agent", "foo")
 	w.WriteHeader(http.StatusTeapot)
 	_, err := w.Write(bytes.Repeat([]byte{'a'}, maxMessageSize))
@@ -927,7 +929,7 @@ func TestResponseWriter_StreamingDisabled_SendsResponseEvenIfContextCancelled(t 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	w, frontend, stats := prepareResponseWriterTest(t, ctx, math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, ctx, math.MaxInt, false)
 	w.Header().Set("User-Agent", "foo")
 	w.WriteHeader(http.StatusTeapot)
 	_, err := w.Write([]byte("the body"))
@@ -950,7 +952,7 @@ func TestResponseWriter_StreamingDisabled_SendsResponseEvenIfContextCancelled(t 
 }
 
 func TestResponseWriter_StreamingDisabled_IgnoresSubsequentWriteHeaderCalls(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 
 	w.Header().Set("User-Agent", "foo")
 	w.WriteHeader(http.StatusTeapot)
@@ -975,7 +977,7 @@ func TestResponseWriter_StreamingDisabled_IgnoresSubsequentWriteHeaderCalls(t *t
 }
 
 func TestResponseWriter_StreamingDisabled_WriteHeaderNotCalled(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 
 	w.Header().Set("User-Agent", "foo")
 	_, err := w.Write([]byte("the body"))
@@ -998,7 +1000,7 @@ func TestResponseWriter_StreamingDisabled_WriteHeaderNotCalled(t *testing.T) {
 }
 
 func TestResponseWriter_StreamingDisabled_WriteNotCalled(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 
 	w.Header().Set("User-Agent", "foo")
 	w.WriteHeader(http.StatusTeapot)
@@ -1019,7 +1021,7 @@ func TestResponseWriter_StreamingDisabled_WriteNotCalled(t *testing.T) {
 }
 
 func TestResponseWriter_StreamingDisabled_WriteAndWriteHeaderNotCalled(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 	w.Header().Set("User-Agent", "foo")
 	w.Close()
 
@@ -1038,7 +1040,7 @@ func TestResponseWriter_StreamingDisabled_WriteAndWriteHeaderNotCalled(t *testin
 }
 
 func TestResponseWriter_StreamingDisabled_WriteCalledBeforeWriteHeader(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 
 	w.Header().Set("User-Agent", "foo")
 	_, err := w.Write([]byte("the body"))
@@ -1061,7 +1063,7 @@ func TestResponseWriter_StreamingDisabled_WriteCalledBeforeWriteHeader(t *testin
 }
 
 func TestResponseWriter_StreamingDisabled_Retries(t *testing.T) {
-	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt)
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, false)
 	const expectedFailingCalls = 4
 	frontend.queryResultRemainingFailingCalls.Store(expectedFailingCalls)
 
@@ -1092,6 +1094,131 @@ func TestResponseWriter_StreamingDisabled_Retries(t *testing.T) {
 	require.Zero(t, frontend.queryResultStreamBodyCalls.Load(), "should not send streaming result")
 }
 
+func TestResponseWriter_StreamingEnabled_StreamingResponseHeaderNotSet(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, true)
+	w.Header().Set("User-Agent", "foo")
+	contentLength := responseStreamingBodyChunkSizeBytes + 10
+	w.Header().Set("Content-Length", strconv.Itoa(contentLength))
+	w.WriteHeader(http.StatusTeapot)
+
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send result after WriteHeader call")
+
+	body := bytes.Repeat([]byte{'a'}, contentLength)
+	_, err := w.Write(body)
+	require.NoError(t, err)
+
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send result after Write call")
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+				{Key: "Content-Length", Values: []string{strconv.Itoa(contentLength)}},
+			},
+			Stats: stats,
+		},
+		body: body,
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingEnabled_PayloadSmallerThanThreshold(t *testing.T) {
+	w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, true)
+	w.Header().Set("User-Agent", "foo")
+	w.Header().Set(ResponseStreamingEnabledHeader, "true")
+	contentLength := 10
+	w.Header().Set("Content-Length", strconv.Itoa(contentLength))
+	w.WriteHeader(http.StatusTeapot)
+
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send result after WriteHeader call")
+
+	body := bytes.Repeat([]byte{'a'}, contentLength)
+	_, err := w.Write(body)
+	require.NoError(t, err)
+
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send result after Write call")
+
+	w.Close()
+
+	expected := &queryResult{
+		metadata: &frontendv2pb.QueryResultMetadata{
+			Code: http.StatusTeapot,
+			Headers: []*httpgrpc.Header{
+				{Key: "User-Agent", Values: []string{"foo"}},
+				{Key: "Content-Length", Values: []string{strconv.Itoa(contentLength)}},
+			},
+			Stats: stats,
+		},
+		body: body,
+	}
+
+	requireSingleNonStreamingResponse(t, w, frontend, expected)
+}
+
+func TestResponseWriter_StreamingEnabled(t *testing.T) {
+	for _, contentLengthHeaderSet := range []bool{true, false} {
+		t.Run(fmt.Sprintf("Content-Length header present = %v", contentLengthHeaderSet), func(t *testing.T) {
+			w, frontend, stats := prepareResponseWriterTest(t, context.Background(), math.MaxInt, true)
+			w.Header().Set("User-Agent", "foo")
+			w.Header().Set(ResponseStreamingEnabledHeader, "true")
+
+			var body []byte
+
+			if contentLengthHeaderSet {
+				body = append(bytes.Repeat([]byte("1234567890"), 2*responseStreamingBodyChunkSizeBytes), 'a', 'b', 'c') // Create a body over the streaming threshold that isn't a multiple of the chunk size.
+				w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			} else {
+				body = []byte("the body")
+			}
+
+			w.WriteHeader(http.StatusTeapot)
+			require.Equal(t, int64(1), frontend.queryResultStreamMetadataCalls.Load(), "should send metadata after WriteHeader call")
+
+			_, err := w.Write(body)
+			require.NoError(t, err)
+			completeChunks := int64(len(body) / responseStreamingBodyChunkSizeBytes)
+			require.Equal(t, completeChunks, frontend.queryResultStreamBodyCalls.Load(), "should send body chunks if enough data to fill a chunk has been written")
+
+			w.Close()
+
+			expected := &queryResult{
+				metadata: &frontendv2pb.QueryResultMetadata{
+					Code: http.StatusTeapot,
+					Headers: []*httpgrpc.Header{
+						{Key: "User-Agent", Values: []string{"foo"}},
+					},
+					Stats: stats,
+				},
+				body: body,
+			}
+
+			if contentLengthHeaderSet {
+				expected.metadata.Headers = append(expected.metadata.Headers, &httpgrpc.Header{Key: "Content-Length", Values: []string{strconv.Itoa(len(body))}})
+			}
+
+			requireStreamingResponse(t, w, frontend, completeChunks+1, expected)
+		})
+	}
+}
+
+// Streaming enabled: retries WriteHeader calls
+// Streaming enabled: does not retry Write calls
+// Streaming enabled: does not retry sending last chunk in Close
+// Streaming enabled: ignores subsequent WriteHeader calls
+// Streaming enabled: sends message in WriteHeader if request context canceled
+// Streaming enabled: does nothing in Write if request context canceled
+// Streaming enabled: sends message in Close if request context canceled and WriteHeader not called
+// Streaming enabled: does nothing in Close if request context canceled and WriteHeader already called
+// Streaming enabled: Close called without WriteHeader
+// Streaming enabled: Close called without Write
+// Streaming enabled: edge cases for chunk sizing
+// Streaming disabled: Close called multiple times
+// Streaming enabled: Close called multiple times
+
 func requireSingleNonStreamingResponse(t *testing.T, w *responseWriter, frontend *frontendForQuerierMockServer, expected *queryResult) {
 	require.Equal(t, int64(1), frontend.queryResultCalls.Load(), "should have sent result after Close")
 	require.Contains(t, frontend.responses, w.queryID, "should have sent result after Close call")
@@ -1111,4 +1238,15 @@ func requireEqualResponses(t *testing.T, expected, actual *queryResult) {
 
 func sortHeaders(a, b *httpgrpc.Header) int {
 	return strings.Compare(a.Key, b.Key)
+}
+
+func requireStreamingResponse(t *testing.T, w *responseWriter, frontend *frontendForQuerierMockServer, chunkCount int64, expected *queryResult) {
+	require.Equal(t, int64(1), frontend.queryResultCalls.Load(), "should have sent result")
+	require.Contains(t, frontend.responses, w.queryID, "should have sent result")
+
+	requireEqualResponses(t, expected, frontend.responses[w.queryID])
+
+	require.Equal(t, int64(1), frontend.queryResultStreamMetadataCalls.Load(), "should have sent metadata exactly once")
+	require.Equal(t, chunkCount, frontend.queryResultStreamBodyCalls.Load(), "should have sent response body in expected number of chunks")
+	require.Zero(t, frontend.queryResultCalls.Load(), "should not send non-streaming responses")
 }

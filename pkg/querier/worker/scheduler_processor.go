@@ -93,6 +93,7 @@ func newSchedulerProcessor(cfg Config, handler http.Handler, log log.Logger, reg
 	return p, []services.Service{p.frontendPool}
 }
 
+// TODO: remove this
 type frontendResponseStreamer func(
 	ctx context.Context,
 	reqCtx context.Context,
@@ -106,7 +107,7 @@ type frontendResponseStreamer func(
 type schedulerProcessor struct {
 	log              log.Logger
 	handler          http.Handler
-	streamResponse   frontendResponseStreamer
+	streamResponse   frontendResponseStreamer // TODO: remove
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
 	querierID        string
