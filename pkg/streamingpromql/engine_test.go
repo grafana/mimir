@@ -1438,8 +1438,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_metric)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryExpectedPeak: 8*types.FPointSize + 16*types.Float64Size + 8*types.BoolSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*types.FPointSize + 16*types.Float64Size + 8*types.BoolSize + types.SeriesMetadataSize + 1,
 
 			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
@@ -1605,7 +1605,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 3*8*types.FPointSize + 8*types.SeriesMetadataSize // Allow up to three series and its SeriesMetadatawith five points (which will be rounded up to 8, the nearest power of 2)
+	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
