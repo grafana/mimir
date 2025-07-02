@@ -226,7 +226,8 @@ type Config struct {
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
 	// This config can be overridden in tests.
-	limitMetricsUpdatePeriod time.Duration `yaml:"-"`
+	limitMetricsUpdatePeriod              time.Duration `yaml:"-"`
+	headBlockMinMaxTimestampsUpdatePeriod time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -256,6 +257,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Hardcoded config (can only be overridden in tests).
 	cfg.limitMetricsUpdatePeriod = time.Second * 15
+	cfg.headBlockMinMaxTimestampsUpdatePeriod = time.Second * 15
 }
 
 func (cfg *Config) Validate(log.Logger) error {
@@ -417,16 +419,6 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			Name: "cortex_ingester_oldest_unshipped_block_timestamp_seconds",
 			Help: "Unix timestamp of the oldest TSDB block not shipped to the storage yet. 0 if ingester has no blocks or all blocks have been shipped.",
 		}, i.getOldestUnshippedBlockMetric)
-
-		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_tsdb_head_min_timestamp_seconds",
-			Help: "Minimum timestamp of the head block across all tenants.",
-		}, i.minTsdbHeadTimestamp)
-
-		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_tsdb_head_max_timestamp_seconds",
-			Help: "Maximum timestamp of the head block across all tenants.",
-		}, i.maxTsdbHeadTimestamp)
 	}
 
 	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
@@ -770,6 +762,9 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	limitMetricsUpdateTicker := time.NewTicker(i.cfg.limitMetricsUpdatePeriod)
 	defer limitMetricsUpdateTicker.Stop()
 
+	headBlockMinMaxTimeTicker := time.NewTicker(i.cfg.headBlockMinMaxTimestampsUpdatePeriod)
+	defer headBlockMinMaxTimeTicker.Stop()
+
 	for {
 		select {
 		case <-ingestionRateTicker.C:
@@ -781,6 +776,8 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 				db.ingestedRuleSamples.Tick()
 			}
 			i.tsdbsMtx.RUnlock()
+		case <-headBlockMinMaxTimeTicker.C:
+			i.updateMinMaxTSDBHeadTimestamps()
 		case <-activeSeriesTickerChan:
 			i.updateActiveSeries(time.Now())
 		case <-usageStatsUpdateTicker.C:
@@ -2740,6 +2737,9 @@ func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	i.tsdbs[userID] = db
 	i.metrics.memUsers.Inc()
 
+	// Initialize head block timestamps with empty values.
+	i.initializeMinMaxTSDBHeadTimestamps(userID)
+
 	return db, nil
 }
 
@@ -3080,36 +3080,28 @@ func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
 	return float64(oldest / 1000)
 }
 
-func (i *Ingester) minTsdbHeadTimestamp() float64 {
-	i.tsdbsMtx.RLock()
-	defer i.tsdbsMtx.RUnlock()
-
-	minTime := int64(math.MaxInt64)
-	for _, db := range i.tsdbs {
-		minTime = min(minTime, db.db.Head().MinTime())
+func (i *Ingester) updateMinMaxTSDBHeadTimestamps() {
+	for _, userID := range i.getTSDBUsers() {
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+		head := db.Head()
+		minTime, maxTime := head.MinTime(), head.MaxTime()
+		if minTime == math.MaxInt64 {
+			minTime = 0
+		}
+		if maxTime == math.MinInt64 {
+			maxTime = 0
+		}
+		i.metrics.tsdbHeadMinTimestamp.WithLabelValues(userID).Set(float64(minTime) / 1000)
+		i.metrics.tsdbHeadMaxTimestamp.WithLabelValues(userID).Set(float64(maxTime) / 1000)
 	}
-
-	if minTime == math.MaxInt64 {
-		return 0
-	}
-	// convert to seconds
-	return float64(minTime) / 1000
 }
 
-func (i *Ingester) maxTsdbHeadTimestamp() float64 {
-	i.tsdbsMtx.RLock()
-	defer i.tsdbsMtx.RUnlock()
-
-	maxTime := int64(math.MinInt64)
-	for _, db := range i.tsdbs {
-		maxTime = max(maxTime, db.db.Head().MaxTime())
-	}
-
-	if maxTime == math.MinInt64 {
-		return 0
-	}
-	// convert to seconds
-	return float64(maxTime) / 1000
+func (i *Ingester) initializeMinMaxTSDBHeadTimestamps(userID string) {
+	i.metrics.tsdbHeadMinTimestamp.WithLabelValues(userID).Set(0)
+	i.metrics.tsdbHeadMaxTimestamp.WithLabelValues(userID).Set(0)
 }
 
 func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
@@ -4086,6 +4078,9 @@ func (i *Ingester) getOrCreateUserMetadata(userID string) *userMetricsMetadata {
 	if !ok {
 		userMetadata = newMetadataMap(i.limiter, i.metrics, i.errorSamplers, userID)
 		i.usersMetadata[userID] = userMetadata
+
+		// Initialize head block timestamps with empty values.
+		i.initializeMinMaxTSDBHeadTimestamps(userID)
 	}
 	return userMetadata
 }
