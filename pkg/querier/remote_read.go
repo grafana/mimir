@@ -86,19 +86,7 @@ func remoteReadSamples(
 		Results: make([]*prompb.QueryResult, len(req.Queries)),
 	}
 
-	type queryJob struct {
-		index int
-		query *prompb.Query
-	}
-
-	jobs := make([]queryJob, len(req.Queries))
-	for i, qr := range req.Queries {
-		jobs[i] = queryJob{
-			index: i,
-			query: qr,
-		}
-	}
-	closers := make([]io.Closer, len(jobs))
+	closers := make([]io.Closer, len(req.Queries))
 	defer func() {
 		for _, closer := range closers {
 			if closer != nil {
@@ -108,8 +96,7 @@ func remoteReadSamples(
 	}()
 
 	run := func(_ context.Context, idx int) error {
-		job := &jobs[idx]
-		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(job.query)
+		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(req.Queries[idx])
 		if err != nil {
 			return err
 		}
@@ -124,11 +111,11 @@ func remoteReadSamples(
 
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
-		resp.Results[job.index], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
+		resp.Results[idx], err = seriesSetToQueryResult(seriesSet, int64(minT), int64(maxT))
 		return err
 	}
 
-	err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run)
+	err := concurrency.ForEachJob(ctx, len(req.Queries), maxConcurrency, run)
 	if err != nil {
 		code := remoteReadErrorStatusCode(err)
 		if code/100 != 4 {
@@ -163,7 +150,6 @@ func remoteReadStreamedXORChunks(
 
 	// Process all queries concurrently and collect their ChunkSeriesSet results
 	type queryResult struct {
-		idx     int
 		series  storage.ChunkSeriesSet
 		querier io.Closer
 	}
@@ -195,7 +181,7 @@ func remoteReadStreamedXORChunks(
 		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
 		// but we need the SeriesSet to remain valid for streaming later.
 		seriesSet := querier.Select(ctx, true, hints, matchers...)
-		results[idx] = queryResult{idx: idx, series: seriesSet, querier: querier}
+		results[idx] = queryResult{series: seriesSet, querier: querier}
 		return nil
 	}
 
