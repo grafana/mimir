@@ -525,7 +525,7 @@ func SortByLabelOperatorFactory(descending bool) InstantVectorFunctionOperatorFa
 			labels = append(labels, l.GetValue())
 		}
 
-		return NewSortByLabel(inner, labels, descending, memoryConsumptionTracker, expressionPosition), nil
+		return NewSortByLabel(inner, descending, labels, memoryConsumptionTracker, expressionPosition), nil
 	}
 }
 
