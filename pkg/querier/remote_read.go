@@ -107,11 +107,6 @@ func remoteReadSamples(
 		}
 	}()
 
-	concurrencyLimit := maxConcurrency
-	if concurrencyLimit <= 0 {
-		concurrencyLimit = len(jobs)
-	}
-
 	run := func(_ context.Context, idx int) error {
 		job := &jobs[idx]
 		start, end, minT, maxT, matchers, hints, err := queryFromRemoteReadQuery(job.query)
@@ -133,7 +128,7 @@ func remoteReadSamples(
 		return err
 	}
 
-	err := concurrency.ForEachJob(ctx, len(jobs), concurrencyLimit, run)
+	err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run)
 	if err != nil {
 		code := remoteReadErrorStatusCode(err)
 		if code/100 != 4 {
@@ -184,11 +179,6 @@ func remoteReadStreamedXORChunks(
 		}
 	}()
 
-	concurrencyLimit := maxConcurrency
-	if concurrencyLimit <= 0 {
-		concurrencyLimit = len(req.Queries)
-	}
-
 	run := func(_ context.Context, idx int) error {
 		qr := req.Queries[idx]
 		start, end, _, _, matchers, hints, err := queryFromRemoteReadQuery(qr)
@@ -209,7 +199,7 @@ func remoteReadStreamedXORChunks(
 		return nil
 	}
 
-	err := concurrency.ForEachJob(ctx, len(req.Queries), concurrencyLimit, run)
+	err := concurrency.ForEachJob(ctx, len(req.Queries), maxConcurrency, run)
 	// If any query failed, return the error
 	if err != nil {
 		code := remoteReadErrorStatusCode(err)
