@@ -166,7 +166,7 @@
 * [FEATURE] Updated rollout-operator to support `OTEL_` environment variables for tracing. #11787
 * [ENHANCEMENT] Add `query_frontend_only_args` option to specify CLI flags that apply only to query-frontends but not ruler-query-frontends. #11799
 * [ENHANCEMENT] Make querier scale up (`$_config.autoscaling_querier_scaleup_percent_cap`) and scale down rates (`$_config.autoscaling_querier_scaledown_percent_cap`) configurable. #11862
-* [ENHANCEMENT] Set resource requests and limits for the Memcached Prometheus exporter. #11933
+* [ENHANCEMENT] Set resource requests and limits for the Memcached Prometheus exporter. #11933 #11946
 
 ### Mimirtool
 
