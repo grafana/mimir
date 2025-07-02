@@ -968,6 +968,9 @@ github.com/lufia/plan9stats
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
+# github.com/maruel/natural v1.1.1
+## explicit; go 1.21
+github.com/maruel/natural
 # github.com/mattn/go-colorable v0.1.13
 ## explicit; go 1.15
 github.com/mattn/go-colorable
@@ -1232,6 +1235,7 @@ github.com/prometheus/prometheus/promql/promqltest
 github.com/prometheus/prometheus/rules
 github.com/prometheus/prometheus/schema
 github.com/prometheus/prometheus/scrape
+github.com/prometheus/prometheus/semconv
 github.com/prometheus/prometheus/storage
 github.com/prometheus/prometheus/storage/remote
 github.com/prometheus/prometheus/storage/remote/azuread
