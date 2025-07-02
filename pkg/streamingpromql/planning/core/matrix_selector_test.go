@@ -75,6 +75,16 @@ func TestMatrixSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}[1m0s] @ 123456 (1970-01-01T00:02:03.456Z) offset 1h0m0s`,
 		},
+		"one matcher, skip histogram buckets enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:             singleMatcher,
+					Range:                time.Minute,
+					SkipHistogramBuckets: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s], skip histogram buckets`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -293,6 +303,29 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					},
 					Range:              time.Minute,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: false,
+		},
+		"one with skipping histogram buckets enabled, one without": {
+			a: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:                time.Minute,
+					SkipHistogramBuckets: false,
+					ExpressionPosition:   PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					Range:                time.Minute,
+					SkipHistogramBuckets: true,
+					ExpressionPosition:   PositionRange{Start: 1, End: 2},
 				},
 			},
 			expectEquivalent: false,
