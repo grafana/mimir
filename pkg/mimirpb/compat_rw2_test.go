@@ -365,6 +365,31 @@ func TestRW2Unmarshal(t *testing.T) {
 		err = received.Unmarshal(data)
 		require.ErrorContains(t, err, "invalid")
 	})
+
+	t.Run("messages where the first symbol is empty string are rejected", func(t *testing.T) {
+		writeRequest := &rw2.Request{
+			Symbols: []string{"__name__", "test_metric_total", "job", "my_job"},
+			Timeseries: []rw2.TimeSeries{
+				{
+					LabelsRefs: []uint32{0, 1, 2, 3},
+					Samples: []rw2.Sample{
+						{
+							Value:     123.456,
+							Timestamp: 1234567890,
+						},
+					},
+				},
+			},
+		}
+		data, err := writeRequest.Marshal()
+		require.NoError(t, err)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		err = received.Unmarshal(data)
+		require.ErrorContains(t, err, "symbols must start with empty string")
+	})
 }
 
 func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {

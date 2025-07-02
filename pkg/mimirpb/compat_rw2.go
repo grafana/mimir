@@ -21,6 +21,7 @@ var (
 	errorInternalRW2                  = errors.New("proto: Remote Write 2.0 internal error")
 	errorInvalidHelpRef               = errors.New("proto: Remote Write 2.0 invalid help reference")
 	errorInvalidUnitRef               = errors.New("proto: Remote Write 2.0 invalid unit reference")
+	errorInvalidFirstSymbol           = errors.New("proto: Remote Write 2.0 symbols must start with empty string")
 )
 
 // rw2SymbolPageSize is the size of each page in bits.
