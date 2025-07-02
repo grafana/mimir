@@ -165,7 +165,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	if err != nil {
 		return nil, err
 	}
-	perStepStats := make([][]StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
+	perStepStats := make([][]stats.StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
 	// Lookup the results cache.
 	if isCacheEnabled {
 		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
@@ -312,8 +312,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
-
-	reportSamplesProcessed(ctx, queryStats.LoadSamplesProcessedPerStep(), perStepStats)
+	reportSamplesProcessed(ctx, append(perStepStats, queryStats.LoadSamplesProcessedPerStep()))
 
 	// We can finally build the response, which is the merge of all downstream responses and the responses
 	// we've got from the cache (if any).
@@ -747,13 +746,9 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 	return target
 }
 
-func reportSamplesProcessed(ctx context.Context, processed []stats.StepStat, perStepStats [][]StepStat) {
-	if convertedStats := convertStatsStepStat(processed); len(convertedStats) > 0 {
-		perStepStats = append(perStepStats, convertedStats)
-	}
-
+func reportSamplesProcessed(ctx context.Context, s [][]stats.StepStat) {
 	if details := QueryDetailsFromContext(ctx); details != nil {
-		totalSamplesProcessed := sumSamplesProcessedPerStep(perStepStats...)
+		totalSamplesProcessed := sumSamplesProcessedPerStep(s...)
 		details.SamplesProcessedCacheAdjusted += uint64(totalSamplesProcessed)
 	}
 }
