@@ -410,3 +410,9 @@ message MetadataRW2 {
   // such a case.
   uint32 unit_ref = 4;
 }
+
+// SymbolizedMetadata contains the fields of MetricMetadata, but using the symbolization technique from MetricMetadataRW2.
+message SymbolizedMetadata {
+  MetadataRW2 metadata = 1;
+  uint32 metric_family_name_ref = 2;
+}
