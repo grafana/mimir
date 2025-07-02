@@ -110,7 +110,7 @@ func newPartitionHandler(
 		eventsKafkaWriter: eventsKafkaWriter,
 
 		snapshotsKafkaWriter: snapshotsKafkaWriter,
-		snapshotsBucket:      objstore.NewPrefixedBucket(snapshotsBucket, fmt.Sprintf("partition-%d", partitionID)),
+		snapshotsBucket:      snapshotsBucket,
 		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, shards),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
@@ -834,10 +834,6 @@ func recordHeader(r *kgo.Record, headerName string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func snapshotFilename(time time.Time, instanceID string, partitionID int32) string {
-	return fmt.Sprintf("snapshot-%d-%s-p%d.bin", time.UnixNano(), instanceID, partitionID)
 }
 
 type goroutineWaitGroup struct {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,10 +20,12 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -466,5 +469,113 @@ func TestParseInstanceID(t *testing.T) {
 
 		_, err = parseInstanceID("usage-tracker-zone-a")
 		require.Error(t, err)
+	})
+}
+
+func TestUsageTracker_CleanupSnapshots(t *testing.T) {
+	t.Run("instance 0 performing cleanup", func(t *testing.T) {
+		t.Parallel()
+
+		testDir := t.TempDir()
+
+		const idleTimeout = 15 * time.Minute
+		logger := utiltest.NewTestingLogger(t)
+		reg := prometheus.NewRegistry()
+
+		// Prepare bucket config.
+		var bucketConfig bucket.Config
+		fs := flag.NewFlagSet("", flag.ExitOnError)
+		bucketConfig.RegisterFlags(fs)
+		require.Nil(t, fs.Parse(nil))
+		bucketConfig.Filesystem.Directory = testDir
+
+		snapshotsBucket, err := bucket.NewClient(context.Background(), bucketConfig, "usage-tracker-snapshots", logger, reg)
+		require.NoError(t, err)
+
+		now := time.Now()
+		filenamesToDelete := []string{
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 0),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor*10)), "usage-tracker-zone-a-0", 1),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor+1)), "usage-tracker-zone-a-1", 0),
+			snapshotFilename(now.Add(-idleTimeout*(snapshotCleanupIdleTimeoutFactor+1)), "usage-tracker-zone-a-1", 1),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor-time.Minute), "usage-tracker-zone-a-1", 0),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor-time.Minute), "usage-tracker-zone-a-1", 1),
+		}
+		for _, filename := range filenamesToDelete {
+			require.NoError(t, snapshotsBucket.Upload(t.Context(), filename, strings.NewReader(`snapshot`), nil), "failed to upload snapshot %s", filename)
+		}
+		filenamesToKeep := []string{
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor+time.Minute), "usage-tracker-zone-a-1", 0),
+			snapshotFilename(now.Add(-idleTimeout*snapshotCleanupIdleTimeoutFactor+time.Minute), "usage-tracker-zone-a-1", 1),
+			snapshotFilename(now.Add(-idleTimeout*5), "usage-tracker-zone-a-1", 0),
+			snapshotFilename(now.Add(-idleTimeout*5), "usage-tracker-zone-a-1", 1),
+			snapshotFilename(now.Add(-idleTimeout), "usage-tracker-zone-b-2", 0),
+			snapshotFilename(now.Add(-idleTimeout), "usage-tracker-zone-b-3", 5),
+			snapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-4", 2),
+			snapshotFilename(now.Add(-idleTimeout/10), "usage-tracker-zone-a-5", 3),
+		}
+		for _, filename := range filenamesToKeep {
+			require.NoError(t, snapshotsBucket.Upload(t.Context(), filename, strings.NewReader(`snapshot`), nil), "failed to upload snapshot %s", filename)
+		}
+		unknownFilenames := []string{
+			"hello-world.bin",
+			"linkin-park-hybrid-theory.mp3",
+		}
+		for _, filename := range unknownFilenames {
+			require.NoError(t, snapshotsBucket.Upload(t.Context(), filename, strings.NewReader(`snapshot`), nil), "failed to upload snapshot %s", filename)
+		}
+
+		ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
+		ut := newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster, func(cfg *Config) {
+			cfg.SnapshotsStorage.Filesystem.Directory = testDir
+			cfg.IdleTimeout = idleTimeout
+			cfg.SnapshotCleanupInterval = 500 * time.Millisecond
+			cfg.SnapshotCleanupIntervalJitter = 0.1
+		})
+		require.NotNil(t, ut.snapshotCleanupsTotal)
+		require.Equal(t, float64(-1), testutil.ToFloat64(ut.snapshotsRemainingInTheBucket))
+
+		// Wait until cleanup is performed.
+		require.Eventually(t, func() bool {
+			return testutil.ToFloat64(ut.snapshotCleanupsTotal) > 0
+		}, 10*time.Second, 100*time.Millisecond, "A cleanup should have been performed")
+
+		// List the remaining snapshots in the bucket.
+		var remaining []string
+		require.NoError(t, snapshotsBucket.Iter(t.Context(), "", func(name string) error {
+			remaining = append(remaining, name)
+			return nil
+		}))
+		require.ElementsMatch(t, remaining, append(filenamesToKeep, unknownFilenames...), "Remaining snapshots should match the expected ones after cleanup")
+
+		require.Equal(t, float64(len(filenamesToDelete)), testutil.ToFloat64(ut.snapshotCleanupsDeletedFiles))
+		require.Equal(t, float64(len(unknownFilenames)), testutil.ToFloat64(ut.snapshotCleanupsFailedFiles))
+		require.Equal(t, float64(len(filenamesToKeep)+len(unknownFilenames)), testutil.ToFloat64(ut.snapshotsRemainingInTheBucket))
+	})
+
+	t.Run("non-0 instance should not perform cleanups", func(t *testing.T) {
+		t.Parallel()
+
+		ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
+		ut := newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster, func(cfg *Config) {
+			cfg.SnapshotCleanupInterval = 100 * time.Millisecond
+			cfg.SnapshotCleanupIntervalJitter = 0.1
+		})
+		// Metric should not be exported.
+		require.Nil(t, ut.snapshotCleanupsTotal)
+
+		// Upload a file.
+		require.NoError(t, ut.snapshotsBucket.Upload(t.Context(), snapshotFilename(time.Now().Add(-10*snapshotCleanupIdleTimeoutFactor*ut.cfg.IdleTimeout), "usage-tracker-zone-a-1", 0), strings.NewReader("snapshot"), nil))
+
+		// Wait for a second, we run cleanups every 100ms.
+		time.Sleep(time.Second)
+
+		// File is still there.
+		var remaining []string
+		require.NoError(t, ut.snapshotsBucket.Iter(t.Context(), "", func(name string) error {
+			remaining = append(remaining, name)
+			return nil
+		}))
+		require.Len(t, remaining, 1)
 	})
 }

@@ -18,8 +18,10 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
@@ -39,6 +41,8 @@ const (
 	eventsKafkaReaderComponent    = "usage-tracker-events-reader"
 	snapshotsKafkaWriterComponent = "usage-tracker-snapshots-metadata-writer"
 	snapshotsKafkaReaderComponent = "usage-tracker-snapshots-metadata-reader"
+
+	snapshotCleanupIdleTimeoutFactor = 10
 )
 
 type Config struct {
@@ -186,6 +190,13 @@ type UsageTracker struct {
 
 	// Dependencies.
 	subservicesWatcher *services.FailureWatcher
+
+	// Metrics
+	snapshotCleanupsTotal         prometheus.Counter
+	snapshotCleanupsFailed        prometheus.Counter
+	snapshotCleanupsFailedFiles   prometheus.Counter
+	snapshotCleanupsDeletedFiles  prometheus.Counter
+	snapshotsRemainingInTheBucket prometheus.Gauge
 }
 
 func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
@@ -251,8 +262,37 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker snapshots metadata")
 	}
 
+	// Only instance 0 performs cleanups of the snapshots bucket, it doesn't make sense to export the metric on the rest of the instances.
+	if t.shouldPerformCleanups() {
+		t.snapshotCleanupsTotal = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_usage_tracker_snapshot_cleanups_total",
+			Help: "Total number of performed snapshots cleanups.",
+		})
+		t.snapshotCleanupsFailed = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_usage_tracker_snapshot_cleanups_failed_total",
+			Help: "Total number of snapshots cleanups that failed.",
+		})
+		t.snapshotCleanupsFailedFiles = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_usage_tracker_snapshot_cleanups_failed_files_total",
+			Help: "Total number of files that failed to be deleted during snapshots cleanup.",
+		})
+		t.snapshotCleanupsDeletedFiles = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_usage_tracker_snapshot_cleanups_deleted_files_total",
+			Help: "Total number of snapshots deleted during snapshots cleanup.",
+		})
+		t.snapshotsRemainingInTheBucket = promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "mimir_usage_tracker_snapshots_remaining_in_the_bucket",
+			Help: "Number of snapshots remaining in the bucket.",
+		})
+		t.snapshotsRemainingInTheBucket.Set(-1) // We don't know yet.
+	}
+
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
 	return t, nil
+}
+
+func (t *UsageTracker) shouldPerformCleanups() bool {
+	return t.instanceID == 0
 }
 
 // start implements services.StartingFn.
@@ -272,7 +312,7 @@ func (t *UsageTracker) run(ctx context.Context) error {
 	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
 
 	var snapshotsCleanupTickerChan <-chan time.Time
-	if t.instanceID == 0 {
+	if t.shouldPerformCleanups() {
 		ticker := time.NewTicker(util.DurationWithJitter(t.cfg.SnapshotCleanupInterval, t.cfg.SnapshotCleanupIntervalJitter))
 		defer ticker.Stop()
 		snapshotsCleanupTickerChan = ticker.C
@@ -289,7 +329,9 @@ func (t *UsageTracker) run(ctx context.Context) error {
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
 		case <-snapshotsCleanupTickerChan:
-			// TODO: run the cleanup.
+			if err := t.cleanupSnapshots(ctx); err != nil {
+				level.Error(t.logger).Log("msg", "failed to clean up old snapshots", "err", err)
+			}
 		}
 	}
 }
@@ -722,4 +764,65 @@ func parseInstanceID(instanceID string) (int32, error) {
 	}
 
 	return int32(seq), nil //nolint:gosec
+}
+
+func snapshotFilename(time time.Time, instanceID string, partitionID int32) string {
+	return fmt.Sprintf("snapshot-%d-p%d-%s.bin", time.UnixMilli(), partitionID, instanceID)
+}
+
+var snapshotRegexp = regexp.MustCompile(`^snapshot-(\d+)-p(\d+)-([a-zA-Z0-9_-]+)\.bin$`)
+
+func (t *UsageTracker) cleanupSnapshots(ctx context.Context) error {
+	const (
+		snapshotRegexpGroupAll = iota
+		snapshotRegexpGroupTimestamp
+		snapshotRegexpGroupPartitionID
+		snapshotRegexpGroupInstanceID
+	)
+
+	defer t.snapshotCleanupsTotal.Inc()
+	watermark := time.Now().Add(-t.cfg.IdleTimeout * snapshotCleanupIdleTimeoutFactor)
+
+	var deleted, remaining int
+	t0 := time.Now()
+	err := t.snapshotsBucket.Iter(ctx, "", func(name string) error {
+		// Use snapshotRegexp to extract the timestamp from the name.
+		matches := snapshotRegexp.FindStringSubmatch(name)
+		if len(matches) == 0 {
+			level.Error(t.logger).Log("msg", "skipping snapshot file with unexpected name", "name", name)
+			t.snapshotCleanupsFailedFiles.Inc()
+			remaining++
+			return nil // Continue the cleanup.
+		}
+		timestampMillis, err := strconv.ParseInt(matches[snapshotRegexpGroupTimestamp], 10, 64)
+		if err != nil {
+			t.snapshotCleanupsFailedFiles.Inc()
+			remaining++
+			return fmt.Errorf("parsing timestamp from snapshot file name %s: %w", name, err)
+		}
+		snapshotTime := time.UnixMilli(timestampMillis)
+		if snapshotTime.After(watermark) {
+			remaining++
+			return nil
+		}
+
+		// This snapshot is older than the watermark, delete it.
+		level.Info(t.logger).Log("msg", "deleting old snapshot file", "name", name, "timestamp", snapshotTime)
+		if err := t.snapshotsBucket.Delete(ctx, name); err != nil {
+			t.snapshotCleanupsFailedFiles.Inc()
+			remaining++
+			return fmt.Errorf("deleting old snapshot file %s: %w", name, err)
+		}
+		t.snapshotCleanupsDeletedFiles.Inc()
+		return nil
+	})
+	t.snapshotsRemainingInTheBucket.Set(float64(remaining))
+
+	if err != nil {
+		t.snapshotCleanupsFailed.Inc()
+		return errors.Wrap(err, "iterating over snapshot files for deletion")
+	}
+
+	level.Info(t.logger).Log("msg", "snapshot files cleanup completed", "deleted", deleted, "duration", time.Since(t0))
+	return nil
 }
