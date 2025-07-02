@@ -1052,6 +1052,78 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
+func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
+	testCases := []string{
+		`foo`,
+		`foo{env="test", region="us"}`,
+		`sum(foo)`,
+		`sum by (env) (foo)`,
+		`sum(foo) + sum(foo)`,
+		`foo + foo + foo + bar + foo`,
+		`a + b + c + d + e`,
+		`(a - a) + (a - a) + (a * b) + (a * b)`,
+		`(a - b) + (c - d) + (e * f) + (g * h)`,
+		`123`,
+		`sum(rate(foo[5m]))`,
+		`sum by (zone) (label_replace(rate(foo[5m]), "zone", "$1", "pod", "ingester-zone-(.*)-\\d+"))`,
+		`some_metric * on (foo) some_other_metric`,
+		`some_metric * ignoring (foo) group_left (bar) some_other_metric`,
+		`(some_metric)[1m:1s] offset 3s`,
+		`max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(bar[5m:])[10m:])`,
+		`label_join(foo, "abc", "-") + label_join(bar, "def", ",")`,
+	}
+
+	opts := NewTestEngineOpts()
+	planner := NewQueryPlanner(opts)
+	ctx := context.Background()
+
+	for _, expr := range testCases {
+		b.Run(expr, func(b *testing.B) {
+			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
+			require.NoError(b, err)
+
+			b.Run("encode", func(b *testing.B) {
+				var marshalled []byte
+
+				for b.Loop() {
+					encoded, err := plan.ToEncodedPlan(false, true)
+					if err != nil {
+						require.NoError(b, err)
+					}
+
+					marshalled, err = encoded.Marshal()
+					if err != nil {
+						require.NoError(b, err)
+					}
+				}
+
+				b.ReportMetric(float64(len(marshalled)), "B")
+			})
+
+			b.Run("decode", func(b *testing.B) {
+				encoded, err := plan.ToEncodedPlan(false, true)
+				require.NoError(b, err)
+
+				marshalled, err := encoded.Marshal()
+				require.NoError(b, err)
+
+				for b.Loop() {
+					unmarshalled := &planning.EncodedQueryPlan{}
+					err := unmarshalled.Unmarshal(marshalled)
+					if err != nil {
+						require.NoError(b, err)
+					}
+
+					_, err = unmarshalled.ToDecodedPlan()
+					if err != nil {
+						require.NoError(b, err)
+					}
+				}
+			})
+		})
+	}
+}
+
 func TestQueryPlanner_ActivityTracking(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
