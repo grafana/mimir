@@ -127,6 +127,8 @@ func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) 
 }
 
 func (s *SortByLabel) Close() {
-	s.inner.Close()
+	// Closing the buffer also closes its source operator which is our `inner`.
 	s.buffer.Close()
+	s.sortedMetadata = nil
+	s.originalPositions = nil
 }
