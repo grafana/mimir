@@ -2,6 +2,7 @@ package usagetracker
 
 import (
 	"context"
+	"io"
 	"slices"
 	"strconv"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -29,10 +31,25 @@ const snapshotsMetadataTopic = "usage-tracker-snapshots-metadata"
 var noRejected = []uint64{}
 
 func TestPartition(t *testing.T) {
+	const tenantID = "tenant-1"
+
+	startPartitionTrackTwoSeriesAndShutDown := func(t *testing.T, h *partitionTestHelper) *partition {
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+
+		p := h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requireTrackSeries(t, p, tenantID, []uint64{1, 2}, noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
+		require.NoError(t, p.publishSnapshot(ctx))
+		h.expectEvents(t, expectedSnapshotEvent{})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		return p
+	}
+
 	t.Run("track series and publish events", func(t *testing.T) {
 		t.Parallel()
 
-		const tenantID = "tenant-1"
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -57,7 +74,6 @@ func TestPartition(t *testing.T) {
 	t.Run("create and load snapshots", func(t *testing.T) {
 		t.Parallel()
 
-		const tenantID = "tenant-1"
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -65,24 +81,10 @@ func TestPartition(t *testing.T) {
 		h.limiter[tenantID] = 3
 
 		// First partition is created, tracks some series and creates a snapshot.
-		p := h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requireTrackSeries(t, p, tenantID, []uint64{1, 2}, noRejected)
-
-		// Consume the series created events.
-		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
-
-		// Publish a snapshot manually.
-		require.NoError(t, p.publishSnapshot(ctx))
-
-		// Expect a snapshot event, consume it.
-		h.expectEvents(t, expectedSnapshotEvent{})
-
-		// Shutdown this partition (not really needed to be done yet).
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		startPartitionTrackTwoSeriesAndShutDown(t, h)
 
 		// New partition is created, loads the snapshot and should contain the same series.
-		p = h.newPartition(t)
+		p := h.newPartition(t)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
 		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
 		requireTrackSeries(t, p, tenantID, []uint64{2, 3}, noRejected)
@@ -97,7 +99,6 @@ func TestPartition(t *testing.T) {
 	t.Run("snapshot events are loaded continuously", func(t *testing.T) {
 		t.Parallel()
 
-		const tenantID = "tenant-1"
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -142,7 +143,6 @@ func TestPartition(t *testing.T) {
 	t.Run("events published after snapshot are correctly consumed", func(t *testing.T) {
 		t.Parallel()
 
-		const tenantID = "tenant-1"
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -180,7 +180,6 @@ func TestPartition(t *testing.T) {
 	t.Run("only last snapshot and the events after it are processed", func(t *testing.T) {
 		t.Parallel()
 
-		const tenantID = "tenant-1"
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -235,6 +234,57 @@ func TestPartition(t *testing.T) {
 		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 5})
 		// Since the limit is 5, by sending seris {1, 2, 3, 4, 5, 100, 200, 300, 400, 500} we should get rejections for the ones that are not in memory, i.e. 1, 2, 3, 4, 5.
 		requireTrackSeries(t, p, tenantID, []uint64{1, 2, 3, 4, 5, 100, 200, 300, 400, 500}, []uint64{1, 2, 3, 4, 5})
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+	})
+
+	t.Run("partition startup waits until snapshot is loaded", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partition is created, tracks some series and creates a snapshot and it's shut down.
+		startPartitionTrackTwoSeriesAndShutDown(t, h)
+
+		// New partition is created, loads the snapshot and should contain the same series.
+		p := h.newPartition(t)
+		// This partition has a slow bucket reader.
+		getLatency := time.Second
+		p.snapshotsBucket = &slowBucket{p.snapshotsBucket, getLatency}
+
+		t0 := time.Now()
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		require.GreaterOrEqual(t, time.Since(t0), getLatency, "partition start should take longer than get latency")
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+	})
+
+	t.Run("snapshot is loaded only once at startup (event is ignored)", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partition is created, tracks some series and creates a snapshot and it's shut down.
+		startPartitionTrackTwoSeriesAndShutDown(t, h)
+
+		// New partition is created, loads the snapshot and should contain the same series.
+		p := h.newPartition(t)
+		// This partition has a slow bucket reader.
+		getCalls := atomic.NewInt64(0)
+		p.snapshotsBucket = &getCounterBucketReader{p.snapshotsBucket, getCalls}
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		require.Equal(t, int64(1), getCalls.Load(), "snapshot should be loaded only once at startup")
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
 	})
@@ -405,3 +455,28 @@ type expectedSeriesCreatedEvent struct {
 }
 
 type expectedSnapshotEvent struct{}
+
+type slowBucket struct {
+	objstore.Bucket
+	getArtificialDelay time.Duration
+}
+
+func (s *slowBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	select {
+	case <-time.After(s.getArtificialDelay):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return s.Bucket.Get(ctx, name)
+}
+
+type getCounterBucketReader struct {
+	objstore.Bucket
+
+	getCalls *atomic.Int64
+}
+
+func (s *getCounterBucketReader) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	s.getCalls.Inc()
+	return s.Bucket.Get(ctx, name)
+}

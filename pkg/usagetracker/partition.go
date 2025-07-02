@@ -362,7 +362,7 @@ func (p *partition) loadEvents(ctx context.Context, eventsOffset int64) error {
 			case eventTypeSeriesCreated:
 				p.processSeriesCreatedEventRecord(r)
 			case eventTypeSnapshot:
-				p.processShardSnapshotEventSync(ctx, r)
+				p.processSnapshotEventSync(ctx, r)
 			}
 			lastEventOffset = r.Offset
 		})
@@ -431,7 +431,7 @@ func (p *partition) consumeEvents(ctx context.Context) {
 			case eventTypeSeriesCreated:
 				p.processSeriesCreatedEventRecord(r)
 			case eventTypeSnapshot:
-				p.processShardSnapshotEventAsync(r)
+				p.processSnapshotEventAsync(r)
 			}
 			if p.onConsumeEvent != nil {
 				p.onConsumeEvent(eventType) // For testing purposes, to know that we consumed an event.
@@ -452,14 +452,14 @@ func (p *partition) processSeriesCreatedEventRecord(r *kgo.Record) {
 	level.Debug(p.logger).Log("msg", "processed series created event", "offset", r.Offset, "series", len(ev.SeriesHashes))
 }
 
-func (p *partition) processShardSnapshotEventSync(ctx context.Context, r *kgo.Record) {
-	p.processShardSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
+func (p *partition) processSnapshotEventSync(ctx context.Context, r *kgo.Record) {
+	p.processSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
 		p.loadSnapshot(ctx, ev)
 	})
 }
 
-func (p *partition) processShardSnapshotEventAsync(r *kgo.Record) {
-	p.processShardSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
+func (p *partition) processSnapshotEventAsync(r *kgo.Record) {
+	p.processSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
 		select {
 		case p.snapshotsFromEvents <- ev:
 			return
@@ -469,8 +469,8 @@ func (p *partition) processShardSnapshotEventAsync(r *kgo.Record) {
 	})
 }
 
-func (p *partition) processShardSnapshotEvent(r *kgo.Record, process func(event *usagetrackerpb.SnapshotEvent)) {
-	if r.Offset < p.ignoreSnapshotEventsUntil {
+func (p *partition) processSnapshotEvent(r *kgo.Record, process func(event *usagetrackerpb.SnapshotEvent)) {
+	if r.Offset <= p.ignoreSnapshotEventsUntil {
 		// Ignore snapshot events that were made before the last snapshot we loaded.
 		level.Info(p.logger).Log("msg", "ignoring shard snapshot event", "offset", r.Offset, "ignore_until", p.ignoreSnapshotEventsUntil)
 		return
