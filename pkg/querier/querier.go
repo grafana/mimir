@@ -25,9 +25,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/semconv"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -77,10 +79,17 @@ type Config struct {
 	// 0 or negative values mean unlimited concurrency.
 	MaxConcurrentRemoteReadQueries int `yaml:"max_concurrent_remote_read_queries" category:"advanced"`
 
+	SemConv SemConvConfig `yaml:"semconv"`
+
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 
 	Ring RingConfig `yaml:"ring"`
+}
+
+type SemConvConfig struct {
+	EnableVersionedRead bool              `yaml:"enable_versioned_read" category:"experimental"`
+	SchemaOverrides     map[string]string `yaml:"schema_overrides" category:"experimental" documentation:"See prometheus/semconv/SemConvConfig#SchemaOverrides"`
 }
 
 const (
@@ -116,6 +125,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.FilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.")
 
 	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
+
+	f.BoolVar(&cfg.SemConv.EnableVersionedRead, "querier.semconv.enable-versioned-read", false, "Enable versioned read, as proposed in https://docs.google.com/document/d/14y4wdZdRMC676qPLDqBQZfaCA6Dog_3ukzmjLOgAL-k")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -201,16 +212,30 @@ func New(
 		},
 	})
 
-	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
+	baseQueryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(minT, maxT)
+	var queryable storage.Queryable = storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := baseQueryable.Querier(minT, maxT)
 		if err != nil {
 			return nil, err
 		}
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
+
+	if cfg.SemConv.EnableVersionedRead {
+		semconvAwareQueryable, applyConfig := semconv.AwareQueryable(queryable)
+		queryable = semconvAwareQueryable
+		err := applyConfig(&config.Config{
+			SemConv: config.SemConvConfig{
+				SchemaOverrides: cfg.SemConv.SchemaOverrides,
+			},
+		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("applying config to semconv-aware queryable: %w", err)
+		}
+		level.Info(logger).Log("msg", "Experimental support for versioned reads is enabled")
+	}
 
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
@@ -247,7 +272,7 @@ func New(
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, streamingEngine, nil
+	return NewSampleAndChunkQueryable(queryable), exemplarQueryable, eng, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
