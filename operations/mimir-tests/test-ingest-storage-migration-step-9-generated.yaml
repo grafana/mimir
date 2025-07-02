@@ -2065,6 +2065,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2118,6 +2124,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2171,6 +2183,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -2224,6 +2242,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---

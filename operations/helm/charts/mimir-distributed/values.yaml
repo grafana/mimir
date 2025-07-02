@@ -2554,8 +2554,11 @@ memcachedExporter:
     pullPolicy: IfNotPresent
 
   resources:
-    requests: {}
-    limits: {}
+    requests:
+      cpu: 50m
+      memory: 50Mi
+    limits:
+      memory: 250Mi
 
   # -- The SecurityContext for memcached exporter containers
   containerSecurityContext:

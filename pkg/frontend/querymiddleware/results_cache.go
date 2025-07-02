@@ -479,28 +479,23 @@ func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryT
 		return Extent{}, err
 	}
 
-	extentPerStepStats := make([]StepStat, len(perStepStats))
-	for i, stat := range perStepStats {
-		extentPerStepStats[i] = StepStat(stat)
-	}
-
 	return Extent{
 		Start:                   req.GetStart(),
 		End:                     req.GetEnd(),
 		Response:                marshalled,
 		TraceId:                 otelTraceID(ctx),
 		QueryTimestampMs:        queryTime.UnixMilli(),
-		SamplesProcessedPerStep: extentPerStepStats,
+		SamplesProcessedPerStep: perStepStats,
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []StepStat, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []stats.StepStat, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
-	var cachedPerStepStat []StepStat
+	var cachedPerStepStat []stats.StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -686,13 +681,13 @@ func cacheHashKey(key string) string {
 }
 
 // extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.
-func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []StepStat {
+func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []stats.StepStat {
 	// Validate the subrange is valid and within the extent.
 	if end < start || start < extent.Start || end > extent.End {
 		return nil
 	}
 
-	var result []StepStat
+	var result []stats.StepStat
 	for _, step := range extent.SamplesProcessedPerStep {
 		if start <= step.Timestamp && step.Timestamp <= end {
 			result = append(result, step)
@@ -702,7 +697,7 @@ func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []Ste
 	return result
 }
 
-func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
+func mergeSamplesProcessedPerStep(a, b []stats.StepStat) []stats.StepStat {
 	if len(a) == 0 {
 		return b
 	}
@@ -710,7 +705,7 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 		return a
 	}
 
-	merged := make([]StepStat, 0, len(a)+len(b))
+	merged := make([]stats.StepStat, 0, len(a)+len(b))
 	i, j := 0, 0
 
 	for i < len(a) && j < len(b) {
@@ -740,8 +735,8 @@ func mergeSamplesProcessedPerStep(a, b []StepStat) []StepStat {
 }
 
 // sumSamplesProcessedPerStep sums values from multiple arrays of StepStat.
-// For duplicate timestamps, later arrays win (last array wins behavior), then values are summed.
-func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
+// For duplicate timestamps, later arrays win.
+func sumSamplesProcessedPerStep(stats ...[]stats.StepStat) int64 {
 	if len(stats) == 0 {
 		return 0
 	}
@@ -769,18 +764,4 @@ func sumSamplesProcessedPerStep(stats ...[]StepStat) int64 {
 	}
 
 	return total
-}
-
-// convertStatsStepStat converts []stats.StepStat to []StepStat using type casting.
-// TODO: reuse stats.StepStat proto in Extent, instead of defining duplicate
-func convertStatsStepStat(processed []stats.StepStat) []StepStat {
-	if len(processed) == 0 {
-		return nil
-	}
-
-	converted := make([]StepStat, len(processed))
-	for i, stat := range processed {
-		converted[i] = StepStat(stat)
-	}
-	return converted
 }
