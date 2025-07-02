@@ -57,7 +57,7 @@ func (ps *rw2PagedSymbols) releasePages() {
 }
 
 func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
-	// The first element of the symbols table MUST be an empty string.
+	// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
 	if ref == 0 {
 		return "", nil
 	}
