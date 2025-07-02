@@ -19676,7 +19676,7 @@
           "kind": "field",
           "name": "lost_partitions_shutdown_grace_period",
           "required": false,
-          "desc": "Time to wait before shutting down a partition that is no longer owned by this instance.",
+          "desc": "Time to wait before shutting down a partition handler that is no longer owned by this instance.",
           "fieldValue": null,
           "fieldDefaultValue": 30000000000,
           "fieldFlag": "usage-tracker.lost-partitions-shutdown-grace-period",
@@ -22875,6 +22875,16 @@
           "fieldDefaultValue": 0.25,
           "fieldFlag": "usage-tracker.snapshot-cleanup-interval-jitter",
           "fieldType": "float"
+        },
+        {
+          "kind": "field",
+          "name": "max_events_fetch_size",
+          "required": false,
+          "desc": "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.",
+          "fieldValue": null,
+          "fieldDefaultValue": 100,
+          "fieldFlag": "usage-tracker.max-events-fetch-size",
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,

@@ -1040,7 +1040,9 @@ Usage of ./cmd/mimir/mimir:
   -usage-tracker.instance-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -usage-tracker.lost-partitions-shutdown-grace-period duration
-    	Time to wait before shutting down a partition that is no longer owned by this instance. (default 30s)
+    	Time to wait before shutting down a partition handler that is no longer owned by this instance. (default 30s)
+  -usage-tracker.max-events-fetch-size int
+    	Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events. (default 100)
   -usage-tracker.max-partitions-to-create-per-reconcile int
     	Maximum number of partitions to create per reconcile interval. This avoids load avalanches and prevents shuffling when adding new instances. (default 1)
   -usage-tracker.partition-reconcile-interval duration

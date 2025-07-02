@@ -82,8 +82,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
-	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partitionHandler-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
-	f.DurationVar(&c.LostPartitionsShutdownGracePeriod, "usage-tracker.lost-partitions-shutdown-grace-period", 30*time.Second, "Time to wait before shutting down a partitionHandler that is no longer owned by this instance.")
+	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partition-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
+	f.DurationVar(&c.LostPartitionsShutdownGracePeriod, "usage-tracker.lost-partitions-shutdown-grace-period", 30*time.Second, "Time to wait before shutting down a partition handler that is no longer owned by this instance.")
 	f.IntVar(&c.MaxPartitionsToCreatePerReconcile, "usage-tracker.max-partitions-to-create-per-reconcile", 1, "Maximum number of partitions to create per reconcile interval. This avoids load avalanches and prevents shuffling when adding new instances.")
 
 	c.InstanceRing.RegisterFlags(f, logger)
@@ -364,7 +364,7 @@ func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 	for p, lostAt := range t.lostPartitions {
 		// We don't check whether p>=start because that should always be true: we never lose starting partitions.
 		if p < end {
-			level.Info(logger).Log("msg", "partitionHandler was previously lost but we own it again", "partitionHandler", p, "lost_at", lostAt)
+			level.Info(logger).Log("msg", "partition was previously lost but we own it again", "partition", p, "lost_at", lostAt)
 			delete(t.lostPartitions, p)
 			unmarkedAsLost++
 		}
@@ -407,17 +407,17 @@ losingPartitions:
 
 		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp, true)
 		if err != nil {
-			level.Error(logger).Log("msg", "unable to get replication set for partitionHandler", "err", err)
+			level.Error(logger).Log("msg", "unable to get replication set for partition", "err", err)
 			continue
 		}
 		for _, instance := range replicationSet.Instances {
 			if instance.Id == t.cfg.InstanceRing.InstanceID {
-				level.Info(logger).Log("msg", "we're still serving partitionHandler, not shutting down")
+				level.Info(logger).Log("msg", "we're still serving partition, not shutting down")
 				continue losingPartitions
 			}
 		}
 
-		level.Info(logger).Log("msg", "partitionHandler has a higher owner now, marking as lost and waiting grace period before shutting down")
+		level.Info(logger).Log("msg", "partition has a higher owner now, marking as lost and waiting grace period before shutting down")
 		t.lostPartitions[pid] = time.Now()
 		markedAsLost++
 	}

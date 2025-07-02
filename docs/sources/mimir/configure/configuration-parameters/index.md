@@ -362,8 +362,8 @@ usage_tracker:
   # CLI flag: -usage-tracker.partition-reconcile-interval
   [partition_reconcile_interval: <duration> | default = 10s]
 
-  # Time to wait before shutting down a partition that is no longer owned by
-  # this instance.
+  # Time to wait before shutting down a partition handler that is no longer
+  # owned by this instance.
   # CLI flag: -usage-tracker.lost-partitions-shutdown-grace-period
   [lost_partitions_shutdown_grace_period: <duration> | default = 30s]
 
@@ -1296,6 +1296,11 @@ usage_tracker:
   # between 0 and 1.
   # CLI flag: -usage-tracker.snapshot-cleanup-interval-jitter
   [snapshot_cleanup_interval_jitter: <float> | default = 0.25]
+
+  # Maximum number of events to fetch from Kafka in a single request. This is
+  # used to limit the memory usage when fetching events.
+  # CLI flag: -usage-tracker.max-events-fetch-size
+  [max_events_fetch_size: <int> | default = 100]
 
 overrides_exporter:
   ring:
