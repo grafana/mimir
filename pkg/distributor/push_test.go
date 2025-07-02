@@ -1265,13 +1265,66 @@ func TestRetryConfig_Validate(t *testing.T) {
 	}
 }
 
+const MiB = 1024 * 1024
+
+func setupTestDistributor(t *testing.T) (*Distributor, func()) {
+	ctx := context.Background()
+
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	kvCleanup := func() { require.NoError(t, closer.Close()) }
+
+	err := kvStore.CAS(ctx, ingester.IngesterRingKey,
+		func(_ interface{}) (interface{}, bool, error) {
+			d := &ring.Desc{}
+			d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+			return d, true, nil
+		},
+	)
+	require.NoError(t, err)
+
+	ingestersRing, err := ring.New(ring.Config{
+		KVStore:           kv.Config{Mock: kvStore},
+		HeartbeatTimeout:  60 * time.Minute,
+		ReplicationFactor: 1,
+	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
+	ringCleanup := func() { require.NoError(t, services.StopAndAwaitTerminated(ctx, ingestersRing)) }
+
+	dskit_test.Poll(t, time.Second, 1, func() interface{} {
+		return ingestersRing.InstancesCount()
+	})
+
+	var distributorConfig Config
+	var clientConfig client.Config
+	limits := validation.Limits{}
+	flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
+
+	distributorConfig.DefaultLimits = InstanceLimits{MaxInflightPushRequestsBytes: MiB}
+	distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
+	distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+		return &noopIngester{}, nil
+	})
+
+	overrides := validation.NewOverrides(limits, nil)
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
+
+	cleanup := func() {
+		ringCleanup()
+		kvCleanup()
+	}
+	return distributor, cleanup
+}
+
+func dummyPushFunc(ctx context.Context, pushReq *Request) error {
+	return nil
+}
+
 func TestHandler_EnforceInflightBytesLimitHTTPPush(t *testing.T) {
-	const MiB = 1024 * 1024
 	inoutBytes := snappy.Encode(nil, createPrometheusRemoteWriteProtobuf(t))
 	reqLen := int64(len(inoutBytes))
-	dummyPushFunc := func(ctx context.Context, pushReq *Request) error {
-		return nil
-	}
 
 	uncompBytesMetrics := `
 # HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
@@ -1281,7 +1334,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 101
 cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
 `
 
-	testCases := map[string]struct {
+	cases := map[string]struct {
 		startingInflightBytes int64
 		expectedStatusCode    int
 		metrics               string
@@ -1312,83 +1365,32 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
 		},
 	}
 
-	for tn, tc := range testCases {
+	for tn, tc := range cases {
 		t.Run(tn, func(t *testing.T) {
-			noopLogger := log.NewNopLogger()
-			ctx := context.Background()
+			distr, cleanup := setupTestDistributor(t)
+			t.Cleanup(cleanup)
+			distr.inflightPushRequestsBytes = *atomic.NewInt64(tc.startingInflightBytes)
 
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			t.Cleanup(func() { require.NoError(t, closer.Close()) })
-
-			err := kvStore.CAS(ctx, ingester.IngesterRingKey,
-				func(_ interface{}) (interface{}, bool, error) {
-					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
-					return d, true, nil
-				},
-			)
-			require.NoError(t, err)
-
-			ingestersRing, err := ring.New(ring.Config{
-				KVStore:           kv.Config{Mock: kvStore},
-				HeartbeatTimeout:  60 * time.Minute,
-				ReplicationFactor: 1,
-			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
-
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingestersRing))
-			})
-
-			dskit_test.Poll(t, time.Second, 1, func() interface{} {
-				return ingestersRing.InstancesCount()
-			})
-
-			var distributorConfig Config
-			var clientConfig client.Config
-			limits := validation.Limits{}
-			flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
-
-			distributorConfig.DefaultLimits = InstanceLimits{MaxInflightPushRequestsBytes: MiB}
-			distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
-			distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-				return &noopIngester{}, nil
-			})
-
-			overrides := validation.NewOverrides(limits, nil)
-			distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, noopLogger)
-			require.NoError(t, err)
-
-			inflightBytes := atomic.Int64{}
-			inflightBytes.Store(tc.startingInflightBytes)
-			distributor.inflightPushRequestsBytes = inflightBytes
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
-
-			ctx = user.InjectOrgID(ctx, "test")
+			ctx := user.InjectOrgID(context.Background(), "test")
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
 			reg := prometheus.NewRegistry()
-			handler := Handler(MiB, nil, nil, false, false, overrides, RetryConfig{}, distributor.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), noopLogger)
+			handler := Handler(MiB, nil, nil, false, false, distr.limits, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 
-			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
 		})
 	}
 }
 
 func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
-	const MiB = 1024 * 1024
 	inoutBytes := []byte("measurement,t1=v1 f1=2 1465839830100400200")
 	reqLen := int64(len(inoutBytes))
-	dummyPushFunc := func(ctx context.Context, pushReq *Request) error {
-		return nil
-	}
 
-	testCases := map[string]struct {
+	cases := map[string]struct {
 		startingInflightBytes int64
 		expectedStatusCode    int
 	}{
@@ -1414,67 +1416,158 @@ func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
 		},
 	}
 
-	for tn, tc := range testCases {
+	for tn, tc := range cases {
 		t.Run(tn, func(t *testing.T) {
-			noopLogger := log.NewNopLogger()
-			ctx := context.Background()
+			distr, cleanup := setupTestDistributor(t)
+			t.Cleanup(cleanup)
+			distr.inflightPushRequestsBytes = *atomic.NewInt64(tc.startingInflightBytes)
 
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			t.Cleanup(func() { require.NoError(t, closer.Close()) })
-
-			err := kvStore.CAS(ctx, ingester.IngesterRingKey,
-				func(_ interface{}) (interface{}, bool, error) {
-					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
-					return d, true, nil
-				},
-			)
-			require.NoError(t, err)
-
-			ingestersRing, err := ring.New(ring.Config{
-				KVStore:           kv.Config{Mock: kvStore},
-				HeartbeatTimeout:  60 * time.Minute,
-				ReplicationFactor: 1,
-			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(ctx, ingestersRing))
-
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingestersRing))
-			})
-
-			dskit_test.Poll(t, time.Second, 1, func() interface{} {
-				return ingestersRing.InstancesCount()
-			})
-
-			var distributorConfig Config
-			var clientConfig client.Config
-			limits := validation.Limits{}
-			flagext.DefaultValues(&distributorConfig, &clientConfig, &limits)
-
-			distributorConfig.DefaultLimits = InstanceLimits{MaxInflightPushRequestsBytes: MiB}
-			distributorConfig.DistributorRing.Common.KVStore.Store = "inmemory"
-			distributorConfig.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-				return &noopIngester{}, nil
-			})
-
-			overrides := validation.NewOverrides(limits, nil)
-			distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, noopLogger)
-			require.NoError(t, err)
-
-			inflightBytes := atomic.Int64{}
-			inflightBytes.Store(tc.startingInflightBytes)
-			distributor.inflightPushRequestsBytes = inflightBytes
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), distributor))
-
-			ctx = user.InjectOrgID(ctx, "test")
+			ctx := user.InjectOrgID(context.Background(), "test")
 			req := httptest.NewRequest("POST", "/api/v1/push/influx/write", bytes.NewReader(inoutBytes)).WithContext(ctx)
 
-			handler := InfluxHandler(MiB, distributor.RequestBufferPool, nil, RetryConfig{}, distributor.limitsMiddleware(dummyPushFunc), nil, noopLogger)
+			handler := InfluxHandler(MiB, distr.RequestBufferPool, nil, RetryConfig{}, distr.limitsMiddleware(dummyPushFunc), nil, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
+		})
+	}
+}
+
+func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
+
+	jsonReq := &httpgrpc.HTTPRequest{
+		Method: "POST",
+		Headers: []*httpgrpc.Header{
+			{Key: "Content-Type", Values: []string{"application/json"}},
+		},
+		Url:  "/otlp",
+		Body: []byte(`{"resourceMetrics": [{"scopeMetrics": [{"metrics": [{"name": "metric", "gauge": {"dataPoints": [{"timeUnixNano": "1679912463340000000", "asDouble": 10.66}]}}]}]}]}`),
+	}
+
+	var samples []prompb.Sample
+	for i := 0; i < 10; i++ {
+		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * time.Second)
+		samples = append(samples, prompb.Sample{
+			Value:     1,
+			Timestamp: ts.UnixNano(),
+		})
+	}
+
+	sampleSeries := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "foo"},
+			},
+			Samples: samples,
+			Histograms: []prompb.Histogram{
+				prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1)),
+			},
+		},
+	}
+
+	sampleMetadata := []mimirpb.MetricMetadata{
+		{
+			Help: "metric_help",
+			Unit: "metric_unit",
+		},
+	}
+	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
+	protoReqBody, err := exportReq.MarshalProto()
+	require.NoError(t, err)
+
+	protoReq := &httpgrpc.HTTPRequest{
+		Method: "POST",
+		Headers: []*httpgrpc.Header{
+			{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+		},
+		Url:  "/otlp",
+		Body: protoReqBody,
+	}
+
+	okMetrics := `
+# HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
+# TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 163
+cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+`
+
+	okMetricsProto := `
+# HELP cortex_distributor_uncompressed_request_body_size_bytes Size of uncompressed request body in bytes.
+# TYPE cortex_distributor_uncompressed_request_body_size_bytes histogram
+cortex_distributor_uncompressed_request_body_size_bytes_bucket{user="test",le="+Inf"} 1
+cortex_distributor_uncompressed_request_body_size_bytes_sum{user="test"} 376
+cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
+`
+
+	cases := map[string]struct {
+		startingInflightBytes int64
+		expectedHTTPStatus    int
+		metrics               string
+		request               *httpgrpc.HTTPRequest
+	}{
+		"starts_below_threshold_stays_below_threshold": {
+			startingInflightBytes: 0.5 * MiB,
+			expectedHTTPStatus:    http.StatusOK,
+			metrics:               okMetrics,
+			request:               jsonReq,
+		},
+		"starts_below_threshold_stays_below_threshold_protoreq": {
+			startingInflightBytes: 0.5 * MiB,
+			expectedHTTPStatus:    http.StatusOK,
+			metrics:               okMetricsProto,
+			request:               protoReq,
+		},
+		"starts_above_threshold_requests_rejected": {
+			startingInflightBytes: MiB + 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               jsonReq,
+		},
+		"starts_above_threshold_requests_rejected_protoreq": {
+			startingInflightBytes: MiB + 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               protoReq,
+		},
+		"starts_above_threshold_stays_above_threshold": {
+			startingInflightBytes: MiB + 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               protoReq,
+		},
+		"starts_below_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB - 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               jsonReq,
+		},
+		"starts_below_threshold_incoming_request_exceeds_threshold_protorq": {
+			startingInflightBytes: MiB - 1,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               protoReq,
+		},
+		"starts_at_threshold_incoming_request_exceeds_threshold": {
+			startingInflightBytes: MiB,
+			expectedHTTPStatus:    http.StatusServiceUnavailable,
+			request:               jsonReq,
+		},
+	}
+
+	for tn, tc := range cases {
+		t.Run(tn, func(t *testing.T) {
+			distr, cleanup := setupTestDistributor(t)
+			t.Cleanup(cleanup)
+			distr.inflightPushRequestsBytes = *atomic.NewInt64(tc.startingInflightBytes)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			req, err := httpgrpc.ToHTTPRequest(ctx, tc.request)
+			require.NoError(t, err)
+
+			reg := prometheus.NewRegistry()
+			handler := OTLPHandler(MiB, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger())
+
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			assert.Equal(t, tc.expectedHTTPStatus, resp.Code)
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.metrics), "cortex_distributor_uncompressed_request_body_size_bytes"))
 		})
 	}
 }

@@ -111,7 +111,9 @@ func OTLPHandler(
 			}
 			return &req.WriteRequest, cleanup, nil
 		}
+
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
@@ -192,6 +194,7 @@ func newOTLPParser(
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
+
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
@@ -200,6 +203,7 @@ func newOTLPParser(
 						limit:  tooLargeErr.Limit,
 					}.Error())
 				}
+
 				return exportReq, protoBodySize, err
 			}
 
