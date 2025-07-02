@@ -11910,7 +11910,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 			Type:             MetricMetadata_MetricType(metricType),
 		}
 	}
-	
+
 	return nil
 }
 func (m *SymbolizedMetadata) Unmarshal(dAtA []byte) error {
