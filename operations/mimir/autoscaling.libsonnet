@@ -66,7 +66,7 @@
   // metricWithWeight will multiply the metric by the weight provided if it's different from 1.
   local metricWithWeight(metric, weight) =
     if weight == 1 then metric
-    else '%s * %.2f' % [metric, weight],
+    else '(%s) * %.2f' % [metric, weight],
 
 
   // replicaswithWeight will return the portion of replicas that should be applied with the weight provided.
@@ -355,7 +355,6 @@
         )
       |||
     ),
-
 
   newResourceScaledObject(
     name,
