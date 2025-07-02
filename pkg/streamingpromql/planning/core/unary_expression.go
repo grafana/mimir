@@ -32,6 +32,10 @@ func (u *UnaryExpression) Details() proto.Message {
 	return u.UnaryExpressionDetails
 }
 
+func (u *UnaryExpression) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_UNARY_EXPRESSION
+}
+
 func (u *UnaryExpression) Children() []planning.Node {
 	return []planning.Node{u.Inner}
 }

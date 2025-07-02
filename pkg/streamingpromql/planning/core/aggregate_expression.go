@@ -55,6 +55,10 @@ func (a *AggregateExpression) Details() proto.Message {
 	return a.AggregateExpressionDetails
 }
 
+func (a *AggregateExpression) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_AGGREGATE_EXPRESSION
+}
+
 func (a *AggregateExpression) Children() []planning.Node {
 	if a.Param == nil {
 		return []planning.Node{a.Inner}

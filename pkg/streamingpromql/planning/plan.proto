@@ -28,16 +28,36 @@ message EncodedQueryTimeRange {
 }
 
 message EncodedNode {
-  // Why use Any rather than a oneof?
+  // Why use this rather than a oneof field?
   // This allows us to define nodes in multiple packages without creating dependencies between them,
   // and allows us to define new kinds of nodes in other repositories (eg. the one used for Grafana Cloud Metrics).
-  // TODO: is this the best type to use? Any will encode a string for the type of message, which seems expensive - could we use an integer perhaps?
-  google.protobuf.Any details = 1;
+  // Why use this rather than a Any value?
+  // Any encodes the type name as a string (eg. 'type.googleapis.com/BinaryExpressionDetails'),
+  // which means that the encoded form of an expression can be many times the size of the original PromQL expression.
+  NodeType nodeType = 1;
+  bytes details = 2;
 
-  repeated int64 children = 2;
+  repeated int64 children = 3;
 
   // The following fields will only be populated if this plan was generated with descriptions enabled.
-  string type = 3;
-  string description = 4;
-  repeated string childrenLabels = 5;
+  string type = 4;
+  string description = 5;
+  repeated string childrenLabels = 6;
+}
+
+// FIXME: should we just use a generic integer for this? Adding this enum here seems to fly in the face of the
+// decoupling goal of not using a oneof above.
+enum NodeType {
+  NODE_TYPE_UNKNOWN = 0;
+  NODE_TYPE_VECTOR_SELECTOR = 1;
+  NODE_TYPE_MATRIX_SELECTOR = 2;
+  NODE_TYPE_AGGREGATE_EXPRESSION = 3;
+  NODE_TYPE_BINARY_EXPRESSION = 4;
+  NODE_TYPE_FUNCTION_CALL = 5;
+  NODE_TYPE_NUMBER_LITERAL = 6;
+  NODE_TYPE_STRING_LITERAL = 7;
+  NODE_TYPE_UNARY_EXPRESSION = 8;
+  NODE_TYPE_SUBQUERY = 9;
+  
+  NODE_TYPE_DUPLICATE = 10;
 }

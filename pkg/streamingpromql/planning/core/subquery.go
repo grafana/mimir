@@ -91,6 +91,10 @@ func (s *Subquery) Details() proto.Message {
 	return s.SubqueryDetails
 }
 
+func (s *Subquery) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_SUBQUERY
+}
+
 func (s *Subquery) Children() []planning.Node {
 	return []planning.Node{s.Inner}
 }
