@@ -23,6 +23,7 @@ var (
 	// The first `V2RecordSymbolOffset` symbols are reserved for this table.
 	// Note: V2 is not yet stabilized.
 	V2CommonSymbols = []string{
+		"",
 		// Prometheus/Mimir symbols
 		"__name__",
 		"__aggregation__",

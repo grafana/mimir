@@ -17,6 +17,10 @@ func TestV2SymbolsCompat(t *testing.T) {
 	t.Run("v2 symbols cannot be larger than v2 offset", func(t *testing.T) {
 		require.LessOrEqual(t, len(V2CommonSymbols), V2RecordSymbolOffset)
 	})
+
+	t.Run("the first symbol in v2 symbols must be empty string", func(t *testing.T) {
+		require.Empty(t, V2CommonSymbols[0])
+	})
 }
 
 func TestRecordVersionHeader(t *testing.T) {

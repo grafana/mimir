@@ -323,6 +323,66 @@ func TestRW2Unmarshal(t *testing.T) {
 		err = received.Unmarshal(data)
 		require.ErrorContains(t, err, "invalid")
 	})
+
+	t.Run("metadata-only RW2 requests are supported", func(t *testing.T) {
+		// Prometheus doesn't send these naturally, but this pattern might
+		// appear in RW2 requests that were translated from RW1.
+		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		wr := &rw2.Request{
+			Timeseries: []rw2.TimeSeries{
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_1")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: syms.GetSymbol("help text for test_metric_1"),
+					},
+				},
+				{
+					LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_2")},
+					Metadata: rw2.Metadata{
+						Type:    rw2.Metadata_METRIC_TYPE_GAUGE,
+						HelpRef: syms.GetSymbol("help text for test_metric_2"),
+						UnitRef: syms.GetSymbol("bytes"),
+					},
+				},
+			},
+		}
+		data, err := wr.Marshal()
+		require.NoError(t, err)
+
+		require.Equal(t, rw2.Request{}, wr)
+
+		// Unmarshal the data back into Mimir's WriteRequest.
+		received := PreallocWriteRequest{}
+		received.UnmarshalFromRW2 = true
+		received.RW2SymbolOffset = 256
+		err = received.Unmarshal(data)
+		require.NoError(t, err)
+
+		expected := &PreallocWriteRequest{
+			WriteRequest: WriteRequest{
+				Timeseries: []PreallocTimeseries{},
+				Metadata: []*MetricMetadata{
+					{
+						MetricFamilyName: "test_metric_1",
+						Type:             COUNTER,
+						Help:             "help text for test_metric_1",
+					},
+					{
+						MetricFamilyName: "test_metric_2",
+						Type:             GAUGE,
+						Help:             "help text for test_metric_2",
+						Unit:             "bytes",
+					},
+				},
+				unmarshalFromRW2: true,
+				rw2symbols:       rw2PagedSymbols{offset: 256},
+			},
+			UnmarshalFromRW2: true,
+			RW2SymbolOffset:  256,
+		}
+		require.Equal(t, expected, &received)
+	})
 }
 
 func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *rw2.Request {
