@@ -407,6 +407,7 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 			expectedDuplicateNodes:      1,
 			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
 		},
 		"duplicate expression where 'skip histogram decoding' applies to both expressions": {
 			expr: `histogram_count(some_metric) * histogram_sum(some_metric)`,
@@ -420,6 +421,7 @@ func TestOptimizationPass(t *testing.T) {
 			`,
 			expectedDuplicateNodes:      1,
 			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  2,
 		},
 	}
 
