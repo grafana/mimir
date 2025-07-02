@@ -2220,7 +2220,7 @@
           "kind": "field",
           "name": "max_concurrent_remote_read_queries",
           "required": false,
-          "desc": "Maximum number of remote read queries that can execute concurrently. 0 or negative values mean unlimited concurrency.",
+          "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
           "fieldValue": null,
           "fieldDefaultValue": 2,
           "fieldFlag": "querier.max-concurrent-remote-read-queries",
