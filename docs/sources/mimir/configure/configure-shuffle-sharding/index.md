@@ -122,26 +122,26 @@ Keeping ingesters shuffle sharding enabled only on the write path does not lead 
 
 If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for the ingesters, use the following rollout strategy to avoid missing querying for any series currently in the ingesters:
 
-1. Explicitly disable ingesters shuffle-sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false`, since this is enabled by default.
-1. Enable ingesters shuffle sharding on the write path.
+1. Explicitly disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`, since this is enabled by default.
+1. Enable shuffle sharding on the ingester write path.
 1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
-1. Enable ingesters shuffle-sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
+1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
 #### Limitation: Decreasing the tenant shard size
 
 The shuffle sharding implementation in Grafana Mimir has a limitation that prevents you from abruptly decreasing the tenant shard size when shuffle sharding is enabled for ingesters on the read path. This is because when shuffle sharding is disabled, the queriers check all ingesters for blocks, whereas when it's enabled, they only check the ones that are assigned to that tenant through the shuffle-shard.
 
-Decreasing the tenant shard size without following this procedure might result in query failures, because the queriers and rulers can't determine how large the tenant shard was previously. As a result, they could potentially miss an ingester with data for a given tenant. The `blocks-storage.tsdb.retention-period` setting, which is used to select the ingesters that might have received series since the value set in `now - blocks-storage.tsdb.retention-period`, doesn't work correctly for finding tenant shards if you decrease the tenant shard size.
+Decreasing the tenant shard size without following this procedure might result in inaccurate or incomplete query results, because the queriers and rulers can't determine how large the tenant shard was previously. As a result, they could potentially miss an ingester with data for a given tenant. The `blocks-storage.tsdb.retention-period` setting, which is used to select the ingesters that might have received series since the value set in `now - blocks-storage.tsdb.retention-period`, doesn't work correctly for finding tenant shards if you decrease the tenant shard size.
 
 To safely decrease the tenant shard size, follow these steps.
 
-1. Disable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
+1. Disable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=false`.
 1. Decrease the configured tenant shard size.
 1. Wait for at least the amount of time specified via `-blocks-storage.tsdb.retention-period`.
-1. Re-enable shuffle sharding on the read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
+1. Re-enable shuffle sharding on the ingester read path via `-querier.shuffle-sharding-ingesters-enabled=true`.
 
 {{< admonition type="note" >}}
-The procedure for decreasing the tenant shard size is the same as for enabling shuffle sharding. Enabling shuffle sharding on the ingesters effectively decreases the tenant shard size.
+The procedure for decreasing the tenant shard size is the same as for enabling shuffle sharding. Enabling shuffle sharding for ingesters effectively decreases the tenant shard size.
 {{< /admonition >}}
 
 ### Query-frontend and query-scheduler shuffle sharding
