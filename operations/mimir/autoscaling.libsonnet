@@ -331,28 +331,29 @@
         // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
         // of containers there are running at any given time, without suffering the PromQL lookback period.
         |||
-          (
-            max_over_time(
-              sum(
-                (
-                  sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
-                  and
-                  max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
-                ) or vector(0)
-              )[15m:]
-            )
-            +
-            # Add pods that were terminated due to an OOM in the memory calculation.
+          max_over_time(
             sum(
-              sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"%(extra_matchers)s}[15m]))
-              and
-              max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0)
-              and
-              max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
-              or vector(0)
-            )
+              (
+                sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s})
+                and
+                max by (pod) (up{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}) > 0
+              ) or vector(0)
+            )[15m:]
           )
         |||
+    ) + (
+      // Add pods that were terminated due to an OOM in the memory calculation.
+      |||
+        +
+        sum(
+          sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"%(extra_matchers)s}[15m]))
+          and
+          max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0)
+          and
+          max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
+          or vector(0)
+        )
+      |||
     ),
 
   newResourceScaledObject(
