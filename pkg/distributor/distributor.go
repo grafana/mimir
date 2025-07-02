@@ -86,10 +86,6 @@ const (
 	// distributorRingKey is the key under which we store the distributors ring in the KVStore.
 	distributorRingKey = "distributor"
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 10
-
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 
@@ -682,7 +678,9 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
 	delegate = newHealthyInstanceDelegate(instanceCount, cfg.Common.HeartbeatTimeout, delegate)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.Common.HeartbeatTimeout, delegate, logger)
+	if cfg.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.Common.HeartbeatTimeout, delegate, logger)
+	}
 
 	distributorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "distributor", distributorRingKey, kvStore, delegate, logger, reg)
 	if err != nil {

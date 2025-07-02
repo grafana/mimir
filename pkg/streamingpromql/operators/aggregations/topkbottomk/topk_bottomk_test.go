@@ -79,7 +79,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 								// Range queries will return all input series, but those with histograms will return no data from NextSeries() below.
 								require.ElementsMatch(t, testutils.LabelsToSeriesMetadata(inputSeries), series)
 							}
-							types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
+							types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 
 							if readSeries {
 								seriesData, err := o.NextSeries(ctx)

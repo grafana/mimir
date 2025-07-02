@@ -88,8 +88,11 @@ spec:
             - "--memcached.address=localhost:11211"
             - "--web.listen-address=0.0.0.0:9150"
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 250Mi
+            requests:
+              cpu: 50m
+              memory: 50Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

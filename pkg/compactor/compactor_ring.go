@@ -38,6 +38,8 @@ type RingConfig struct {
 	WaitActiveInstanceTimeout time.Duration `yaml:"wait_active_instance_timeout" category:"advanced"`
 
 	ObservePeriod time.Duration `yaml:"-"`
+
+	AutoForgetUnhealthyPeriods int `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -51,8 +53,11 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.WaitStabilityMinDuration, flagNamePrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup. 0 to disable.")
 	f.DurationVar(&cfg.WaitStabilityMaxDuration, flagNamePrefix+"wait-stability-max-duration", 5*time.Minute, "Maximum time to wait for ring stability at startup. If the compactor ring keeps changing after this period of time, the compactor will start anyway.")
 
-	// Timeout durations
+	// Timeout durations.
 	f.DurationVar(&cfg.WaitActiveInstanceTimeout, flagNamePrefix+"wait-active-instance-timeout", 10*time.Minute, "Timeout for waiting on compactor to become ACTIVE in the ring.")
+
+	// Auto-forget.
+	f.IntVar(&cfg.AutoForgetUnhealthyPeriods, flagNamePrefix+"auto-forget-unhealthy-periods", 10, "Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget.")
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {

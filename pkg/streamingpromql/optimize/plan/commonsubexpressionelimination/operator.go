@@ -187,8 +187,7 @@ func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PreparePa
 }
 
 func (b *DuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(b.seriesMetadata, b.MemoryConsumptionTracker)
-	b.seriesMetadata = nil
+	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
 
 	for b.buffer.Size() > 0 {
 		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)

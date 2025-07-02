@@ -1155,6 +1155,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1266,6 +1267,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1319,6 +1326,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1372,6 +1385,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---
@@ -1425,6 +1444,12 @@ spec:
         ports:
         - containerPort: 9150
           name: http-metrics
+        resources:
+          limits:
+            memory: 250Mi
+          requests:
+            cpu: "0.05"
+            memory: 50Mi
   updateStrategy:
     type: RollingUpdate
 ---

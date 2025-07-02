@@ -604,6 +604,32 @@ How to **investigate**:
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
+### MimirHighVolumeLevel1BlocksQueried
+
+This alert fires when the store-gateway is querying level 1 blocks for more than 6 hours, indicating that the compactor may not be keeping up with compaction work.
+
+How it **works**:
+
+- Level 1 blocks are 2-hour blocks shipped by ingesters, not yet optimized by the compactor
+- When the compactor falls behind, store-gateways must serve queries from these less efficient level 1 blocks instead of well-compacted higher-level blocks
+- This can lead to increased query latency and resource usage
+- Out-of-order blocks are excluded from this alert as they may be shipped for previous dates and queried before being compacted into bigger blocks
+
+How to **investigate**:
+
+- Check the `Mimir / Compactor` dashboard to see if the compactor is healthy and processing blocks normally
+- Look for errors in the compactor logs that might indicate why compaction is falling behind
+- Monitor the `Mimir / Queries` dashboard to see the "Blocks queried / sec by compaction level" panel for the volume of level 1 block queries
+- Check if there's increased write load that the compactor cannot keep up with
+
+How to **fix**:
+
+- Scale up the compactor horizontally if it's CPU or memory constrained
+- Check and increase compactor resources if needed
+- Preventatively check store-gateway CPU/memory/disk usage and scale out if constrained
+- Verify store-gateway auto-scaling has sufficient headroom to handle increased load during compactor catch-up
+- If the issue persists, investigate for corrupted blocks that might be blocking compaction
+
 ### MimirCompactorHasNotSuccessfullyRunCompaction
 
 This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
@@ -1826,12 +1852,12 @@ How it **works**:
 - In Go, concurrency is handled via goroutines, which are lightweight threads managed by the Go runtime.
 - Goroutines are multiplexed onto a small number of actual OS threads by the Go scheduler.
 - Go threads are limited to 10K. When this limit is reached, the application panics with error like `runtime: program exceeds 10000-thread limit`.
-- If a goroutine makes a syscall that blocks (e.g. network I/O, disk I/O, ...), the Go runtime will try to schedule other goroutines on other OS threads, starting new threads on-demand.
+- If a goroutine makes a call to a blocking syscall, for example, disk I/O, the Go runtime tries to schedule other goroutines on other OS threads. This process starts new threads on-demand. Note that network syscalls use asynchronous I/O under the hood, and therefore, don't create this problem.
 - Idle go threads are never terminated ([issue](https://github.com/golang/go/issues/14592)), so once an application has a spike in the number of go threads, the process needs to be restarted to get back to a low number of threads.
 
 How to **investigate**:
 
-- Check the process stack trace to find common patterns in where the goroutines were blocked (typically a syscall):
+- Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
   - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
   - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
 

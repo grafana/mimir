@@ -123,7 +123,7 @@ func (ns *Client) SendWebhook(ctx context.Context, l log.Logger, webhook *receiv
 	level.Debug(l).Log("msg", "sending webhook", "url", webhook.URL, "http method", webhook.HTTPMethod)
 
 	if webhook.HTTPMethod != http.MethodPost && webhook.HTTPMethod != http.MethodPut {
-		return ErrInvalidMethod
+		return fmt.Errorf("%w: %s", ErrInvalidMethod, webhook.HTTPMethod)
 	}
 
 	request, err := http.NewRequestWithContext(ctx, webhook.HTTPMethod, webhook.URL, bytes.NewReader([]byte(webhook.Body)))

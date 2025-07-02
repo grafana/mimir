@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package planning;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
 option (gogoproto.marshaler_all) = true;

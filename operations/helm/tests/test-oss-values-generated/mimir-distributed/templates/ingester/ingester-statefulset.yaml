@@ -77,6 +77,7 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-default"
             - "-server.grpc-max-concurrent-streams=500"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir

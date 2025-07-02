@@ -30,6 +30,8 @@ import (
 
 type OptimizationPass struct {
 	duplicationNodesIntroduced prometheus.Counter
+	selectorsEliminated        prometheus.Counter
+	selectorsInspected         prometheus.Counter
 }
 
 func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
@@ -37,6 +39,14 @@ func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced",
 			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
+		}),
+		selectorsEliminated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated",
+			Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
+		}),
+		selectorsInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected",
+			Help: "Number of selectors inspected by the common subexpression elimination optimization pass, before elimination.",
 		}),
 	}
 }
@@ -50,10 +60,13 @@ func (e *OptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan) (*
 	paths := e.accumulatePaths(plan)
 
 	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
-	err := e.groupAndApplyDeduplication(paths, 0)
+	selectorsEliminated, err := e.groupAndApplyDeduplication(paths, 0)
 	if err != nil {
 		return nil, err
 	}
+
+	e.selectorsInspected.Add(float64(len(paths)))
+	e.selectorsEliminated.Add(float64(selectorsEliminated))
 
 	return plan, nil
 }
@@ -104,16 +117,20 @@ func (e *OptimizationPass) accumulatePath(soFar *path) []*path {
 	return paths
 }
 
-func (e *OptimizationPass) groupAndApplyDeduplication(paths []*path, offset int) error {
+func (e *OptimizationPass) groupAndApplyDeduplication(paths []*path, offset int) (int, error) {
 	groups := e.groupPaths(paths, offset)
+	totalPathsEliminated := 0
 
 	for _, group := range groups {
-		if err := e.applyDeduplication(group, offset); err != nil {
-			return err
+		pathsEliminated, err := e.applyDeduplication(group, offset)
+		if err != nil {
+			return 0, err
 		}
+
+		totalPathsEliminated += pathsEliminated
 	}
 
-	return nil
+	return totalPathsEliminated, nil
 }
 
 // groupPaths returns paths grouped by the node at offset from the leaf.
@@ -171,7 +188,9 @@ func (e *OptimizationPass) groupPaths(paths []*path, offset int) [][]*path {
 	return groups
 }
 
-func (e *OptimizationPass) applyDeduplication(group []*path, offset int) error {
+// applyDuplication replaces duplicate expressions at the tails of paths in group with a single expression.
+// It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
+func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, error) {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
@@ -179,29 +198,35 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) error {
 	resultType, err := duplicatedExpression.ResultType()
 
 	if err != nil {
-		return err
+		return 0, err
 	}
+
+	var skipLongerExpressions bool
+	pathsEliminated := len(group) - 1
 
 	// We only want to deduplicate instant vectors.
 	if resultType == parser.ValueTypeVector {
-		if skipLongerExpressions, err := e.introduceDuplicateNode(group, duplicatePathLength); err != nil {
-			return err
-		} else if skipLongerExpressions {
-			return nil
-		}
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
 		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
-		if skipLongerExpressions, err := e.introduceDuplicateNode(group, duplicatePathLength-1); err != nil {
-			return err
-		} else if skipLongerExpressions {
-			return nil
-		}
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
+	} else {
+		// Duplicated range vector selector, but the function that encloses each instance isn't the same (or isn't the same on all paths).
+		pathsEliminated = 0
+	}
+
+	if err != nil {
+		return 0, nil
+	}
+
+	if skipLongerExpressions {
+		return pathsEliminated, nil
 	}
 
 	if len(group) <= 2 {
 		// Can't possibly have any more common subexpressions. We're done.
-		return nil
+		return pathsEliminated, nil
 	}
 
 	// Check if a subset of the paths we just examined share an even longer common subexpression.
@@ -210,11 +235,15 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) error {
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	if err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
-		return err
+	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
+		return 0, err
+	} else if pathsEliminated == 0 {
+		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
+		// return the number returned by the next level.
+		pathsEliminated = nextLevelPathsEliminated
 	}
 
-	return nil
+	return pathsEliminated, nil
 }
 
 // introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
