@@ -1,0 +1,407 @@
+package usagetracker
+
+import (
+	"context"
+	"slices"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
+)
+
+const eventsTopic = "usage-tracker-events"
+const snapshotsMetadataTopic = "usage-tracker-snapshots-metadata"
+
+var noRejected = []uint64{}
+
+func TestPartition(t *testing.T) {
+	t.Run("track series and publish events", func(t *testing.T) {
+		t.Parallel()
+
+		const tenantID = "tenant-1"
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 2
+		p := h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+
+		requirePerTenantSeries(t, p, map[string]uint64{})
+		requireTrackSeries(t, p, tenantID, []uint64{1, 2, 3}, []uint64{3})
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+
+		// No snapshot was published, yet the new partition consumes last events on creation.
+		p = h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+	})
+
+	t.Run("create and load snapshots", func(t *testing.T) {
+		t.Parallel()
+
+		const tenantID = "tenant-1"
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partition is created, tracks some series and creates a snapshot.
+		p := h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requireTrackSeries(t, p, tenantID, []uint64{1, 2}, noRejected)
+
+		// Consume the series created events.
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
+
+		// Publish a snapshot manually.
+		require.NoError(t, p.publishSnapshot(ctx))
+
+		// Expect a snapshot event, consume it.
+		h.expectEvents(t, expectedSnapshotEvent{})
+
+		// Shutdown this partition (not really needed to be done yet).
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+
+		// New partition is created, loads the snapshot and should contain the same series.
+		p = h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		requireTrackSeries(t, p, tenantID, []uint64{2, 3}, noRejected)
+
+		// The series 2 is already tracked, so it should not be published again.
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{3}})
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 3})
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+	})
+
+	t.Run("snapshot events are loaded continuously", func(t *testing.T) {
+		t.Parallel()
+
+		const tenantID = "tenant-1"
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partition is created, tracks some series and creates a snapshot.
+		p1 := h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p1))
+		requireTrackSeries(t, p1, tenantID, []uint64{1, 2}, noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
+
+		// New partition is created it loads the events.
+		// We need to create this partition on a different instance because otherwise own events are ignored.
+		p2 := h.newPartitionOnDifferentInstance(t)
+		consumedEvents := make(chan string, 10)
+		p2.onConsumeEvent = func(typ string) { consumedEvents <- typ }
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p2))
+		requirePerTenantSeries(t, p2, map[string]uint64{tenantID: 2})
+		// We artificially reset its state, let's say it didn't receive any requests for series 1 and 2 for a while.
+		p2.store.cleanup(time.Now().Add(2 * p2.cfg.IdleTimeout))
+		requirePerTenantSeries(t, p2, map[string]uint64{})
+
+		// p2 publishes a snapshot of its current state. p2 should sync.
+		require.NoError(t, p1.publishSnapshot(ctx))
+		h.expectEvents(t, expectedSnapshotEvent{})
+
+		// Wait until p2 consumes the snapshot event.
+		// TODO
+		select {
+		case typ := <-consumedEvents:
+			require.Equal(t, eventTypeSnapshot, typ, "expected p2 to consume snapshot event, got %s", typ)
+		case <-time.After(10 * time.Second):
+			t.Fatal("timeout waiting for p2 to consume snapshot event")
+		}
+		requirePerTenantSeries(t, p2, map[string]uint64{tenantID: 2})
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p1))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p2))
+	})
+
+	t.Run("events published after snapshot are correctly consumed", func(t *testing.T) {
+		t.Parallel()
+
+		const tenantID = "tenant-1"
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partition is created, tracks some series and creates a snapshot.
+		p := h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requireTrackSeries(t, p, tenantID, []uint64{1, 2}, noRejected)
+		// Consume the series created events.
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
+
+		// Publish a snapshot manually.
+		require.NoError(t, p.publishSnapshot(ctx))
+
+		// Expect a snapshot event, consume it.
+		h.expectEvents(t, expectedSnapshotEvent{})
+
+		// Track one more series after the snapshot.
+		requireTrackSeries(t, p, tenantID, []uint64{3}, noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{3}})
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 3})
+
+		// Shutdown this partition (not really needed to be done yet).
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+
+		// New partition is created it should load 2 series from the snapshot and 1 series from the event.
+		p = h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 3})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+	})
+
+	t.Run("only last snapshot and the events after it are processed", func(t *testing.T) {
+		t.Parallel()
+
+		const tenantID = "tenant-1"
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionTestHelper(t)
+		h.limiter[tenantID] = 5
+
+		// First partition is created, tracks some series and creates a snapshot.
+		p := h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requireTrackSeries(t, p, tenantID, []uint64{1}, noRejected)
+		requireTrackSeries(t, p, tenantID, []uint64{2}, noRejected)
+		requireTrackSeries(t, p, tenantID, []uint64{3}, noRejected)
+		// Consume the series created events.
+		h.expectEvents(t,
+			expectedSeriesCreatedEvent{tenantID, []uint64{1}},
+			expectedSeriesCreatedEvent{tenantID, []uint64{2}},
+			expectedSeriesCreatedEvent{tenantID, []uint64{3}},
+		)
+		// Publish a snapshot manually and consume the event.
+		require.NoError(t, p.publishSnapshot(ctx))
+		h.expectEvents(t, expectedSnapshotEvent{})
+		// Publish another event.
+		requireTrackSeries(t, p, tenantID, []uint64{4, 5}, noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{4, 5}})
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 5})
+
+		// *** Reset the partition ***
+		// This simulates some time passing and series expired.
+		p.store.cleanup(time.Now().Add(2 * p.cfg.IdleTimeout))
+		// We should now have 0 series again (tenant is fully deleted).
+		requirePerTenantSeries(t, p, map[string]uint64{})
+
+		// Track different series.
+		requireTrackSeries(t, p, tenantID, []uint64{100, 200, 300}, noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{100, 200, 300}})
+
+		// Publish a a snapshot and consume the event.
+		require.NoError(t, p.publishSnapshot(ctx))
+		h.expectEvents(t, expectedSnapshotEvent{})
+
+		// Track some more series.
+		requireTrackSeries(t, p, tenantID, []uint64{400, 500}, noRejected)
+		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{400, 500}})
+
+		// Shutdown this partition (not really needed to be done yet).
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+
+		// New partition is created it should load 3 series {100, 200, 300} from the snapshot and 2 series {300, 400} from the event.
+		// We don't load the series {1, 2, 3, 4, 5} from the previous snapshot/events.
+		p = h.newPartition(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 5})
+		// Since the limit is 5, by sending seris {1, 2, 3, 4, 5, 100, 200, 300, 400, 500} we should get rejections for the ones that are not in memory, i.e. 1, 2, 3, 4, 5.
+		requireTrackSeries(t, p, tenantID, []uint64{1, 2, 3, 4, 5, 100, 200, 300, 400, 500}, []uint64{1, 2, 3, 4, 5})
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+	})
+}
+
+func requireTrackSeries(t *testing.T, p *partition, id string, series, rejected []uint64) {
+	t.Helper()
+	actualRejected, err := p.store.trackSeries(t.Context(), id, series, time.Now())
+	require.NoError(t, err, "failed to track series for tenant %s in partition %d", id, p.partitionID)
+	if len(rejected) == 0 && len(actualRejected) == 0 {
+		return // No series tracked, no rejected series.
+	}
+	require.ElementsMatch(t, rejected, actualRejected, "wrong rejected series for tenant %s in partition %d", id, p.partitionID)
+}
+
+func requirePerTenantSeries(t *testing.T, p *partition, expected map[string]uint64) {
+	t.Helper()
+	actual := make(map[string]uint64)
+	p.store.mtx.RLock()
+	for tenantID, tenant := range p.store.tenants {
+		actual[tenantID] = tenant.series.Load()
+	}
+	p.store.mtx.RUnlock()
+	require.Equal(t, expected, actual, "unexpected series counts in partition %d", p.partitionID)
+}
+
+func newPartitionTestHelper(t *testing.T) *partitionTestHelper {
+	ikv, instanceKVCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, instanceKVCloser.Close()) })
+	pkv, partitionKVCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, partitionKVCloser.Close()) })
+	cluster := fakeKafkaCluster(t, eventsTopic, snapshotsMetadataTopic)
+
+	cfg := newTestUsageTrackerConfig(t, "usage-tracker-zone-a-0", "zone-a", ikv, pkv, cluster)
+	logger := utiltest.NewTestingLogger(t)
+
+	reg := prometheus.NewRegistry()
+
+	// Create Kafka writer for events storage.
+	eventsKafkaWriter, err := ingest.NewKafkaWriterClient(cfg.EventsStorageWriter, 20, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": eventsKafkaWriterComponent}, reg))
+	require.NoError(t, err)
+	t.Cleanup(eventsKafkaWriter.Close)
+
+	// Create Kafka writer for snapshots metadata storage.
+	snapshotsKafkaWriter, err := ingest.NewKafkaWriterClient(cfg.SnapshotsMetadataWriter, 20, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": snapshotsKafkaWriterComponent}, reg))
+	require.NoError(t, err)
+	t.Cleanup(snapshotsKafkaWriter.Close)
+
+	snapshotsBucket, err := bucket.NewClient(context.Background(), cfg.SnapshotsStorage, "usage-tracker-snapshots", logger, reg)
+	require.NoError(t, err)
+
+	eventsKafkaReader, err := ingest.NewKafkaReaderClient(cfg.EventsStorageReader, ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "test-helper", prometheus.NewRegistry()), logger)
+	require.NoError(t, err)
+	eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
+		cfg.EventsStorageWriter.Topic: {0: kgo.NewOffset().AtStart()},
+	})
+	t.Cleanup(eventsKafkaReader.Close)
+
+	return &partitionTestHelper{
+		cfg: cfg,
+
+		ikv:                  ikv,
+		pkv:                  pkv,
+		eventsKafkaWriter:    eventsKafkaWriter,
+		snapshotsKafkaWriter: snapshotsKafkaWriter,
+		snapshotsBucket:      snapshotsBucket,
+		limiter:              limiterMock{},
+		logger:               logger,
+		reg:                  reg,
+
+		// Needed to run test helpers.
+		eventsKafkaReader: eventsKafkaReader,
+	}
+}
+
+type partitionTestHelper struct {
+	cfg Config
+
+	ikv                  *consul.Client
+	pkv                  *consul.Client
+	eventsKafkaWriter    *kgo.Client
+	snapshotsKafkaWriter *kgo.Client
+	snapshotsBucket      objstore.InstrumentedBucket
+	limiter              limiterMock
+	logger               *utiltest.TestingLogger
+	reg                  *prometheus.Registry
+
+	// Needed to run test helpers.
+	eventsKafkaReader *kgo.Client
+
+	pidx int // Identify each partition in the logs.
+}
+
+func (h *partitionTestHelper) newPartition(t *testing.T) *partition {
+	t.Helper()
+	return h.newPartitionForConfig(t, h.cfg)
+}
+
+func (h *partitionTestHelper) newPartitionOnDifferentInstance(t *testing.T) *partition {
+	t.Helper()
+	cfg := h.cfg
+	cfg.InstanceRing.InstanceID = "usage-tracker-zone-b-1"
+	cfg.InstanceRing.InstanceZone = "zone-b" // Doesn't necessarily need to be different.
+	return h.newPartitionForConfig(t, cfg)
+}
+
+func (h *partitionTestHelper) newPartitionForConfig(t *testing.T, cfg Config) *partition {
+	t.Helper()
+	// Wrap logger to understand test logs easier.
+	logger := log.With(h.logger, "pidx", h.pidx)
+	// Wrap the registry to allow running two partition's for the same partition ID (this doesn't happen in usage-tracker).
+	reg := prometheus.WrapRegistererWith(prometheus.Labels{"pidx": strconv.Itoa(h.pidx)}, h.reg)
+	h.pidx++
+
+	instanceRing, err := NewInstanceRingClient(cfg.InstanceRing, logger, reg)
+	require.NoError(t, err)
+	startServiceAndStopOnCleanup(t, instanceRing)
+
+	partitionRingWatcher := NewPartitionRingWatcher(h.pkv, logger, reg)
+	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
+	startServiceAndStopOnCleanup(t, partitionRingWatcher)
+
+	p, err := newPartition(0, cfg, h.pkv, partitionRing, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
+	require.NoError(t, err)
+	return p
+}
+
+func (h *partitionTestHelper) expectEvents(t *testing.T, expectedEvents ...any) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	i := 0
+	for ctx.Err() == nil && i < len(expectedEvents) {
+		fetches := h.eventsKafkaReader.PollRecords(t.Context(), max(0, len(expectedEvents)-i))
+		require.NoError(t, fetches.Err(), "could not fetch events from Kafka, current: %d, expected: %d", i, len(expectedEvents))
+		fetches.EachRecord(func(record *kgo.Record) {
+			switch expected := expectedEvents[i].(type) {
+			case expectedSeriesCreatedEvent:
+				typ, ok := recordHeader(record, eventTypeRecordHeader)
+				require.True(t, ok, "expected a snapshot event at %d, got no type header", i)
+				require.Equal(t, eventTypeSeriesCreated, typ, "expected a series created event at %d, got %s on offset %d", i, typ, record.Offset)
+
+				var ev usagetrackerpb.SeriesCreatedEvent
+				require.NoError(t, ev.Unmarshal(record.Value))
+				got := expectedSeriesCreatedEvent{
+					userID: ev.UserID,
+					series: ev.SeriesHashes,
+				}
+				// Order doesn't matter, so sort the slices.
+				slices.Sort(got.series)
+				slices.Sort(expected.series)
+				require.Equal(t, expected, got, "wrong snapshot event at %d offset %d", i, record.Offset)
+			case expectedSnapshotEvent:
+				typ, ok := recordHeader(record, eventTypeRecordHeader)
+				require.True(t, ok, "expected a snapshot event at %d, got no type header", i)
+				require.Equal(t, eventTypeSnapshot, typ, "expected a snapshot event at %d, got %s on offset %d", i, typ, record.Offset)
+			}
+
+			i++
+		})
+	}
+}
+
+type expectedSeriesCreatedEvent struct {
+	userID string
+	series []uint64
+}
+
+type expectedSnapshotEvent struct{}

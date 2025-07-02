@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,15 +64,13 @@ type partition struct {
 
 	// Snapshots metadata storage (Kafka).
 	snapshotsKafkaReader *kgo.Client
-
-	// Snapshots
-	snapshotsBucket objstore.Bucket
+	snapshotsKafkaWriter *kgo.Client
+	snapshotsBucket      objstore.Bucket
+	snapshotsFromEvents  chan *usagetrackerpb.SnapshotEvent
 
 	// ignoreSnapshotEventsUntil is the offset of the last snapshot event that was included in the snapshot we loaded at startup.
 	ignoreSnapshotEventsUntil int64
 	lastPublishedEventOffset  atomic.Int64
-
-	snapshotsFromEvents chan *usagetrackerpb.SnapshotEvent
 
 	pendingCreatedSeriesMarshaledEvents chan []byte
 
@@ -80,6 +79,9 @@ type partition struct {
 
 	// Misc
 	instanceIDBytes []byte
+
+	// Testing
+	onConsumeEvent func(eventType string)
 }
 
 func newPartition(
@@ -88,6 +90,7 @@ func newPartition(
 	partitionKVClient kv.Client,
 	partitionRing *ring.PartitionInstanceRing,
 	eventsKafkaWriter *kgo.Client,
+	snapshotsKafkaWriter *kgo.Client,
 	snapshotsBucket objstore.InstrumentedBucket,
 	lim limiter,
 	logger log.Logger,
@@ -106,9 +109,9 @@ func newPartition(
 
 		eventsKafkaWriter: eventsKafkaWriter,
 
-		snapshotsBucket: objstore.NewPrefixedBucket(snapshotsBucket, fmt.Sprintf("partition-%d", partitionID)),
-
-		snapshotsFromEvents: make(chan *usagetrackerpb.SnapshotEvent, shards),
+		snapshotsKafkaWriter: snapshotsKafkaWriter,
+		snapshotsBucket:      objstore.NewPrefixedBucket(snapshotsBucket, fmt.Sprintf("partition-%d", partitionID)),
+		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, shards),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 
@@ -209,7 +212,7 @@ func (p *partition) loadSnapshotAndPrepareKafkaEventsReader(ctx context.Context)
 		return 0, errors.Wrapf(err, "failed to unmarshal snapshot record from topic %s", snapshotsTopic)
 	}
 
-	level.Info(p.logger).Log("msg", "found snapshot record", "offset", record.Offset, "record_timestamp", record.Timestamp, "snapshot_timestamp", snapshot.Timestamp)
+	level.Info(p.logger).Log("msg", "loading snapshot record", "offset", record.Offset, "record_timestamp", record.Timestamp, "snapshot_timestamp", snapshot.Timestamp)
 	if err := p.loadAllSnapshotShards(ctx, snapshot.Filenames); err != nil {
 		return 0, errors.Wrapf(err, "failed to load snapshot")
 	}
@@ -243,7 +246,7 @@ func (p *partition) loadAllSnapshotShards(ctx context.Context, files []string) e
 				}
 			}
 			if i == 0 {
-				level.Info(p.logger).Log("msg", "loaded the first snapshot file", "shards", len(snapshot.data), "load_time", time.Since(t0))
+				level.Info(p.logger).Log("msg", "loaded the first snapshot file", "filename", snapshot.filename, "shards", len(snapshot.data), "load_time", time.Since(t0))
 			}
 			i++
 		}
@@ -275,7 +278,7 @@ func (p *partition) loadAllSnapshotShards(ctx context.Context, files []string) e
 				return
 			}
 
-			level.Info(p.logger).Log("msg", "downloaded first snapshot file", "elapsed", time.Since(t0), "bytes", len(data))
+			level.Info(p.logger).Log("msg", "downloaded first snapshot file", "filename", filename, "elapsed", time.Since(t0), "bytes", len(data))
 			select {
 			case downloaded <- downloadedSnapshot{filename, file.Data}:
 			case <-ctx.Done():
@@ -311,9 +314,11 @@ func (p *partition) loadEvents(ctx context.Context, eventsOffset int64) error {
 		})
 		return nil
 	}
+	lastExpectedEventOffset := endOffset - 1 // Because endOffset is the "next" offset.
+	level.Info(p.logger).Log("msg", "end offset for events topic", "topic", p.cfg.EventsStorageReader.Topic, "end_offset", endOffset, "last_expected_event_offset", lastExpectedEventOffset)
 
-	if endOffset < eventsOffset-1 {
-		level.Error(p.logger).Log("msg", "snapshot suggested to start consuming events at an offset that is greater than the end offset of the topic", "end_offset", endOffset, "snapshot_offset", eventsOffset, "topic", p.cfg.EventsStorageReader.Topic)
+	if lastExpectedEventOffset > endOffset {
+		level.Error(p.logger).Log("msg", "snapshot suggested to start consuming events at an offset that is greater than the last expected offset of the topic", "last_expected_event_offset", lastExpectedEventOffset, "snapshot_offset", eventsOffset, "topic", p.cfg.EventsStorageReader.Topic)
 		return nil
 	}
 
@@ -328,17 +333,19 @@ func (p *partition) loadEvents(ctx context.Context, eventsOffset int64) error {
 		level.Info(p.logger).Log("msg", "starting to consume events from snapshot offset", "topic", p.cfg.EventsStorageReader.Topic, "snapshot_offset", eventsOffset, "end_offset", endOffset)
 		// If the end offset is greater than the snapshot offset, we need to start consuming events from the snapshot offset.
 		p.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-			p.cfg.EventsStorageWriter.Topic: {p.partitionID: kgo.NewOffset().At(eventsOffset)},
+			p.cfg.EventsStorageWriter.Topic: {p.partitionID: kgo.NewOffset().At(eventsOffset + 1)}, // Start at the next offset after the snapshot offset.
 		})
 	}
 
-	for {
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		fetches := p.eventsKafkaReader.PollFetches(ctx) // TODO: maybe configure the max amount of records to fetch here?
+	lastEventOffset := int64(-1)
+	for lastEventOffset < lastExpectedEventOffset && ctx.Err() == nil {
+		pollCtx, cancel := context.WithTimeout(ctx, time.Second)
+		fetches := p.eventsKafkaReader.PollRecords(pollCtx, p.cfg.MaxEventsFetchSize) // TODO: maybe configure the max amount of records to fetch here?
 		cancel()
+
 		if err := fetches.Err(); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
-				level.Info(p.logger).Log("msg", "didn't receive events to load within timeout, retrying")
+				level.Info(p.logger).Log("msg", "didn't receive events to load within timeout, retrying", "start_offset", eventsOffset, "last_event_offset", lastEventOffset, "last_expected_event_offset", lastExpectedEventOffset)
 				continue
 			}
 			return errors.Wrap(err, "failed to load events")
@@ -357,9 +364,12 @@ func (p *partition) loadEvents(ctx context.Context, eventsOffset int64) error {
 			case eventTypeSnapshot:
 				p.processShardSnapshotEventSync(ctx, r)
 			}
+			lastEventOffset = r.Offset
 		})
-
 	}
+
+	level.Info(p.logger).Log("msg", "finished loading events", "topic", p.cfg.EventsStorageReader.Topic, "start_offset", eventsOffset, "last_event_offset", lastEventOffset, "last_expected_event_offset", lastExpectedEventOffset)
+	return ctx.Err()
 }
 
 // run implements services.RunningFn.
@@ -368,7 +378,7 @@ func (p *partition) run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	wg := &goroutineWaitGroup{}
-	wg.Go(func() { p.consumeSeriesCreatedEvents(ctx) })
+	wg.Go(func() { p.consumeEvents(ctx) })
 	wg.Go(func() { p.publishSeriesCreatedEvents(ctx) })
 	wg.Go(func() { p.loadSnapshotsFromEvents(ctx) })
 	wg.Go(func() { p.publishSnapshots(ctx) })
@@ -398,9 +408,9 @@ func (p *partition) stop(_ error) error {
 	return err
 }
 
-func (p *partition) consumeSeriesCreatedEvents(ctx context.Context) {
+func (p *partition) consumeEvents(ctx context.Context) {
 	for ctx.Err() == nil {
-		fetches := p.eventsKafkaReader.PollRecords(ctx, 0)
+		fetches := p.eventsKafkaReader.PollRecords(ctx, p.cfg.MaxEventsFetchSize)
 		fetches.EachError(func(_ string, part int32, err error) {
 			if !errors.Is(err, context.Canceled) { // Ignore when we're shutting down.
 				// TODO: observability? Handle this?
@@ -414,7 +424,7 @@ func (p *partition) consumeSeriesCreatedEvents(ctx context.Context) {
 				return
 			}
 			if instanceID == p.cfg.InstanceRing.InstanceID {
-				level.Debug(p.logger).Log("msg", "ignoring our own event", "offset", r.Offset)
+				level.Debug(p.logger).Log("msg", "ignoring our own event", "offset", r.Offset, "type", eventType)
 				return
 			}
 			switch eventType {
@@ -422,6 +432,9 @@ func (p *partition) consumeSeriesCreatedEvents(ctx context.Context) {
 				p.processSeriesCreatedEventRecord(r)
 			case eventTypeSnapshot:
 				p.processShardSnapshotEventAsync(r)
+			}
+			if p.onConsumeEvent != nil {
+				p.onConsumeEvent(eventType) // For testing purposes, to know that we consumed an event.
 			}
 		})
 	}
@@ -660,7 +673,7 @@ func (p *partition) publishSnapshot(ctx context.Context) error {
 			level.Error(p.logger).Log("msg", "failed to marshal snapshot file", "err", err)
 			return errors.Wrap(err, "failed to marshal snapshot file")
 		}
-		filename := fmt.Sprintf("snapshot-%d-partition-%d-instance-%s.bin", time.Now().UnixMilli(), p.partitionID, p.cfg.InstanceRing.InstanceID)
+		filename := fmt.Sprintf("snapshot-%d-%s-p%d.bin", time.Now().UnixNano(), p.cfg.InstanceRing.InstanceID, p.partitionID)
 		if err := p.snapshotsBucket.Upload(ctx, filename, bytes.NewReader(fileData)); err != nil {
 			level.Error(p.logger).Log("msg", "failed to upload snapshot file to bucket", "filename", filename, "err", err)
 			return errors.Wrap(err, "failed to upload snapshot file to bucket")
@@ -683,6 +696,7 @@ func (p *partition) publishSnapshot(ctx context.Context) error {
 		}
 		// Store the latest event we published, so next startup doesn't need to replay these snapshot events.
 		lastSnapshotEventOffset = r.Offset
+		filenames = append(filenames, filename)
 
 		// Store the buffers.
 		for _, data := range file.Data {
@@ -719,7 +733,7 @@ func (p *partition) publishSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	level.Info(p.logger).Log("msg", "wrote snapshot files and published events", "files", len(filenames), "filenames", filenames, "elapsed", time.Since(t0), "total_bytes", totalDataLen)
+	level.Info(p.logger).Log("msg", "wrote snapshot files and published events", "files", len(filenames), "filenames", strings.Join(filenames, ","), "elapsed", time.Since(t0), "total_bytes", totalDataLen)
 
 	record := &usagetrackerpb.SnapshotRecord{
 		Timestamp:                              t0.UnixMilli(),
@@ -733,19 +747,19 @@ func (p *partition) publishSnapshot(ctx context.Context) error {
 		return errors.Wrap(err, "failed to marshal snapshot record")
 	}
 	snapshotRecord := &kgo.Record{
-		Topic: p.cfg.EventsStorageWriter.Topic,
+		Topic: p.cfg.SnapshotsMetadataWriter.Topic,
 		Headers: []kgo.RecordHeader{
 			{Key: instanceRecordHeader, Value: p.instanceIDBytes},
 		},
 		Value:     data,
 		Partition: p.partitionID,
 	}
-	r, err := p.eventsKafkaWriter.ProduceSync(ctx, snapshotRecord).First()
+	r, err := p.snapshotsKafkaWriter.ProduceSync(ctx, snapshotRecord).First()
 	if err != nil {
 		level.Error(p.logger).Log("msg", "failed to publish snapshot record", "err", err)
 		return errors.Wrap(err, "failed to publish snapshot record")
 	}
-	level.Info(p.logger).Log("msg", "published snapshot record", "offset", r.Offset)
+	level.Info(p.logger).Log("msg", "published snapshot record", "offset", r.Offset, "last_event_offset_published_before_snapshot", firstSnapshotEventOffset, "last_snapshot_event_offset", lastSnapshotEventOffset)
 
 	return nil
 }

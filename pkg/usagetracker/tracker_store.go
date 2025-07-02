@@ -153,7 +153,7 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	}
 }
 
-// getOrCreateTenant returns the trackedTenant for the given tenantID, with shards for the limit provided.
+// getOrCreateTenant returns the trackedTenant for the given userID, with shards for the limit provided.
 // The tenant returned is RLock'ed() and needs to be RUnlocked() after use.
 func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *trackedTenant {
 	t.mtx.RLock()

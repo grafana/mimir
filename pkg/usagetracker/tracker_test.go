@@ -344,19 +344,21 @@ func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv k
 	cfg.PartitionRing.waitOwnersDurationOnPending = 100 * time.Millisecond
 	cfg.PartitionRing.lifecyclerPollingInterval = 50 * time.Millisecond
 	// Fake kafka cluster address.
-	cfg.EventsStorageWriter.Topic = "usage-tracker-events"
-	cfg.EventsStorageReader.Topic = "usage-tracker-events"
+	cfg.EventsStorageWriter.Topic = eventsTopic
+	cfg.EventsStorageReader.Topic = eventsTopic
 	cfg.EventsStorageReader.Address = cluster.ListenAddrs()[0]
 	cfg.EventsStorageWriter.Address = cluster.ListenAddrs()[0]
 	cfg.EventsStorageWriter.AutoCreateTopicDefaultPartitions = testPartitionsCount
 
-	cfg.SnapshotsMetadataWriter.Topic = "usage-tracker-snapshots-metadata"
-	cfg.SnapshotsMetadataReader.Topic = "usage-tracker-snapshots-metadata"
+	cfg.SnapshotsMetadataWriter.Topic = snapshotsMetadataTopic
+	cfg.SnapshotsMetadataReader.Topic = snapshotsMetadataTopic
 	cfg.SnapshotsMetadataReader.Address = cluster.ListenAddrs()[0]
 	cfg.SnapshotsMetadataWriter.Address = cluster.ListenAddrs()[0]
 	cfg.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions = testPartitionsCount
 
 	cfg.PartitionReconcileInterval = time.Hour // we do reconciliation manually
+
+	cfg.SnapshotsStorage.Filesystem.Directory = t.TempDir()
 
 	require.NoError(t, cfg.Validate())
 	return cfg

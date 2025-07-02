@@ -84,7 +84,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
 	for i := 0; i < int(tenantsLen); i++ {
-		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
+		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
 		tenantID := snapshot.UvarintStr()
 		if err := snapshot.Err(); err != nil {
 			return fmt.Errorf("failed to read tenant ID %d: %w", i, err)

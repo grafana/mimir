@@ -70,6 +70,8 @@ type Config struct {
 
 	SnapshotCleanupInterval       time.Duration `yaml:"snapshot_cleanup_interval"`
 	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
+
+	MaxEventsFetchSize int `yaml:"max_events_fetch_size"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -102,6 +104,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&c.SnapshotCleanupInterval, "usage-tracker.snapshot-cleanup-interval", time.Hour, "Interval to clean up old snapshots.")
 	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
+
+	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
 }
 
 func (c *Config) Validate() error {
@@ -156,7 +160,6 @@ type UsageTracker struct {
 	instanceID int32
 
 	cfg        Config
-	bucket     objstore.InstrumentedBucket
 	overrides  *validation.Overrides
 	logger     log.Logger
 	registerer prometheus.Registerer
@@ -172,6 +175,7 @@ type UsageTracker struct {
 
 	// Snapshots metadata storage (Kafka).
 	snapshotsMetadataKafkaWriter *kgo.Client
+	snapshotsBucket              objstore.InstrumentedBucket
 
 	partitionsMtx sync.RWMutex
 	partitions    map[int32]*partition
@@ -223,7 +227,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create usage-tracker snapshots storage client")
 	}
-	t.bucket = bkt
+	t.snapshotsBucket = bkt
 
 	// Create Kafka writer for events storage.
 	if t.cfg.EventsStorageWriter.AutoCreateTopicEnabled {
@@ -392,7 +396,7 @@ losingPartitions:
 		logger := log.With(logger, "action", "adding", "partition", pid)
 
 		level.Info(logger).Log("msg", "creating new partition")
-		p, err := newPartition(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
+		p, err := newPartition(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create partition %d", pid)
 		}

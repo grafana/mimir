@@ -462,9 +462,9 @@ func decodeSnapshot(t *testing.T, data []byte) map[string]map[uint64]clock.Minut
 
 	res := make(map[string]map[uint64]clock.Minutes, tenantsLen)
 	for i := 0; i < int(tenantsLen); i++ {
-		// We don't check for tenantID string length here, because we don't require it to be non-empty when we track series.
+		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.
 		tenantID := snapshot.UvarintStr()
-		require.NoErrorf(t, snapshot.Err(), "can't read tenantID %d", i)
+		require.NoErrorf(t, snapshot.Err(), "can't read userID %d", i)
 
 		seriesLen := int(snapshot.Uvarint64())
 		require.NoError(t, snapshot.Err())
