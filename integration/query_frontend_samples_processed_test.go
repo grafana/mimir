@@ -22,6 +22,10 @@ import (
 
 func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t *testing.T) {
 	now := time.Now().Round(time.Second)
+	queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
+		maxCacheFreshness:      10 * time.Minute,
+		splitQueriesByInterval: 30 * time.Minute,
+	})
 
 	testCases := []struct {
 		name                   string
@@ -32,95 +36,87 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		setupSeries            func(t *testing.T, writeClient *e2emimir.Client)
 	}{
 		{
-			name:                   "basic query",
-			splitQueriesByInterval: 24 * time.Hour,
-			query:                  "test_series{}",
-			queryStart:             now.Add(-30 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "basic query",
+			query:      "test_series{}",
+			queryStart: now.Add(-20 * time.Minute),
+			queryEnd:   now.Add(-15 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-20*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-20*time.Minute), now.Add(-15*time.Minute), "test_series")
 			},
 		},
 		{
-			name:                   "sharded query",
-			splitQueriesByInterval: 24 * time.Hour,
-			query:                  "sum(test_series{})",
-			queryStart:             now.Add(-30 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "sharded query",
+			query:      "sum(test_sharded_series{})",
+			queryStart: now.Add(-20 * time.Minute),
+			queryEnd:   now.Add(-15 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-20*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-20*time.Minute), now.Add(-15*time.Minute), "test_sharded_series")
 			},
 		},
 		{
-			name:                   "split query",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series{}",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "split query",
+			query:      "test_split_series{}",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-10*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-20*time.Minute), "test_split_series")
 			},
 		},
 		{
-			name:                   "split and sharded query",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "sum(test_series{})",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "split and sharded query",
+			query:      "sum(test_split_and_sharded_series{})",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-20*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-20*time.Minute), "test_split_and_sharded_series")
 			},
 		},
 		{
-			name:                   "series with gap in front of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "series with gap in front of a query range",
+			query:      "test_gap_in_front_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_gap_in_front_series")
 			},
 		},
 		{
-			name:                   "series with gap behind of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "series with gap behind of a query range",
+			query:      "test_gap_behind_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-20*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-20*time.Minute), "test_gap_behind_series")
 			},
 		},
 		{
-			name:                   "series with gap inside of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-20 * time.Minute),
+			name:       "series with gap inside of a query range",
+			query:      "test_gap_inside_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-50*time.Minute), "test_series")
-				pushSeries(t, writeClient, now.Add(-40*time.Minute), now.Add(-20*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-50*time.Minute), "test_gap_inside_series")
+				pushSeries(t, writeClient, now.Add(-40*time.Minute), now.Add(-20*time.Minute), "test_gap_inside_series")
 			},
 		},
 		{
-			name:                   "series with gap gap in front, behind and inside of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-10 * time.Minute),
+			name: "series with gap gap in front, behind and inside of a query range",
+
+			query:      "test_gap_in_front_behind_and_inside_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-10 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_series")
-				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-20*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_gap_in_front_behind_and_inside_series")
+				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-20*time.Minute), "test_gap_in_front_behind_and_inside_series")
 			},
 		},
 	}
 
+	// Track baseline metrics to calculate deltas for each test case
+	var samplesProcessedCacheAdjustedTotal, samplesProcessedExcludingCacheTotal float64
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
-				splitQueriesByInterval: tc.splitQueriesByInterval,
-			})
-
 			// Setup series for this test case.
 			tc.setupSeries(t, writeClient)
 
@@ -129,39 +125,55 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 			require.NoError(t, err)
 			values, err := queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_cache_adjusted_total"})
 			require.NoError(t, err)
-			sampleProcessedCacheAdjustedFirst := e2e.SumValues(values)
+			samplesProcessedCacheAdjustedTotalAfterFirst := e2e.SumValues(values)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_total"})
 			require.NoError(t, err)
-			sampleProcessedExcludingCacheFirst := e2e.SumValues(values)
-			require.Equal(t, sampleProcessedCacheAdjustedFirst, sampleProcessedExcludingCacheFirst, "first query should hit datasource only")
+			samplesProcessedExcludingCacheTotalAfterFirst := e2e.SumValues(values)
+
+			// Calculate deltas for the first query
+			samplesProcessedCacheAdjustedDeltaFirst := samplesProcessedCacheAdjustedTotalAfterFirst - samplesProcessedCacheAdjustedTotal
+			samplesProcessedExcludingCacheDeltaFirst := samplesProcessedExcludingCacheTotalAfterFirst - samplesProcessedExcludingCacheTotal
+			require.Equal(t, samplesProcessedCacheAdjustedDeltaFirst, samplesProcessedExcludingCacheDeltaFirst, "first query should hit datasource only")
 
 			// Execute the same query again (should hit cache).
 			_, err = queryClient.QueryRange(tc.query, tc.queryStart, tc.queryEnd, 1*time.Minute)
 			require.NoError(t, err)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_cache_adjusted_total"})
 			require.NoError(t, err)
-			samplesProcessedCacheAdjustedSecond := e2e.SumValues(values)
+			samplesProcessedCacheAdjustedTotalAfterSecond := e2e.SumValues(values)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_total"})
 			require.NoError(t, err)
-			samplesProcessedExcludingCacheSecond := e2e.SumValues(values)
+			samplesProcessedExcludingCacheTotalAfterSecond := e2e.SumValues(values)
+
+			// Calculate deltas for the second query
+			samplesProcessedCacheAdjustedDeltaSecond := samplesProcessedCacheAdjustedTotalAfterSecond - samplesProcessedCacheAdjustedTotal
+			samplesProcessedExcludingCacheDeltaSecond := samplesProcessedExcludingCacheTotalAfterSecond - samplesProcessedExcludingCacheTotal
 			// Expect the same number of samples_processed when running an identical query a second time.
-			require.Equal(t, sampleProcessedCacheAdjustedFirst*2, samplesProcessedCacheAdjustedSecond, "second query should process same amount of samples as first query")
+			require.Equal(t, samplesProcessedCacheAdjustedDeltaFirst*2, samplesProcessedCacheAdjustedDeltaSecond, "second query should process same amount of samples as first query")
 			// The entire second query should be served from the cache, so cortex_query_samples_processed_total should remain unchanged.
-			require.Equal(t, sampleProcessedExcludingCacheFirst, samplesProcessedExcludingCacheSecond, "second query should hit cache only")
+			require.Equal(t, samplesProcessedExcludingCacheDeltaFirst, samplesProcessedExcludingCacheDeltaSecond, "second query should hit cache only")
 
 			// Execute the same query third time.
 			_, err = queryClient.QueryRange(tc.query, tc.queryStart, tc.queryEnd, 1*time.Minute)
 			require.NoError(t, err)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_cache_adjusted_total"})
 			require.NoError(t, err)
-			samplesProcessedCacheAdjustedThird := e2e.SumValues(values)
+			samplesProcessedCacheAdjustedTotalAfterThird := e2e.SumValues(values)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_total"})
 			require.NoError(t, err)
-			samplesProcessedExcludingCacheThird := e2e.SumValues(values)
+			samplesProcessedExcludingCacheTotalAfterThird := e2e.SumValues(values)
+
+			// Calculate deltas for the third query
+			samplesProcessedCacheAdjustedDeltaThird := samplesProcessedCacheAdjustedTotalAfterThird - samplesProcessedCacheAdjustedTotal
+			samplesProcessedExcludingCacheDeltaThird := samplesProcessedExcludingCacheTotalAfterThird - samplesProcessedExcludingCacheTotal
 			// Expect the same number of samples_processed when running an identical query a third time.
-			require.Equal(t, sampleProcessedCacheAdjustedFirst*3, samplesProcessedCacheAdjustedThird, "third query should process same amount of samples as first query")
+			require.Equal(t, samplesProcessedCacheAdjustedDeltaFirst*3, samplesProcessedCacheAdjustedDeltaThird, "third query should process same amount of samples as first query")
 			// The entire third query should be served from the cache, so cortex_query_samples_processed_total should remain unchanged.
-			require.Equal(t, sampleProcessedExcludingCacheFirst, samplesProcessedExcludingCacheThird, "third query should hit cache only")
+			require.Equal(t, samplesProcessedExcludingCacheDeltaFirst, samplesProcessedExcludingCacheDeltaThird, "third query should hit cache only")
+
+			// Update baseline for next test case
+			samplesProcessedCacheAdjustedTotal = samplesProcessedCacheAdjustedTotalAfterThird
+			samplesProcessedExcludingCacheTotal = samplesProcessedExcludingCacheTotalAfterThird
 		})
 	}
 }
@@ -169,6 +181,11 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFreshness(t *testing.T) {
 	now := time.Now().Round(time.Second)
 
+	queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
+		maxCacheFreshness:      10 * time.Minute,
+		splitQueriesByInterval: 30 * time.Minute,
+	})
+
 	testCases := []struct {
 		name                   string
 		splitQueriesByInterval time.Duration
@@ -178,95 +195,86 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		queryEnd               time.Time
 	}{
 		{
-			name:                   "basic query",
-			splitQueriesByInterval: 24 * time.Hour,
-			query:                  "test_series{}",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
+			name:       "basic query",
+			query:      "test_series{}",
 			queryStart: now.Add(-20 * time.Minute),
 			queryEnd:   now,
-		},
-		{
-			name:                   "sharded query",
-			splitQueriesByInterval: 24 * time.Hour,
-			query:                  "sum(test_series{})",
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
 				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
 			},
+		},
+		{
+			name:       "sharded query",
+			query:      "sum(test_sharded_series{})",
 			queryStart: now.Add(-20 * time.Minute),
 			queryEnd:   now,
+			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_sharded_series")
+			},
 		},
 		{
-			name:                   "split query",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series{}",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-			queryStart: now.Add(-20 * time.Minute),
+			name:       "split query",
+			query:      "test_split_series{}",
+			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now,
+			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now, "test_split_series")
+			},
 		},
 		{
-			name:                   "split and sharded query",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "sum(test_series{})",
-			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
-			},
-			queryStart: now.Add(-20 * time.Minute),
+			name:       "split and sharded query",
+			query:      "sum(test_split_and_sharded_series{})",
+			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now,
-		},
-		{
-			name:                   "series with gap in front of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now,
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-5*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now, "test_split_and_sharded_series")
 			},
 		},
 		{
-			name:                   "series with gap behind of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now,
+			name:       "series with gap in front of a query range",
+			query:      "test_gap_in_front_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now,
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now, "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-5*time.Minute), "test_gap_in_front_series")
 			},
 		},
 		{
-			name:                   "series with gap inside of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now,
+			name:       "series with gap behind of a query range",
+			query:      "test_gap_behind_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now,
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_series")
-				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_series")
+				pushSeries(t, writeClient, now.Add(-15*time.Minute), now, "test_gap_behind_series")
 			},
 		},
 		{
-			name:                   "series with gap in front, behind and inside of a query range",
-			splitQueriesByInterval: 10 * time.Minute,
-			query:                  "test_series",
-			queryStart:             now.Add(-60 * time.Minute),
-			queryEnd:               now.Add(-5 * time.Minute),
+			name:       "series with gap inside of a query range",
+			query:      "test_gap_inside_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now,
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_series")
-				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-8*time.Minute), "test_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_gap_inside_series")
+				pushSeries(t, writeClient, now.Add(-20*time.Minute), now, "test_gap_inside_series")
+			},
+		},
+		{
+			name:       "series with gap in front, behind and inside of a query range",
+			query:      "test_gap_in_front_behind_and_inside_series",
+			queryStart: now.Add(-60 * time.Minute),
+			queryEnd:   now.Add(-5 * time.Minute),
+			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
+				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_gap_in_front_behind_and_inside_series")
+				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-10*time.Minute), "test_gap_in_front_behind_and_inside_series")
 			},
 		},
 	}
 
+	// Track baseline metrics to calculate deltas for each test case
+	var samplesProcessedCacheAdjustedTotal, samplesProcessedExcludingCacheTotal float64
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
-				splitQueriesByInterval: tc.splitQueriesByInterval,
-			})
-
 			// Setup series for this test case.
 			tc.setupSeries(t, writeClient)
 
@@ -275,35 +283,51 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 			require.NoError(t, err)
 			values, err := queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_cache_adjusted_total"})
 			require.NoError(t, err)
-			sampleProcessedCacheAdjustedFirst := e2e.SumValues(values)
+			samplesProcessedCacheAdjustedTotalAfterFirst := e2e.SumValues(values)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_total"})
 			require.NoError(t, err)
-			sampleProcessedExcludingCacheFirst := e2e.SumValues(values)
-			require.Equal(t, sampleProcessedCacheAdjustedFirst, sampleProcessedExcludingCacheFirst, "first query should hit datasource only, but reported samples processed from cache")
+			samplesProcessedExcludingCacheTotalAfterFirst := e2e.SumValues(values)
+
+			// Calculate deltas for the first query
+			samplesProcessedCacheAdjustedDeltaFirst := samplesProcessedCacheAdjustedTotalAfterFirst - samplesProcessedCacheAdjustedTotal
+			samplesProcessedExcludingCacheDeltaFirst := samplesProcessedExcludingCacheTotalAfterFirst - samplesProcessedExcludingCacheTotal
+			require.Equal(t, samplesProcessedCacheAdjustedDeltaFirst, samplesProcessedExcludingCacheDeltaFirst, "first query should hit datasource only, but reported samples processed from cache")
 
 			// Execute the same query again – only part of the query should be cached because of maxCacheFreshness.
 			_, err = queryClient.QueryRange(tc.query, tc.queryStart, tc.queryEnd, 1*time.Minute)
 			require.NoError(t, err)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_cache_adjusted_total"})
 			require.NoError(t, err)
-			samplesProcessedCacheAdjustedSecond := e2e.SumValues(values)
+			samplesProcessedCacheAdjustedTotalAfterSecond := e2e.SumValues(values)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_total"})
 			require.NoError(t, err)
-			samplesProcessedExcludingCacheSecond := e2e.SumValues(values)
-			require.Equal(t, sampleProcessedCacheAdjustedFirst*2, samplesProcessedCacheAdjustedSecond, "second query should process same amount of samples as first query")
-			require.Greater(t, samplesProcessedExcludingCacheSecond, sampleProcessedExcludingCacheFirst, "second query should hit datasource only for last maxCacheFreshness interval, but samples processed not from cache stayed the same")
+			samplesProcessedExcludingCacheTotalAfterSecond := e2e.SumValues(values)
+
+			// Calculate deltas for the second query
+			samplesProcessedCacheAdjustedDeltaSecond := samplesProcessedCacheAdjustedTotalAfterSecond - samplesProcessedCacheAdjustedTotal
+			samplesProcessedExcludingCacheDeltaSecond := samplesProcessedExcludingCacheTotalAfterSecond - samplesProcessedExcludingCacheTotal
+			require.Equal(t, samplesProcessedCacheAdjustedDeltaFirst*2, samplesProcessedCacheAdjustedDeltaSecond, "second query should process same amount of samples as first query")
+			require.Greater(t, samplesProcessedExcludingCacheDeltaSecond, samplesProcessedExcludingCacheDeltaFirst, "second query should hit datasource only for last maxCacheFreshness interval, but samples processed not from cache stayed the same")
 
 			// Execute the same query third time – still only part of the query should be cached because of maxCacheFreshness.
 			_, err = queryClient.QueryRange(tc.query, tc.queryStart, tc.queryEnd, 1*time.Minute)
 			require.NoError(t, err)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_cache_adjusted_total"})
 			require.NoError(t, err)
-			samplesProcessedCacheAdjustedThird := e2e.SumValues(values)
+			samplesProcessedCacheAdjustedTotalAfterThird := e2e.SumValues(values)
 			values, err = queryFrontend.SumMetrics([]string{"cortex_query_samples_processed_total"})
 			require.NoError(t, err)
-			samplesProcessedExcludingCacheThird := e2e.SumValues(values)
-			require.Equal(t, sampleProcessedCacheAdjustedFirst*3, samplesProcessedCacheAdjustedThird, "third query should process same amount of samples as first query")
-			require.Greater(t, samplesProcessedExcludingCacheThird, samplesProcessedExcludingCacheSecond, "third query should hit datasource only for last maxCacheFreshness interval,  but samples processed not from cache stayed the same")
+			samplesProcessedExcludingCacheTotalAfterThird := e2e.SumValues(values)
+
+			// Calculate deltas for the third query
+			samplesProcessedCacheAdjustedDeltaThird := samplesProcessedCacheAdjustedTotalAfterThird - samplesProcessedCacheAdjustedTotal
+			samplesProcessedExcludingCacheDeltaThird := samplesProcessedExcludingCacheTotalAfterThird - samplesProcessedExcludingCacheTotal
+			require.Equal(t, samplesProcessedCacheAdjustedDeltaFirst*3, samplesProcessedCacheAdjustedDeltaThird, "third query should process same amount of samples as first query")
+			require.Greater(t, samplesProcessedExcludingCacheDeltaThird, samplesProcessedExcludingCacheDeltaSecond, "third query should hit datasource only for last maxCacheFreshness interval,  but samples processed not from cache stayed the same")
+
+			// Update baseline for next test case
+			samplesProcessedCacheAdjustedTotal = samplesProcessedCacheAdjustedTotalAfterThird
+			samplesProcessedExcludingCacheTotal = samplesProcessedExcludingCacheTotalAfterThird
 		})
 	}
 }
@@ -312,6 +336,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomInQueryRange(t *t
 	now := time.Now().Round(time.Second)
 
 	queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
+		maxCacheFreshness:      10 * time.Minute,
 		splitQueriesByInterval: 24 * time.Hour,
 	})
 
@@ -363,6 +388,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenZoomOutQueryRange(t *
 	now := time.Now().Round(time.Second)
 
 	queryFrontend, writeClient, queryClient := setupQueryFrontendSamplesStatsTest(t, queryFrontendCacheTestConfig{
+		maxCacheFreshness:      10 * time.Minute,
 		splitQueriesByInterval: 24 * time.Hour,
 	})
 
@@ -450,6 +476,7 @@ func pushSeries(t *testing.T, writeClient *e2emimir.Client, seriesTime, seriesEn
 }
 
 type queryFrontendCacheTestConfig struct {
+	maxCacheFreshness      time.Duration
 	splitQueriesByInterval time.Duration
 }
 
@@ -477,9 +504,10 @@ func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheT
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.parallelize-shardable-queries":     "true",
 		"-query-frontend.split-queries-by-interval":         config.splitQueriesByInterval.String(),
-		"-query-frontend.max-cache-freshness":               "10m",
+		"-query-frontend.max-cache-freshness":               config.maxCacheFreshness.String(),
 		"-query-frontend.align-queries-with-step":           "true", // to make sure we hit the cache.
 		"-query-frontend.cache-samples-processed-stats":     "true", // to collect and cache per-step stats.
+		"-blocks-storage.tsdb.block-ranges-period":          "2h",
 	})
 
 	// Start the query-scheduler
