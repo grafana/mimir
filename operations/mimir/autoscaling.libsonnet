@@ -356,7 +356,6 @@
       |||
     ),
 
-
   newResourceScaledObject(
     name,
     cpu_requests,
