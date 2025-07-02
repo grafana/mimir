@@ -78,8 +78,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
-	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partition-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
-	f.DurationVar(&c.LostPartitionsShutdownGracePeriod, "usage-tracker.lost-partitions-shutdown-grace-period", 30*time.Second, "Time to wait before shutting down a partition that is no longer owned by this instance.")
+	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partitionHandler-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
+	f.DurationVar(&c.LostPartitionsShutdownGracePeriod, "usage-tracker.lost-partitions-shutdown-grace-period", 30*time.Second, "Time to wait before shutting down a partitionHandler that is no longer owned by this instance.")
 	f.IntVar(&c.MaxPartitionsToCreatePerReconcile, "usage-tracker.max-partitions-to-create-per-reconcile", 1, "Maximum number of partitions to create per reconcile interval. This avoids load avalanches and prevents shuffling when adding new instances.")
 
 	c.InstanceRing.RegisterFlags(f, logger)
@@ -178,7 +178,7 @@ type UsageTracker struct {
 	snapshotsBucket              objstore.InstrumentedBucket
 
 	partitionsMtx sync.RWMutex
-	partitions    map[int32]*partition
+	partitions    map[int32]*partitionHandler
 
 	lostPartitions map[int32]time.Time
 
@@ -197,7 +197,7 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 		logger:        logger,
 		registerer:    registerer,
 
-		partitions:     make(map[int32]*partition, 64),
+		partitions:     make(map[int32]*partitionHandler, 64),
 		lostPartitions: make(map[int32]time.Time),
 	}
 
@@ -322,7 +322,7 @@ func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 	for p, lostAt := range t.lostPartitions {
 		// We don't check whether p>=start because that should always be true: we never lose starting partitions.
 		if p < end {
-			level.Info(logger).Log("msg", "partition was previously lost but we own it again", "partition", p, "lost_at", lostAt)
+			level.Info(logger).Log("msg", "partitionHandler was previously lost but we own it again", "partitionHandler", p, "lost_at", lostAt)
 			delete(t.lostPartitions, p)
 			unmarkedAsLost++
 		}
@@ -355,27 +355,27 @@ losingPartitions:
 			locked(func() { delete(t.partitions, pid) })
 			delete(t.lostPartitions, pid)
 			if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
-				level.Error(logger).Log("msg", "unable to stop partition", "err", err)
-				return errors.Wrapf(err, "unable to stop partition %d", pid)
+				level.Error(logger).Log("msg", "unable to stop partition handler", "err", err)
+				return errors.Wrapf(err, "unable to stop partition handler %d", pid)
 			}
 			deleted++
-			level.Info(logger).Log("msg", "partition stopped")
+			level.Info(logger).Log("msg", "partition handler stopped")
 			continue
 		}
 
 		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp, true)
 		if err != nil {
-			level.Error(logger).Log("msg", "unable to get replication set for partition", "err", err)
+			level.Error(logger).Log("msg", "unable to get replication set for partitionHandler", "err", err)
 			continue
 		}
 		for _, instance := range replicationSet.Instances {
 			if instance.Id == t.cfg.InstanceRing.InstanceID {
-				level.Info(logger).Log("msg", "we're still serving partition, not shutting down")
+				level.Info(logger).Log("msg", "we're still serving partitionHandler, not shutting down")
 				continue losingPartitions
 			}
 		}
 
-		level.Info(logger).Log("msg", "partition has a higher owner now, marking as lost and waiting grace period before shutting down")
+		level.Info(logger).Log("msg", "partitionHandler has a higher owner now, marking as lost and waiting grace period before shutting down")
 		t.lostPartitions[pid] = time.Now()
 		markedAsLost++
 	}
@@ -395,25 +395,25 @@ losingPartitions:
 
 		logger := log.With(logger, "action", "adding", "partition", pid)
 
-		level.Info(logger).Log("msg", "creating new partition")
-		p, err := newPartition(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
+		level.Info(logger).Log("msg", "creating new partition handler")
+		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
 		if err != nil {
-			return errors.Wrapf(err, "unable to create partition %d", pid)
+			return errors.Wrapf(err, "unable to create partition handler %d", pid)
 		}
-		level.Info(logger).Log("msg", "starting partition")
+		level.Info(logger).Log("msg", "starting partition handler")
 		if err := p.StartAsync(ctx); err != nil {
-			return errors.Wrapf(err, "unable to start partition %d ", pid)
+			return errors.Wrapf(err, "unable to start partition handler %d ", pid)
 		}
 		go func() {
 			if err := p.AwaitRunning(ctx); err != nil {
-				started <- errors.Wrapf(err, "unable to run partition %d", pid)
+				started <- errors.Wrapf(err, "unable to run partition handler %d", pid)
 			} else {
 				started <- nil
 			}
 		}()
 
 		locked(func() { t.partitions[pid] = p })
-		level.Info(logger).Log("msg", "partition started")
+		level.Info(logger).Log("msg", "partition handler started")
 		added++
 	}
 
@@ -513,7 +513,7 @@ func (t *UsageTracker) stop(_ error) error {
 	}
 	for _, p := range t.partitions {
 		if err := p.AwaitTerminated(context.Background()); err != nil {
-			errs.Add(errors.Wrapf(err, "unable to stop partition %d", p.partitionID))
+			errs.Add(errors.Wrapf(err, "unable to stop partition handler %d", p.partitionID))
 		}
 	}
 
@@ -534,7 +534,7 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 	p, ok := t.partitions[req.Partition]
 	t.partitionsMtx.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("partition %d not found", req.Partition)
+		return nil, fmt.Errorf("partition handler %d not found", req.Partition)
 	}
 	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
@@ -708,7 +708,7 @@ func log2(n int32) int32 {
 	return log
 }
 
-// parseInstanceID returns the partition ID from the instance ID.
+// parseInstanceID returns the instance ID number from the instance ID string.
 func parseInstanceID(instanceID string) (int32, error) {
 	match := instanceIDRegexp.FindStringSubmatch(instanceID)
 	if len(match) == 0 {

@@ -56,7 +56,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			require.Empty(t, partitionRing.PartitionRing().MultiPartitionOwnerIDs(partitionID, nil), "Partition %d should have no owners yet.")
 		}
 
-		// All usage-trackers have started now, run partition reconciliations.
+		// All usage-trackers have started now, run partition handler reconciliations.
 		reconcileAllTrackersPartitionCountTimes(t, trackers)
 
 		// Check that every partition has two owners.
@@ -272,7 +272,7 @@ func waitUntilAllTrackersSeeAllInstancesInTheirZones(t *testing.T, trackers map[
 }
 
 // reconcileAllTrackersPartitionCountTimes calls reoncilePartition on each tracker testPartitionsCount times.
-// Since we only allow one partition creation per reconcile by default, this should allow for creation of all partitions.
+// Since we only allow one partition handler creation per reconcile by default, this should allow for creation of all partitions.
 func reconcileAllTrackersPartitionCountTimes(t require.TestingT, trackers map[string]*UsageTracker) {
 	for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
 		for key, ut := range trackers {

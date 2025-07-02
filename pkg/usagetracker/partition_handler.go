@@ -42,7 +42,7 @@ var (
 	eventTypeSnapshotBytes      = []byte(eventTypeSnapshot)
 )
 
-type partition struct {
+type partitionHandler struct {
 	services.Service
 
 	store *trackerStore
@@ -84,7 +84,7 @@ type partition struct {
 	onConsumeEvent func(eventType string)
 }
 
-func newPartition(
+func newPartitionHandler(
 	partitionID int32,
 	cfg Config,
 	partitionKVClient kv.Client,
@@ -95,10 +95,10 @@ func newPartition(
 	lim limiter,
 	logger log.Logger,
 	registerer prometheus.Registerer,
-) (*partition, error) {
+) (*partitionHandler, error) {
 	reg := prometheus.NewRegistry()
 	logger = log.With(logger, "partition", partitionID)
-	p := &partition{
+	p := &partitionHandler{
 		cfg:           cfg,
 		partitionRing: partitionRing,
 		logger:        logger,
@@ -153,17 +153,17 @@ func newPartition(
 }
 
 // start implements services.StartingFn.
-func (p *partition) start(ctx context.Context) error {
+func (p *partitionHandler) start(ctx context.Context) error {
 	if err := p.registerer.Register(p.collector); err != nil {
-		return errors.Wrap(err, "unable to register usage-tracker partition collector as Prometheus collector")
+		return errors.Wrap(err, "unable to register partition handler collector as Prometheus collector")
 	}
 
 	eventsOffset, err := p.loadSnapshotAndPrepareKafkaEventsReader(ctx)
 	if err != nil {
-		return errors.Wrap(err, "unable to load snapshot for usage-tracker partition")
+		return errors.Wrap(err, "unable to load snapshot")
 	}
 	if err := p.loadEvents(ctx, eventsOffset); err != nil {
-		return errors.Wrap(err, "unable to load events for usage-tracker partition")
+		return errors.Wrap(err, "unable to load events")
 	}
 
 	// Do this only once ready
@@ -176,7 +176,7 @@ func (p *partition) start(ctx context.Context) error {
 	return nil
 }
 
-func (p *partition) loadSnapshotAndPrepareKafkaEventsReader(ctx context.Context) (int64, error) {
+func (p *partitionHandler) loadSnapshotAndPrepareKafkaEventsReader(ctx context.Context) (int64, error) {
 	// Default offset to start, to avoid returning nonsense.
 	snapshotsTopic := p.cfg.SnapshotsMetadataReader.Topic
 
@@ -222,7 +222,7 @@ func (p *partition) loadSnapshotAndPrepareKafkaEventsReader(ctx context.Context)
 	return snapshot.LastEventOffsetPublishedBeforeSnapshot, nil
 }
 
-func (p *partition) loadAllSnapshotShards(ctx context.Context, files []string) error {
+func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []string) error {
 	t0 := time.Now()
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -299,7 +299,7 @@ func (p *partition) loadAllSnapshotShards(ctx context.Context, files []string) e
 	}
 }
 
-func (p *partition) loadEvents(ctx context.Context, eventsOffset int64) error {
+func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) error {
 	endOffset, err := findEndOffset(ctx, p.eventsKafkaReader, p.cfg.EventsStorageReader.Topic)
 	if err != nil {
 		return errors.Wrapf(err, "failed to find end offset for topic %s", p.cfg.EventsStorageReader.Topic)
@@ -373,7 +373,7 @@ func (p *partition) loadEvents(ctx context.Context, eventsOffset int64) error {
 }
 
 // run implements services.RunningFn.
-func (p *partition) run(ctx context.Context) error {
+func (p *partitionHandler) run(ctx context.Context) error {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
@@ -397,7 +397,7 @@ func (p *partition) run(ctx context.Context) error {
 }
 
 // stop implements services.StoppingFn.
-func (p *partition) stop(_ error) error {
+func (p *partitionHandler) stop(_ error) error {
 	p.registerer.Unregister(p.collector)
 	// Stop dependencies.
 	err := services.StopAndAwaitTerminated(context.Background(), p.partitionLifecycler)
@@ -408,7 +408,7 @@ func (p *partition) stop(_ error) error {
 	return err
 }
 
-func (p *partition) consumeEvents(ctx context.Context) {
+func (p *partitionHandler) consumeEvents(ctx context.Context) {
 	for ctx.Err() == nil {
 		fetches := p.eventsKafkaReader.PollRecords(ctx, p.cfg.MaxEventsFetchSize)
 		fetches.EachError(func(_ string, part int32, err error) {
@@ -440,7 +440,7 @@ func (p *partition) consumeEvents(ctx context.Context) {
 	}
 }
 
-func (p *partition) processSeriesCreatedEventRecord(r *kgo.Record) {
+func (p *partitionHandler) processSeriesCreatedEventRecord(r *kgo.Record) {
 	var ev usagetrackerpb.SeriesCreatedEvent
 	if err := ev.Unmarshal(r.Value); err != nil {
 		// TODO increment a metric here, alert on it.
@@ -452,13 +452,13 @@ func (p *partition) processSeriesCreatedEventRecord(r *kgo.Record) {
 	level.Debug(p.logger).Log("msg", "processed series created event", "offset", r.Offset, "series", len(ev.SeriesHashes))
 }
 
-func (p *partition) processSnapshotEventSync(ctx context.Context, r *kgo.Record) {
+func (p *partitionHandler) processSnapshotEventSync(ctx context.Context, r *kgo.Record) {
 	p.processSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
 		p.loadSnapshot(ctx, ev)
 	})
 }
 
-func (p *partition) processSnapshotEventAsync(r *kgo.Record) {
+func (p *partitionHandler) processSnapshotEventAsync(r *kgo.Record) {
 	p.processSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
 		select {
 		case p.snapshotsFromEvents <- ev:
@@ -469,7 +469,7 @@ func (p *partition) processSnapshotEventAsync(r *kgo.Record) {
 	})
 }
 
-func (p *partition) processSnapshotEvent(r *kgo.Record, process func(event *usagetrackerpb.SnapshotEvent)) {
+func (p *partitionHandler) processSnapshotEvent(r *kgo.Record, process func(event *usagetrackerpb.SnapshotEvent)) {
 	if r.Offset <= p.ignoreSnapshotEventsUntil {
 		// Ignore snapshot events that were made before the last snapshot we loaded.
 		level.Info(p.logger).Log("msg", "ignoring shard snapshot event", "offset", r.Offset, "ignore_until", p.ignoreSnapshotEventsUntil)
@@ -493,7 +493,7 @@ func (p *partition) processSnapshotEvent(r *kgo.Record, process func(event *usag
 	process(&ev)
 }
 
-func (p *partition) loadSnapshotsFromEvents(ctx context.Context) {
+func (p *partitionHandler) loadSnapshotsFromEvents(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -504,7 +504,7 @@ func (p *partition) loadSnapshotsFromEvents(ctx context.Context) {
 	}
 }
 
-func (p *partition) loadSnapshot(ctx context.Context, r *usagetrackerpb.SnapshotEvent) {
+func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.SnapshotEvent) {
 	t0 := time.Now()
 	rc, err := p.snapshotsBucket.Get(ctx, r.Filename)
 	if err != nil {
@@ -545,7 +545,7 @@ func (p *partition) loadSnapshot(ctx context.Context, r *usagetrackerpb.Snapshot
 	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", len(data), "elapsed_download", time.Since(t0), "elapsed_total", time.Since(td))
 }
 
-func (p *partition) publishSeriesCreatedEvents(ctx context.Context) {
+func (p *partitionHandler) publishSeriesCreatedEvents(ctx context.Context) {
 	wg := &goroutineWaitGroup{}
 	defer wg.Wait()
 
@@ -620,7 +620,7 @@ func (p *partition) publishSeriesCreatedEvents(ctx context.Context) {
 	}
 }
 
-func (p *partition) newEventKafkaRecord(eventTypeBytes []byte, data []byte) *kgo.Record {
+func (p *partitionHandler) newEventKafkaRecord(eventTypeBytes []byte, data []byte) *kgo.Record {
 	return &kgo.Record{
 		Topic: p.cfg.EventsStorageWriter.Topic,
 		Headers: []kgo.RecordHeader{
@@ -632,7 +632,7 @@ func (p *partition) newEventKafkaRecord(eventTypeBytes []byte, data []byte) *kgo
 	}
 }
 
-func (p *partition) publishSnapshots(ctx context.Context) {
+func (p *partitionHandler) publishSnapshots(ctx context.Context) {
 	for {
 		delay := util.DurationWithJitter(p.cfg.IdleTimeout/2, p.cfg.SnapshotIntervalJitter)
 		level.Info(p.logger).Log("msg", "next snapshot scheduled", "delay", delay, "next_snapshot", time.Now().Add(delay))
@@ -648,7 +648,7 @@ func (p *partition) publishSnapshots(ctx context.Context) {
 	}
 }
 
-func (p *partition) publishSnapshot(ctx context.Context) error {
+func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 	level.Info(p.logger).Log("msg", "publishing snapshot")
 
 	var filenames []string

@@ -30,14 +30,14 @@ const snapshotsMetadataTopic = "usage-tracker-snapshots-metadata"
 
 var noRejected = []uint64{}
 
-func TestPartition(t *testing.T) {
+func TestPartitionHandler(t *testing.T) {
 	const tenantID = "tenant-1"
 
-	startPartitionTrackTwoSeriesAndShutDown := func(t *testing.T, h *partitionTestHelper) *partition {
+	startPartitionHandlerTrackTwoSeriesAndShutDown := func(t *testing.T, h *partitionHandlerTestHelper) *partitionHandler {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		p := h.newPartition(t)
+		p := h.newHandler(t)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
 		requireTrackSeries(t, p, tenantID, []uint64{1, 2}, noRejected)
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
@@ -53,22 +53,22 @@ func TestPartition(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 2
-		p := h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
 
-		requirePerTenantSeries(t, p, map[string]uint64{})
-		requireTrackSeries(t, p, tenantID, []uint64{1, 2, 3}, []uint64{3})
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		requirePerTenantSeries(t, ph, map[string]uint64{})
+		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3}, []uint64{3})
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 
-		// No snapshot was published, yet the new partition consumes last events on creation.
-		p = h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		// No snapshot was published, yet the new partitionHandler consumes last events on creation.
+		ph = h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
 	t.Run("create and load snapshots", func(t *testing.T) {
@@ -77,23 +77,23 @@ func TestPartition(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 3
 
-		// First partition is created, tracks some series and creates a snapshot.
-		startPartitionTrackTwoSeriesAndShutDown(t, h)
+		// First partitionHandler is created, tracks some series and creates a snapshot.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
 
-		// New partition is created, loads the snapshot and should contain the same series.
-		p := h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
-		requireTrackSeries(t, p, tenantID, []uint64{2, 3}, noRejected)
+		// New partitionHandler is created, loads the snapshot and should contain the same series.
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
+		requireTrackSeries(t, ph, tenantID, []uint64{2, 3}, noRejected)
 
 		// The series 2 is already tracked, so it should not be published again.
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{3}})
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 3})
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 3})
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
 	t.Run("snapshot events are loaded continuously", func(t *testing.T) {
@@ -102,42 +102,42 @@ func TestPartition(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 3
 
-		// First partition is created, tracks some series and creates a snapshot.
-		p1 := h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p1))
-		requireTrackSeries(t, p1, tenantID, []uint64{1, 2}, noRejected)
+		// First partitionHandler is created, tracks some series and creates a snapshot.
+		ph1 := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph1))
+		requireTrackSeries(t, ph1, tenantID, []uint64{1, 2}, noRejected)
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
 
-		// New partition is created it loads the events.
-		// We need to create this partition on a different instance because otherwise own events are ignored.
-		p2 := h.newPartitionOnDifferentInstance(t)
+		// New partitionHandler is created it loads the events.
+		// We need to create this partitionHandler on a different instance because otherwise own events are ignored.
+		ph2 := h.newHandlerOnDifferentInstance(t)
 		consumedEvents := make(chan string, 10)
-		p2.onConsumeEvent = func(typ string) { consumedEvents <- typ }
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p2))
-		requirePerTenantSeries(t, p2, map[string]uint64{tenantID: 2})
+		ph2.onConsumeEvent = func(typ string) { consumedEvents <- typ }
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
+		requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: 2})
 		// We artificially reset its state, let's say it didn't receive any requests for series 1 and 2 for a while.
-		p2.store.cleanup(time.Now().Add(2 * p2.cfg.IdleTimeout))
-		requirePerTenantSeries(t, p2, map[string]uint64{})
+		ph2.store.cleanup(time.Now().Add(2 * ph2.cfg.IdleTimeout))
+		requirePerTenantSeries(t, ph2, map[string]uint64{})
 
-		// p2 publishes a snapshot of its current state. p2 should sync.
-		require.NoError(t, p1.publishSnapshot(ctx))
+		// ph2 publishes a snapshot of its current state. ph2 should sync.
+		require.NoError(t, ph1.publishSnapshot(ctx))
 		h.expectEvents(t, expectedSnapshotEvent{})
 
-		// Wait until p2 consumes the snapshot event.
+		// Wait until ph2 consumes the snapshot event.
 		// TODO
 		select {
 		case typ := <-consumedEvents:
-			require.Equal(t, eventTypeSnapshot, typ, "expected p2 to consume snapshot event, got %s", typ)
+			require.Equal(t, eventTypeSnapshot, typ, "expected ph2 to consume snapshot event, got %s", typ)
 		case <-time.After(10 * time.Second):
-			t.Fatal("timeout waiting for p2 to consume snapshot event")
+			t.Fatal("timeout waiting for ph2 to consume snapshot event")
 		}
-		requirePerTenantSeries(t, p2, map[string]uint64{tenantID: 2})
+		requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: 2})
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p1))
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p2))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
 	})
 
 	t.Run("events published after snapshot are correctly consumed", func(t *testing.T) {
@@ -146,35 +146,35 @@ func TestPartition(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 3
 
-		// First partition is created, tracks some series and creates a snapshot.
-		p := h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requireTrackSeries(t, p, tenantID, []uint64{1, 2}, noRejected)
+		// First partitionHandler is created, tracks some series and creates a snapshot.
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requireTrackSeries(t, ph, tenantID, []uint64{1, 2}, noRejected)
 		// Consume the series created events.
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
 
 		// Publish a snapshot manually.
-		require.NoError(t, p.publishSnapshot(ctx))
+		require.NoError(t, ph.publishSnapshot(ctx))
 
 		// Expect a snapshot event, consume it.
 		h.expectEvents(t, expectedSnapshotEvent{})
 
 		// Track one more series after the snapshot.
-		requireTrackSeries(t, p, tenantID, []uint64{3}, noRejected)
+		requireTrackSeries(t, ph, tenantID, []uint64{3}, noRejected)
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{3}})
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 3})
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 3})
 
-		// Shutdown this partition (not really needed to be done yet).
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		// Shutdown this partitionHandler (not really needed to be done yet).
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 
-		// New partition is created it should load 2 series from the snapshot and 1 series from the event.
-		p = h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 3})
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		// New partitionHandler is created it should load 2 series from the snapshot and 1 series from the event.
+		ph = h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 3})
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
 	t.Run("only last snapshot and the events after it are processed", func(t *testing.T) {
@@ -183,15 +183,15 @@ func TestPartition(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 5
 
-		// First partition is created, tracks some series and creates a snapshot.
-		p := h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requireTrackSeries(t, p, tenantID, []uint64{1}, noRejected)
-		requireTrackSeries(t, p, tenantID, []uint64{2}, noRejected)
-		requireTrackSeries(t, p, tenantID, []uint64{3}, noRejected)
+		// First partitionHandler is created, tracks some series and creates a snapshot.
+		ph := h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requireTrackSeries(t, ph, tenantID, []uint64{1}, noRejected)
+		requireTrackSeries(t, ph, tenantID, []uint64{2}, noRejected)
+		requireTrackSeries(t, ph, tenantID, []uint64{3}, noRejected)
 		// Consume the series created events.
 		h.expectEvents(t,
 			expectedSeriesCreatedEvent{tenantID, []uint64{1}},
@@ -199,69 +199,69 @@ func TestPartition(t *testing.T) {
 			expectedSeriesCreatedEvent{tenantID, []uint64{3}},
 		)
 		// Publish a snapshot manually and consume the event.
-		require.NoError(t, p.publishSnapshot(ctx))
+		require.NoError(t, ph.publishSnapshot(ctx))
 		h.expectEvents(t, expectedSnapshotEvent{})
 		// Publish another event.
-		requireTrackSeries(t, p, tenantID, []uint64{4, 5}, noRejected)
+		requireTrackSeries(t, ph, tenantID, []uint64{4, 5}, noRejected)
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{4, 5}})
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 5})
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 5})
 
-		// *** Reset the partition ***
+		// *** Reset the partitionHandler ***
 		// This simulates some time passing and series expired.
-		p.store.cleanup(time.Now().Add(2 * p.cfg.IdleTimeout))
+		ph.store.cleanup(time.Now().Add(2 * ph.cfg.IdleTimeout))
 		// We should now have 0 series again (tenant is fully deleted).
-		requirePerTenantSeries(t, p, map[string]uint64{})
+		requirePerTenantSeries(t, ph, map[string]uint64{})
 
 		// Track different series.
-		requireTrackSeries(t, p, tenantID, []uint64{100, 200, 300}, noRejected)
+		requireTrackSeries(t, ph, tenantID, []uint64{100, 200, 300}, noRejected)
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{100, 200, 300}})
 
 		// Publish a a snapshot and consume the event.
-		require.NoError(t, p.publishSnapshot(ctx))
+		require.NoError(t, ph.publishSnapshot(ctx))
 		h.expectEvents(t, expectedSnapshotEvent{})
 
 		// Track some more series.
-		requireTrackSeries(t, p, tenantID, []uint64{400, 500}, noRejected)
+		requireTrackSeries(t, ph, tenantID, []uint64{400, 500}, noRejected)
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{400, 500}})
 
-		// Shutdown this partition (not really needed to be done yet).
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		// Shutdown this partitionHandler (not really needed to be done yet).
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 
-		// New partition is created it should load 3 series {100, 200, 300} from the snapshot and 2 series {300, 400} from the event.
+		// New partitionHandler is created it should load 3 series {100, 200, 300} from the snapshot and 2 series {300, 400} from the event.
 		// We don't load the series {1, 2, 3, 4, 5} from the previous snapshot/events.
-		p = h.newPartition(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 5})
+		ph = h.newHandler(t)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 5})
 		// Since the limit is 5, by sending seris {1, 2, 3, 4, 5, 100, 200, 300, 400, 500} we should get rejections for the ones that are not in memory, i.e. 1, 2, 3, 4, 5.
-		requireTrackSeries(t, p, tenantID, []uint64{1, 2, 3, 4, 5, 100, 200, 300, 400, 500}, []uint64{1, 2, 3, 4, 5})
+		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3, 4, 5, 100, 200, 300, 400, 500}, []uint64{1, 2, 3, 4, 5})
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
-	t.Run("partition startup waits until snapshot is loaded", func(t *testing.T) {
+	t.Run("partition handler startup waits until snapshot is loaded", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 3
 
-		// First partition is created, tracks some series and creates a snapshot and it's shut down.
-		startPartitionTrackTwoSeriesAndShutDown(t, h)
+		// First partitionHandler is created, tracks some series and creates a snapshot and it's shut down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
 
-		// New partition is created, loads the snapshot and should contain the same series.
-		p := h.newPartition(t)
-		// This partition has a slow bucket reader.
+		// New partitionHandler is created, loads the snapshot and should contain the same series.
+		ph := h.newHandler(t)
+		// This partitionHandler has a slow bucket reader.
 		getLatency := time.Second
-		p.snapshotsBucket = &slowBucket{p.snapshotsBucket, getLatency}
+		ph.snapshotsBucket = &slowBucket{ph.snapshotsBucket, getLatency}
 
 		t0 := time.Now()
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		require.GreaterOrEqual(t, time.Since(t0), getLatency, "partition start should take longer than get latency")
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		require.GreaterOrEqual(t, time.Since(t0), getLatency, "partition handler start should take longer than get latency")
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 
 	t.Run("snapshot is loaded only once at startup (event is ignored)", func(t *testing.T) {
@@ -270,27 +270,27 @@ func TestPartition(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
-		h := newPartitionTestHelper(t)
+		h := newPartitionHandlerTestHelper(t)
 		h.limiter[tenantID] = 3
 
-		// First partition is created, tracks some series and creates a snapshot and it's shut down.
-		startPartitionTrackTwoSeriesAndShutDown(t, h)
+		// First partitionHandler is created, tracks some series and creates a snapshot and it's shut down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
 
-		// New partition is created, loads the snapshot and should contain the same series.
-		p := h.newPartition(t)
-		// This partition has a slow bucket reader.
+		// New partitionHandler is created, loads the snapshot and should contain the same series.
+		ph := h.newHandler(t)
+		// This partitionHandler has a slow bucket reader.
 		getCalls := atomic.NewInt64(0)
-		p.snapshotsBucket = &getCounterBucketReader{p.snapshotsBucket, getCalls}
+		ph.snapshotsBucket = &getCounterBucketReader{ph.snapshotsBucket, getCalls}
 
-		require.NoError(t, services.StartAndAwaitRunning(ctx, p))
-		requirePerTenantSeries(t, p, map[string]uint64{tenantID: 2})
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
 		require.Equal(t, int64(1), getCalls.Load(), "snapshot should be loaded only once at startup")
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, p))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
 }
 
-func requireTrackSeries(t *testing.T, p *partition, id string, series, rejected []uint64) {
+func requireTrackSeries(t *testing.T, p *partitionHandler, id string, series, rejected []uint64) {
 	t.Helper()
 	actualRejected, err := p.store.trackSeries(t.Context(), id, series, time.Now())
 	require.NoError(t, err, "failed to track series for tenant %s in partition %d", id, p.partitionID)
@@ -300,7 +300,7 @@ func requireTrackSeries(t *testing.T, p *partition, id string, series, rejected 
 	require.ElementsMatch(t, rejected, actualRejected, "wrong rejected series for tenant %s in partition %d", id, p.partitionID)
 }
 
-func requirePerTenantSeries(t *testing.T, p *partition, expected map[string]uint64) {
+func requirePerTenantSeries(t *testing.T, p *partitionHandler, expected map[string]uint64) {
 	t.Helper()
 	actual := make(map[string]uint64)
 	p.store.mtx.RLock()
@@ -311,7 +311,7 @@ func requirePerTenantSeries(t *testing.T, p *partition, expected map[string]uint
 	require.Equal(t, expected, actual, "unexpected series counts in partition %d", p.partitionID)
 }
 
-func newPartitionTestHelper(t *testing.T) *partitionTestHelper {
+func newPartitionHandlerTestHelper(t *testing.T) *partitionHandlerTestHelper {
 	ikv, instanceKVCloser := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, instanceKVCloser.Close()) })
 	pkv, partitionKVCloser := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
@@ -343,7 +343,7 @@ func newPartitionTestHelper(t *testing.T) *partitionTestHelper {
 	})
 	t.Cleanup(eventsKafkaReader.Close)
 
-	return &partitionTestHelper{
+	return &partitionHandlerTestHelper{
 		cfg: cfg,
 
 		ikv:                  ikv,
@@ -360,7 +360,7 @@ func newPartitionTestHelper(t *testing.T) *partitionTestHelper {
 	}
 }
 
-type partitionTestHelper struct {
+type partitionHandlerTestHelper struct {
 	cfg Config
 
 	ikv                  *consul.Client
@@ -375,27 +375,27 @@ type partitionTestHelper struct {
 	// Needed to run test helpers.
 	eventsKafkaReader *kgo.Client
 
-	pidx int // Identify each partition in the logs.
+	pidx int // Identify each partitionHandler in the logs.
 }
 
-func (h *partitionTestHelper) newPartition(t *testing.T) *partition {
+func (h *partitionHandlerTestHelper) newHandler(t *testing.T) *partitionHandler {
 	t.Helper()
-	return h.newPartitionForConfig(t, h.cfg)
+	return h.newHandlerForConfig(t, h.cfg)
 }
 
-func (h *partitionTestHelper) newPartitionOnDifferentInstance(t *testing.T) *partition {
+func (h *partitionHandlerTestHelper) newHandlerOnDifferentInstance(t *testing.T) *partitionHandler {
 	t.Helper()
 	cfg := h.cfg
 	cfg.InstanceRing.InstanceID = "usage-tracker-zone-b-1"
 	cfg.InstanceRing.InstanceZone = "zone-b" // Doesn't necessarily need to be different.
-	return h.newPartitionForConfig(t, cfg)
+	return h.newHandlerForConfig(t, cfg)
 }
 
-func (h *partitionTestHelper) newPartitionForConfig(t *testing.T, cfg Config) *partition {
+func (h *partitionHandlerTestHelper) newHandlerForConfig(t *testing.T, cfg Config) *partitionHandler {
 	t.Helper()
 	// Wrap logger to understand test logs easier.
 	logger := log.With(h.logger, "pidx", h.pidx)
-	// Wrap the registry to allow running two partition's for the same partition ID (this doesn't happen in usage-tracker).
+	// Wrap the registry to allow running two partitionHandler handlers for the same partitionHandler ID (this doesn't happen in usage-tracker).
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"pidx": strconv.Itoa(h.pidx)}, h.reg)
 	h.pidx++
 
@@ -407,12 +407,12 @@ func (h *partitionTestHelper) newPartitionForConfig(t *testing.T, cfg Config) *p
 	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
 	startServiceAndStopOnCleanup(t, partitionRingWatcher)
 
-	p, err := newPartition(0, cfg, h.pkv, partitionRing, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
+	p, err := newPartitionHandler(0, cfg, h.pkv, partitionRing, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
 	require.NoError(t, err)
 	return p
 }
 
-func (h *partitionTestHelper) expectEvents(t *testing.T, expectedEvents ...any) {
+func (h *partitionHandlerTestHelper) expectEvents(t *testing.T, expectedEvents ...any) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
