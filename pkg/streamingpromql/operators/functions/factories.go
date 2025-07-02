@@ -546,6 +546,13 @@ func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
 			labels = append(labels, l.GetValue())
 		}
 
+		// sort_by_labels and sort_by_labels_desc only affect the results of instant queries
+		// since range query results have a fixed output ordering. However, we still validate
+		// all the arguments as if we were going to sort for consistency.
+		if !timeRange.IsInstant {
+			return inner, nil
+		}
+
 		return NewSortByLabel(inner, descending, labels, memoryConsumptionTracker, expressionPosition), nil
 	}
 }
