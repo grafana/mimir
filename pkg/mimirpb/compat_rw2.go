@@ -57,6 +57,11 @@ func (ps *rw2PagedSymbols) releasePages() {
 }
 
 func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
+	// The first element of the symbols table MUST be an empty string.
+	if ref == 0 {
+		return "", nil
+	}
+
 	if ref < ps.offset {
 		if len(ps.commonSymbols) == 0 {
 			return "", fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
