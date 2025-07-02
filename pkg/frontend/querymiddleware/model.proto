@@ -11,8 +11,9 @@ package queryrange;
 option go_package = "querymiddleware";
 
 import "gogoproto/gogo.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "google/protobuf/any.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -68,12 +69,7 @@ message Extent  {
   // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
   int64 query_timestamp_ms = 6;
   // Number of samples processed per step to create this Extent. Should be sorted by timestamp in ascending order.
-  repeated StepStat samples_processed_per_step = 7 [(gogoproto.nullable) = false];
-}
-
-message StepStat {
-  int64 timestamp = 1;
-  int64 value = 2;
+  repeated stats.StepStat samples_processed_per_step = 7 [(gogoproto.nullable) = false];
 }
 
 message Options {
