@@ -1,4 +1,4 @@
-name: Update vendored version in grafana/backend-enterprise
+name: Update vendored versions in grafana/backend-enterprise weekly branches
 
 on:
   push:
