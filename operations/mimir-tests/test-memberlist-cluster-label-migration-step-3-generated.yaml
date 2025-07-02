@@ -1147,6 +1147,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.cluster-label=my-cluster-label
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946

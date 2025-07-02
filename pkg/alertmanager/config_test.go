@@ -209,6 +209,25 @@ receivers:
 			},
 		},
 		{
+			name: "non-empty mimir config, SmtpFrom and StaticHeaders fields",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl:   externalURL,
+				RawConfig:     grafanaConfig,
+				SmtpFrom:      "custom@example.com",
+				StaticHeaders: map[string]string{"test": "test"},
+			},
+			mimirConfig: mimirConfig,
+			expEmailSenderConfig: receivers.EmailSenderConfig{
+				ContentTypes:  baseEmailSenderConfig.ContentTypes,
+				EhloIdentity:  baseEmailSenderConfig.EhloIdentity,
+				ExternalURL:   baseEmailSenderConfig.ExternalURL,
+				FromAddress:   "custom@example.com",
+				FromName:      baseEmailSenderConfig.FromName,
+				SentBy:        baseEmailSenderConfig.SentBy,
+				StaticHeaders: map[string]string{"test": "test"},
+			},
+		},
+		{
 			name: "non-empty mimir config, custom SMTP config",
 			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
 				ExternalUrl: externalURL,
@@ -253,10 +272,15 @@ receivers:
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.emailConfig.StaticHeaders)
 			require.Equal(t, test.grafanaConfig.User, cfg.User)
 			require.Equal(t, test.grafanaConfig.ExternalUrl, cfg.tmplExternalURL.String())
 			require.True(t, cfg.usingGrafanaConfig)
+
+			if test.grafanaConfig.SmtpConfig != nil {
+				require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.emailConfig.StaticHeaders)
+			} else {
+				require.Equal(t, test.grafanaConfig.StaticHeaders, cfg.emailConfig.StaticHeaders)
+			}
 
 			// Custom SMTP settings should be part of the config.
 			require.Equal(t, test.expEmailSenderConfig, cfg.emailConfig)
