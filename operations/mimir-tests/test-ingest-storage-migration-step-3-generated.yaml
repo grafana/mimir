@@ -2687,7 +2687,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
@@ -2746,7 +2746,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
@@ -2805,7 +2805,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
@@ -2864,7 +2864,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
