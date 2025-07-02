@@ -21,9 +21,11 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/semconv"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -66,8 +68,15 @@ type Config struct {
 
 	FilterQueryablesEnabled bool `yaml:"filter_queryables_enabled" category:"advanced"`
 
+	SemConv SemConvConfig `yaml:"semconv"`
+
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
+}
+
+type SemConvConfig struct {
+	EnableVersionedRead bool              `yaml:"enable_versioned_read" category:"experimental"`
+	SchemaOverrides     map[string]string `yaml:"schema_overrides" category:"experimental" documentation:"See prometheus/semconv/SemConvConfig#SchemaOverrides"`
 }
 
 const (
@@ -98,6 +107,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 
 	f.BoolVar(&cfg.FilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.")
+
+	f.BoolVar(&cfg.SemConv.EnableVersionedRead, "querier.semconv.enable-versioned-read", false, "Enable versioned read, as proposed in https://docs.google.com/document/d/14y4wdZdRMC676qPLDqBQZfaCA6Dog_3ukzmjLOgAL-k")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -155,16 +166,30 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		},
 	})
 
-	queryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
+	baseQueryable := newQueryable(queryables, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(minT, maxT)
+	var queryable storage.Queryable = storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := baseQueryable.Querier(minT, maxT)
 		if err != nil {
 			return nil, err
 		}
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
+
+	if cfg.SemConv.EnableVersionedRead {
+		semconvAwareQueryable, applyConfig := semconv.AwareQueryable(queryable)
+		queryable = semconvAwareQueryable
+		err := applyConfig(&config.Config{
+			SemConv: config.SemConvConfig{
+				SchemaOverrides: cfg.SemConv.SchemaOverrides,
+			},
+		})
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("applying config to semconv-aware queryable: %w", err)
+		}
+		level.Info(logger).Log("msg", "Experimental support for versioned reads is enabled")
+	}
 
 	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
@@ -197,7 +222,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		panic(fmt.Sprintf("invalid config not caught by validation: unknown PromQL engine '%s'", cfg.QueryEngine))
 	}
 
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, eng, nil
+	return NewSampleAndChunkQueryable(queryable), exemplarQueryable, eng, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
