@@ -180,7 +180,7 @@ func (p *partitionHandler) loadSnapshotAndPrepareKafkaEventsReader(ctx context.C
 	// Default offset to start, to avoid returning nonsense.
 	snapshotsTopic := p.cfg.SnapshotsMetadataReader.Topic
 
-	offset, err := findEndOffset(ctx, p.snapshotsKafkaReader, snapshotsTopic)
+	offset, err := findEndOffset(ctx, p.snapshotsKafkaReader, snapshotsTopic, p.partitionID)
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to find end offset for topic %s", snapshotsTopic)
 	}
@@ -300,7 +300,7 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 }
 
 func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) error {
-	endOffset, err := findEndOffset(ctx, p.eventsKafkaReader, p.cfg.EventsStorageReader.Topic)
+	endOffset, err := findEndOffset(ctx, p.eventsKafkaReader, p.cfg.EventsStorageReader.Topic, p.partitionID)
 	if err != nil {
 		return errors.Wrapf(err, "failed to find end offset for topic %s", p.cfg.EventsStorageReader.Topic)
 	}
@@ -323,12 +323,23 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 	}
 
 	if eventsOffset == 0 {
+		firstOffsetAfterIdleTimeout, err := findOffsetAfter(ctx, p.eventsKafkaReader, p.cfg.EventsStorageReader.Topic, p.partitionID, time.Now().Add(-p.cfg.IdleTimeout))
+		if err != nil {
+			return errors.Wrapf(err, "failed to find offset after idle timeout for topic %s", p.cfg.EventsStorageReader.Topic)
+		}
+
 		// It doesn't make sense to start consuming events from the beginning of the topic, we should read only the latest IdleTimeout minutes.
 		startConsumingEventsAtMillis := time.Now().Add(-p.cfg.IdleTimeout).UnixMilli()
 		p.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 			p.cfg.EventsStorageWriter.Topic: {p.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
 		})
-		level.Info(p.logger).Log("msg", "events offset from snapshot was zero, starting consumption at idle timeout", "topic", p.cfg.EventsStorageReader.Topic, "end_offset", startConsumingEventsAtMillis)
+
+		if firstOffsetAfterIdleTimeout >= endOffset {
+			level.Info(p.logger).Log("msg", "events offset from snapshot was zero, and there are no events after idle timeout, so not loading any event", "topic", p.cfg.EventsStorageReader.Topic, "first_offset_after_idle_timeout", firstOffsetAfterIdleTimeout, "end_offset", endOffset)
+			return nil
+		}
+
+		level.Info(p.logger).Log("msg", "events offset from snapshot was zero, starting consumption at idle timeout", "topic", p.cfg.EventsStorageReader.Topic, "first_offset_after_idle_timeout", firstOffsetAfterIdleTimeout, "end_offset", endOffset)
 	} else {
 		level.Info(p.logger).Log("msg", "starting to consume events from snapshot offset", "topic", p.cfg.EventsStorageReader.Topic, "snapshot_offset", eventsOffset, "end_offset", endOffset)
 		// If the end offset is greater than the snapshot offset, we need to start consuming events from the snapshot offset.
@@ -673,7 +684,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 			level.Error(p.logger).Log("msg", "failed to marshal snapshot file", "err", err)
 			return errors.Wrap(err, "failed to marshal snapshot file")
 		}
-		filename := fmt.Sprintf("snapshot-%d-%s-p%d.bin", time.Now().UnixNano(), p.cfg.InstanceRing.InstanceID, p.partitionID)
+		filename := snapshotFilename(time.Now(), p.cfg.InstanceRing.InstanceID, p.partitionID)
 		if err := p.snapshotsBucket.Upload(ctx, filename, bytes.NewReader(fileData)); err != nil {
 			level.Error(p.logger).Log("msg", "failed to upload snapshot file to bucket", "filename", filename, "err", err)
 			return errors.Wrap(err, "failed to upload snapshot file to bucket")
@@ -767,7 +778,7 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 // findEndOffset retrieves the end offset for the given topic using the provided Kafka client.
 // This offset is the offset of the "next" message in the topic, so if it's 0, there are no messages yet.
 // https://github.com/grafana/mimir/blob/392588b98e386c0fd7cdd549a54e5f06d3155bc2/pkg/storage/ingest/DESIGN.md
-func findEndOffset(ctx context.Context, client *kgo.Client, topic string) (int64, error) {
+func findEndOffset(ctx context.Context, client *kgo.Client, topic string, partition int32) (int64, error) {
 	readAdmin := kadm.NewClient(client)
 
 	offsets, err := readAdmin.ListEndOffsets(ctx, topic)
@@ -777,11 +788,30 @@ func findEndOffset(ctx context.Context, client *kgo.Client, topic string) (int64
 	if offsets.Error() != nil {
 		return 0, fmt.Errorf("failed to get end offsets, offsets error: %w", offsets.Error())
 	}
-	topicOffset, ok := offsets.Lookup(topic, 0)
+	topicOffset, ok := offsets.Lookup(topic, partition)
 	if !ok {
-		return 0, fmt.Errorf("failed to get end offsets, topic not found")
+		return 0, fmt.Errorf("failed to get end offsets, topic or partition not found, offsets: %#v", offsets)
 	}
 
+	return topicOffset.Offset, nil
+}
+
+// findOffsetAfter retrieves the offset of the first message after the given time for the specified topic and partition.
+// Similarly to findEndOffset, if there are no such offsets in the partition, it returns the offset of the next message that is going to be produced.
+func findOffsetAfter(ctx context.Context, client *kgo.Client, topic string, partition int32, t time.Time) (int64, error) {
+	readAdmin := kadm.NewClient(client)
+
+	offsets, err := readAdmin.ListOffsetsAfterMilli(ctx, t.UnixMilli(), topic)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get offsets after %s: %w", t, err)
+	}
+	if offsets.Error() != nil {
+		return 0, fmt.Errorf("failed to get offsets after %s, offsets error: %w", t, offsets.Error())
+	}
+	topicOffset, ok := offsets.Lookup(topic, partition)
+	if !ok {
+		return 0, fmt.Errorf("failed to get offsets after %s, topic or partition not found, offsets: %#v", t, offsets)
+	}
 	return topicOffset.Offset, nil
 }
 
@@ -804,6 +834,10 @@ func recordHeader(r *kgo.Record, headerName string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func snapshotFilename(time time.Time, instanceID string, partitionID int32) string {
+	return fmt.Sprintf("snapshot-%d-%s-p%d.bin", time.UnixNano(), instanceID, partitionID)
 }
 
 type goroutineWaitGroup struct {

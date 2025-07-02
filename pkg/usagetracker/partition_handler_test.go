@@ -288,6 +288,36 @@ func TestPartitionHandler(t *testing.T) {
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
 	})
+
+	t.Run("snapshot and events are not loaded if they are too old", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+
+		h := newPartitionHandlerTestHelper(t)
+		h.limiter[tenantID] = 3
+
+		// First partitionHandler is created, tracks some series and creates a snapshot and it's shut down.
+		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+
+		// Wait 1 second for the snapshot to expire.
+		time.Sleep(time.Second)
+
+		// New partitionHandler is created, it has IdleTimeout set to 1 second, which already passed, so old snapshot should not be loaded.
+		cfg := h.cfg
+		cfg.IdleTimeout = time.Second
+		ph := h.newHandlerForConfig(t, cfg)
+		// This partitionHandler has a slow bucket reader.
+		getCalls := atomic.NewInt64(0)
+		ph.snapshotsBucket = &getCounterBucketReader{ph.snapshotsBucket, getCalls}
+
+		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
+		requirePerTenantSeries(t, ph, map[string]uint64{}) // Should be empty.
+		require.Equal(t, int64(0), getCalls.Load(), "snapshot should not be loaded because it's too old")
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+	})
 }
 
 func requireTrackSeries(t *testing.T, p *partitionHandler, id string, series, rejected []uint64) {
