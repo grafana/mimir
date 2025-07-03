@@ -103,7 +103,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-a"
-            - "-server.grpc-max-send-msg-size-bytes=2.097152e+08"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             
             - mountPath: /certs
@@ -257,7 +257,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-b"
-            - "-server.grpc-max-send-msg-size-bytes=2.097152e+08"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             
             - mountPath: /certs
@@ -411,7 +411,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-c"
-            - "-server.grpc-max-send-msg-size-bytes=2.097152e+08"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             
             - mountPath: /certs
