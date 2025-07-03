@@ -1158,7 +1158,7 @@ func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanage
 	return ugc, err
 }
 
-func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, smtpConfig *alertmanager.SmtpConfig) error {
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, staticHeaders map[string]string, smtpConfig *alertmanager.SmtpConfig) error {
 	var grafanaConfig alertmanager.GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(cfg), &grafanaConfig); err != nil {
 		return err
@@ -1173,6 +1173,9 @@ func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTime
 		Promoted:                  isPromoted,
 		ExternalURL:               externalURL,
 		SmtpConfig:                smtpConfig,
+
+		// TODO: Remove once it's sent in SmtpConfig.
+		StaticHeaders: staticHeaders,
 	})
 	if err != nil {
 		return err

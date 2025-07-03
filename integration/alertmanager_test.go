@@ -1037,12 +1037,13 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		}
 	}`
 
+	staticHeaders := map[string]string{
+		"Header-1": "Value-1",
+		"Header-2": "Value-2",
+	}
 	smtpConfig := &alertmanager.SmtpConfig{
-		FromAddress: "test@example.com",
-		StaticHeaders: map[string]string{
-			"Header-1": "Value-1",
-			"Header-2": "Value-2",
-		},
+		FromAddress:   "test@example.com",
+		StaticHeaders: staticHeaders,
 	}
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -1076,7 +1077,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, smtpConfig)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders, smtpConfig)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
@@ -1097,7 +1098,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, smtpConfig)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders, smtpConfig)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.

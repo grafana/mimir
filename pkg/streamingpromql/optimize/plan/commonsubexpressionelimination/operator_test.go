@@ -260,7 +260,8 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+	require.NoError(t, err)
 
 	buffer := NewDuplicationBuffer(&failingOperator{series: series}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
@@ -286,8 +287,10 @@ func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
-	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
+	require.NoError(t, err)
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
+	require.NoError(t, err)
 
 	buffer := NewDuplicationBuffer(&failingOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()

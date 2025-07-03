@@ -1152,6 +1152,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
+        - -memberlist.abort-if-fast-join-fails=true
         - -memberlist.bind-port=7946
         - -memberlist.cluster-label=my-cluster-label
         - -memberlist.cluster-label-verification-disabled=true
@@ -1269,7 +1270,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
@@ -1328,7 +1329,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
@@ -1387,7 +1388,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate
@@ -1446,7 +1447,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
   updateStrategy:
     type: RollingUpdate

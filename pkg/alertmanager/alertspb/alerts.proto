@@ -45,9 +45,11 @@ message GrafanaAlertConfigDesc {
   bool default = 7;
   bool promoted = 8;
   string external_url = 9;
-  reserved 10; // static_headers, deprecated
-  reserved 11; // smtp_from, deprecated
   SmtpConfig smtp_config = 12;
+
+  // TODO: Deprecate and re-order once everything is sent in SmtpConfig.
+  map<string, string> static_headers = 10;
+  string smtp_from = 11;
 }
 
 message SmtpConfig {
