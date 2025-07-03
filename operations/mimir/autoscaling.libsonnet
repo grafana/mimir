@@ -48,6 +48,8 @@
     autoscaling_alertmanager_max_replicas: error 'you must set autoscaling_alertmanager_max_replicas in the _config',
     autoscaling_alertmanager_cpu_target_utilization: 1,
     autoscaling_alertmanager_memory_target_utilization: 1,
+
+    autoscaling_group_query_with_weight: false,
   },
 
   assert !$._config.autoscaling_querier_enabled || $._config.query_scheduler_enabled
@@ -66,7 +68,8 @@
   // queryWithWeight will multiply the metric by the weight provided if it's different from 1.
   local queryWithWeight(metric, weight) =
     if weight == 1 then metric
-    else '(%s) * %.2f' % [metric, weight],
+    else if $._config.autoscaling_group_query_with_weight then '(%s) * %.2f' % [metric, weight]
+    else '%s * %.2f' % [metric, weight],
 
 
   // replicaswithWeight will return the portion of replicas that should be applied with the weight provided.
