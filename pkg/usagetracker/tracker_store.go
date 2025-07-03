@@ -61,17 +61,6 @@ func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev
 	return t
 }
 
-func (t *trackerStore) seriesCounts() map[string]uint64 {
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
-
-	counts := make(map[string]uint64, len(t.tenants))
-	for tenantID, tenant := range t.tenants {
-		counts[tenantID] = tenant.series.Load()
-	}
-	return counts
-}
-
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
@@ -230,6 +219,18 @@ func (t *trackerStore) cleanup(now time.Time) {
 		tenant.Unlock()
 	}
 	t.mtx.Unlock()
+}
+
+// seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.
+func (t *trackerStore) seriesCountsForTests() map[string]uint64 {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
+	counts := make(map[string]uint64, len(t.tenants))
+	for tenantID, tenant := range t.tenants {
+		counts[tenantID] = tenant.series.Load()
+	}
+	return counts
 }
 
 type trackedTenant struct {
