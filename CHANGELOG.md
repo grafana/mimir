@@ -130,6 +130,7 @@
 * [BUGFIX] Block-builder-scheduler: Fix data loss bug in job assignment. #11785
 * [BUGFIX] Compactor: start tracking `-compactor.max-compaction-time` after the initial compaction planning phase, to avoid rare cases where planning takes longer than `-compactor.max-compaction-time` and so actual compaction never runs for a tenant. #11834
 * [BUGFIX] Ingester: Fix issue where ingesters can exit read-only mode during idle compactions, resulting in write errors. #11890
+* [BUGFIX] Distributor: Check `max_inflight_push_requests_bytes` before decompressing incoming requests. #11967
 
 ### Mixin
 

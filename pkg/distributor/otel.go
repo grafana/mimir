@@ -111,7 +111,6 @@ func OTLPHandler(
 			}
 			return &req.WriteRequest, cleanup, nil
 		}
-
 		req := newRequest(supplier)
 		req.contentLength = r.ContentLength
 
@@ -198,7 +197,6 @@ func newOTLPParser(
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
-
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
@@ -210,7 +208,6 @@ func newOTLPParser(
 
 				return exportReq, protoBodySize, err
 			}
-
 		case jsonContentType:
 			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()

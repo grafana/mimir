@@ -98,10 +98,10 @@ const (
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
 
-	// decompressionEstMultiplier is a multiplier used to estimate the decompressed size from compressed size of
-	// an incoming request. It prevents wasting CPU on decompression when the decompressed request will likely
-	// exceed inflight bytes limits.
-	decompressionEstMultiplier = 4
+	// Multiplier used to estimate the decompressed size from compressed size of an incoming request. It prevents
+	// decompressing requests when the distributor is near the inflight bytes limit and the uncompressed request
+	// will likely exceed the limit.
+	decompressionEstMultiplier = 6
 )
 
 // Distributor forwards appends and queries to individual ingesters.
