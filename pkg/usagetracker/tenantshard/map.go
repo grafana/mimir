@@ -118,9 +118,10 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 		// stop probing if we see an empty slot
 		matches = metaMatchEmpty(&m.index[i])
 		if matches != 0 { // insert
-			// Only check limit if we're tracking series.
-			// We don't check limit for Load events.
+			// When we're rehashing, we don't update series at all, thus it's nil.
 			if series != nil {
+				// Only check limit if we're tracking series (i.e. a TrackSeries call).
+				// We don't check limit when processing events (series accepted by other replicas or reloaded from snapshot).
 				if track && series.Load() >= limit {
 					return false, true // rejected
 				}
