@@ -9,24 +9,24 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func NewQueryPruner(ctx context.Context, logger log.Logger) ASTMapper {
-	pruner := newQueryPruner(ctx, logger)
+func NewQueryPrunerToggle(ctx context.Context, logger log.Logger) ASTMapper {
+	pruner := newQueryPrunerToggle(ctx, logger)
 	return NewASTExprMapper(pruner)
 }
 
-type queryPruner struct {
+type queryPrunerToggle struct {
 	ctx    context.Context
 	logger log.Logger
 }
 
-func newQueryPruner(ctx context.Context, logger log.Logger) *queryPruner {
-	return &queryPruner{
+func newQueryPrunerToggle(ctx context.Context, logger log.Logger) *queryPrunerToggle {
+	return &queryPrunerToggle{
 		ctx:    ctx,
 		logger: logger,
 	}
 }
 
-func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+func (pruner *queryPrunerToggle) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	if err := pruner.ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -56,7 +56,7 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 	return e.LHS, false, nil
 }
 
-func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
+func (pruner *queryPrunerToggle) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 	var lhs, rhs parser.Expr
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
@@ -83,7 +83,7 @@ func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
 // isVectorAndNumberEqual returns whether the lhs is a const vector like
 // "vector(5)"" and the right hand size is a number like "2". Also returns
 // if the values are equal.
-func (pruner *queryPruner) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, bool) {
+func (pruner *queryPrunerToggle) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, bool) {
 	lIsVector, lValue := pruner.isConstVector(lhs)
 	if !lIsVector {
 		return false, false
@@ -95,7 +95,7 @@ func (pruner *queryPruner) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, b
 	return true, rValue == lValue
 }
 
-func (pruner *queryPruner) isConstVector(expr parser.Expr) (isVector bool, value float64) {
+func (pruner *queryPrunerToggle) isConstVector(expr parser.Expr) (isVector bool, value float64) {
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
 		return pruner.isConstVector(e.Expr)
@@ -112,7 +112,7 @@ func (pruner *queryPruner) isConstVector(expr parser.Expr) (isVector bool, value
 	return false, 0
 }
 
-func (pruner *queryPruner) isNumber(expr parser.Expr) (isNumber bool, value float64) {
+func (pruner *queryPrunerToggle) isNumber(expr parser.Expr) (isNumber bool, value float64) {
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
 		return pruner.isNumber(e.Expr)
