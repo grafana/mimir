@@ -192,9 +192,11 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(o.Offset))
 
 		s.mu.Lock()
+		defer s.mu.Unlock()
+
 		ps := s.getPartitionState(o.Topic, o.Partition)
 		job, err := ps.updateEndOffset(o.Offset, now, s.cfg.JobSize)
-		s.mu.Unlock()
+
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to observe end offset", "err", err)
 			return
