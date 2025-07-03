@@ -31,6 +31,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 		FPointSize,
 		false,
 		nil,
+		nil,
 	)
 
 	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested.
@@ -84,6 +85,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 		limiter.FPointSlices,
 		FPointSize,
 		false,
+		nil,
 		nil,
 	)
 
@@ -214,6 +216,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 		1,
 		false,
 		func(_ int) int { return 123 },
+		nil,
 	)
 
 	// Test with mangling disabled.

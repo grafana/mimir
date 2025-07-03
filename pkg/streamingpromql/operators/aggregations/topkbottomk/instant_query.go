@@ -141,6 +141,10 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
+			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			if err != nil {
+				return nil, err
+			}
 
 			if math.IsNaN(next.value) {
 				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
@@ -319,6 +323,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
+	nil,
 	nil,
 )
 

@@ -1098,7 +1098,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       nodeSelector:
         workload: mimir
@@ -1159,7 +1159,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       nodeSelector:
         workload: mimir
@@ -1220,7 +1220,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       nodeSelector:
         workload: mimir
@@ -1281,7 +1281,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       nodeSelector:
         workload: mimir

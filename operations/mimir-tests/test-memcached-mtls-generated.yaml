@@ -1331,7 +1331,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       volumes:
       - name: memcached-ca-cert
@@ -1413,7 +1413,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       volumes:
       - name: memcached-ca-cert
@@ -1495,7 +1495,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       volumes:
       - name: memcached-ca-cert
@@ -1577,7 +1577,7 @@ spec:
           limits:
             memory: 250Mi
           requests:
-            cpu: 50m
+            cpu: "0.05"
             memory: 50Mi
       volumes:
       - name: memcached-ca-cert

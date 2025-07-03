@@ -83,6 +83,7 @@ var pointBucketPool = types.NewLimitingBucketedPool(
 	uint64(unsafe.Sizeof(promql.Buckets{})),
 	true,
 	mangleBuckets,
+	nil,
 )
 
 func mangleBuckets(b promql.Buckets) promql.Buckets {
@@ -102,6 +103,7 @@ var bucketSliceBucketedPool = types.NewLimitingBucketedPool(
 	limiter.BucketSlices,
 	uint64(unsafe.Sizeof(promql.Bucket{})),
 	true,
+	nil,
 	nil,
 )
 
@@ -233,7 +235,11 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	h.remainingGroups = make([]*bucketGroup, 0, len(groups))
 	for _, g := range groups {
-		seriesMetadata = append(seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, types.SeriesMetadata{Labels: g.labels.DropMetricName()})
+		if err != nil {
+			return nil, err
+		}
+
 		h.remainingGroups = append(h.remainingGroups, g.group)
 	}
 
