@@ -233,15 +233,15 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			ctx = user.InjectOrgID(ctx, request.UserID)
 
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			if parentSpanContext, valid := httpgrpcutil.ContextWithSpanFromRequest(ctx, request.HttpRequest); valid {
+			if parentSpanContext, valid := httpgrpcutil.ContextWithSpanFromRequest(ctx, request.GetHttpRequest()); valid {
 				var queueSpan trace.Span
 				ctx, queueSpan = tracer.Start(parentSpanContext, "querier_processor_runRequest")
 				defer queueSpan.End()
-				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.HttpRequest))
+				otel.GetTextMapPropagator().Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(request.GetHttpRequest()))
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
-			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest, time.Duration(request.QueueTimeNanos))
+			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.GetHttpRequest(), time.Duration(request.QueueTimeNanos))
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {

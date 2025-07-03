@@ -264,7 +264,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		case schedulerpb.ENQUEUE:
 			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 			// information, since that is a long-running request.
-			parentSpanContext, _ := httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.HttpRequest)
+			parentSpanContext, _ := httpgrpcutil.ContextWithSpanFromRequest(frontendCtx, msg.GetHttpRequest())
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
 
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
@@ -357,7 +357,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 		FrontendAddr:              frontendAddr,
 		UserID:                    msg.UserID,
 		QueryID:                   msg.QueryID,
-		Request:                   msg.HttpRequest,
+		Request:                   msg.GetHttpRequest(),
 		StatsEnabled:              msg.StatsEnabled,
 		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
@@ -508,7 +508,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			UserID:          req.UserID,
 			QueryID:         req.QueryID,
 			FrontendAddress: req.FrontendAddr,
-			HttpRequest:     req.Request,
+			Payload:         &schedulerpb.SchedulerToQuerier_HttpRequest{req.Request},
 			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
