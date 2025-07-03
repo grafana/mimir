@@ -72,7 +72,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 			},
 		},
 		{
-			name:       "series with gap in front of a query range",
+			name:       "series with gap before the end of the query range",
 			query:      "test_gap_in_front_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-20 * time.Minute),
@@ -81,7 +81,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 			},
 		},
 		{
-			name:       "series with gap behind of a query range",
+			name:       "series with gap after the start of the query range",
 			query:      "test_gap_behind_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-20 * time.Minute),
@@ -100,7 +100,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 			},
 		},
 		{
-			name: "series with gap gap in front, behind and inside of a query range",
+			name: "series with gap after the start, before the end and inside of a query range",
 
 			query:      "test_gap_in_front_behind_and_inside_series",
 			queryStart: now.Add(-60 * time.Minute),
@@ -231,7 +231,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 			},
 		},
 		{
-			name:       "series with gap in front of a query range",
+			name:       "series with gap before the end of the query range",
 			query:      "test_gap_in_front_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now,
@@ -240,7 +240,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 			},
 		},
 		{
-			name:       "series with gap behind of a query range",
+			name:       "series with gap after the start of the query range",
 			query:      "test_gap_behind_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now,
@@ -259,7 +259,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 			},
 		},
 		{
-			name:       "series with gap in front, behind and inside of a query range",
+			name:       "series with gap after the start, before the end and inside of a query range",
 			query:      "test_gap_in_front_behind_and_inside_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-5 * time.Minute),
@@ -507,7 +507,9 @@ func setupQueryFrontendSamplesStatsTest(t *testing.T, config queryFrontendCacheT
 		"-query-frontend.max-cache-freshness":               config.maxCacheFreshness.String(),
 		"-query-frontend.align-queries-with-step":           "true", // to make sure we hit the cache.
 		"-query-frontend.cache-samples-processed-stats":     "true", // to collect and cache per-step stats.
-		"-blocks-storage.tsdb.block-ranges-period":          "2h",
+		// Default block-ranges-period for integration tests is 1m.
+		// Set it to 2h to avoid getting err-mimir-sample-timestamp-too-old, so all series will be in the head block.
+		"-blocks-storage.tsdb.block-ranges-period": "2h",
 	})
 
 	// Start the query-scheduler
