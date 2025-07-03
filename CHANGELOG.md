@@ -159,7 +159,7 @@
 * [CHANGE] All: Environment variable `JAEGER_REPORTER_MAX_QUEUE_SIZE` is no longer set. Components will use OTel's default value of `2048` unless explicitly configured. You can still configure `JAEGER_REPORTER_MAX_QUEUE_SIZE` if you configure tracing using Jaeger env vars, and you can always set `OTEL_BSP_MAX_QUEUE_SIZE` OTel configuration. #11700
 * [CHANGE] Removed jaeger-agent-mixin and `_config.jaeger_agent_host` configuration. You can configure tracing using an OTLP endpoint through `_config.otlp_traces_endpoint`, see `tracing.libsonnet` for more configuration options. #11773
 * [CHANGE] Removed `ingester_stream_chunks_when_using_blocks` option. #11711
-* [CHANGE] Enable `memberlist.abort-if-fast-join-fails` for ingesters using memberlist #11931
+* [CHANGE] Enable `memberlist.abort-if-fast-join-fails` for ingesters using memberlist #11931 #11950
 * [FEATURE] Make ingest storage ingester HPA behavior configurable through `_config.ingest_storage_ingester_hpa_behavior`. #11168
 * [FEATURE] Add an alternate ingest storage HPA trigger that targets maximum owned series per pod. #11356
 * [FEATURE] Make tracing of HTTP headers as span attributes configurable through `_config.trace_request_headers`. You can exclude certain headers from being traced using `_config.trace_request_exclude_headers_list`. #11655 #11714
@@ -167,7 +167,7 @@
 * [FEATURE] Updated rollout-operator to support `OTEL_` environment variables for tracing. #11787
 * [ENHANCEMENT] Add `query_frontend_only_args` option to specify CLI flags that apply only to query-frontends but not ruler-query-frontends. #11799
 * [ENHANCEMENT] Make querier scale up (`$_config.autoscaling_querier_scaleup_percent_cap`) and scale down rates (`$_config.autoscaling_querier_scaledown_percent_cap`) configurable. #11862
-* [ENHANCEMENT] Set resource requests and limits for the Memcached Prometheus exporter. #11933
+* [ENHANCEMENT] Set resource requests and limits for the Memcached Prometheus exporter. #11933 #11946
 
 ### Mimirtool
 

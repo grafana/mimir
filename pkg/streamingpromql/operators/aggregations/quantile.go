@@ -128,6 +128,7 @@ var qGroupPool = types.NewLimitingBucketedPool(
 	uint64(unsafe.Sizeof(qGroup{})),
 	false,
 	nil,
+	nil,
 )
 
 func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error {
