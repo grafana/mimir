@@ -4,7 +4,7 @@ package functions
 
 import (
 	"context"
-	"slices"
+	"sort"
 
 	"github.com/facette/natsort"
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,10 +22,9 @@ type SortByLabel struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 
-	seriesIndex       int
-	sortedMetadata    []types.SeriesMetadata
-	originalPositions map[uint64]int
-	buffer            *operators.InstantVectorOperatorBuffer
+	seriesIndex     int
+	originalIndexes []int
+	buffer          *operators.InstantVectorOperatorBuffer
 }
 
 var _ types.InstantVectorOperator = &SortByLabel{}
@@ -53,63 +52,83 @@ func (s *SortByLabel) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	// Create a mapping of each series to its original position before sorting.
-	s.originalPositions = make(map[uint64]int, len(innerMetadata))
-	for i, series := range innerMetadata {
-		s.originalPositions[series.Labels.Hash()] = i
+	// Store the original indexes of each piece of metadata and then sort them alongside
+	// the metadata. This allows us to return series in sorted order when requesting them
+	// from the inner operator by their original index.
+	indexes := make([]int, len(innerMetadata))
+	for i := range indexes {
+		indexes[i] = i
 	}
 
-	slices.SortFunc(innerMetadata, compareForLabels(s.labels, s.descending))
+	sort.Sort(&sortableMetadata{
+		metadata:   innerMetadata,
+		indexes:    indexes,
+		labels:     s.labels,
+		descending: s.descending,
+	})
 
-	s.sortedMetadata = innerMetadata
+	s.originalIndexes = indexes
 	s.buffer = operators.NewInstantVectorOperatorBuffer(s.inner, nil, len(innerMetadata), s.memoryConsumptionTracker)
 
 	return innerMetadata, nil
 }
 
-func compareForLabels(lbls []string, descending bool) func(a, b types.SeriesMetadata) int {
-	f := func(a, b types.SeriesMetadata) int {
-		for _, lbl := range lbls {
-			val1 := a.Labels.Get(lbl)
-			val2 := b.Labels.Get(lbl)
-			if val1 == val2 {
-				continue
-			}
+type sortableMetadata struct {
+	metadata   []types.SeriesMetadata
+	indexes    []int
+	labels     []string
+	descending bool
+}
 
-			if natsort.Compare(val1, val2) {
-				return -1
-			}
+func (s *sortableMetadata) Len() int {
+	return len(s.metadata)
+}
 
-			return +1
+func (s *sortableMetadata) Swap(i, j int) {
+	s.metadata[i], s.metadata[j] = s.metadata[j], s.metadata[i]
+	s.indexes[i], s.indexes[j] = s.indexes[j], s.indexes[i]
+}
+
+func (s *sortableMetadata) Less(i, j int) bool {
+	res := s.lessInner(i, j)
+	if s.descending {
+		return !res
+	}
+	return res
+}
+
+func (s *sortableMetadata) lessInner(i, j int) bool {
+	a := s.metadata[i]
+	b := s.metadata[j]
+	for _, lbl := range s.labels {
+		val1 := a.Labels.Get(lbl)
+		val2 := b.Labels.Get(lbl)
+		if val1 == val2 {
+			continue
 		}
 
-		// If all labels provided as arguments were equal, sort by the full label set. This ensures a
-		// consistent ordering and matches the behavior of the Prometheus engine.
-		return labels.Compare(a.Labels, b.Labels)
-	}
-
-	if descending {
-		return func(a, b types.SeriesMetadata) int {
-			return -f(a, b)
+		if natsort.Compare(val1, val2) {
+			return true
 		}
+
+		return false
 	}
 
-	return f
+	// If all labels provided as arguments were equal, sort by the full label set. This ensures a
+	// consistent ordering and matches the behavior of the Prometheus engine.
+	return labels.Compare(a.Labels, b.Labels) < 0
 }
 
 func (s *SortByLabel) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if s.seriesIndex >= len(s.sortedMetadata) {
+	if s.seriesIndex >= len(s.originalIndexes) {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	// Get metadata for the series to return based on its sorted order
-	meta := s.sortedMetadata[s.seriesIndex]
-	// Get the original position in the stream of series so that we can
-	// request it from buffer which buffers series from the inner operator
-	// while they aren't needed.
-	orig := s.originalPositions[meta.Labels.Hash()]
+	// Get the original position in the stream of series so that we can request it from
+	// the buffer which buffers series from the inner operator while they aren't needed.
+	originalIndex := s.originalIndexes[s.seriesIndex]
 
-	data, err := s.buffer.GetSeries(ctx, []int{orig})
+	data, err := s.buffer.GetSeries(ctx, []int{originalIndex})
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -129,6 +148,5 @@ func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) 
 func (s *SortByLabel) Close() {
 	// Closing the buffer also closes its source operator which is our `inner`.
 	s.buffer.Close()
-	s.sortedMetadata = nil
-	s.originalPositions = nil
+	s.originalIndexes = nil
 }
