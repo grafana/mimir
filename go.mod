@@ -87,9 +87,9 @@ require (
 	go.opentelemetry.io/collector/pdata v1.34.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.35.0
-	go.opentelemetry.io/otel v1.36.0
-	go.opentelemetry.io/otel/sdk v1.36.0
-	go.opentelemetry.io/otel/trace v1.36.0
+	go.opentelemetry.io/otel v1.37.0
+	go.opentelemetry.io/otel/sdk v1.37.0
+	go.opentelemetry.io/otel/trace v1.37.0
 	go.opentelemetry.io/proto/otlp v1.6.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.32.0
@@ -250,8 +250,8 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
-	github.com/go-logfmt/logfmt v0.6.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logfmt/logfmt v0.6.0
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect
 	github.com/go-openapi/errors v0.22.0 // indirect
@@ -329,7 +329,7 @@ require (
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.128.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0
-	go.opentelemetry.io/otel/metric v1.36.0 // indirect
+	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/mod v0.25.0 // indirect
@@ -377,6 +377,12 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5
+
+// TODO: usage-tracker specific: Vendoring the "usage-tracker" branch in dskit.
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250701142333-334dc513d867
+
+// TODO: usage-tracker specific: Replacing client_golang with https://github.com/prometheus/client_golang/pull/1766
+replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e
 
 // Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
 replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb

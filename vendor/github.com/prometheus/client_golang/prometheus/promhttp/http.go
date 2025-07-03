@@ -41,11 +41,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp/internal"
 )
 
 const (
@@ -65,13 +65,7 @@ const (
 	Zstd     Compression = "zstd"
 )
 
-func defaultCompressionFormats() []Compression {
-	if internal.NewZstdWriter != nil {
-		return []Compression{Identity, Gzip, Zstd}
-	} else {
-		return []Compression{Identity, Gzip}
-	}
-}
+var defaultCompressionFormats = []Compression{Identity, Gzip, Zstd}
 
 var gzipPool = sync.Pool{
 	New: func() interface{} {
@@ -144,7 +138,7 @@ func HandlerForTransactional(reg prometheus.TransactionalGatherer, opts HandlerO
 	// Select compression formats to offer based on default or user choice.
 	var compressions []string
 	if !opts.DisableCompression {
-		offers := defaultCompressionFormats()
+		offers := defaultCompressionFormats
 		if len(opts.OfferedCompressions) > 0 {
 			offers = opts.OfferedCompressions
 		}
@@ -472,12 +466,14 @@ func negotiateEncodingWriter(r *http.Request, rw io.Writer, compressions []strin
 
 	switch selected {
 	case "zstd":
-		if internal.NewZstdWriter == nil {
-			// The content encoding was not implemented yet.
-			return nil, "", func() {}, fmt.Errorf("content compression format not recognized: %s. Valid formats are: %s", selected, defaultCompressionFormats())
+		// TODO(mrueg): Replace klauspost/compress with stdlib implementation once https://github.com/golang/go/issues/62513 is implemented.
+		z, err := zstd.NewWriter(rw, zstd.WithEncoderLevel(zstd.SpeedFastest))
+		if err != nil {
+			return nil, "", func() {}, err
 		}
-		writer, closeWriter, err := internal.NewZstdWriter(rw)
-		return writer, selected, closeWriter, err
+
+		z.Reset(rw)
+		return z, selected, func() { _ = z.Close() }, nil
 	case "gzip":
 		gz := gzipPool.Get().(*gzip.Writer)
 		gz.Reset(rw)
@@ -487,6 +483,6 @@ func negotiateEncodingWriter(r *http.Request, rw io.Writer, compressions []strin
 		return rw, selected, func() {}, nil
 	default:
 		// The content encoding was not implemented yet.
-		return nil, "", func() {}, fmt.Errorf("content compression format not recognized: %s. Valid formats are: %s", selected, defaultCompressionFormats())
+		return nil, "", func() {}, fmt.Errorf("content compression format not recognized: %s. Valid formats are: %s", selected, defaultCompressionFormats)
 	}
 }
