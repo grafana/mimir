@@ -36,6 +36,10 @@ func (v *VectorSelector) Details() proto.Message {
 	return v.VectorSelectorDetails
 }
 
+func (v *VectorSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_VECTOR_SELECTOR
+}
+
 func (v *VectorSelector) Children() []planning.Node {
 	return nil
 }

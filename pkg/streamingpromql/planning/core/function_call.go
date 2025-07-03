@@ -39,6 +39,10 @@ func (f *FunctionCall) Details() proto.Message {
 	return f.FunctionCallDetails
 }
 
+func (f *FunctionCall) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_FUNCTION_CALL
+}
+
 func (f *FunctionCall) Children() []planning.Node {
 	return f.Args
 }
