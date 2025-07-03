@@ -528,104 +528,126 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 // InstantVectorFunctionOperatorFactories contains operator factories for each function that returns an instant vector.
 //
 // Do not modify this map directly at runtime. Instead, call RegisterInstantVectorFunctionOperatorFactory.
-var InstantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
+var InstantVectorFunctionOperatorFactories = map[Function]InstantVectorFunctionOperatorFactory{
 	// absent and absent_over_time are handled as special cases.
 	//lint:sorted
-	"abs":                          InstantVectorTransformationFunctionOperatorFactory("abs", Abs),
-	"acos":                         InstantVectorTransformationFunctionOperatorFactory("acos", Acos),
-	"acosh":                        InstantVectorTransformationFunctionOperatorFactory("acosh", Acosh),
-	"asin":                         InstantVectorTransformationFunctionOperatorFactory("asin", Asin),
-	"asinh":                        InstantVectorTransformationFunctionOperatorFactory("asinh", Asinh),
-	"atan":                         InstantVectorTransformationFunctionOperatorFactory("atan", Atan),
-	"atanh":                        InstantVectorTransformationFunctionOperatorFactory("atanh", Atanh),
-	"avg_over_time":                FunctionOverRangeVectorOperatorFactory("avg_over_time", AvgOverTime),
-	"ceil":                         InstantVectorTransformationFunctionOperatorFactory("ceil", Ceil),
-	"changes":                      FunctionOverRangeVectorOperatorFactory("changes", Changes),
-	"clamp":                        ClampFunctionOperatorFactory,
-	"clamp_max":                    ClampMinMaxFunctionOperatorFactory("clamp_max", false),
-	"clamp_min":                    ClampMinMaxFunctionOperatorFactory("clamp_min", true),
-	"cos":                          InstantVectorTransformationFunctionOperatorFactory("cos", Cos),
-	"cosh":                         InstantVectorTransformationFunctionOperatorFactory("cosh", Cosh),
-	"count_over_time":              FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime),
-	"day_of_month":                 TimeTransformationFunctionOperatorFactory("day_of_month", DayOfMonth),
-	"day_of_week":                  TimeTransformationFunctionOperatorFactory("day_of_week", DayOfWeek),
-	"day_of_year":                  TimeTransformationFunctionOperatorFactory("day_of_year", DayOfYear),
-	"days_in_month":                TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth),
-	"deg":                          InstantVectorTransformationFunctionOperatorFactory("deg", Deg),
-	"delta":                        FunctionOverRangeVectorOperatorFactory("delta", Delta),
-	"deriv":                        FunctionOverRangeVectorOperatorFactory("deriv", Deriv),
-	"double_exponential_smoothing": DoubleExponentialSmoothingFunctionOperatorFactory,
-	"exp":                          InstantVectorTransformationFunctionOperatorFactory("exp", Exp),
-	"floor":                        InstantVectorTransformationFunctionOperatorFactory("floor", Floor),
-	"histogram_avg":                InstantVectorTransformationFunctionOperatorFactory("histogram_avg", HistogramAvg),
-	"histogram_count":              InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount),
-	"histogram_fraction":           HistogramFractionFunctionOperatorFactory,
-	"histogram_quantile":           HistogramQuantileFunctionOperatorFactory,
-	"histogram_stddev":             InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", HistogramStdDevStdVar(true)),
-	"histogram_stdvar":             InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", HistogramStdDevStdVar(false)),
-	"histogram_sum":                InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum),
-	"hour":                         TimeTransformationFunctionOperatorFactory("hour", Hour),
-	"idelta":                       FunctionOverRangeVectorOperatorFactory("idelta", Idelta),
-	"increase":                     FunctionOverRangeVectorOperatorFactory("increase", Increase),
-	"irate":                        FunctionOverRangeVectorOperatorFactory("irate", Irate),
-	"label_join":                   LabelJoinFunctionOperatorFactory,
-	"label_replace":                LabelReplaceFunctionOperatorFactory,
-	"last_over_time":               FunctionOverRangeVectorOperatorFactory("last_over_time", LastOverTime),
-	"ln":                           InstantVectorTransformationFunctionOperatorFactory("ln", Ln),
-	"log10":                        InstantVectorTransformationFunctionOperatorFactory("log10", Log10),
-	"log2":                         InstantVectorTransformationFunctionOperatorFactory("log2", Log2),
-	"max_over_time":                FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime),
-	"min_over_time":                FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime),
-	"minute":                       TimeTransformationFunctionOperatorFactory("minute", Minute),
-	"month":                        TimeTransformationFunctionOperatorFactory("month", Month),
-	"predict_linear":               PredictLinearFactory,
-	"present_over_time":            FunctionOverRangeVectorOperatorFactory("present_over_time", PresentOverTime),
-	"quantile_over_time":           QuantileOverTimeFactory,
-	"rad":                          InstantVectorTransformationFunctionOperatorFactory("rad", Rad),
-	"rate":                         FunctionOverRangeVectorOperatorFactory("rate", Rate),
-	"resets":                       FunctionOverRangeVectorOperatorFactory("resets", Resets),
-	"round":                        RoundFunctionOperatorFactory,
-	"sgn":                          InstantVectorTransformationFunctionOperatorFactory("sgn", Sgn),
-	"sin":                          InstantVectorTransformationFunctionOperatorFactory("sin", Sin),
-	"sinh":                         InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh),
-	"sort":                         SortOperatorFactory(false),
-	"sort_desc":                    SortOperatorFactory(true),
-	"sqrt":                         InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt),
-	"stddev_over_time":             FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime),
-	"stdvar_over_time":             FunctionOverRangeVectorOperatorFactory("stdvar_over_time", StdvarOverTime),
-	"sum_over_time":                FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime),
-	"tan":                          InstantVectorTransformationFunctionOperatorFactory("tan", Tan),
-	"tanh":                         InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh),
-	"timestamp":                    TimestampFunctionOperatorFactory,
-	"vector":                       scalarToInstantVectorOperatorFactory,
-	"year":                         TimeTransformationFunctionOperatorFactory("year", Year),
+	FUNCTION_ABS:                          InstantVectorTransformationFunctionOperatorFactory("abs", Abs),
+	FUNCTION_ACOS:                         InstantVectorTransformationFunctionOperatorFactory("acos", Acos),
+	FUNCTION_ACOSH:                        InstantVectorTransformationFunctionOperatorFactory("acosh", Acosh),
+	FUNCTION_ASIN:                         InstantVectorTransformationFunctionOperatorFactory("asin", Asin),
+	FUNCTION_ASINH:                        InstantVectorTransformationFunctionOperatorFactory("asinh", Asinh),
+	FUNCTION_ATAN:                         InstantVectorTransformationFunctionOperatorFactory("atan", Atan),
+	FUNCTION_ATANH:                        InstantVectorTransformationFunctionOperatorFactory("atanh", Atanh),
+	FUNCTION_AVG_OVER_TIME:                FunctionOverRangeVectorOperatorFactory("avg_over_time", AvgOverTime),
+	FUNCTION_CEIL:                         InstantVectorTransformationFunctionOperatorFactory("ceil", Ceil),
+	FUNCTION_CHANGES:                      FunctionOverRangeVectorOperatorFactory("changes", Changes),
+	FUNCTION_CLAMP:                        ClampFunctionOperatorFactory,
+	FUNCTION_CLAMP_MAX:                    ClampMinMaxFunctionOperatorFactory("clamp_max", false),
+	FUNCTION_CLAMP_MIN:                    ClampMinMaxFunctionOperatorFactory("clamp_min", true),
+	FUNCTION_COS:                          InstantVectorTransformationFunctionOperatorFactory("cos", Cos),
+	FUNCTION_COSH:                         InstantVectorTransformationFunctionOperatorFactory("cosh", Cosh),
+	FUNCTION_COUNT_OVER_TIME:              FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime),
+	FUNCTION_DAY_OF_MONTH:                 TimeTransformationFunctionOperatorFactory("day_of_month", DayOfMonth),
+	FUNCTION_DAY_OF_WEEK:                  TimeTransformationFunctionOperatorFactory("day_of_week", DayOfWeek),
+	FUNCTION_DAY_OF_YEAR:                  TimeTransformationFunctionOperatorFactory("day_of_year", DayOfYear),
+	FUNCTION_DAYS_IN_MONTH:                TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth),
+	FUNCTION_DEG:                          InstantVectorTransformationFunctionOperatorFactory("deg", Deg),
+	FUNCTION_DELTA:                        FunctionOverRangeVectorOperatorFactory("delta", Delta),
+	FUNCTION_DERIV:                        FunctionOverRangeVectorOperatorFactory("deriv", Deriv),
+	FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING: DoubleExponentialSmoothingFunctionOperatorFactory,
+	FUNCTION_EXP:                          InstantVectorTransformationFunctionOperatorFactory("exp", Exp),
+	FUNCTION_FLOOR:                        InstantVectorTransformationFunctionOperatorFactory("floor", Floor),
+	FUNCTION_HISTOGRAM_AVG:                InstantVectorTransformationFunctionOperatorFactory("histogram_avg", HistogramAvg),
+	FUNCTION_HISTOGRAM_COUNT:              InstantVectorTransformationFunctionOperatorFactory("histogram_count", HistogramCount),
+	FUNCTION_HISTOGRAM_FRACTION:           HistogramFractionFunctionOperatorFactory,
+	FUNCTION_HISTOGRAM_QUANTILE:           HistogramQuantileFunctionOperatorFactory,
+	FUNCTION_HISTOGRAM_STDDEV:             InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", HistogramStdDevStdVar(true)),
+	FUNCTION_HISTOGRAM_STDVAR:             InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", HistogramStdDevStdVar(false)),
+	FUNCTION_HISTOGRAM_SUM:                InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum),
+	FUNCTION_HOUR:                         TimeTransformationFunctionOperatorFactory("hour", Hour),
+	FUNCTION_IDELTA:                       FunctionOverRangeVectorOperatorFactory("idelta", Idelta),
+	FUNCTION_INCREASE:                     FunctionOverRangeVectorOperatorFactory("increase", Increase),
+	FUNCTION_IRATE:                        FunctionOverRangeVectorOperatorFactory("irate", Irate),
+	FUNCTION_LABEL_JOIN:                   LabelJoinFunctionOperatorFactory,
+	FUNCTION_LABEL_REPLACE:                LabelReplaceFunctionOperatorFactory,
+	FUNCTION_LAST_OVER_TIME:               FunctionOverRangeVectorOperatorFactory("last_over_time", LastOverTime),
+	FUNCTION_LN:                           InstantVectorTransformationFunctionOperatorFactory("ln", Ln),
+	FUNCTION_LOG10:                        InstantVectorTransformationFunctionOperatorFactory("log10", Log10),
+	FUNCTION_LOG2:                         InstantVectorTransformationFunctionOperatorFactory("log2", Log2),
+	FUNCTION_MAX_OVER_TIME:                FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime),
+	FUNCTION_MIN_OVER_TIME:                FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime),
+	FUNCTION_MINUTE:                       TimeTransformationFunctionOperatorFactory("minute", Minute),
+	FUNCTION_MONTH:                        TimeTransformationFunctionOperatorFactory("month", Month),
+	FUNCTION_PREDICT_LINEAR:               PredictLinearFactory,
+	FUNCTION_PRESENT_OVER_TIME:            FunctionOverRangeVectorOperatorFactory("present_over_time", PresentOverTime),
+	FUNCTION_QUANTILE_OVER_TIME:           QuantileOverTimeFactory,
+	FUNCTION_RAD:                          InstantVectorTransformationFunctionOperatorFactory("rad", Rad),
+	FUNCTION_RATE:                         FunctionOverRangeVectorOperatorFactory("rate", Rate),
+	FUNCTION_RESETS:                       FunctionOverRangeVectorOperatorFactory("resets", Resets),
+	FUNCTION_ROUND:                        RoundFunctionOperatorFactory,
+	FUNCTION_SGN:                          InstantVectorTransformationFunctionOperatorFactory("sgn", Sgn),
+	FUNCTION_SIN:                          InstantVectorTransformationFunctionOperatorFactory("sin", Sin),
+	FUNCTION_SINH:                         InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh),
+	FUNCTION_SORT:                         SortOperatorFactory(false),
+	FUNCTION_SORT_DESC:                    SortOperatorFactory(true),
+	FUNCTION_SQRT:                         InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt),
+	FUNCTION_STDDEV_OVER_TIME:             FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime),
+	FUNCTION_STDVAR_OVER_TIME:             FunctionOverRangeVectorOperatorFactory("stdvar_over_time", StdvarOverTime),
+	FUNCTION_SUM_OVER_TIME:                FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime),
+	FUNCTION_TAN:                          InstantVectorTransformationFunctionOperatorFactory("tan", Tan),
+	FUNCTION_TANH:                         InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh),
+	FUNCTION_TIMESTAMP:                    TimestampFunctionOperatorFactory,
+	FUNCTION_VECTOR:                       scalarToInstantVectorOperatorFactory,
+	FUNCTION_YEAR:                         TimeTransformationFunctionOperatorFactory("year", Year),
 }
 
-func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
-	if _, exists := InstantVectorFunctionOperatorFactories[functionName]; exists {
-		return fmt.Errorf("function '%s' has already been registered", functionName)
+func RegisterInstantVectorFunctionOperatorFactory(function Function, name string, factory InstantVectorFunctionOperatorFactory) error {
+	if existing, exists := functionsToPromQLNames[function]; exists && name != existing {
+		return fmt.Errorf("function with ID %d has already been registered with a different name: %s", function, existing)
 	}
 
-	InstantVectorFunctionOperatorFactories[functionName] = factory
+	if _, exists := InstantVectorFunctionOperatorFactories[function]; exists {
+		return fmt.Errorf("function '%s' (%d) has already been registered", name, function)
+	}
+
+	if existing, exists := promQLNamesToFunctions[name]; exists {
+		return fmt.Errorf("function with name '%s' has already been registered as a function with ID %d returning a different type of result", name, existing)
+	}
+
+	InstantVectorFunctionOperatorFactories[function] = factory
+	promQLNamesToFunctions[name] = function
+	functionsToPromQLNames[function] = name
+
 	return nil
 }
 
 // ScalarFunctionOperatorFactories contains operator factories for each function that returns a scalar.
 //
 // Do not modify this map directly at runtime. Instead, call RegisterScalarFunctionOperatorFactory.
-var ScalarFunctionOperatorFactories = map[string]ScalarFunctionOperatorFactory{
+var ScalarFunctionOperatorFactories = map[Function]ScalarFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
-	"pi":     piOperatorFactory,
-	"scalar": instantVectorToScalarOperatorFactory,
-	"time":   timeOperatorFactory,
+	FUNCTION_PI:     piOperatorFactory,
+	FUNCTION_SCALAR: instantVectorToScalarOperatorFactory,
+	FUNCTION_TIME:   timeOperatorFactory,
 }
 
-func RegisterScalarFunctionOperatorFactory(functionName string, factory ScalarFunctionOperatorFactory) error {
-	if _, exists := ScalarFunctionOperatorFactories[functionName]; exists {
-		return fmt.Errorf("function '%s' has already been registered", functionName)
+func RegisterScalarFunctionOperatorFactory(function Function, name string, factory ScalarFunctionOperatorFactory) error {
+	if existing, exists := functionsToPromQLNames[function]; exists && name != existing {
+		return fmt.Errorf("function with ID %d has already been registered with a different name: %s", function, existing)
 	}
 
-	ScalarFunctionOperatorFactories[functionName] = factory
+	if _, exists := ScalarFunctionOperatorFactories[function]; exists {
+		return fmt.Errorf("function '%s' (%d) has already been registered", name, function)
+	}
+
+	if existing, exists := promQLNamesToFunctions[name]; exists {
+		return fmt.Errorf("function with name '%s' has already been registered as a function with ID %d returning a different type of result", name, existing)
+	}
+
+	ScalarFunctionOperatorFactories[function] = factory
+	promQLNamesToFunctions[name] = function
+	functionsToPromQLNames[function] = name
+
 	return nil
 }
 

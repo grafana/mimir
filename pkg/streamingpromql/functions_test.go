@@ -110,7 +110,8 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"year":                         `year({__name__=~"float.*"})`,
 	}
 
-	for name := range functions.InstantVectorFunctionOperatorFactories {
+	for f := range functions.InstantVectorFunctionOperatorFactories {
+		name := f.PromQLName()
 		expr, haveExpression := expressions[name]
 
 		if expr == "<skip>" {

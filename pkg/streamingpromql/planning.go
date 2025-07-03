@@ -306,7 +306,9 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.Call:
-		if !isKnownFunction(expr.Func.Name) {
+		fnc, ok := isKnownFunction(expr.Func.Name)
+
+		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
 		}
 
@@ -324,15 +326,15 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		f := &core.FunctionCall{
 			Args: args,
 			FunctionCallDetails: &core.FunctionCallDetails{
-				FunctionName:       expr.Func.Name,
+				Function:           fnc,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}
 
-		switch expr.Func.Name {
-		case "absent", "absent_over_time":
+		switch fnc {
+		case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
-		case "timestamp":
+		case functions.FUNCTION_TIMESTAMP:
 			vs, isVectorSelector := args[0].(*core.VectorSelector)
 			if isVectorSelector {
 				vs.VectorSelectorDetails.ReturnSampleTimestamps = true
@@ -416,16 +418,25 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	}
 }
 
-func isKnownFunction(name string) bool {
-	if _, ok := functions.InstantVectorFunctionOperatorFactories[name]; ok {
-		return true
+func isKnownFunction(name string) (functions.Function, bool) {
+	f, ok := functions.FromPromQLName(name)
+	if !ok {
+		return functions.FUNCTION_UNKNOWN, false
 	}
 
-	if _, ok := functions.ScalarFunctionOperatorFactories[name]; ok {
-		return true
+	if _, ok := functions.InstantVectorFunctionOperatorFactories[f]; ok {
+		return f, true
 	}
 
-	return name == "absent" || name == "absent_over_time"
+	if _, ok := functions.ScalarFunctionOperatorFactories[f]; ok {
+		return f, true
+	}
+
+	if f == functions.FUNCTION_ABSENT || f == functions.FUNCTION_ABSENT_OVER_TIME {
+		return f, true
+	}
+
+	return functions.FUNCTION_UNKNOWN, false
 }
 
 // Materialize converts a query plan into an executable query.
