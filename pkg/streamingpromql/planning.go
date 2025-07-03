@@ -306,7 +306,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.Call:
-		fnc, ok := isKnownFunction(expr.Func.Name)
+		fnc, ok := findFunction(expr.Func.Name)
 
 		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
@@ -418,17 +418,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	}
 }
 
-func isKnownFunction(name string) (functions.Function, bool) {
+func findFunction(name string) (functions.Function, bool) {
 	f, ok := functions.FromPromQLName(name)
 	if !ok {
 		return functions.FUNCTION_UNKNOWN, false
 	}
 
-	if _, ok := functions.InstantVectorFunctionOperatorFactories[f]; ok {
-		return f, true
-	}
-
-	if _, ok := functions.ScalarFunctionOperatorFactories[f]; ok {
+	if _, ok := functions.RegisteredFunctions[f]; ok {
 		return f, true
 	}
 

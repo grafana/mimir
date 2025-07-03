@@ -83,42 +83,28 @@ func (f *FunctionCall) ChildrenLabels() []string {
 }
 
 func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	instantVectorFactory, ok := functions.InstantVectorFunctionOperatorFactories[f.Function]
-	if ok {
-		var absentLabels labels.Labels
-
-		if f.Function == functions.FUNCTION_ABSENT || f.Function == functions.FUNCTION_ABSENT_OVER_TIME {
-			absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
-		}
-
-		o, err := instantVectorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
-		if err != nil {
-			return nil, err
-		}
-
-		return planning.NewSingleUseOperatorFactory(o), nil
+	fnc, ok := functions.RegisteredFunctions[f.Function]
+	if !ok {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
 	}
 
-	scalarFactory, ok := functions.ScalarFunctionOperatorFactories[f.Function]
-	if ok {
-		o, err := scalarFactory(children, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
-		if err != nil {
-			return nil, err
-		}
+	var absentLabels labels.Labels
 
-		return planning.NewSingleUseOperatorFactory(o), nil
+	if f.Function == functions.FUNCTION_ABSENT || f.Function == functions.FUNCTION_ABSENT_OVER_TIME {
+		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
-	return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
+	o, err := fnc.OperatorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	return planning.NewSingleUseOperatorFactory(o), nil
 }
 
 func (f *FunctionCall) ResultType() (parser.ValueType, error) {
-	if _, ok := functions.InstantVectorFunctionOperatorFactories[f.Function]; ok {
-		return parser.ValueTypeVector, nil
-	}
-
-	if _, ok := functions.ScalarFunctionOperatorFactories[f.Function]; ok {
-		return parser.ValueTypeScalar, nil
+	if fnc, ok := functions.RegisteredFunctions[f.Function]; ok {
+		return fnc.ReturnType, nil
 	}
 
 	return parser.ValueTypeNone, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
