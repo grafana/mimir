@@ -38,7 +38,7 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		Type:                      schedulerpb.ENQUEUE,
 		QueryID:                   req.queryID,
 		UserID:                    req.userID,
-		HttpRequest:               req.request,
+		Payload:                   &schedulerpb.FrontendToScheduler_HttpRequest{req.request},
 		FrontendAddress:           frontendAddr,
 		StatsEnabled:              req.statsEnabled,
 		AdditionalQueueDimensions: addlQueueDims,
