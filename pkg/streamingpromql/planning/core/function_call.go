@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -84,7 +85,13 @@ func (f *FunctionCall) ChildrenLabels() []string {
 func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	instantVectorFactory, ok := functions.InstantVectorFunctionOperatorFactories[f.Function]
 	if ok {
-		o, err := instantVectorFactory(children, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
+		var absentLabels labels.Labels
+
+		if f.Function == functions.FUNCTION_ABSENT || f.Function == functions.FUNCTION_ABSENT_OVER_TIME {
+			absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
+		}
+
+		o, err := instantVectorFactory(children, absentLabels, params.MemoryConsumptionTracker, params.Annotations, f.ExpressionPosition.ToPrometheusType(), timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -102,43 +109,11 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 		return planning.NewSingleUseOperatorFactory(o), nil
 	}
 
-	// absent and absent_over_time need special handling because we need to pass the series labels to their operators.
-	switch f.Function {
-	case functions.FUNCTION_ABSENT:
-		if len(children) != 1 {
-			return nil, fmt.Errorf("expected exactly 1 parameter for '%v', got %v", f.Function.PromQLName(), len(children))
-		}
-
-		inner, ok := children[0].(types.InstantVectorOperator)
-		if !ok {
-			return nil, fmt.Errorf("expected InstantVectorOperator as parameter of '%v' function call, got %T", f.Function.PromQLName(), children[0])
-		}
-
-		o := functions.NewAbsent(inner, mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels), timeRange, params.MemoryConsumptionTracker, f.ExpressionPosition.ToPrometheusType())
-		return planning.NewSingleUseOperatorFactory(o), nil
-
-	case functions.FUNCTION_ABSENT_OVER_TIME:
-		if len(children) != 1 {
-			return nil, fmt.Errorf("expected exactly 1 parameter for '%v', got %v", f.Function.PromQLName(), len(children))
-		}
-
-		inner, ok := children[0].(types.RangeVectorOperator)
-		if !ok {
-			return nil, fmt.Errorf("expected InstantVectorOperator as parameter of '%v' function call, got %T", f.Function.PromQLName(), children[0])
-		}
-
-		o := functions.NewAbsentOverTime(inner, mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels), timeRange, params.MemoryConsumptionTracker, f.ExpressionPosition.ToPrometheusType())
-		return planning.NewSingleUseOperatorFactory(o), nil
-
-	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
-	}
+	return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
 }
 
 func (f *FunctionCall) ResultType() (parser.ValueType, error) {
-	// absent and absent_over_time are special cases that aren't present in InstantVectorFunctionOperatorFactories,
-	// so we have to handle them specifically.
-	if _, ok := functions.InstantVectorFunctionOperatorFactories[f.Function]; ok || f.Function == functions.FUNCTION_ABSENT || f.Function == functions.FUNCTION_ABSENT_OVER_TIME {
+	if _, ok := functions.InstantVectorFunctionOperatorFactories[f.Function]; ok {
 		return parser.ValueTypeVector, nil
 	}
 
