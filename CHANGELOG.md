@@ -149,6 +149,7 @@
 * [ENHANCEMENT] Dashboards: Add "per-query memory consumption" and "fallback to Prometheus' query engine" panels to the Queries dashboard. #11626
 * [ENHANCEMENT] Alerts: Add `MimirGoThreadsTooHigh` alert. #11836 #11845
 * [ENHANCEMENT] Dashboards: Add autoscaling row for ruler query-frontends to `Mimir / Remote ruler reads` dashboard. #11838
+* [CHANGE] Alerts: Replace namespace with job label in golang_alerts. #11957
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
 * [BUGFIX] Dashboards: fix Query-scheduler RPS panel legend in "Mimir / Reads". #11515
 * [BUGFIX] Recording rules: fix `cluster_namespace_deployment:actual_replicas:count` recording rule when there's a mix on single-zone and multi-zone deployments. #11287

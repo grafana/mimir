@@ -975,7 +975,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             alert: $.alertName('GoThreadsTooHigh'),
             expr: |||
               # We filter by the namespace because go_threads can be very high cardinality in a large organization.
-              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (go_threads{namespace=~".*(cortex|mimir).*"} > %(threshold)s)
+              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (go_threads{job=~".*(cortex|mimir).*"} > %(threshold)s)
 
               # Further filter on namespaces actually running Mimir.
               and on (%(alert_aggregation_labels)s) (count by (%(alert_aggregation_labels)s) (cortex_build_info))
