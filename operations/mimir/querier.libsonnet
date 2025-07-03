@@ -28,7 +28,10 @@
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
       'mem-ballast-size-bytes': 1 << 28,  // 256M
-    },
+    } +
+    (if 'store_gateway_grpc_max_query_response_size_bytes' in $._config then {
+      'querier.store-gateway-client.grpc-max-recv-msg-size': $._config.store_gateway_grpc_max_query_response_size_bytes,
+    } else {}),
 
   // CLI flags that are applied only to queriers, and not ruler-queriers.
   // Values take precedence over querier_args.
