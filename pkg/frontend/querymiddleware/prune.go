@@ -17,15 +17,17 @@ import (
 type pruneMiddleware struct {
 	next   MetricsQueryHandler
 	logger log.Logger
+	cfg    Config
 }
 
 // newPruneMiddleware creates a middleware that optimises queries by rewriting them to prune away
 // unnecessary computations.
-func newPruneMiddleware(logger log.Logger) MetricsQueryMiddleware {
+func newPruneMiddleware(logger log.Logger, cfg Config) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &pruneMiddleware{
 			next:   next,
 			logger: logger,
+			cfg:    cfg,
 		}
 	})
 }
@@ -62,12 +64,24 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 		return "", false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 	origQueryString := expr.String()
+	prunedQuery := expr
 
-	mapper := astmapper.NewQueryPruner(ctx, p.logger)
-	prunedQuery, err := mapper.Map(expr)
-	if err != nil {
-		return "", false, err
+	if p.cfg.PruneQueriesToggle {
+		mapperToggle := astmapper.NewQueryPrunerToggle(ctx, p.logger)
+		prunedQuery, err = mapperToggle.Map(prunedQuery)
+		if err != nil {
+			return "", false, err
+		}
 	}
+
+	if p.cfg.PruneQueriesMatcherPropagate {
+		mapperMatcherPropagate := astmapper.NewQueryPrunerMatcherPropagate(ctx, p.logger)
+		prunedQuery, err = mapperMatcherPropagate.Map(prunedQuery)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
 	prunedQueryString := prunedQuery.String()
 
 	return prunedQueryString, origQueryString != prunedQueryString, nil
