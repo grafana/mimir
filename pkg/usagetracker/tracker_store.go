@@ -81,7 +81,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 	now := clock.ToMinutes(timeNow)
 
 	// We don't pool rejectedRefs because we don't have full control of its lifecycle.
-	createdRefs := refsPool.Get()
+	createdRefs := refsPool.Get()[:0]
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
