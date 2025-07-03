@@ -156,9 +156,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
             {{- end }}
-            {{- if .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}
             - "-server.grpc-max-send-msg-size-bytes={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
-            {{- end }}
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}

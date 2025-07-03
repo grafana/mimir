@@ -35,10 +35,9 @@
 
       // Relax pressure on KV store when running at scale.
       'store-gateway.sharding-ring.heartbeat-period': '1m',
-    } +
-    (if 'store_gateway_grpc_max_query_response_size_bytes' in $._config then {
+
       'server.grpc-max-send-msg-size-bytes': $._config.store_gateway_grpc_max_query_response_size_bytes,
-    } else {}) +
+    } +
     (if !$._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': false,
      } else {}) +
