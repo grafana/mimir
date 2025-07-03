@@ -304,11 +304,11 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	var skipped bool
 	defer func() {
 		duration := time.Since(start)
-		c.metrics.conversionDuration.Observe(duration.Seconds())
+		c.metrics.conversionDuration.WithLabelValues(userID).Observe(duration.Seconds())
 		if err != nil {
-			c.metrics.blocksConvertedFailed.Inc()
+			c.metrics.blocksConvertedFailed.WithLabelValues(userID).Inc()
 		} else if !skipped {
-			c.metrics.blocksConverted.Inc()
+			c.metrics.blocksConverted.WithLabelValues(userID).Inc()
 		}
 	}()
 
