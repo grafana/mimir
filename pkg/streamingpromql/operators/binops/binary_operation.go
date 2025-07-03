@@ -64,6 +64,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
 			lb.Keep(vectorMatching.MatchingLabels...)
+			lb.Del(labels.MetricName)
 			return lb.Labels()
 		}
 	}
