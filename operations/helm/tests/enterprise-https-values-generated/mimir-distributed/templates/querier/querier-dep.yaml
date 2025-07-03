@@ -51,6 +51,7 @@ spec:
             - "-target=querier"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size=2.097152e+08"
           volumeMounts:
               
             - mountPath: /certs
