@@ -68,6 +68,6 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 		jobGapDetected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_blockbuilder_scheduler_job_gap_detected",
 			Help: "The number of times an unexpected gap was detected between jobs.",
-		}, []string{"offset"}),
+		}, []string{"offset_type", "partition"}),
 	}
 }

@@ -157,10 +157,10 @@ func TestStartup(t *testing.T) {
 	require.NotZero(t, a1spec)
 	require.Equal(t, "ingest/65/300", a1key.id)
 
-	requireGaps(t, sched.register.(*prometheus.Registry), 0, 0)
+	requireGaps(t, sched.register.(*prometheus.Registry), 65, 0, 0)
 }
 
-func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int, msgAndArgs ...any) {
+func requireGaps(t *testing.T, reg *prometheus.Registry, partition int32, planned, committed int, msgAndArgs ...any) {
 	t.Helper()
 
 	var b strings.Builder
@@ -172,11 +172,11 @@ func requireGaps(t *testing.T, reg *prometheus.Registry, planned, committed int,
 
 		if planned != 0 {
 			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset=\"planned\"} %d\n", planned))
+				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"planned\",partition=\"%d\"} %d\n", partition, planned))
 		}
 		if committed != 0 {
 			b.WriteString(fmt.Sprintf(
-				"cortex_blockbuilder_scheduler_job_gap_detected{offset=\"committed\"} %d\n", committed))
+				"cortex_blockbuilder_scheduler_job_gap_detected{offset_type=\"committed\",partition=\"%d\"} %d\n", partition, committed))
 		}
 	}
 
@@ -1135,7 +1135,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 3, sched.jobs.count())
 	assert.Equal(t, int64(50), pt.planned.offset())
 
-	requireGaps(t, reg, 0, 0)
+	requireGaps(t, reg, part, 0, 0)
 
 	// this one introduces a gap:
 	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 60, EndOffset: 70})
@@ -1148,7 +1148,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 4, sched.jobs.count(), "a gap should not interfere with job queueing")
 	assert.Equal(t, int64(70), pt.planned.offset())
 
-	requireGaps(t, reg, 1, 0)
+	requireGaps(t, reg, part, 1, 0)
 
 	// the gap may not be the first job:
 	pt.addPendingJob(&schedulerpb.JobSpec{Topic: "ingest", Partition: part, StartOffset: 70, EndOffset: 80})
@@ -1164,7 +1164,7 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 	assert.Equal(t, 7, sched.jobs.count(), "a gap should not interfere with job queueing")
 	assert.Equal(t, int64(120), pt.planned.offset())
 
-	requireGaps(t, reg, 2, 0)
+	requireGaps(t, reg, part, 2, 0)
 
 	// Now simulate completing these jobs and expect commit gaps where appropriate.
 	expectedStart := int64(0)
@@ -1183,6 +1183,6 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 		}
 
 		expectedStart = spec.EndOffset
-		requireGaps(t, reg, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
+		requireGaps(t, reg, part, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
 	}
 }

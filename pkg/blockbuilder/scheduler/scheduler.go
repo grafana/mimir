@@ -955,15 +955,17 @@ type advancingOffset struct {
 // metric is incremented.
 func (o *advancingOffset) advance(key jobKey, spec schedulerpb.JobSpec) {
 	if o.beyondSpec(spec) {
-		level.Warn(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
+		// Frequent, and expected.
+		level.Debug(o.logger).Log("msg", "ignoring historical job", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
 		return
 	}
+
 	if !o.validNextSpec(spec) {
 		// Gap detected.
 		level.Warn(o.logger).Log("msg", "gap detected in offset advancement", "offset_name", o.name, "job_id", key.id, "epoch", key.epoch,
 			"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", o.off)
-		o.metrics.jobGapDetected.WithLabelValues(o.name).Inc()
+		o.metrics.jobGapDetected.WithLabelValues(o.name, fmt.Sprint(spec.Partition)).Inc()
 	}
 
 	o.off = spec.EndOffset
