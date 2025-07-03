@@ -430,6 +430,10 @@ func isKnownFunction(name string) bool {
 
 // Materialize converts a query plan into an executable query.
 func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
+	return e.MaterializeNode(ctx, plan, queryable, opts, plan.Root, plan.TimeRange)
+}
+
+func (e *Engine) MaterializeNode(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts, node planning.Node, timeRange types.QueryTimeRange) (promql.Query, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
@@ -471,7 +475,7 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		q.statement.Interval = 0
 	}
 
-	q.root, err = q.convertNodeToOperator(plan.Root, plan.TimeRange)
+	q.root, err = q.convertNodeToOperator(node, timeRange)
 	if err != nil {
 		return nil, err
 	}
