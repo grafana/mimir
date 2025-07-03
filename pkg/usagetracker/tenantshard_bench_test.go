@@ -34,12 +34,12 @@ func BenchmarkTenantShard(b *testing.B) {
 }
 
 type tenantShardMap interface {
-	Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool)
+	Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64, track bool) (created, rejected bool)
 }
 
 func benchmarkWithSeries[T tenantShardMap](b *testing.B, m T, keys []uint64) {
 	series := atomic.NewUint64(0)
-	limit := uint64(2 * len(keys))
+	limit := atomic.NewUint64(uint64(2 * len(keys)))
 	minutes := clock.Minutes(0)
 	for _, s := range keys {
 		_, _ = m.Put(s, minutes, series, limit, true)

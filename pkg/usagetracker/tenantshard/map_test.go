@@ -16,7 +16,7 @@ func TestMap(t *testing.T) {
 	series := atomic.NewUint64(0)
 	const events = 5
 	const seriesPerEvent = 5
-	limit := uint64(events * seriesPerEvent)
+	limit := atomic.NewUint64(events * seriesPerEvent)
 
 	// Start small, let rehashing happen.
 	m := New(seriesPerEvent, 0, Shards)
@@ -72,7 +72,7 @@ func TestMapValues(t *testing.T) {
 		key := rand.Uint64() &^ valueMask // we can only store values of this shard.
 		val := clock.Minutes(i) % valueMask
 		stored[key] = val
-		m.Put(key, val, total, 0, false)
+		m.Put(key, val, total, nil, false)
 	}
 	require.Equal(t, len(stored), m.count())
 	require.Equal(t, len(stored), int(total.Load()))

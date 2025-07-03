@@ -37,6 +37,8 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 		require.Empty(t, rejected)
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker.seriesCountsForTests())
 	}
+	// Update limits because we're getting close to the limit.
+	tracker.updateLimits()
 	now = now.Add(idleTimeout / 2)
 	{
 		// Push 2 more series, one is accepted, one is rejected.
@@ -72,6 +74,72 @@ func TestTrackerStore_HappyCase(t *testing.T) {
 	}
 }
 
+func TestTrackerStore_SeriesCreationRateLimit(t *testing.T) {
+	const idleTimeout = 20 * time.Minute
+	const testUser1 = "user1"
+	limits := limiterMock{testUser1: 10}
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+	tracker := newTrackerStore(idleTimeout, log.NewNopLogger(), limits, noopEvents{})
+
+	{
+		// Push 10 series, 5 of them are rejected because current limit is 5.
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		require.NoError(t, err)
+		require.Len(t, rejected, 5)
+		require.Equal(t, map[string]uint64{testUser1: 5}, tracker.seriesCountsForTests())
+	}
+
+	{
+		// Push them again, same amount is rejected.
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		require.NoError(t, err)
+		require.Len(t, rejected, 5)
+		require.Equal(t, map[string]uint64{testUser1: 5}, tracker.seriesCountsForTests())
+	}
+
+	// Update limits, this sets the limit at 7.5=8
+	tracker.updateLimits()
+	now = now.Add(idleTimeout / 2)
+
+	{
+		// Push 10, 2 of them are rejected because current limit is 8.
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		require.NoError(t, err)
+		require.Len(t, rejected, 2)
+		require.Equal(t, map[string]uint64{testUser1: 8}, tracker.seriesCountsForTests())
+	}
+	{
+		// Push them again, same amount is rejected.
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		require.NoError(t, err)
+		require.Len(t, rejected, 2)
+		require.Equal(t, map[string]uint64{testUser1: 8}, tracker.seriesCountsForTests())
+	}
+
+	// Update limits, this sets the limit at 9
+	tracker.updateLimits()
+	now = now.Add(idleTimeout / 2)
+	{
+		// Push them again, none are rejected now.
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		require.NoError(t, err)
+		require.Len(t, rejected, 1)
+		require.Equal(t, map[string]uint64{testUser1: 9}, tracker.seriesCountsForTests())
+	}
+
+	// Update limits, this sets the limit at 10
+	tracker.updateLimits()
+	now = now.Add(idleTimeout / 2)
+	{
+		// Push them again, none are rejected now.
+		rejected, err := tracker.trackSeries(context.Background(), testUser1, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, now)
+		require.NoError(t, err)
+		require.Empty(t, rejected)
+		require.Equal(t, map[string]uint64{testUser1: 10}, tracker.seriesCountsForTests())
+	}
+}
+
 func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	const idleTimeout = 20 * time.Minute
 	const testUser1 = "user1"
@@ -97,6 +165,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCountsForTests())
 		requireTrackersSameData(t, tracker1, tracker2)
 	}
+	tracker1.updateLimits()
 	now = now.Add(idleTimeout / 4)
 	{
 		// Push 2 more series to the tracker 1.
@@ -107,6 +176,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 		require.Equal(t, map[string]uint64{testUser1: 3}, tracker1.seriesCountsForTests())
 		require.Equal(t, map[string]uint64{testUser1: 2}, tracker2.seriesCountsForTests())
 	}
+	tracker2.updateLimits()
 	now = now.Add(idleTimeout / 4)
 	{
 		// Push 2 different series to the tracker 2.
@@ -403,6 +473,8 @@ func TestTrackerStore_PrometheusCollector(t *testing.T) {
 type limiterMock map[string]uint64
 
 func (l limiterMock) localSeriesLimit(userID string) uint64 { return l[userID] }
+
+func (l limiterMock) zonesCount() uint64 { return 2 }
 
 type noopEvents struct{}
 

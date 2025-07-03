@@ -89,7 +89,7 @@ func New(sz uint32, shard uint8, totalShards uint8) (m *Map) {
 // Put inserts |key| and |value| into the map.
 // Series is incremented if it's not nil and it's below limit, unless track is false.
 // If track is false, then the value is only updated if it's greater than the current value.
-func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit uint64, track bool) (created, rejected bool) {
+func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64, track bool) (created, rejected bool) {
 	if m.resident >= m.limit {
 		m.rehash(m.nextSize())
 	}
@@ -122,7 +122,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 			if series != nil {
 				// Only check limit if we're tracking series (i.e. a TrackSeries call).
 				// We don't check limit when processing events (series accepted by other replicas or reloaded from snapshot).
-				if track && series.Load() >= limit {
+				if track && series.Load() >= limit.Load() {
 					return false, true // rejected
 				}
 				series.Inc()
@@ -189,7 +189,7 @@ func (m *Map) rehash(n uint32) {
 				continue
 			}
 			// We don't need to mask the key here, data suffix of the key is always masked out.
-			m.Put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, 0, false)
+			m.Put(datas[g][s], clock.Minutes(datas[g][s]&valueMask^valueMask), nil, nil, false)
 		}
 	}
 }

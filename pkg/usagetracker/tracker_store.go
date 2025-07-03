@@ -46,6 +46,7 @@ type trackerStore struct {
 // limiter provides the local series limit for a tenant.
 type limiter interface {
 	localSeriesLimit(userID string) uint64
+	zonesCount() uint64
 }
 
 // events provides an abstraction to publish usage-tracker events.
@@ -67,8 +68,7 @@ func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
-	limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
-	tenant := t.getOrCreateTenant(tenantID, limit)
+	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
 	// Sort series by shard.
@@ -89,7 +89,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 			m := tenant.shards[shard]
 			m.Lock()
 			for _, ref := range series[i0:i] {
-				if created, rejected := m.Put(ref, now, tenant.series, limit, true); created {
+				if created, rejected := m.Put(ref, now, tenant.series, tenant.currentLimit, true); created {
 					createdRefs = append(createdRefs, ref)
 				} else if rejected {
 					rejectedRefs = append(rejectedRefs, ref)
@@ -122,8 +122,7 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 		return
 	}
 
-	limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
-	tenant := t.getOrCreateTenant(tenantID, limit)
+	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
 
 	// Sort series by shard. We're going to accept all of them, so we can start on shard 0 here.
@@ -137,7 +136,7 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 			m := tenant.shards[shard]
 			m.Lock()
 			for _, ref := range series[i0:i] {
-				_, _ = m.Put(ref, timestamp, tenant.series, limit, false)
+				_, _ = m.Put(ref, timestamp, tenant.series, nil, false)
 			}
 			m.Unlock()
 			i0 = i
@@ -145,9 +144,21 @@ func (t *trackerStore) processCreatedSeriesEvent(tenantID string, series []uint6
 	}
 }
 
+func currentSeriesLimit(series uint64, limit uint64, zonesCount uint64) uint64 {
+	room := limit - series
+	allowance := room / zonesCount
+	if zonesCount > 1 {
+		allowance += room % zonesCount
+	}
+	return series + allowance
+}
+
 // getOrCreateTenant returns the trackedTenant for the given userID, with shards for the limit provided.
 // The tenant returned is RLock'ed() and needs to be RUnlocked() after use.
-func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *trackedTenant {
+func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
+	limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
+	zonesCount := t.limiter.zonesCount()
+
 	t.mtx.RLock()
 	if tenant, ok := t.tenants[tenantID]; ok {
 		tenant.RLock()
@@ -165,7 +176,8 @@ func (t *trackerStore) getOrCreateTenant(tenantID string, limit uint64) *tracked
 
 	// Let's prepare a tenant with all shards instead of doing it while locked.
 	tenant := &trackedTenant{
-		series: atomic.NewUint64(0),
+		series:       atomic.NewUint64(0),
+		currentLimit: atomic.NewUint64(currentSeriesLimit(0, limit, zonesCount)),
 	}
 	capacity := int(limit / shards)
 	if limit == noLimit || limit == 0 {
@@ -224,6 +236,18 @@ func (t *trackerStore) cleanup(now time.Time) {
 	t.mtx.Unlock()
 }
 
+func (t *trackerStore) updateLimits() {
+	t.mtx.RLock()
+	tenantsClone := maps.Clone(t.tenants)
+	t.mtx.RUnlock()
+
+	zonesCount := t.limiter.zonesCount()
+	for tenantID, tenant := range tenantsClone {
+		limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
+		tenant.currentLimit.Store(currentSeriesLimit(tenant.series.Load(), limit, zonesCount))
+	}
+}
+
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.
 func (t *trackerStore) seriesCountsForTests() map[string]uint64 {
 	t.mtx.RLock()
@@ -238,8 +262,9 @@ func (t *trackerStore) seriesCountsForTests() map[string]uint64 {
 
 type trackedTenant struct {
 	sync.RWMutex
-	series *atomic.Uint64
-	shards [shards]*tenantshard.Map
+	series       *atomic.Uint64
+	currentLimit *atomic.Uint64
+	shards       [shards]*tenantshard.Map
 }
 
 func zeroAsNoLimit(v uint64) uint64 {

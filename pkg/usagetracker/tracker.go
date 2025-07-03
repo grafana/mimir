@@ -631,6 +631,10 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
 }
 
+func (t *UsageTracker) zonesCount() uint64 {
+	return uint64(t.instanceRing.ZonesCount())
+}
+
 type chanEventsPublisher struct {
 	logger log.Logger
 	events chan []byte
@@ -638,7 +642,7 @@ type chanEventsPublisher struct {
 
 func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, timestamp time.Time) error {
 	defer refsPool.Put(series)
-	
+
 	ev := usagetrackerpb.SeriesCreatedEvent{
 		UserID:       userID,
 		Timestamp:    timestamp.Unix(),

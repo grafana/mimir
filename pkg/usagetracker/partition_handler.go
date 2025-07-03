@@ -385,8 +385,11 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 
 // run implements services.RunningFn.
 func (p *partitionHandler) run(ctx context.Context) error {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
+	cleanup := time.NewTicker(time.Minute)
+	defer cleanup.Stop()
+
+	updateLimits := time.NewTicker(time.Second)
+	defer updateLimits.Stop()
 
 	wg := &goroutineWaitGroup{}
 	wg.Go(func() { p.consumeEvents(ctx) })
@@ -397,8 +400,10 @@ func (p *partitionHandler) run(ctx context.Context) error {
 
 	for {
 		select {
-		case now := <-ticker.C:
+		case now := <-cleanup.C:
 			p.store.cleanup(now)
+		case <-updateLimits.C:
+			p.store.updateLimits()
 		case <-ctx.Done():
 			return nil
 		case err := <-p.subservicesWatcher.Chan():

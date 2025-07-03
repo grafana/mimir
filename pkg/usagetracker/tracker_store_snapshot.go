@@ -28,7 +28,7 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 	for tenantID := range clonedTenants {
 		snapshot.PutUvarintStr(tenantID)
 
-		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
+		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
 		m.Lock()
 		iter := m.Iterator()
@@ -119,11 +119,11 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs})
 		}
 
-		tenant := t.getOrCreateTenant(tenantID, zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID)))
+		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
 		m.Lock()
 		for _, ref := range refs {
-			_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, 0, false)
+			_, _ = m.Put(ref.Ref, ref.Timestamp, tenant.series, nil, false)
 		}
 		m.Unlock()
 		tenant.RUnlock()

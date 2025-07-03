@@ -56,12 +56,12 @@ func TestPartitionHandler(t *testing.T) {
 		defer cancel()
 
 		h := newPartitionHandlerTestHelper(t)
-		h.limiter[tenantID] = 2
+		h.limiter[tenantID] = 4
 		ph := h.newHandler(t)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
 
 		requirePerTenantSeries(t, ph, map[string]uint64{})
-		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3}, []uint64{3})
+		requireTrackSeries(t, ph, tenantID, []uint64{1, 2, 3}, []uint64{3}) // limit is 4, but current limit is 2 (because it's halfway)
 		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
 		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{1, 2}})
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
@@ -80,7 +80,7 @@ func TestPartitionHandler(t *testing.T) {
 		defer cancel()
 
 		h := newPartitionHandlerTestHelper(t)
-		h.limiter[tenantID] = 3
+		h.limiter[tenantID] = 10
 
 		// First partitionHandler is created, tracks some series and creates a snapshot.
 		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
@@ -105,7 +105,7 @@ func TestPartitionHandler(t *testing.T) {
 		defer cancel()
 
 		h := newPartitionHandlerTestHelper(t)
-		h.limiter[tenantID] = 3
+		h.limiter[tenantID] = 10
 
 		// First partitionHandler is created, tracks some series and creates a snapshot.
 		ph1 := h.newHandler(t)
@@ -149,7 +149,7 @@ func TestPartitionHandler(t *testing.T) {
 		defer cancel()
 
 		h := newPartitionHandlerTestHelper(t)
-		h.limiter[tenantID] = 3
+		h.limiter[tenantID] = 10
 
 		// First partitionHandler is created, tracks some series and creates a snapshot.
 		ph := h.newHandler(t)
@@ -186,7 +186,7 @@ func TestPartitionHandler(t *testing.T) {
 		defer cancel()
 
 		h := newPartitionHandlerTestHelper(t)
-		h.limiter[tenantID] = 5
+		h.limiter[tenantID] = 10
 
 		// First partitionHandler is created, tracks some series and creates a snapshot.
 		ph := h.newHandler(t)
