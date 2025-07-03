@@ -637,6 +637,8 @@ type chanEventsPublisher struct {
 }
 
 func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID string, series []uint64, timestamp time.Time) error {
+	defer refsPool.Put(series)
+	
 	ev := usagetrackerpb.SeriesCreatedEvent{
 		UserID:       userID,
 		Timestamp:    timestamp.Unix(),

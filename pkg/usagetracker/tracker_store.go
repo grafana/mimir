@@ -13,11 +13,14 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/prometheus/util/zeropool"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
+
+var refsPool zeropool.Pool[[]uint64]
 
 const shards = tenantshard.Shards
 const noLimit = math.MaxUint64
@@ -77,8 +80,8 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 
 	now := clock.ToMinutes(timeNow)
 
-	// TODO: Pool this slice.
-	var createdRefs []uint64
+	// We don't pool rejectedRefs because we don't have full control of its lifecycle.
+	createdRefs := refsPool.Get()
 	i0 := 0
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
