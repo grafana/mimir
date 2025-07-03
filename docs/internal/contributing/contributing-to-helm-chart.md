@@ -62,8 +62,11 @@ In order to keep the kustomize configuration manageable, it is divided into over
 
 For example, at the time of writing, the Helm chart is passed through the following overlays:
 
+```bash
+ls -1 operations/compare-helm-with-jsonnet/helm
 ```
-$ ls -1 operations/compare-helm-with-jsonnet/helm
+
+```console
 00-base
 01-ignore
 02-configs-and-k8s-defaults
@@ -111,7 +114,7 @@ This can be a useful tool when debugging kustomize configuration.
 
 For example, the following invocation will show only changes that have been applied by the 9th helm overlay.
 
-```
+```bash
 cd operations/compare-helm-with-jsonnet
 ./compare-kustomize-outputs.sh ./helm/08-* ./helm/09-*
 ```
@@ -119,7 +122,7 @@ cd operations/compare-helm-with-jsonnet
 The output can be filtered further by supplying a [yq](https://mikefarah.gitbook.io/yq/operators/select) `select` expression.
 This is useful to limit otherwise noisy output to only show objects of a certain kind, name, or other property.
 
-```
+```bash
 cd operations/compare-helm-with-jsonnet
 ./compare-kustomize-outputs.sh ./helm/09-* ./jsonnet/09-* 'select(.kind == "StatefulSet")'
 ```
