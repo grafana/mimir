@@ -5,7 +5,6 @@ syntax = "proto3";
 package planning;
 
 import "gogoproto/gogo.proto";
-import "google/protobuf/any.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -58,6 +57,6 @@ enum NodeType {
   NODE_TYPE_STRING_LITERAL = 7;
   NODE_TYPE_UNARY_EXPRESSION = 8;
   NODE_TYPE_SUBQUERY = 9;
-  
+
   NODE_TYPE_DUPLICATE = 10;
 }
