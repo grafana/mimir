@@ -888,7 +888,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.producer-record-version=0
+        - -ingest-storage.kafka.producer-record-version=1
         - -ingest-storage.kafka.topic=ingest
         - -ingest-storage.migration.distributor-send-to-ingesters-enabled=true
         - -ingester.partition-ring.prefix=
@@ -1279,7 +1279,7 @@ spec:
         - -ingest-storage.ingestion-partition-tenant-shard-size=1
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
-        - -ingest-storage.kafka.producer-record-version=0
+        - -ingest-storage.kafka.producer-record-version=1
         - -ingest-storage.kafka.topic=ingest
         - -ingest-storage.migration.distributor-send-to-ingesters-enabled=true
         - -ingester.partition-ring.prefix=
