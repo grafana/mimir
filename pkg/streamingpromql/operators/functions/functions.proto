@@ -7,9 +7,6 @@ package functions;
 enum Function {
   FUNCTION_UNKNOWN = 0;
 
-  // These names must match the PromQL function names (eg. 'abs' must be 'FUNCTION_ABS') so
-  // that convertFunctionConstantsToPromQLNames can correctly convert these names to the
-  // corresponding PromQL function name.
   FUNCTION_ABS = 1;
   FUNCTION_ABSENT = 2;
   FUNCTION_ABSENT_OVER_TIME = 3;
@@ -84,5 +81,7 @@ enum Function {
   FUNCTION_PI = 71;
   FUNCTION_SCALAR = 72;
   FUNCTION_TIME = 73;
+
+  reserved 74, 75; // Used by Adaptive Metrics query rewriting.
 }
 
