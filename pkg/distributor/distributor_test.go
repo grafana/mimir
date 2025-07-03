@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -2469,8 +2470,11 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						require.NoError(b, err)
 					}
 
+					pool := concurrency.NewReusableGoroutinesPool(distributorCfg.ReusableIngesterPushWorkers)
+					b.Cleanup(pool.Close)
+
 					// Start the distributor.
-					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, log.NewNopLogger())
+					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, pool.Go, nil, log.NewNopLogger())
 					require.NoError(b, err)
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -6005,9 +6009,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 			}
 		}
 
+		pool := concurrency.NewReusableGoroutinesPool(distributorCfg.ReusableIngesterPushWorkers)
+		t.Cleanup(pool.Close)
+
 		overrides := validation.NewOverrides(*cfg.limits, nil)
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, pool.Go, reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {
@@ -8707,7 +8714,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	})
 
 	overrides := validation.NewOverrides(limits, nil)
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")

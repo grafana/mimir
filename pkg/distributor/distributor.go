@@ -255,7 +255,11 @@ type Config struct {
 	PushWrappers []PushWrapper `yaml:"-"`
 
 	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
-	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+
+	// ReusableIngesterPushWorkers is part of this Config for backward-compatibility reasons,
+	// but actually it is not used from distributor.New: the workers pull is configures separately
+	// and is injected to distributor.New only when it's configured.
+	ReusableIngesterPushWorkers int `yaml:"reusable_ingester_push_workers" category:"advanced"`
 
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
@@ -373,7 +377,20 @@ func (m *PushMetrics) deleteUserMetrics(user string) {
 }
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(
+	cfg Config,
+	clientConfig ingester_client.Config,
+	limits *validation.Overrides,
+	activeGroupsCleanupService *util.ActiveGroupsCleanupService,
+	costAttributionMgr *costattribution.Manager,
+	ingestersRing ring.ReadRing,
+	partitionsRing *ring.PartitionInstanceRing,
+	canJoinDistributorsRing bool,
+	// pushWorkers can be a nil func, in which case new goroutines are spawned for each ingester push request.
+	pushWorkers func(func()),
+	reg prometheus.Registerer,
+	log log.Logger,
+) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -507,8 +524,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}),
 
 		PushMetrics: newPushMetrics(reg),
-		now:         defaultNow,
-		sleep:       defaultSleep,
+
+		doBatchPushWorkers: pushWorkers,
+
+		now:   defaultNow,
+		sleep: defaultSleep,
 	}
 
 	// Initialize expected rejected request labels
@@ -611,17 +631,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
-
-	if cfg.ReusableIngesterPushWorkers > 0 {
-		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
-		d.doBatchPushWorkers = wp.Go
-		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
-		subservices = append(subservices, services.NewBasicService(
-			nil,
-			func(ctx context.Context) error { <-ctx.Done(); return nil },
-			func(_ error) error { wp.Close(); return nil },
-		))
-	}
 
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)

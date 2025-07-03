@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/dns"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
@@ -86,6 +87,7 @@ const (
 	CostAttributionService           string = "cost-attribution-service"
 	Distributor                      string = "distributor"
 	DistributorService               string = "distributor-service"
+	DistributorPushWorkers           string = "distributor-push-workers"
 	Flusher                          string = "flusher"
 	Ingester                         string = "ingester"
 	IngesterPartitionRing            string = "ingester-partitions-ring"
@@ -502,9 +504,19 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
-		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
-		canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(
+		t.Cfg.Distributor,
+		t.Cfg.IngesterClient,
+		t.Overrides,
+		t.ActiveGroupsCleanup,
+		t.CostAttributionManager,
+		t.IngesterRing,
+		t.IngesterPartitionInstanceRing,
+		canJoinDistributorsRing,
+		t.DistributorPushWorkers,
+		t.Registerer,
+		util_log.Logger,
+	)
 	if err != nil {
 		return
 	}
@@ -514,6 +526,18 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	}
 
 	return t.Distributor, nil
+}
+
+func (t *Mimir) initDistributorPushWorkers() (serv services.Service, err error) {
+	if t.Cfg.Distributor.ReusableIngesterPushWorkers <= 0 {
+		return nil, nil
+	}
+
+	wp := concurrency.NewReusableGoroutinesPool(t.Cfg.Distributor.ReusableIngesterPushWorkers)
+	t.DistributorPushWorkers = wp.Go
+
+	// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
+	return services.NewIdleService(nil, func(_ error) error { wp.Close(); return nil }), nil
 }
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
@@ -1245,6 +1269,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
+	mm.RegisterModule(DistributorPushWorkers, t.initDistributorPushWorkers, modules.UserInvisibleModule)
 	mm.RegisterModule(Flusher, t.initFlusher)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
@@ -1288,7 +1313,7 @@ func (t *Mimir) setupModuleManager() error {
 		Compactor:                        {API, MemberlistKV, Overrides, Vault},
 		ContinuousTest:                   {API},
 		CostAttributionService:           {API, Overrides},
-		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		Distributor:                      {DistributorService, DistributorPushWorkers, API, ActiveGroupsCleanupService, Vault},
 		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
 		Flusher:                          {Overrides, API},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
@@ -1305,7 +1330,7 @@ func (t *Mimir) setupModuleManager() error {
 		QueryPlanner:                     {API, ActivityTracker},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},
+		Ruler:                            {DistributorService, DistributorPushWorkers, StoreQueryable, RulerStorage, Vault, QueryPlanner},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},

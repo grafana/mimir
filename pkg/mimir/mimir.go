@@ -784,6 +784,7 @@ type Mimir struct {
 	Overrides                        *validation.Overrides
 	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
 	Distributor                      *distributor.Distributor
+	DistributorPushWorkers           func(func())
 	Ingester                         *ingester.Ingester
 	Flusher                          *flusher.Flusher
 	FrontendV1                       *frontendv1.Frontend
