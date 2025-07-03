@@ -274,12 +274,9 @@ groups:
                 Container {{ $labels.container }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing high GRPC concurrent streams per connection.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighgrpcconcurrentstreamsperconnection
           expr: |
-            avg_over_time(
-              (
-                max(grpc_concurrent_streams_by_conn_max) by (cluster, namespace, container)
-                / min(cortex_grpc_concurrent_streams_limit) by (cluster, namespace, container)
-              )
-            [5m:]) > 0.5
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[5m])) by (cluster, namespace, container)
+            /
+            min(cortex_grpc_concurrent_streams_limit) by (cluster, namespace, container) > 0.75
           labels:
             severity: warning
         - alert: MimirHighGRPCConcurrentStreamsPerConnection
@@ -288,12 +285,9 @@ groups:
                 Container {{ $labels.container }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing high GRPC concurrent streams per connection.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighgrpcconcurrentstreamsperconnection
           expr: |
-            avg_over_time(
-              (
-                max(grpc_concurrent_streams_by_conn_max) by (cluster, namespace, container)
-                / min(cortex_grpc_concurrent_streams_limit) by (cluster, namespace, container)
-              )
-            [5m:]) > 0.8
+            max(avg_over_time(grpc_concurrent_streams_by_conn_max[5m])) by (cluster, namespace, container)
+            /
+            min(cortex_grpc_concurrent_streams_limit) by (cluster, namespace, container) > 0.9
           labels:
             severity: critical
     - name: mimir_instance_limits_alerts

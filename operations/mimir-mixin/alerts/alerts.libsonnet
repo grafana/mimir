@@ -98,12 +98,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local highGRPCConcurrentStreamsPerConnection(threshold, severity) = {
     alert: $.alertName('HighGRPCConcurrentStreamsPerConnection'),
     expr: |||
-      avg_over_time(
-        (
-          max(grpc_concurrent_streams_by_conn_max) by (%(alert_aggregation_labels)s, container)
-          / min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container)
-        )
-      [5m:]) > %(threshold)s
+      max(avg_over_time(grpc_concurrent_streams_by_conn_max[5m])) by (%(alert_aggregation_labels)s, container)
+      /
+      min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container) > %(threshold)s
     ||| % {
       alert_aggregation_labels: $._config.alert_aggregation_labels,
       threshold: threshold,
@@ -492,8 +489,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
 
-        highGRPCConcurrentStreamsPerConnection('0.5', 'warning'),
-        highGRPCConcurrentStreamsPerConnection('0.8', 'critical'),
+        highGRPCConcurrentStreamsPerConnection('0.75', 'warning'),
+        highGRPCConcurrentStreamsPerConnection('0.9', 'critical'),
       ],
     },
     {
