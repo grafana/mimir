@@ -205,9 +205,9 @@ func newOTLPParser(
 						limit:  tooLargeErr.Limit,
 					}.Error())
 				}
-
 				return exportReq, protoBodySize, err
 			}
+
 		case jsonContentType:
 			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
