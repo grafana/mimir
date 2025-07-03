@@ -524,9 +524,9 @@ func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
 	}
 
 	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
-		if len(args) < 2 {
+		if len(args) < 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected at least 2 arguments for %s, got %v", functionName, len(args))
+			return nil, fmt.Errorf("expected at least 1 argument for %s, got %v", functionName, len(args))
 		}
 
 		inner, ok := args[0].(types.InstantVectorOperator)
