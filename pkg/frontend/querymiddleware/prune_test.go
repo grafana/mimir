@@ -61,6 +61,7 @@ func TestQueryPruning(t *testing.T) {
 					Config{
 						PruneQueriesToggle:           true,
 						PruneQueriesMatcherPropagate: true,
+						PruneQueriesHistogram:        true,
 					},
 				)
 				downstream := &downstreamHandler{
