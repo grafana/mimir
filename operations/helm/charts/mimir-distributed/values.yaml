@@ -2279,6 +2279,9 @@ store_gateway:
 
   terminationGracePeriodSeconds: 120
 
+  # -- The maximum size of a query response in bytes. Sets max send size for store-gateway and receive size for queriers.
+  grpcMaxQueryResponseSizeBytes: "209715200"
+
   tolerations: []
   initContainers: []
   extraContainers: []

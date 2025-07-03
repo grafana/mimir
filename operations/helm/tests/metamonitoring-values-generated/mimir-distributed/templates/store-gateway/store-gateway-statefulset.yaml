@@ -83,6 +83,7 @@ spec:
             - "-target=store-gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
