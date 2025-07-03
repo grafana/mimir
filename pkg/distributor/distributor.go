@@ -97,6 +97,11 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
+
+	// decompressionEstMultiplier is a multiplier used to estimate the decompressed size from compressed size of
+	// an incoming request. It prevents wasting CPU on decompression when the decompressed request will likely
+	// exceed inflight bytes limits.
+	decompressionEstMultiplier = 4
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -1546,10 +1551,9 @@ func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequest
 	if rs.httpgrpcRequestSize > 0 {
 		return nil
 	}
-
 	rs.httpgrpcRequestSize = httpgrpcRequestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
-	return d.checkInflightBytes(inflightBytes)
+	return d.checkInflightBytes(inflightBytes + decompressionEstMultiplier*httpgrpcRequestSize)
 }
 
 func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize int64) error {

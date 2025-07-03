@@ -1340,19 +1340,12 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{user="test"} 1
 		metrics               string
 	}{
 		"starts_below_threshold_stays_below_threshold": {
-			startingInflightBytes: MiB - 3*reqLen,
+			startingInflightBytes: MiB - 10*reqLen,
 			expectedStatusCode:    http.StatusOK,
 			metrics:               uncompBytesMetrics,
 		},
-		// NOTE: This is a special case, the compressed req. brings inflight bytes exactly to the cap and the push is allowed to begin. The uncompressed
-		// request will exceed the limit, so we end up decompressing the request and then rejecting to push.
-		"starts_below_threshold_incoming_request_meets_threshold": {
-			startingInflightBytes: MiB - reqLen,
-			expectedStatusCode:    http.StatusInternalServerError,
-			metrics:               uncompBytesMetrics,
-		},
-		"starts_below_threshold_incoming_request_exceeds_threshold": {
-			startingInflightBytes: MiB - reqLen/2,
+		"starts_below_threshold_estimated_over_threshold": {
+			startingInflightBytes: MiB - 3*reqLen,
 			expectedStatusCode:    http.StatusInternalServerError,
 		},
 		"starts_above_threshold_stays_above_threshold": {
@@ -1395,15 +1388,11 @@ func TestHandler_EnforceInflightBytesLimitInfluxPush(t *testing.T) {
 		expectedStatusCode    int
 	}{
 		"starts_below_threshold_stays_below_threshold": {
-			startingInflightBytes: MiB - 3*reqLen,
+			startingInflightBytes: MiB - 10*reqLen,
 			expectedStatusCode:    http.StatusNoContent,
 		},
-		"starts_below_threshold_incoming_request_meets_threshold": {
-			startingInflightBytes: MiB - reqLen,
-			expectedStatusCode:    http.StatusServiceUnavailable,
-		},
-		"starts_below_threshold_incoming_request_exceeds_threshold": {
-			startingInflightBytes: MiB - reqLen/2,
+		"starts_below_threshold_estimated_over_threshold": {
+			startingInflightBytes: MiB - 6*reqLen,
 			expectedStatusCode:    http.StatusServiceUnavailable,
 		},
 		"starts_above_threshold_stays_above_threshold": {
