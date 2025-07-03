@@ -419,6 +419,16 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 }
 
 func isKnownFunction(name string) (functions.Function, bool) {
+	// absent and absent_over_time are special cases that aren't present in InstantVectorFunctionOperatorFactories,
+	// so we have to handle them specifically.
+	if name == "absent" {
+		return functions.FUNCTION_ABSENT, true
+	}
+
+	if name == "absent_over_time" {
+		return functions.FUNCTION_ABSENT_OVER_TIME, true
+	}
+
 	f, ok := functions.FromPromQLName(name)
 	if !ok {
 		return functions.FUNCTION_UNKNOWN, false
@@ -429,10 +439,6 @@ func isKnownFunction(name string) (functions.Function, bool) {
 	}
 
 	if _, ok := functions.ScalarFunctionOperatorFactories[f]; ok {
-		return f, true
-	}
-
-	if f == functions.FUNCTION_ABSENT || f == functions.FUNCTION_ABSENT_OVER_TIME {
 		return f, true
 	}
 
