@@ -44,6 +44,8 @@ func TestIngester_TenantsHandlers(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 		// Check if link to user's TSDB was generated
 		require.Contains(t, rec.Body.String(), fmt.Sprintf(`<a href="tsdb/%s">%s</a>`, userID, userID))
+		// Check if grace interval is present
+		require.Contains(t, rec.Body.String(), `<td>(-0s, +10m0s)</td>`)
 	})
 
 	t.Run("tenant TSDB for valid tenant", func(t *testing.T) {
