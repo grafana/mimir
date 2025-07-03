@@ -28,18 +28,19 @@ import (
 )
 
 const (
-	errMalformedGrafanaConfigInStore = "error unmarshalling Grafana configuration from storage"
-	errMarshallingState              = "error marshalling Grafana Alertmanager state"
-	errMarshallingStateJSON          = "error marshalling JSON Grafana Alertmanager state"
-	errMarshallingGrafanaConfigJSON  = "error marshalling JSON Grafana Alertmanager config"
-	errReadingState                  = "unable to read the Grafana Alertmanager state"
-	errDeletingState                 = "unable to delete the Grafana Alertmanager State"
-	errStoringState                  = "unable to store the Grafana Alertmanager state"
-	errReadingGrafanaConfig          = "unable to read the Grafana Alertmanager config"
-	errDeletingGrafanaConfig         = "unable to delete the Grafana Alertmanager config"
-	errStoringGrafanaConfig          = "unable to store the Grafana Alertmanager config"
-	errBase64DecodeState             = "unable to base64 decode Grafana Alertmanager state"
-	errUnmarshalProtoState           = "unable to unmarshal protobuf for Grafana Alertmanager state"
+	errMalformedGrafanaConfigInStore  = "error unmarshalling Grafana configuration from storage"
+	errMarshallingState               = "error marshalling Grafana Alertmanager state"
+	errMarshallingStateJSON           = "error marshalling JSON Grafana Alertmanager state"
+	errMarshallingGrafanaConfigJSON   = "error marshalling JSON Grafana Alertmanager config"
+	errUnmarshallingGrafanaConfigJSON = "error unmarshalling JSON Grafana Alertmanager config"
+	errReadingState                   = "unable to read the Grafana Alertmanager state"
+	errDeletingState                  = "unable to delete the Grafana Alertmanager State"
+	errStoringState                   = "unable to store the Grafana Alertmanager state"
+	errReadingGrafanaConfig           = "unable to read the Grafana Alertmanager config"
+	errDeletingGrafanaConfig          = "unable to delete the Grafana Alertmanager config"
+	errStoringGrafanaConfig           = "unable to store the Grafana Alertmanager config"
+	errBase64DecodeState              = "unable to base64 decode Grafana Alertmanager state"
+	errUnmarshalProtoState            = "unable to unmarshal protobuf for Grafana Alertmanager state"
 
 	statusSuccess = "success"
 	statusError   = "error"
@@ -59,6 +60,9 @@ var (
 type GrafanaAlertmanagerConfig struct {
 	Templates          map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
+
+	// original is the string from which the config was parsed
+	original string
 }
 
 type SmtpConfig struct {
@@ -100,6 +104,13 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return err
 	}
 	return nil
+}
+
+func (gac *GrafanaAlertmanagerConfig) UnmarshalJSON(data []byte) error {
+	gac.original = string(data)
+
+	type plain GrafanaAlertmanagerConfig
+	return json.Unmarshal(data, (*plain)(gac))
 }
 
 func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
@@ -408,20 +419,13 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
+	// Unmarshal the config to validate it.
 	cfg := &UserGrafanaConfig{}
 	err = json.Unmarshal(payload, cfg)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errMarshallingGrafanaConfigJSON, err.Error())})
-		return
-	}
-
-	rawCfg, err := json.Marshal(cfg.GrafanaAlertmanagerConfig)
-	if err != nil {
-		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
-		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errStoringGrafanaConfig, err.Error())})
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errUnmarshallingGrafanaConfigJSON, err.Error())})
 		return
 	}
 
@@ -440,7 +444,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		}
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.SmtpFrom, cfg.StaticHeaders, smtpConfig)
+	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig.original, userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.SmtpFrom, cfg.StaticHeaders, smtpConfig)
 	if err := validateUserGrafanaConfig(logger, cfgDesc, am.limits, userID); err != nil {
 		level.Error(logger).Log("msg", errValidatingConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
