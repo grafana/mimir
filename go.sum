@@ -579,8 +579,8 @@ github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700 h1:0t7iOQ5ZkB
 github.com/grafana/memberlist v0.3.1-0.20250428154222-f7d51a6f6700/go.mod h1:Ri9p/tRShbjYnpNf4FFPXG7wxEGY4Nrcn6E7jrVa//4=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5 h1:H4Del07v9UAYJgky9oeRY1oNqs6dh8lmHRUWiGCKXoE=
 github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5/go.mod h1:v1PzmPjSnNkmZSDvKJ9OmsWcmWMEF5+JdllEcXrRfzM=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250704054056-de508a582ea0 h1:P65tKX40q0x2jIumDMu17+fsh6BWhlv0s6dd7yvQIjY=
-github.com/grafana/mimir-prometheus v1.8.2-0.20250704054056-de508a582ea0/go.mod h1:mJDBM/Lzo/rSf+byKSPESdNw/LR5pdn17GDZv9E/7gM=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250704062111-d3be9d0e3cf5 h1:JiwyJEjBa7pARyO8VHnI5SubyHp/ZWflU0ZEsfwpvGs=
+github.com/grafana/mimir-prometheus v1.8.2-0.20250704062111-d3be9d0e3cf5/go.mod h1:51sCkEHDpexFCGizYi1W4omiFaKThWThkquNPOxhwxQ=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
@@ -842,8 +842,8 @@ github.com/ncw/swift v1.0.53/go.mod h1:23YIA4yWVnGwv2dQlN4bB7egfYX6YLn0Yo/S6zZO/
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/nxadm/tail v1.4.8 h1:nPr65rt6Y5JFSKQO7qToXr7pePgD6Gwiw05lkbyAQTE=
 github.com/nxadm/tail v1.4.8/go.mod h1:+ncqLTQzXmGhMZNUePPaPqPvBxHAIsmXswZKocGu+AU=
-github.com/oklog/run v1.1.0 h1:GEenZ1cK0+q0+wsJew9qUg/DyD8k3JzYsZAi5gYi2mA=
-github.com/oklog/run v1.1.0/go.mod h1:sVPdnTZT1zYwAJeCMu2Th4T21pA3FPOQRfWjQlk7DVU=
+github.com/oklog/run v1.2.0 h1:O8x3yXwah4A73hJdlrwo/2X6J62gE5qTMusH0dvz60E=
+github.com/oklog/run v1.2.0/go.mod h1:mgDbKRSwPhJfesJ4PntqFUbKQRZ50NgmZTSPlFA0YFk=
 github.com/oklog/ulid v1.3.1 h1:EGfNDEx6MqHz8B3uNV6QAib1UR2Lm97sHi3ocA6ESJ4=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
 github.com/oklog/ulid/v2 v2.1.1 h1:suPZ4ARWLOJLegGFiZZ1dFAkqzhMjL3J1TzI+5wHz8s=
@@ -920,8 +920,8 @@ github.com/prometheus/common v0.9.1/go.mod h1:yhUN8i9wzaXS3w1O07YhxHEBxD+W35wd8b
 github.com/prometheus/common v0.10.0/go.mod h1:Tlit/dnDKsSWFlCLTWaA1cyBgKHSMdTB80sz/V91rCo=
 github.com/prometheus/common v0.26.0/go.mod h1:M7rCNAaPfAosfx8veZJCuw84e35h3Cfd9VFqTh1DIvc=
 github.com/prometheus/common v0.29.0/go.mod h1:vu+V0TpY+O6vW9J44gczi3Ap/oXXR10b+M/gUGO4Hls=
-github.com/prometheus/common v0.65.0 h1:QDwzd+G1twt//Kwj/Ww6E9FQq1iVMmODnILtW1t2VzE=
-github.com/prometheus/common v0.65.0/go.mod h1:0gZns+BLRQ3V6NdaerOhMbwwRbNh9hkGINtQAsP5GS8=
+github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3 h1:R/zO7ombSHCI8bjQusgCMSL+cE669w5/R2upq5WlPD0=
+github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3/go.mod h1:0gZns+BLRQ3V6NdaerOhMbwwRbNh9hkGINtQAsP5GS8=
 github.com/prometheus/common/sigv4 v0.1.0 h1:qoVebwtwwEhS85Czm2dSROY5fTo2PAPEVdDeppTwGX4=
 github.com/prometheus/common/sigv4 v0.1.0/go.mod h1:2Jkxxk9yYvCkE5G1sQT7GuEXm57JrvHu9k5YwTjsNtI=
 github.com/prometheus/exporter-toolkit v0.14.0 h1:NMlswfibpcZZ+H0sZBiTjrA3/aBFHkNZqE+iCj5EmRg=
