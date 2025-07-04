@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -36,10 +37,11 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 		return err
 	}
 
-	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	matchers, regexDuration, err := client.FromLabelMatchers(request.GetMatchers())
 	if err != nil {
 		return fmt.Errorf("error parsing label matchers: %w", err)
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).

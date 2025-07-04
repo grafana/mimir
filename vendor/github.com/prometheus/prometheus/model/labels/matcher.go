@@ -16,6 +16,7 @@ package labels
 import (
 	"bytes"
 	"strconv"
+	"go.uber.org/atomic"
 )
 
 // MatchType is an enum for label matching types.
@@ -61,6 +62,23 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 	}
 	if t == MatchRegexp || t == MatchNotRegexp {
 		re, err := NewFastRegexMatcher(v)
+		if err != nil {
+			return nil, err
+		}
+		m.re = re
+	}
+	return m, nil
+}
+
+// NewMatcher returns a matcher object.
+func NewMatcherWithTimeTracker(t MatchType, n, v string, duration *atomic.Duration) (*Matcher, error) {
+	m := &Matcher{
+		Type:  t,
+		Name:  n,
+		Value: v,
+	}
+	if t == MatchRegexp || t == MatchNotRegexp {
+		re, err := NewFastRegexMatcherWithTimeTracker(v, duration)
 		if err != nil {
 			return nil, err
 		}

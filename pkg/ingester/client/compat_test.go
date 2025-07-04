@@ -48,7 +48,7 @@ func TestQueryRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	haveFrom, haveTo, haveMatchers, err := FromQueryRequest(req)
+	haveFrom, haveTo, haveMatchers, _, err := FromQueryRequest(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestLabelNamesRequest(t *testing.T) {
 	req, err := ToLabelNamesRequest(mint, maxt, hints, matchers)
 	require.NoError(t, err)
 
-	actualMinT, actualMaxT, actualHints, actualMatchers, err := FromLabelNamesRequest(req)
+	actualMinT, actualMaxT, actualHints, actualMatchers, _, err := FromLabelNamesRequest(req)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(mint), actualMinT)

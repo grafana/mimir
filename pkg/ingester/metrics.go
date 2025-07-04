@@ -27,10 +27,11 @@ type ingesterMetrics struct {
 	ingestedExemplarsFail prometheus.Counter
 	ingestedMetadataFail  prometheus.Counter
 
-	queries          prometheus.Counter
-	queriedSamples   prometheus.Histogram
-	queriedExemplars prometheus.Histogram
-	queriedSeries    prometheus.Histogram
+	queries           prometheus.Counter
+	queriedSamples    prometheus.Histogram
+	queriedExemplars  prometheus.Histogram
+	queriedSeries     prometheus.Histogram
+	queryRequestStage *prometheus.HistogramVec
 
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
@@ -172,6 +173,12 @@ func newIngesterMetrics(
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
 		}),
+		queryRequestStage: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                           "cortex_ingester_query_request_stage_latency",
+			Help:                           "How much each stage in processing queries took.",
+			NativeHistogramBucketFactor:    1.1,
+			NativeHistogramMaxBucketNumber: 100,
+		}, []string{"user", "stage"}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_metadata",
 			Help: "The current number of metadata in memory.",
@@ -430,6 +437,13 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
+}
+
+func (m *ingesterMetrics) recordRequestStageLatencies(userID string, regexDuration *atomic.Duration, requestStart time.Time) {
+	totalDuration := time.Since(requestStart)
+	regexDurationSnapshot := regexDuration.Load()
+	m.queryRequestStage.WithLabelValues(userID, "label_matching").Observe(regexDurationSnapshot.Seconds())
+	m.queryRequestStage.WithLabelValues(userID, "other").Observe((totalDuration - regexDurationSnapshot).Seconds())
 }
 
 type discardedMetrics struct {

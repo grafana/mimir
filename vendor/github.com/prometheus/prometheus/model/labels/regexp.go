@@ -24,6 +24,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
+	"go.uber.org/atomic"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -67,6 +68,22 @@ type FastRegexMatcher struct {
 
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
+}
+
+func NewFastRegexMatcherWithTimeTracker(regex string, duration *atomic.Duration) (*FastRegexMatcher, error) {
+	m, err := NewFastRegexMatcher(regex)
+	if err != nil {
+		return nil, err
+	}
+	withDifferentObserver := *m
+	oldMatchString := m.matchString
+	withDifferentObserver.matchString = func(s string) bool {
+		defer func(start time.Time) {
+			duration.Add(time.Since(start))
+		}(time.Now())
+		return oldMatchString(s)
+	}
+	return &withDifferentObserver, nil
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
