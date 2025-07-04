@@ -675,10 +675,10 @@ func init() {
 	must(RegisterFunction(FUNCTION_COS, "cos", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("cos", Cos)))
 	must(RegisterFunction(FUNCTION_COSH, "cosh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("cosh", Cosh)))
 	must(RegisterFunction(FUNCTION_COUNT_OVER_TIME, "count_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime)))
+	must(RegisterFunction(FUNCTION_DAYS_IN_MONTH, "days_in_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth)))
 	must(RegisterFunction(FUNCTION_DAY_OF_MONTH, "day_of_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_month", DayOfMonth)))
 	must(RegisterFunction(FUNCTION_DAY_OF_WEEK, "day_of_week", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_week", DayOfWeek)))
 	must(RegisterFunction(FUNCTION_DAY_OF_YEAR, "day_of_year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_year", DayOfYear)))
-	must(RegisterFunction(FUNCTION_DAYS_IN_MONTH, "days_in_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth)))
 	must(RegisterFunction(FUNCTION_DEG, "deg", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("deg", Deg)))
 	must(RegisterFunction(FUNCTION_DELTA, "delta", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("delta", Delta)))
 	must(RegisterFunction(FUNCTION_DERIV, "deriv", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("deriv", Deriv)))
@@ -703,9 +703,10 @@ func init() {
 	must(RegisterFunction(FUNCTION_LOG10, "log10", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log10", Log10)))
 	must(RegisterFunction(FUNCTION_LOG2, "log2", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log2", Log2)))
 	must(RegisterFunction(FUNCTION_MAX_OVER_TIME, "max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime)))
-	must(RegisterFunction(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime)))
 	must(RegisterFunction(FUNCTION_MINUTE, "minute", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("minute", Minute)))
+	must(RegisterFunction(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime)))
 	must(RegisterFunction(FUNCTION_MONTH, "month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("month", Month)))
+	must(RegisterFunction(FUNCTION_PI, "pi", parser.ValueTypeScalar, piOperatorFactory))
 	must(RegisterFunction(FUNCTION_PREDICT_LINEAR, "predict_linear", parser.ValueTypeVector, PredictLinearFactory))
 	must(RegisterFunction(FUNCTION_PRESENT_OVER_TIME, "present_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("present_over_time", PresentOverTime)))
 	must(RegisterFunction(FUNCTION_QUANTILE_OVER_TIME, "quantile_over_time", parser.ValueTypeVector, QuantileOverTimeFactory))
@@ -713,6 +714,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_RATE, "rate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("rate", Rate)))
 	must(RegisterFunction(FUNCTION_RESETS, "resets", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("resets", Resets)))
 	must(RegisterFunction(FUNCTION_ROUND, "round", parser.ValueTypeVector, RoundFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_SCALAR, "scalar", parser.ValueTypeScalar, instantVectorToScalarOperatorFactory))
 	must(RegisterFunction(FUNCTION_SGN, "sgn", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sgn", Sgn)))
 	must(RegisterFunction(FUNCTION_SIN, "sin", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sin", Sin)))
 	must(RegisterFunction(FUNCTION_SINH, "sinh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh)))
@@ -724,14 +726,10 @@ func init() {
 	must(RegisterFunction(FUNCTION_SUM_OVER_TIME, "sum_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime)))
 	must(RegisterFunction(FUNCTION_TAN, "tan", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tan", Tan)))
 	must(RegisterFunction(FUNCTION_TANH, "tanh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh)))
+	must(RegisterFunction(FUNCTION_TIME, "time", parser.ValueTypeScalar, timeOperatorFactory))
 	must(RegisterFunction(FUNCTION_TIMESTAMP, "timestamp", parser.ValueTypeVector, TimestampFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_VECTOR, "vector", parser.ValueTypeVector, scalarToInstantVectorOperatorFactory))
 	must(RegisterFunction(FUNCTION_YEAR, "year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("year", Year)))
-
-	//lint:sorted
-	must(RegisterFunction(FUNCTION_PI, "pi", parser.ValueTypeScalar, piOperatorFactory))
-	must(RegisterFunction(FUNCTION_SCALAR, "scalar", parser.ValueTypeScalar, instantVectorToScalarOperatorFactory))
-	must(RegisterFunction(FUNCTION_TIME, "time", parser.ValueTypeScalar, timeOperatorFactory))
 }
 
 func must(err error) {
