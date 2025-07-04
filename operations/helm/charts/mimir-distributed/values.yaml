@@ -699,6 +699,7 @@ alertmanager:
     enableRetentionPolicy: false
     whenDeleted: Retain
     whenScaled: Retain
+    selector: {}
 
   readinessProbe:
     httpGet:
@@ -1092,6 +1093,7 @@ ingester:
     enableRetentionPolicy: false
     whenDeleted: Retain
     whenScaled: Retain
+    selector: {}
 
     # Ingester data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
@@ -2256,6 +2258,7 @@ store_gateway:
     enableRetentionPolicy: false
     whenDeleted: Retain
     whenScaled: Retain
+    selector: {}
 
   readinessProbe:
     httpGet:
@@ -2495,6 +2498,7 @@ compactor:
     enableRetentionPolicy: false
     whenDeleted: Retain
     whenScaled: Retain
+    selector: {}
 
   readinessProbe:
     httpGet:
