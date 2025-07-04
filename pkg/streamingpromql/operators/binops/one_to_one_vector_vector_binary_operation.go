@@ -105,8 +105,7 @@ func (g *oneToOneBinaryOperationRightSide) latestRightSeriesIndex() int {
 }
 
 func (g *oneToOneBinaryOperationRightSide) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.IntSlicePool.Put(g.leftSidePresence, memoryConsumptionTracker)
-	g.leftSidePresence = nil
+	types.IntSlicePool.Put(&g.leftSidePresence, memoryConsumptionTracker)
 
 	// If this right side was used for all of its corresponding output series, then mergedData will have already been returned to the pool by the evaluator's computeResult.
 	// However, if the operator is being closed early, then we need to return mergedData to the pool.
@@ -185,9 +184,9 @@ func (b *OneToOneVectorVectorBinaryOperation) SeriesMetadata(ctx context.Context
 	}
 
 	if len(allMetadata) == 0 {
-		types.SeriesMetadataSlicePool.Put(allMetadata, b.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(leftSeriesUsed, b.MemoryConsumptionTracker)
-		types.BoolSlicePool.Put(rightSeriesUsed, b.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&allMetadata, b.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(&leftSeriesUsed, b.MemoryConsumptionTracker)
+		types.BoolSlicePool.Put(&rightSeriesUsed, b.MemoryConsumptionTracker)
 		b.Close()
 		return nil, nil
 	}
@@ -325,7 +324,11 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, outputSeries := range outputSeriesMap {
-		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
+		allMetadata, err = types.AppendSeriesMetadata(b.MemoryConsumptionTracker, allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
+		if err != nil {
+			return nil, nil, nil, -1, nil, -1, err
+		}
+
 		allSeries = append(allSeries, outputSeries.series)
 	}
 
@@ -597,11 +600,8 @@ func (b *OneToOneVectorVectorBinaryOperation) Close() {
 	b.Left.Close()
 	b.Right.Close()
 
-	types.SeriesMetadataSlicePool.Put(b.leftMetadata, b.MemoryConsumptionTracker)
-	b.leftMetadata = nil
-
-	types.SeriesMetadataSlicePool.Put(b.rightMetadata, b.MemoryConsumptionTracker)
-	b.rightMetadata = nil
+	types.SeriesMetadataSlicePool.Put(&b.leftMetadata, b.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&b.rightMetadata, b.MemoryConsumptionTracker)
 
 	if b.leftBuffer != nil {
 		b.leftBuffer.Close()

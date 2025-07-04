@@ -75,7 +75,10 @@ const (
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
+	errNegativeUpdateTimeoutJitterMax              = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 )
+
+const errInvalidFailoverTimeout = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
 type LimitError interface {
@@ -106,15 +109,25 @@ func IsLimitError(err error) bool {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	RequestRate                                 float64             `yaml:"request_rate" json:"request_rate"`
-	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
-	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	IngestionBurstFactor                        float64             `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
-	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters                               int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	RequestRate          float64 `yaml:"request_rate" json:"request_rate"`
+	RequestBurstSize     int     `yaml:"request_burst_size" json:"request_burst_size"`
+	IngestionRate        float64 `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionBurstSize   int     `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor float64 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
+	AcceptHASamples      bool    `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel       string  `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel       string  `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters        int     `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	// We should only update the timestamp if the difference
+	// between the stored timestamp and the time we received a sample at
+	// is more than this duration.
+	HATrackerUpdateTimeout          model.Duration `yaml:"ha_tracker_update_timeout" json:"ha_tracker_update_timeout" category:"advanced" doc:"flag=description=Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp."`
+	HATrackerUpdateTimeoutJitterMax model.Duration `yaml:"ha_tracker_update_timeout_jitter_max" json:"ha_tracker_update_timeout_jitter_max" category:"advanced" doc:"flag=description=Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time."`
+	// We should only failover to accepting samples from a replica
+	// other than the replica written in the KVStore if the difference
+	// between the stored timestamp and the time we received a sample is
+	// more than this duration
+	HATrackerFailoverTimeout                    model.Duration      `yaml:"ha_tracker_failover_timeout" json:"ha_tracker_failover_timeout" category:"advanced" doc:"description=If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout."`
 	DropLabels                                  flagext.StringSlice `yaml:"drop_labels" json:"drop_labels" category:"advanced"`
 	MaxLabelNameLength                          int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
 	MaxLabelValueLength                         int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
@@ -276,6 +289,7 @@ type Limits struct {
 	PromoteOTelResourceAttributes            flagext.StringSliceCSV `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
 	OTelKeepIdentifyingResourceAttributes    bool                   `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
 	OTelConvertHistogramsToNHCB              bool                   `yaml:"otel_convert_histograms_to_nhcb" json:"otel_convert_histograms_to_nhcb" category:"experimental"`
+	OTelPromoteScopeMetadata                 bool                   `yaml:"otel_promote_scope_metadata" json:"otel_promote_scope_metadata" category:"experimental"`
 	OTelNativeDeltaIngestion                 bool                   `yaml:"otel_native_delta_ingestion" json:"otel_native_delta_ingestion" category:"experimental"`
 
 	// Ingest storage.
@@ -296,6 +310,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
+	l.HATrackerUpdateTimeout = model.Duration(15 * time.Second)
+	f.Var(&l.HATrackerUpdateTimeout, "distributor.ha-tracker.update-timeout", "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
+	l.HATrackerUpdateTimeoutJitterMax = model.Duration(5 * time.Second)
+	f.Var(&l.HATrackerUpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
+	l.HATrackerFailoverTimeout = model.Duration(30 * time.Second)
+	f.Var(&l.HATrackerFailoverTimeout, "distributor.ha-tracker.failover-timeout", "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout.")
 	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
 	f.IntVar(&l.MaxLabelNameLength, MaxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
@@ -317,6 +337,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
 	f.BoolVar(&l.OTelKeepIdentifyingResourceAttributes, "distributor.otel-keep-identifying-resource-attributes", false, "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.")
 	f.BoolVar(&l.OTelConvertHistogramsToNHCB, "distributor.otel-convert-histograms-to-nhcb", false, "Whether to convert OTel explicit histograms into native histograms with custom buckets.")
+	f.BoolVar(&l.OTelPromoteScopeMetadata, "distributor.otel-promote-scope-metadata", false, "Whether to promote OTel scope metadata (scope name, version, schema URL, attributes) to corresponding metric labels, prefixed with otel_scope_.")
 	f.BoolVar(&l.OTelNativeDeltaIngestion, "distributor.otel-native-delta-ingestion", false, "Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.")
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
@@ -539,6 +560,17 @@ func (l *Limits) validate() error {
 
 	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
+	}
+
+	if l.HATrackerUpdateTimeoutJitterMax < 0 {
+		return errNegativeUpdateTimeoutJitterMax
+	}
+
+	if l.HATrackerUpdateTimeout > 0 || l.HATrackerFailoverTimeout > 0 {
+		minFailureTimeout := l.HATrackerUpdateTimeout + l.HATrackerUpdateTimeoutJitterMax + model.Duration(time.Second)
+		if l.HATrackerFailoverTimeout < minFailureTimeout {
+			return fmt.Errorf(errInvalidFailoverTimeout, l.HATrackerFailoverTimeout, minFailureTimeout)
+		}
 	}
 
 	return nil
@@ -1090,6 +1122,32 @@ func (o *Overrides) MaxHAClusters(user string) int {
 	return o.getOverridesForUser(user).HAMaxClusters
 }
 
+// See distributor.haTrackerLimits.HATrackerTimeouts
+func (o *Overrides) HATrackerTimeouts(user string) (update time.Duration, updateJitterMax time.Duration, failover time.Duration) {
+	uo := o.getOverridesForUser(user)
+
+	update = time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
+	if uo.HATrackerUpdateTimeout > 0 {
+		update = time.Duration(uo.HATrackerUpdateTimeout)
+	}
+
+	updateJitterMax = time.Duration(o.defaultLimits.HATrackerUpdateTimeoutJitterMax)
+	if uo.HATrackerUpdateTimeoutJitterMax > 0 {
+		updateJitterMax = time.Duration(uo.HATrackerUpdateTimeoutJitterMax)
+	}
+
+	failover = time.Duration(o.defaultLimits.HATrackerFailoverTimeout)
+	if uo.HATrackerFailoverTimeout > 0 {
+		failover = time.Duration(uo.HATrackerFailoverTimeout)
+	}
+
+	return update, updateJitterMax, failover
+}
+
+func (o *Overrides) DefaultHATrackerUpdateTimeout() time.Duration {
+	return time.Duration(o.defaultLimits.HATrackerUpdateTimeout)
+}
+
 // S3SSEType returns the per-tenant S3 SSE type.
 func (o *Overrides) S3SSEType(user string) string {
 	return o.getOverridesForUser(user).S3SSEType
@@ -1267,6 +1325,10 @@ func (o *Overrides) OTelKeepIdentifyingResourceAttributes(tenantID string) bool 
 
 func (o *Overrides) OTelConvertHistogramsToNHCB(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelConvertHistogramsToNHCB
+}
+
+func (o *Overrides) OTelPromoteScopeMetadata(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelPromoteScopeMetadata
 }
 
 func (o *Overrides) OTelNativeDeltaIngestion(tenantID string) bool {

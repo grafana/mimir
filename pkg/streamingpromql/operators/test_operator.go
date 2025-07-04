@@ -31,16 +31,20 @@ func (t *TestOperator) SeriesMetadata(_ context.Context) ([]types.SeriesMetadata
 		return nil, nil
 	}
 
-	seriesPool, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
+	metadata, err := types.SeriesMetadataSlicePool.Get(len(t.Series), t.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
-	seriesPool = seriesPool[:len(t.Series)]
+	metadata = metadata[:len(t.Series)]
 	for i, l := range t.Series {
-		seriesPool[i].Labels = l
+		metadata[i].Labels = l
+		err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return seriesPool, nil
+	return metadata, nil
 }
 
 func (t *TestOperator) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {

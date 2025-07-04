@@ -41,6 +41,7 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	var electedReplicas []haTrackerReplica
 	for userID, clusters := range h.clusters {
+		uh := h.forUser(userID)
 		for cluster, entry := range clusters {
 			desc := &entry.elected
 			electedReplicas = append(electedReplicas, haTrackerReplica{
@@ -49,8 +50,8 @@ func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Replica:             desc.Replica,
 				LastElectionTime:    timestamp.Time(desc.ElectedAt),
 				ElectedLastSeenTime: timestamp.Time(desc.ReceivedAt),
-				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
-				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
+				UpdateTime:          time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.updateTimeout)),
+				FailoverTime:        time.Until(timestamp.Time(desc.ReceivedAt).Add(uh.failoverTimeout)),
 			})
 		}
 	}

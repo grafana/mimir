@@ -157,11 +157,12 @@ func TestDeduplicateAndMerge(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			inner := &TestOperator{Series: testCase.inputSeries, Data: testCase.inputData, MemoryConsumptionTracker: memoryConsumptionTracker}
 			o := NewDeduplicateAndMerge(inner, memoryConsumptionTracker)
 
-			outputSeriesMetadata, err := o.SeriesMetadata(context.Background())
+			outputSeriesMetadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
 			if !testCase.expectConflict {
@@ -172,7 +173,7 @@ func TestDeduplicateAndMerge(t *testing.T) {
 
 			for {
 				var nextSeries types.InstantVectorSeriesData
-				nextSeries, err = o.NextSeries(context.Background())
+				nextSeries, err = o.NextSeries(ctx)
 
 				if err != nil {
 					break

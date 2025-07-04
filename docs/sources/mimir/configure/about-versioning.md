@@ -113,6 +113,8 @@ The following features are currently experimental:
     - `-distributor.otel-keep-identifying-resource-attributes`
   - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
     - `-distributor.otel-convert-histograms-to-nhcb`
+  - Enable promotion of OTel scope metadata to metric labels
+    - `-distributor.otel-promote-scope-metadata`
   - Enable native ingestion of delta OTLP metrics. This means storing the raw delta sample values without converting them to cumulative values and having the metric type set to "Unknown". Delta support is in an early stage of development. The ingestion and querying process is likely to change over time. You can find considerations around querying and gotchas in the [corresponding Prometheus documentation](https://prometheus.io/docs/prometheus/3.4/feature_flags/#otlp-native-delta-support).
     - `distributor.otel-native-delta-ingestion`
 - Hash ring
@@ -286,9 +288,11 @@ For details about what _deprecated_ means, see [Parameter lifecycle](../configur
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 
+- Distributor's HA tracker timeouts can now be configured on a per-tenant basis. To support this, their configuration has moved from [`distributor.ha_tracker`](../configuration-parameters/#distributor) to [`limits`](../configuration-parameters/#limits) (deprecated since Mimir 2.17)
 - Tracing configuration through Jaeger `JAEGER_*` environment variables and Jaeger tracing exposition protocol (deprecated since Mimir 2.17)
   - Use OpenTelemetry configuration instead, as Jaeger supports OTLP ingestion natively
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - Support for Redis-based caching
 - The `-ingester.stream-chunks-when-using-blocks` CLI flag, and `ingester_stream_chunks_when_using_blocks` runtime configuration option
+- The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.

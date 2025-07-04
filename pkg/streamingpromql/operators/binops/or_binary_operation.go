@@ -73,8 +73,8 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 
 	if len(leftMetadata) == 0 && len(rightMetadata) == 0 {
 		// Nothing to return.
-		types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
-		types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 		o.Right.Close()
@@ -86,7 +86,7 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the right side.
 		o.nextSeriesIsFromLeft = false
 		o.rightSeriesCount = []int{len(rightMetadata)}
-		types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
 
 		o.Left.Close()
 
@@ -97,15 +97,15 @@ func (o *OrBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		// We can just return everything from the left side.
 		o.nextSeriesIsFromLeft = true
 		o.leftSeriesCount = []int{len(leftMetadata)}
-		types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 		o.Right.Close()
 
 		return leftMetadata, nil
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(leftMetadata, o.MemoryConsumptionTracker)
-	defer types.SeriesMetadataSlicePool.Put(rightMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&leftMetadata, o.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, o.MemoryConsumptionTracker)
 
 	o.computeGroups(leftMetadata, rightMetadata)
 
@@ -187,7 +187,12 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			seriesCount := rightGroup.lastLeftSeriesIndex - nextLeftSeriesToRead + 1
 
 			o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
-			series = append(series, leftMetadata[nextLeftSeriesToRead:rightGroup.lastLeftSeriesIndex+1]...)
+			seriesToAppend := leftMetadata[nextLeftSeriesToRead : rightGroup.lastLeftSeriesIndex+1]
+			series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, seriesToAppend...)
+			if err != nil {
+				return nil, err
+			}
+
 			nextLeftSeriesToRead += seriesCount
 
 			if nextRightSeriesToRead == 0 {
@@ -207,13 +212,19 @@ func (o *OrBinaryOperation) computeSeriesOutputOrder(leftMetadata []types.Series
 			o.rightSeriesCount[len(o.rightSeriesCount)-1]++
 		}
 
-		series = append(series, rightMetadata[nextRightSeriesToRead])
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, rightMetadata[nextRightSeriesToRead])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Check if there are any remaining series on the left side.
 	if nextLeftSeriesToRead < len(leftMetadata) {
 		seriesCount := len(leftMetadata) - nextLeftSeriesToRead
-		series = append(series, leftMetadata[nextLeftSeriesToRead:]...)
+		series, err = types.AppendSeriesMetadata(o.MemoryConsumptionTracker, series, leftMetadata[nextLeftSeriesToRead:]...)
+		if err != nil {
+			return nil, err
+		}
 
 		o.leftSeriesCount = append(o.leftSeriesCount, seriesCount)
 	}
@@ -388,6 +399,5 @@ func (g *orGroup) FilterRightSeries(rightData types.InstantVectorSeriesData, mem
 }
 
 func (g *orGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.BoolSlicePool.Put(g.leftSamplePresence, memoryConsumptionTracker)
-	g.leftSamplePresence = nil
+	types.BoolSlicePool.Put(&g.leftSamplePresence, memoryConsumptionTracker)
 }

@@ -972,6 +972,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
       ],
     },
+    {
+      name: 'golang_alerts',
+      rules: (
+        [
+          {
+            alert: $.alertName('GoThreadsTooHigh'),
+            expr: |||
+              # We filter by the namespace because go_threads can be very high cardinality in a large organization.
+              max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (go_threads{namespace=~".*(cortex|mimir).*"} > %(threshold)s)
+
+              # Further filter on namespaces actually running Mimir.
+              and on (%(alert_aggregation_labels)s) (count by (%(alert_aggregation_labels)s) (cortex_build_info))
+            ||| % ($._config + settings),
+            'for': '15m',
+            labels: {
+              severity: settings.severity,
+            },
+            annotations: {
+              message: |||
+                %(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s is running a very high number of Go threads.
+              ||| % $._config,
+            },
+          }
+          for settings in [
+            { severity: 'warning', threshold: 5000 },
+            { severity: 'critical', threshold: 8000 },
+          ]
+        ]
+      ),
+    },
   ],
 
   groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', $.withExtraLabelsAnnotations(alertGroups)),

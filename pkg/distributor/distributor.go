@@ -86,10 +86,6 @@ const (
 	// distributorRingKey is the key under which we store the distributors ring in the KVStore.
 	distributorRingKey = "distributor"
 
-	// ringAutoForgetUnhealthyPeriods is how many consecutive timeout periods an unhealthy instance
-	// in the ring will be automatically removed after.
-	ringAutoForgetUnhealthyPeriods = 10
-
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 
@@ -144,6 +140,8 @@ type Distributor struct {
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
+	receivedNativeHistogramSamples   *prometheus.CounterVec
+	receivedNativeHistogramBuckets   *prometheus.CounterVec
 	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
@@ -151,6 +149,7 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
+	sampleDelay                      *prometheus.HistogramVec
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
@@ -297,9 +296,6 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	if err := cfg.HATrackerConfig.Validate(); err != nil {
-		return err
-	}
 	return cfg.RetryConfig.Validate()
 }
 
@@ -412,7 +408,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_samples_total",
-			Help: "The total number of received samples, excluding rejected and deduped samples.",
+			Help: "The total number of received samples, including native histogram samples, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",
@@ -421,6 +417,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_metadata_total",
 			Help: "The total number of received metadata, excluding rejected.",
+		}, []string{"user"}),
+		receivedNativeHistogramSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_samples_total",
+			Help: "The total number of received native histogram samples, excluding rejected and deduped samples.",
+		}, []string{"user"}),
+		receivedNativeHistogramBuckets: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_received_native_histogram_buckets_total",
+			Help: "The total number of received native histogram buckets, excluding rejected and deduped samples.",
 		}, []string{"user"}),
 		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_requests_in_total",
@@ -451,6 +455,13 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Number of labels per sample.",
 			Buckets: []float64{5, 10, 15, 20, 25},
 		}),
+		sampleDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_sample_delay_seconds",
+			Help:                            "Number of seconds by which a sample came in late wrt wallclock.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_samples_per_request",
 			Help:                            "Number of samples per request before deduplication and validation.",
@@ -667,7 +678,9 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
 	delegate = newHealthyInstanceDelegate(instanceCount, cfg.Common.HeartbeatTimeout, delegate)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.Common.HeartbeatTimeout, delegate, logger)
+	if cfg.AutoForgetUnhealthyPeriods > 0 {
+		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.Common.HeartbeatTimeout, delegate, logger)
+	}
 
 	distributorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "distributor", distributorRingKey, kvStore, delegate, logger, reg)
 	if err != nil {
@@ -726,10 +739,13 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
+	d.receivedNativeHistogramSamples.DeleteLabelValues(userID)
+	d.receivedNativeHistogramBuckets.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
 	d.incomingSamplesPerRequest.DeleteLabelValues(userID)
+	d.sampleDelay.DeleteLabelValues(userID)
 	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
@@ -801,6 +817,8 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 
 	cat := d.costAttributionMgr.SampleTracker(userID)
 	if len(ts.Samples) == 1 {
+		delta := now - model.Time(ts.Samples[0].TimestampMs)
+		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
 		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
 	}
 
@@ -815,6 +833,10 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 		}
 
 		timestamps[s.TimestampMs] = struct{}{}
+
+		delta := now - model.Time(s.TimestampMs)
+		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cat); err != nil {
 			return err
 		}
@@ -842,6 +864,9 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 
 	cat := d.costAttributionMgr.SampleTracker(userID)
 	if len(ts.Histograms) == 1 {
+		delta := now - model.Time(ts.Histograms[0].Timestamp)
+		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
 		if err != nil {
 			return err
@@ -863,6 +888,10 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		}
 
 		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
+
+		delta := now - model.Time(ts.Histograms[idx].Timestamp)
+		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
+
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
 		if err != nil {
 			return err
@@ -1950,16 +1979,21 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 }
 
 func (d *Distributor) updateReceivedMetrics(ctx context.Context, req *mimirpb.WriteRequest, userID string) {
-	var receivedSamples, receivedHistograms, receivedExemplars, receivedMetadata int
+	var receivedSamples, receivedHistograms, receivedHistogramBuckets, receivedExemplars, receivedMetadata int
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.Samples)
-		receivedHistograms += len(ts.Histograms)
 		receivedExemplars += len(ts.Exemplars)
+		receivedHistograms += len(ts.Histograms)
+		for _, h := range ts.Histograms {
+			receivedHistogramBuckets += h.BucketCount()
+		}
 	}
 	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples + receivedHistograms))
+	d.receivedNativeHistogramSamples.WithLabelValues(userID).Add(float64(receivedHistograms))
+	d.receivedNativeHistogramBuckets.WithLabelValues(userID).Add(float64(receivedHistogramBuckets))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 

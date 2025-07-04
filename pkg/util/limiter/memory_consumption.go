@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type contextKey int
@@ -22,7 +24,7 @@ const (
 func MemoryTrackerFromContextWithFallback(ctx context.Context) *MemoryConsumptionTracker {
 	tracker, ok := ctx.Value(memoryConsumptionTracker).(*MemoryConsumptionTracker)
 	if !ok {
-		return NewMemoryConsumptionTracker(0, nil, "")
+		return NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	}
 
 	return tracker
@@ -51,11 +53,13 @@ const (
 	HistogramPointerSlices
 	SeriesMetadataSlices
 	BucketSlices
+	BucketsSlices
 	QuantileGroupSlices
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
+	Labels
 
-	memoryConsumptionSourceCount = TopKBottomKRangeQuerySeriesSlices + 1
+	memoryConsumptionSourceCount = Labels + 1
 )
 
 const (
@@ -89,6 +93,8 @@ func (s MemoryConsumptionSource) String() string {
 	case SeriesMetadataSlices:
 		return "[]SeriesMetadata"
 	case BucketSlices:
+		return "[]promql.Bucket"
+	case BucketsSlices:
 		return "[]promql.Buckets"
 	case QuantileGroupSlices:
 		return "[]aggregations.qGroup"
@@ -96,6 +102,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[]topkbottom.instantQuerySeries"
 	case TopKBottomKRangeQuerySeriesSlices:
 		return "[]topkbottom.rangeQuerySeries"
+	case Labels:
+		return "labels.Labels"
 	default:
 		return unknownMemorySource
 	}
@@ -115,18 +123,21 @@ type MemoryConsumptionTracker struct {
 	haveRecordedRejection bool
 	queryDescription      string
 
+	ctx context.Context // Used to retrieve trace ID to include in panic messages.
+
 	// mtx protects all mutable state of the memory consumption tracker. We use a mutex
 	// rather than atomics because we only want to adjust the memory used after checking
 	// that it would not exceed the limit.
 	mtx sync.Mutex
 }
 
-func NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
+func NewMemoryConsumptionTracker(ctx context.Context, maxEstimatedMemoryConsumptionBytes uint64, rejectionCount prometheus.Counter, queryDescription string) *MemoryConsumptionTracker {
 	return &MemoryConsumptionTracker{
 		maxEstimatedMemoryConsumptionBytes: maxEstimatedMemoryConsumptionBytes,
 
 		rejectionCount:   rejectionCount,
 		queryDescription: queryDescription,
+		ctx:              ctx,
 	}
 }
 
@@ -159,7 +170,14 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumption(b uint64, source Me
 	defer l.mtx.Unlock()
 
 	if b > l.currentEstimatedMemoryConsumptionBySource[source] {
-		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v", source, l.queryDescription))
+		traceID, ok := tracing.ExtractTraceID(l.ctx)
+		traceDescription := ""
+
+		if ok {
+			traceDescription = fmt.Sprintf(" (trace ID: %v)", traceID)
+		}
+
+		panic(fmt.Sprintf("Estimated memory consumption of all instances of %s in this query is negative. This indicates something has been returned to a pool more than once, which is a bug. The affected query is: %v%v", source, l.queryDescription, traceDescription))
 	}
 
 	l.currentEstimatedMemoryConsumptionBytes -= b
@@ -180,4 +198,17 @@ func (l *MemoryConsumptionTracker) CurrentEstimatedMemoryConsumptionBytes() uint
 	defer l.mtx.Unlock()
 
 	return l.currentEstimatedMemoryConsumptionBytes
+}
+
+// IncreaseMemoryConsumptionForLabels attempts to increase the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) IncreaseMemoryConsumptionForLabels(lbls labels.Labels) error {
+	if err := l.IncreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DecreaseMemoryConsumptionForLabels decreases the current memory consumption based on labels.
+func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls labels.Labels) {
+	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
 }

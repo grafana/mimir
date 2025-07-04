@@ -916,10 +916,10 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 	}()
 
+	// Keep this channel outside the compaction loop, because we want the "max compaction time"
+	// to apply on compactions across multiple consecutive loops. This channel is initialised
+	// after the first planning.
 	var maxCompactionTimeChan <-chan time.Time
-	if maxCompactionTime > 0 {
-		maxCompactionTimeChan = time.After(maxCompactionTime)
-	}
 
 	// Loop over bucket and compact until there's no work left.
 	for {
@@ -1077,6 +1077,14 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		level.Info(c.logger).Log("msg", "start of compactions")
+
+		// Start the max compaction timer only after the first planning has been completed. This is important
+		// in case the metas syncing (or planning in general) is slow. If did start the timer before the first
+		// planning we could end up in a situation where the planning takes longer than "max compaction time"
+		// and we would never run compactions at all for a given tenant.
+		if maxCompactionTimeChan == nil && maxCompactionTime > 0 {
+			maxCompactionTimeChan = time.After(maxCompactionTime)
+		}
 
 		maxCompactionTimeReached := false
 		// Send all jobs found during this pass to the compaction workers.

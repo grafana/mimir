@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package core;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
@@ -125,6 +125,8 @@ message VectorSelectorDetails {
   google.protobuf.Timestamp timestamp = 2 [(gogoproto.stdtime) = true];
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
+  bool returnSampleTimestamps = 5;
+  bool skipHistogramBuckets = 6;
 }
 
 message MatrixSelectorDetails {
@@ -133,6 +135,7 @@ message MatrixSelectorDetails {
   google.protobuf.Duration offset = 3 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   google.protobuf.Duration range = 4 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
+  bool skipHistogramBuckets = 6;
 }
 
 message SubqueryDetails {

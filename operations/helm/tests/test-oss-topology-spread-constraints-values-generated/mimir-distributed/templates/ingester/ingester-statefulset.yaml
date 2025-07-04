@@ -13,8 +13,12 @@ metadata:
     name: "ingester-zone-a"
     rollout-group: ingester
     zone: zone-a
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -111,6 +115,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-a"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -167,8 +172,13 @@ metadata:
     name: "ingester-zone-b"
     rollout-group: ingester
     zone: zone-b
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -265,6 +275,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-b"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -321,8 +332,13 @@ metadata:
     name: "ingester-zone-c"
     rollout-group: ingester
     zone: zone-c
+    grafana.com/prepare-downscale: "true"
+    grafana.com/min-time-between-zones-downscale: 12h
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -419,6 +435,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-ingester.ring.instance-availability-zone=zone-c"
+            - "-memberlist.abort-if-fast-join-fails=true"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir

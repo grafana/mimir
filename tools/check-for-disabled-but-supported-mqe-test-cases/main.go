@@ -57,7 +57,8 @@ func run() error {
 		return fmt.Errorf("could not list test files in '%v': %w", testsDir, err)
 	}
 
-	engine, err := streamingpromql.NewEngine(streamingpromql.NewTestEngineOpts(), streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	opts := streamingpromql.NewTestEngineOpts()
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), streamingpromql.NewQueryPlanner(opts), log.NewNopLogger())
 	if err != nil {
 		return fmt.Errorf("could not create engine: %w", err)
 	}

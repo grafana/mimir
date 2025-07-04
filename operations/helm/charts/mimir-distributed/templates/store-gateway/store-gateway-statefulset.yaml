@@ -10,8 +10,23 @@ metadata:
   name: {{ include "mimir.resourceName" $args }}
   labels:
     {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if (eq $rolloutZone.noDownscale true )}}
+    grafana.com/no-downscale: {{ $rolloutZone.noDownscale | quote }}
+    {{- else }}
+    {{- if (eq $rolloutZone.prepareDownscale true )}}
+    grafana.com/prepare-downscale: {{ $rolloutZone.prepareDownscale | quote }}
+    grafana.com/min-time-between-zones-downscale: 30m
+    {{- end }}
+    {{- end }}
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
+    {{- if $rolloutZone.prepareDownscale }}
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . | quote }}
+    {{- end -}}
+    {{- if $rolloutZone.downscaleLeader }}
+    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
+    {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
@@ -141,6 +156,7 @@ spec:
             - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
             {{- end }}
+            - "-server.grpc-max-send-msg-size-bytes={{ .Values.store_gateway.grpcMaxQueryResponseSizeBytes }}"
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}

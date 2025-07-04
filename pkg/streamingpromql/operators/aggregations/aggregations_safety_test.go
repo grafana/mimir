@@ -3,6 +3,7 @@
 package aggregations
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -27,7 +28,7 @@ func TestAggregationGroupNativeHistogramSafety(t *testing.T) {
 
 	for name, group := range groups {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(4), time.Millisecond)
 
 			// First series: all histograms should be nil-ed out after returning, as they're all retained for use.

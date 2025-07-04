@@ -75,7 +75,7 @@
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   distributor_container::
     $.newDistributorContainer('distributor', $.distributor_args, $.distributor_env_map),

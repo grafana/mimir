@@ -47,7 +47,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	if err != nil {
 		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(innerMetadata, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, a.MemoryConsumptionTracker)
 
 	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
@@ -62,9 +62,10 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		return nil, err
 	}
 
-	metadata = append(metadata, types.SeriesMetadata{
-		Labels: a.Labels,
-	})
+	metadata, err = types.AppendSeriesMetadata(a.MemoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: a.Labels})
+	if err != nil {
+		return nil, err
+	}
 
 	for range innerMetadata {
 		series, err := a.Inner.NextSeries(ctx)
@@ -119,8 +120,7 @@ func (a *Absent) Prepare(ctx context.Context, params *types.PrepareParams) error
 func (a *Absent) Close() {
 	a.Inner.Close()
 
-	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
-	a.presence = nil
+	types.BoolSlicePool.Put(&a.presence, a.MemoryConsumptionTracker)
 }
 
 // CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched

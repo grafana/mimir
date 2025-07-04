@@ -26,7 +26,7 @@
     container.withPorts($.query_scheduler_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}) +
-    $.jaeger_mixin +
+    $.tracing_env_mixin +
     $.util.readinessProbe +
     $.util.resourcesRequests('2', '1Gi') +
     $.util.resourcesLimits(null, '2Gi'),

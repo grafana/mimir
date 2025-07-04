@@ -67,6 +67,45 @@ const (
 			}]
 		}
 	}`
+	testGrafanaConfigWithMixedReceivers = `{
+		"template_files": {},
+		"alertmanager_config": {
+			"route": {
+				"receiver": "test_receiver",
+				"group_by": ["alertname"],
+				"routes": [{
+					"receiver": "standard_email_receiver",
+					"matchers": ["imported=\"true\""]
+				}]
+			},
+			"global": {
+				"resolve_timeout": "5m",
+				"smtp_smarthost": "localhost:587"
+			},
+			"receivers": [{
+				"name": "test_receiver",
+				"grafana_managed_receiver_configs": [{
+					"uid": "",
+					"name": "email test",
+					"type": "email",
+					"disableResolveMessage": true,
+					"settings": {
+						"addresses": "test@test.com"
+					}
+				}]
+			}, {
+				"name": "standard_email_receiver",
+				"email_configs": [{
+					"to": "alerts@example.com",
+					"from": "alertmanager@example.com",
+					"smarthost": "localhost:587",
+					"auth_username": "alertmanager@localhost",
+					"auth_password": "my_secret_password",
+					"subject": "Alert: {{ .GroupLabels.alertname }}"
+				}]
+			}]
+		}
+	}`
 )
 
 func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
@@ -199,8 +238,12 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		logger: test.NewTestingLogger(t),
 	}
 
+	smtpConfig := &alertspb.SmtpConfig{
+		FromAddress:   "test@example.com",
+		StaticHeaders: map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
+	}
 	externalURL := "http://test.grafana.com"
-	smtpFrom := "test@grafana.com"
+	smtpFrom := "test@example.com"
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:               "test_user",
 		RawConfig:          testGrafanaConfig,
@@ -209,6 +252,7 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		Default:            false,
 		Promoted:           true,
 		ExternalUrl:        externalURL,
+		SmtpConfig:         smtpConfig,
 		SmtpFrom:           smtpFrom,
 		StaticHeaders:      map[string]string{"Header-1": "Value-1", "Header-2": "Value-2"},
 	}))
@@ -240,15 +284,29 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 				 "default": false,
 				 "promoted": true,
 				 "external_url": %q,
-				 "smtp_from": %q,
-				 "static_headers": {
-					"Header-1": "Value-1",
+				 "smtp_config": {
+					"from_address": %q,
+					"static_headers": {
+						"Header-1": "Value-1",	
+						"Header-2": "Value-2"
+					},
+					"ehlo_identity": "",
+					"from_name": "",
+					"host": "",
+					"password": "",
+					"skip_verify": false,
+					"start_tls_policy": "",
+					"user": ""
+				},
+				"smtp_from": %q,
+				"static_headers": {
+					"Header-1": "Value-1",	
 					"Header-2": "Value-2"
-				 }
+				}
 			},
 			"status": "success"
 		}
-		`, testGrafanaConfig, now, externalURL, smtpFrom)
+		`, testGrafanaConfig, now, externalURL, smtpConfig.FromAddress, smtpFrom)
 
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -310,13 +368,14 @@ func TestMultitenantAlertmanager_GetUserGrafanaState(t *testing.T) {
 
 func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	cases := []struct {
-		name            string
-		maxConfigSize   int
-		orgID           string
-		body            string
-		expStatusCode   int
-		expResponseBody string
-		expStorageKey   string
+		name              string
+		maxConfigSize     int
+		orgID             string
+		body              string
+		expStatusCode     int
+		expResponseBody   string
+		expStorageKey     string
+		checkStoredObject func(t *testing.T, storedData []byte)
 	}{
 		{
 			name:          "missing org id",
@@ -361,7 +420,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			expStatusCode: http.StatusBadRequest,
 			expResponseBody: `
 			{
-				"error": "error marshalling JSON Grafana Alertmanager config: no route provided in config",
+				"error": "error unmarshalling JSON Grafana Alertmanager config: no route provided in config",
 				"status": "error"
 			}
 			`,
@@ -467,6 +526,30 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 			}
 			`,
 		},
+		{
+			name: "with mixed receiver formats",
+			body: fmt.Sprintf(`
+			{
+				"configuration": %s,
+				"configuration_hash": "some-hash",
+				"created": 12312414343,
+				"default": false,
+				"promoted": true,
+				"external_url": "http://test.grafana.com",
+				"static_headers": {
+					"Header-1": "Value-1"
+				}
+			}
+			`, testGrafanaConfigWithMixedReceivers),
+			orgID:           "test_user",
+			expStatusCode:   http.StatusCreated,
+			expResponseBody: successJSON,
+			expStorageKey:   "grafana_alertmanager/test_user/grafana_config",
+			checkStoredObject: func(t *testing.T, storedData []byte) {
+				assert.Contains(t, string(storedData), `"auth_password": "my_secret_password"`)
+				assert.Contains(t, string(storedData), `"email_configs"`)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -506,8 +589,12 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 				assert.Len(t, storage.Objects(), 0)
 			} else {
 				assert.Len(t, storage.Objects(), 1)
-				_, ok := storage.Objects()[tc.expStorageKey]
+				storedObject, ok := storage.Objects()[tc.expStorageKey]
 				assert.True(t, ok)
+
+				if tc.checkStoredObject != nil {
+					tc.checkStoredObject(t, storedObject)
+				}
 			}
 		})
 	}

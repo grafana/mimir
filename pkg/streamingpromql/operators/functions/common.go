@@ -14,9 +14,14 @@ type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryCo
 
 // DropSeriesName is a series metadata function that removes the __name__ label from all series.
 var DropSeriesName = SeriesMetadataFunctionDefinition{
-	Func: func(seriesMetadata []types.SeriesMetadata, _ *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	Func: func(seriesMetadata []types.SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		for i := range seriesMetadata {
+			tracker.DecreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
 			seriesMetadata[i].Labels = seriesMetadata[i].Labels.DropMetricName()
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesMetadata[i].Labels)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return seriesMetadata, nil
@@ -42,15 +47,13 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		// Functions that do not explicitly mention native histograms in their documentation will ignore histogram samples.
 		// https://prometheus.io/docs/prometheus/latest/querying/functions
-		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
-		seriesData.Histograms = nil
+		types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)
 		return ft(seriesData, nil, timeRange, memoryConsumptionTracker)
 	}
 }
 
 func DropHistograms(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
-	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
-	seriesData.Histograms = nil
+	types.HPointSlicePool.Put(&seriesData.Histograms, memoryConsumptionTracker)
 	return seriesData, nil
 }
 

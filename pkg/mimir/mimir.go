@@ -35,6 +35,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
@@ -182,6 +183,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
+	c.registerMemberlistKVFlagsWithChangedDefaultValues(f)
 	c.Distributor.RegisterFlags(f, logger)
 	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
@@ -197,14 +199,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
-
 	c.Ruler.RegisterFlags(f, logger)
 	c.RulerStorage.RegisterFlags(f)
 	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
-	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
@@ -332,6 +332,19 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout; use limits.ha_tracker_update_timeout instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax > 0 {
+		c.LimitsConfig.HATrackerUpdateTimeoutJitterMax = model.Duration(c.Distributor.HATrackerConfig.DeprecatedUpdateTimeoutJitterMax)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_update_timeout_jitter_max; use limits.ha_tracker_update_timeout_jitter_max instead")
+	}
+	if c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout > 0 {
+		c.LimitsConfig.HATrackerFailoverTimeout = model.Duration(c.Distributor.HATrackerConfig.DeprecatedFailoverTimeout)
+		level.Warn(log).Log("msg", "using deprecated config parameter distributor.ha_tracker.ha_tracker_failover_timeout; use limits.ha_tracker_failover_timeout instead")
 	}
 	// validate the default limits
 	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
@@ -584,6 +597,28 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 		"server.http-listen-port":                                   "8080",
 		"server.http-write-timeout":                                 "2m",
 		"server.report-grpc-codes-in-instrumentation-label-enabled": "true",
+	}
+
+	throwaway.VisitAll(func(f *flag.Flag) {
+		if defaultValue, overridden := defaultsOverrides[f.Name]; overridden {
+			// Ignore errors when setting new values. We have a test to verify that it works.
+			_ = f.Value.Set(defaultValue)
+		}
+
+		fs.Var(f.Value, f.Name, f.Usage)
+	})
+}
+
+func (c *Config) registerMemberlistKVFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
+	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
+
+	c.MemberlistKV.RegisterFlags(throwaway)
+
+	defaultsOverrides := map[string]string{
+		"memberlist.packet-dial-timeout":    "500ms",
+		"memberlist.packet-write-timeout":   "500ms",
+		"memberlist.max-concurrent-writes":  "5",
+		"memberlist.acquire-writer-timeout": "1s",
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {

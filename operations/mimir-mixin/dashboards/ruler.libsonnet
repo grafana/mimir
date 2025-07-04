@@ -57,7 +57,13 @@ local filename = 'mimir-ruler.json';
                 (sum(rate(cortex_ingester_client_request_duration_seconds_count{%(job_matcher)s, operation="/cortex.Ingester/Push"}[$__rate_interval])) or vector(0))
                 +
                 # Ingest storage architecture.
-                (sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
+                (sum(
+                    # Old metric.
+                    rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])
+                    or
+                    # New metric.
+                    rate(cortex_ingest_storage_writer_produce_records_enqueued_total{%(job_matcher)s}[$__rate_interval])
+                ) or vector(0))
               ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) }
             else
               |||

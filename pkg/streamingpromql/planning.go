@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -54,6 +55,11 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg))
+	}
+
+	if opts.EnableSkippingHistogramDecoding {
+		// This optimization pass must be registered after common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
 	return planner
@@ -217,6 +223,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
+				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
+				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
+				// with merging selectors that can and can't skip histogram buckets.
 			},
 		}, nil
 
@@ -233,6 +243,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
 
@@ -318,8 +329,14 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			},
 		}
 
-		if expr.Func.Name == "absent" || expr.Func.Name == "absent_over_time" {
+		switch expr.Func.Name {
+		case "absent", "absent_over_time":
 			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
+		case "timestamp":
+			vs, isVectorSelector := args[0].(*core.VectorSelector)
+			if isVectorSelector {
+				vs.VectorSelectorDetails.ReturnSampleTimestamps = true
+			}
 		}
 
 		return f, nil

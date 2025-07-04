@@ -75,7 +75,7 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 
 	if len(leftMetadata) == 0 {
 		// We can't produce any series, we are done.
-		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -84,11 +84,11 @@ func (a *AndUnlessBinaryOperation) SeriesMetadata(ctx context.Context) ([]types.
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(rightMetadata, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&rightMetadata, a.MemoryConsumptionTracker)
 
 	if len(rightMetadata) == 0 && !a.IsUnless {
 		// We can't produce any series, we are done.
-		types.SeriesMetadataSlicePool.Put(leftMetadata, a.MemoryConsumptionTracker)
+		types.SeriesMetadataSlicePool.Put(&leftMetadata, a.MemoryConsumptionTracker)
 		return nil, nil
 	}
 
@@ -143,12 +143,16 @@ func (a *AndUnlessBinaryOperation) computeAndSeriesMetadata(leftMetadata []types
 			// This series doesn't match any series from the right side.
 			// Discard the group.
 			a.leftSeriesGroups[seriesIdx] = nil
+			a.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(leftMetadata[seriesIdx].Labels)
 		} else {
 			leftMetadata[nextOutputSeriesIndex] = leftMetadata[seriesIdx]
 			nextOutputSeriesIndex++
 			a.lastLeftSeriesIndexToRead = seriesIdx
 		}
 	}
+
+	// Clear up labels that we don't need anymore.
+	clear(leftMetadata[nextOutputSeriesIndex:])
 
 	return leftMetadata[:nextOutputSeriesIndex]
 }
@@ -327,6 +331,5 @@ func (g *andGroup) FilterLeftSeries(leftData types.InstantVectorSeriesData, memo
 }
 
 func (g *andGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.BoolSlicePool.Put(g.rightSamplePresence, memoryConsumptionTracker)
-	g.rightSamplePresence = nil
+	types.BoolSlicePool.Put(&g.rightSamplePresence, memoryConsumptionTracker)
 }

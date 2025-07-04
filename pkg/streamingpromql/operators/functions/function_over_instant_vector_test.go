@@ -20,6 +20,7 @@ import (
 // pkg/streamingpromql/testdata.
 
 func TestFunctionOverInstantVector(t *testing.T) {
+	ctx := context.Background()
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
@@ -29,7 +30,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
+		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
 	}
 
 	metadataFuncCalled := false
@@ -47,7 +48,7 @@ func TestFunctionOverInstantVector(t *testing.T) {
 
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
+		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(ctx, 0, nil, ""),
 		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc: mustBeCalledSeriesData,
 			SeriesMetadataFunction: SeriesMetadataFunctionDefinition{
@@ -56,7 +57,6 @@ func TestFunctionOverInstantVector(t *testing.T) {
 		},
 	}
 
-	ctx := context.TODO()
 	_, err := operator.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	_, err = operator.NextSeries(ctx)
@@ -66,6 +66,8 @@ func TestFunctionOverInstantVector(t *testing.T) {
 }
 
 func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
+	ctx := context.Background()
+	tracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 	inner := &operators.TestOperator{
 		Series: []labels.Labels{
 			labels.FromStrings("series", "0"),
@@ -75,7 +77,7 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 			{Floats: []promql.FPoint{{T: 0, F: 1}}},
 			{Floats: []promql.FPoint{{T: 0, F: 2}}},
 		},
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
+		MemoryConsumptionTracker: tracker,
 	}
 
 	scalarOperator1 := &testScalarOperator{
@@ -99,14 +101,13 @@ func TestFunctionOverInstantVectorWithScalarArgs(t *testing.T) {
 	operator := &FunctionOverInstantVector{
 		Inner:                    inner,
 		ScalarArgs:               []types.ScalarOperator{scalarOperator1, scalarOperator2},
-		MemoryConsumptionTracker: limiter.NewMemoryConsumptionTracker(0, nil, ""),
+		MemoryConsumptionTracker: tracker,
 		Func: FunctionOverInstantVectorDefinition{
 			SeriesDataFunc:         mustBeCalledSeriesData,
 			SeriesMetadataFunction: DropSeriesName,
 		},
 	}
 
-	ctx := context.TODO()
 	// SeriesMetadata should process scalar args
 	_, err := operator.SeriesMetadata(ctx)
 	require.NoError(t, err)

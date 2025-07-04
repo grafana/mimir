@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
+	"github.com/grafana/alerting/receivers"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -75,76 +76,189 @@ const grafanaConfigWithDuplicateReceiverName = `{
 }`
 
 func TestCreateUsableGrafanaConfig(t *testing.T) {
+	defaultFromAddress := "grafana@example.com"
+	mimirConfig := fmt.Sprintf(`
+global:
+  smtp_from: %s
+route:
+  receiver: dummy
+receivers:
+  - name: dummy
+`, defaultFromAddress)
+
+	staticHeaders := map[string]string{"test": "test"}
+	smtpConfig := &alertspb.SmtpConfig{
+		StaticHeaders: staticHeaders,
+		FromAddress:   "test-instance@grafana.com",
+	}
+	externalURL := "http://test:3000"
+	baseEmailSenderConfig := receivers.EmailSenderConfig{
+		ContentTypes:  []string{"text/html"},
+		EhloIdentity:  "localhost",
+		ExternalURL:   externalURL,
+		FromAddress:   smtpConfig.FromAddress,
+		FromName:      "Grafana",
+		SentBy:        "Mimir vunknown", // no 'version' flag passed in tests.
+		StaticHeaders: smtpConfig.StaticHeaders,
+	}
+
 	tests := []struct {
-		name          string
-		grafanaConfig alertspb.GrafanaAlertConfigDesc
-		mimirConfig   string
-		expErr        string
+		name                 string
+		grafanaConfig        alertspb.GrafanaAlertConfigDesc
+		mimirConfig          string
+		expEmailSenderConfig receivers.EmailSenderConfig
+		expErr               string
 	}{
 		{
-			"empty grafana config",
-			alertspb.GrafanaAlertConfigDesc{
-				ExternalUrl:   "http://test:3000",
-				RawConfig:     "",
-				StaticHeaders: map[string]string{"test": "test"},
-				SmtpFrom:      "test-instance@grafana.com",
+			name: "empty grafana config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   "",
 			},
-			simpleConfigOne,
-			"failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
+			mimirConfig: mimirConfig,
+			expErr:      "failed to unmarshal Grafana Alertmanager configuration: unexpected end of JSON input",
 		},
 		{
-			"invalid grafana config",
-			alertspb.GrafanaAlertConfigDesc{
-				ExternalUrl:   "http://test:3000",
-				RawConfig:     "invalid",
-				StaticHeaders: map[string]string{"test": "test"},
-				SmtpFrom:      "test-instance@grafana.com",
+			name: "invalid grafana config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   "invalid",
+				SmtpConfig:  smtpConfig,
 			},
-			simpleConfigOne,
-			"failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
+			mimirConfig: mimirConfig,
+			expErr:      "failed to unmarshal Grafana Alertmanager configuration: invalid character 'i' looking for beginning of value",
 		},
 		{
-			"no mimir config",
-			alertspb.GrafanaAlertConfigDesc{
-				ExternalUrl:   "http://test:3000",
+			name: "no mimir config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfig,
+				SmtpConfig:  smtpConfig,
+			},
+			expEmailSenderConfig: baseEmailSenderConfig,
+		},
+		{
+			name: "no mimir config, custom SMTP config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfig,
+				SmtpConfig: &alertspb.SmtpConfig{
+					StaticHeaders:  map[string]string{"test": "test"},
+					EhloIdentity:   "custom-identity",
+					FromAddress:    "custom@address.com",
+					FromName:       "Custom From Name",
+					Host:           "custom-host",
+					Password:       "custom-password",
+					SkipVerify:     true,
+					StartTlsPolicy: "custom-policy",
+					User:           "custom-user",
+				},
+			},
+			expEmailSenderConfig: receivers.EmailSenderConfig{
+				AuthPassword:   "custom-password",
+				AuthUser:       "custom-user",
+				ContentTypes:   baseEmailSenderConfig.ContentTypes,
+				EhloIdentity:   "custom-identity",
+				ExternalURL:    baseEmailSenderConfig.ExternalURL,
+				FromAddress:    "custom@address.com",
+				FromName:       "Custom From Name",
+				Host:           "custom-host",
+				SentBy:         baseEmailSenderConfig.SentBy,
+				SkipVerify:     true,
+				StartTLSPolicy: "custom-policy",
+				StaticHeaders:  map[string]string{"test": "test"},
+			},
+		},
+		{
+			name: "duplicate grafana receiver name config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfigWithDuplicateReceiverName,
+				SmtpConfig:  smtpConfig,
+			},
+			expEmailSenderConfig: baseEmailSenderConfig,
+		},
+		{
+			name: "non-empty mimir config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfig,
+				SmtpConfig:  smtpConfig,
+			},
+			mimirConfig:          mimirConfig,
+			expEmailSenderConfig: baseEmailSenderConfig,
+		},
+		{
+			name: "non-empty mimir config, empty SMTP from address",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfig,
+				SmtpConfig: &alertspb.SmtpConfig{
+					StaticHeaders: staticHeaders,
+				},
+			},
+			mimirConfig: mimirConfig,
+			expEmailSenderConfig: receivers.EmailSenderConfig{
+				ContentTypes:  baseEmailSenderConfig.ContentTypes,
+				EhloIdentity:  baseEmailSenderConfig.EhloIdentity,
+				ExternalURL:   baseEmailSenderConfig.ExternalURL,
+				FromAddress:   defaultFromAddress,
+				FromName:      baseEmailSenderConfig.FromName,
+				SentBy:        baseEmailSenderConfig.SentBy,
+				StaticHeaders: baseEmailSenderConfig.StaticHeaders,
+			},
+		},
+		{
+			name: "non-empty mimir config, SmtpFrom and StaticHeaders fields",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl:   externalURL,
 				RawConfig:     grafanaConfig,
+				SmtpFrom:      "custom@example.com",
 				StaticHeaders: map[string]string{"test": "test"},
-				SmtpFrom:      "test-instance@grafana.com",
 			},
-			"",
-			"",
+			mimirConfig: mimirConfig,
+			expEmailSenderConfig: receivers.EmailSenderConfig{
+				ContentTypes:  baseEmailSenderConfig.ContentTypes,
+				EhloIdentity:  baseEmailSenderConfig.EhloIdentity,
+				ExternalURL:   baseEmailSenderConfig.ExternalURL,
+				FromAddress:   "custom@example.com",
+				FromName:      baseEmailSenderConfig.FromName,
+				SentBy:        baseEmailSenderConfig.SentBy,
+				StaticHeaders: map[string]string{"test": "test"},
+			},
 		},
 		{
-			"duplicate grafana receiver name config",
-			alertspb.GrafanaAlertConfigDesc{
-				ExternalUrl:   "http://test:3000",
-				RawConfig:     grafanaConfigWithDuplicateReceiverName,
-				StaticHeaders: map[string]string{"test": "test"},
-				SmtpFrom:      "test-instance@grafana.com",
+			name: "non-empty mimir config, custom SMTP config",
+			grafanaConfig: alertspb.GrafanaAlertConfigDesc{
+				ExternalUrl: externalURL,
+				RawConfig:   grafanaConfig,
+				SmtpConfig: &alertspb.SmtpConfig{
+					StaticHeaders:  map[string]string{"test": "test"},
+					EhloIdentity:   "custom-identity",
+					FromAddress:    "custom@address.com",
+					FromName:       "Custom From Name",
+					Host:           "custom-host",
+					Password:       "custom-password",
+					SkipVerify:     true,
+					StartTlsPolicy: "custom-policy",
+					User:           "custom-user",
+				},
 			},
-			"",
-			"",
-		},
-		{
-			"non-empty mimir config",
-			alertspb.GrafanaAlertConfigDesc{
-				ExternalUrl:   "http://test:3000",
-				RawConfig:     grafanaConfig,
-				StaticHeaders: map[string]string{"test": "test"},
-				SmtpFrom:      "test-instance@grafana.com",
+			mimirConfig: mimirConfig,
+			expEmailSenderConfig: receivers.EmailSenderConfig{
+				AuthPassword:   "custom-password",
+				AuthUser:       "custom-user",
+				ContentTypes:   baseEmailSenderConfig.ContentTypes,
+				EhloIdentity:   "custom-identity",
+				ExternalURL:    baseEmailSenderConfig.ExternalURL,
+				FromAddress:    "custom@address.com",
+				FromName:       "Custom From Name",
+				Host:           "custom-host",
+				SentBy:         baseEmailSenderConfig.SentBy,
+				SkipVerify:     true,
+				StartTLSPolicy: "custom-policy",
+				StaticHeaders:  map[string]string{"test": "test"},
 			},
-			simpleConfigOne,
-			"",
-		},
-		{
-			"non-empty mimir config, empty SMTP from address",
-			alertspb.GrafanaAlertConfigDesc{
-				ExternalUrl:   "http://test:3000",
-				RawConfig:     grafanaConfig,
-				StaticHeaders: map[string]string{"test": "test"},
-			},
-			simpleConfigOne,
-			"",
 		},
 	}
 
@@ -158,29 +272,18 @@ func TestCreateUsableGrafanaConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, test.grafanaConfig.StaticHeaders, cfg.staticHeaders)
 			require.Equal(t, test.grafanaConfig.User, cfg.User)
 			require.Equal(t, test.grafanaConfig.ExternalUrl, cfg.tmplExternalURL.String())
 			require.True(t, cfg.usingGrafanaConfig)
 
-			if test.mimirConfig != "" {
-				// The resulting config should contain Mimir's globals with Grafana's "from" address.
-				mCfg, err := definition.LoadCompat([]byte(test.mimirConfig))
-				require.NoError(t, err)
-
-				var gCfg GrafanaAlertmanagerConfig
-				require.NoError(t, json.Unmarshal([]byte(test.grafanaConfig.RawConfig), &gCfg))
-
-				gCfg.AlertmanagerConfig.Global = mCfg.Global
-				if test.grafanaConfig.SmtpFrom != "" {
-					gCfg.AlertmanagerConfig.Global.SMTPFrom = test.grafanaConfig.SmtpFrom
-				}
-
-				b, err := json.Marshal(gCfg.AlertmanagerConfig)
-				require.NoError(t, err)
-
-				require.Equal(t, string(b), cfg.RawConfig)
+			if test.grafanaConfig.SmtpConfig != nil {
+				require.Equal(t, test.grafanaConfig.SmtpConfig.StaticHeaders, cfg.emailConfig.StaticHeaders)
+			} else {
+				require.Equal(t, test.grafanaConfig.StaticHeaders, cfg.emailConfig.StaticHeaders)
 			}
+
+			// Custom SMTP settings should be part of the config.
+			require.Equal(t, test.expEmailSenderConfig, cfg.emailConfig)
 
 			// Receiver names should be unique.
 			var finalCfg definition.PostableApiAlertingConfig

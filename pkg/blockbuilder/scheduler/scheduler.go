@@ -100,7 +100,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 		s.metrics.fetchOffsetsFailed.Inc()
 		return fmt.Errorf("fetch committed offsets: %w", err)
 	}
-	level.Debug(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
+	level.Info(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
 	s.mu.Lock()
 	s.committed = c
 	s.mu.Unlock()
@@ -724,8 +724,11 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 			return k, spec, err
 		}
 
-		if c, ok := s.committed.Lookup(spec.Topic, spec.Partition); ok && spec.StartOffset < c.At {
+		if c, ok := s.committed.Lookup(spec.Topic, spec.Partition); ok && spec.EndOffset <= c.At {
 			// Job is before the committed offset. Remove it.
+			level.Info(s.logger).Log(
+				"msg", "removing job as it's behind the committed offset", "job_id", k.id, "epoch", k.epoch,
+				"partition", spec.Partition, "start_offset", spec.StartOffset, "end_offset", spec.EndOffset, "committed", c.At)
 			s.jobs.removeJob(k)
 			continue
 		}

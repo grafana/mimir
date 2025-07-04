@@ -62,7 +62,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(innerSeries, t.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries, t.MemoryConsumptionTracker)
 
 	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
@@ -141,6 +141,10 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
+			err := t.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(next.metadata.Labels)
+			if err != nil {
+				return nil, err
+			}
 
 			if math.IsNaN(next.value) {
 				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
@@ -154,7 +158,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			}
 		}
 
-		instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+		instantQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 	}
 
 	return outputSeries, nil
@@ -166,7 +170,7 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer types.FPointSlicePool.Put(&paramValues.Samples, t.MemoryConsumptionTracker)
 
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
 
@@ -297,8 +301,7 @@ func (t *InstantQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Float64SlicePool.Put(t.values, t.MemoryConsumptionTracker)
-	t.values = nil
+	types.Float64SlicePool.Put(&t.values, t.MemoryConsumptionTracker)
 }
 
 type instantQueryGroup struct {
@@ -320,6 +323,7 @@ var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	limiter.TopKBottomKInstantQuerySeriesSlices,
 	uint64(unsafe.Sizeof(instantQuerySeries{})),
 	true,
+	nil,
 	nil,
 )
 

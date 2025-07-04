@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -55,25 +56,11 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		"instance": "resource value",
 	}
 
-	md := pmetric.NewMetrics()
-	{
-		rm := md.ResourceMetrics().AppendEmpty()
-		for k, v := range resourceAttrs {
-			rm.Resource().Attributes().PutStr(k, v)
-		}
-		il := rm.ScopeMetrics().AppendEmpty()
-		m := il.Metrics().AppendEmpty()
-		m.SetName("test_metric")
-		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
-		dp.SetIntValue(123)
-		dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-		dp.Attributes().PutStr("metric-attr", "metric value")
-	}
-
 	testCases := []struct {
 		name                              string
 		promoteResourceAttributes         []string
 		keepIdentifyingResourceAttributes bool
+		appendCustomMetric                func(pmetric.MetricSlice)
 		expectedLabels                    []mimirpb.LabelAdapter
 		expectedInfoLabels                []mimirpb.LabelAdapter
 	}{
@@ -274,21 +261,149 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                      "Successful conversion of cumulative non-monotonic sum",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                      "Successful conversion of cumulative monotonic sum",
+			promoteResourceAttributes: nil,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(true)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("metric-attr", "metric value")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric_total",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			md := pmetric.NewMetrics()
+			{
+				rm := md.ResourceMetrics().AppendEmpty()
+				for k, v := range resourceAttrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
+				scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+				metrics := scopeMetrics.Metrics()
+				if tc.appendCustomMetric == nil {
+					m := metrics.AppendEmpty()
+					m.SetName("test_metric")
+					dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+					dp.SetIntValue(123)
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+					dp.Attributes().PutStr("metric-attr", "metric value")
+				} else {
+					tc.appendCustomMetric(metrics)
+				}
+			}
+
 			converter := newOTLPMimirConverter()
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
 				converter,
-				true,
-				false,
-				false,
-				tc.promoteResourceAttributes,
-				tc.keepIdentifyingResourceAttributes,
-				false,
-				false,
 				md,
+				conversionOptions{
+					addSuffixes:                       true,
+					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+					promoteResourceAttributes:         tc.promoteResourceAttributes,
+				},
 				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
@@ -357,14 +472,11 @@ func TestConvertOTelHistograms(t *testing.T) {
 		mimirTS, dropped, err := otelMetricsToTimeseries(
 			context.Background(),
 			converter,
-			true,
-			false,
-			false,
-			[]string{},
-			false,
-			convertHistogramsToNHCB,
-			false,
 			md,
+			conversionOptions{
+				addSuffixes:             true,
+				convertHistogramsToNHCB: convertHistogramsToNHCB,
+			},
 			log.NewNopLogger(),
 		)
 		require.NoError(t, err)
@@ -571,14 +683,11 @@ func TestOTelDeltaIngestion(t *testing.T) {
 			mimirTS, dropped, err := otelMetricsToTimeseries(
 				context.Background(),
 				converter,
-				true,
-				false,
-				false,
-				[]string{},
-				false,
-				true,
-				tc.allowDelta,
 				tc.input,
+				conversionOptions{
+					convertHistogramsToNHCB: true,
+					allowDeltaTemporality:   tc.allowDelta,
+				},
 				log.NewNopLogger(),
 			)
 			if tc.expectedErr != "" {
@@ -771,7 +880,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		metadata                         []mimirpb.MetricMetadata
 		compression                      string
 		maxMsgSize                       int
-		verifyFunc                       func(*testing.T, *Request, testCase) error
+		verifyFunc                       func(*testing.T, context.Context, *Request, testCase) error
 		requestContentType               string
 		responseCode                     int
 		responseContentType              string
@@ -784,7 +893,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		resourceAttributePromotionConfig OTelResourceAttributePromotionConfig
 	}
 
-	samplesVerifierFunc := func(t *testing.T, pushReq *Request, tc testCase) error {
+	samplesVerifierFunc := func(t *testing.T, _ context.Context, pushReq *Request, tc testCase) error {
 		t.Helper()
 
 		request, err := pushReq.WriteRequest()
@@ -886,7 +995,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize: 30,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -902,7 +1011,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  100000,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -918,7 +1027,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  100000,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -935,7 +1044,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -951,7 +1060,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(_ *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(_ *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				_, err := pushReq.WriteRequest()
 				return err
 			},
@@ -966,7 +1075,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize: 100000,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(*testing.T, *Request, testCase) error {
+			verifyFunc: func(*testing.T, context.Context, *Request, testCase) error {
 				return httpgrpc.Errorf(http.StatusTooManyRequests, "go slower")
 			},
 			responseCode:          http.StatusTooManyRequests,
@@ -995,7 +1104,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 
@@ -1038,7 +1147,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(t *testing.T, pushReq *Request, _ testCase) error {
+			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
 				request, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 
@@ -1061,6 +1170,35 @@ func TestHandlerOTLPPush(t *testing.T) {
 			responseCode:        http.StatusOK,
 			responseContentType: pbContentType,
 		},
+		{
+			name:       "Attribute value too long",
+			maxMsgSize: 100000,
+			series: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "foo"},
+						{Name: "too_long", Value: "huge value"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
+					},
+				},
+			},
+			metadata: sampleMetadata,
+			verifyFunc: func(_ *testing.T, ctx context.Context, pushReq *Request, _ testCase) error {
+				var limitsCfg validation.Limits
+				flagext.DefaultValues(&limitsCfg)
+				limitsCfg.MaxLabelValueLength = len("huge value") - 1
+				distributors, _, _, _ := prepare(t, prepConfig{numDistributors: 1, limits: &limitsCfg})
+				distributor := distributors[0]
+				return distributor.prePushValidationMiddleware(func(context.Context, *Request) error { return nil })(ctx, pushReq)
+			},
+			responseCode:        http.StatusBadRequest,
+			responseContentType: pbContentType,
+			errMessage:          "received a metric whose attribute value length exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
+			expectedLogs:        []string{`level=error user=test msg="detected an error while ingesting OTLP metrics request (the request may have been partially ingested)" httpCode=400 err="received a metric whose attribute value length exceeds the limit of 9, attribute: 'too_long', value: 'huge value' (truncated) metric: 'foo{too_long=\"huge value\"}'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits" insight=true`},
+			expectedRetryHeader: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1081,10 +1219,11 @@ func TestHandlerOTLPPush(t *testing.T) {
 					"test": testLimits,
 				}),
 			)
-			pusher := func(_ context.Context, pushReq *Request) error {
+
+			pusher := func(ctx context.Context, pushReq *Request) error {
 				t.Helper()
 				t.Cleanup(pushReq.CleanUp)
-				return tt.verifyFunc(t, pushReq, tt)
+				return tt.verifyFunc(t, ctx, pushReq, tt)
 			}
 
 			logs := &concurrency.SyncBuffer{}
@@ -1096,7 +1235,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 
 			assert.Equal(t, tt.responseCode, resp.Code)
 			assert.Equal(t, tt.responseContentType, resp.Header().Get("Content-Type"))
-			assert.Equal(t, strconv.Itoa(tt.responseContentLength), resp.Header().Get("Content-Length"))
+			if tt.responseContentLength > 0 {
+				assert.Equal(t, strconv.Itoa(tt.responseContentLength), resp.Header().Get("Content-Length"))
+			}
 			if tt.errMessage != "" {
 				body, err := io.ReadAll(resp.Body)
 				require.NoError(t, err)

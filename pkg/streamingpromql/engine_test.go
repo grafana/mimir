@@ -95,70 +95,52 @@ func requireQueryIsUnsupported(t *testing.T, expression string, expectedError st
 
 func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
 
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-		require.ErrorIs(t, err, compat.NotSupportedError{})
-		require.Nil(t, qry)
-	})
+	qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
+	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+	require.ErrorIs(t, err, compat.NotSupportedError{})
+	require.Nil(t, qry)
 }
 
 func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
 
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
-		qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-		require.Error(t, err)
-		require.ErrorIs(t, err, compat.NotSupportedError{})
-		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-		require.Nil(t, qry)
-	})
-}
-
-func testWithAndWithoutQueryPlanner(t *testing.T, opts EngineOpts, test func(t *testing.T, engine *Engine)) {
-	t.Run("with query planner", func(t *testing.T) {
-		opts.UseQueryPlanning = true
-
-		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
-		require.NoError(t, err)
-
-		test(t, engine)
-	})
-
-	t.Run("without query planner", func(t *testing.T) {
-		opts.UseQueryPlanning = false
-
-		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
-		require.NoError(t, err)
-
-		test(t, engine)
-	})
+	qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
+	require.Error(t, err)
+	require.ErrorIs(t, err, compat.NotSupportedError{})
+	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+	require.Nil(t, qry)
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
-	testWithAndWithoutQueryPlanner(t, NewTestEngineOpts(), func(t *testing.T, engine *Engine) {
-		ctx := context.Background()
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
 
-		_, err := engine.NewRangeQuery(ctx, nil, nil, "vector(0)", time.Now(), time.Now(), 0)
-		require.EqualError(t, err, "0s is not a valid interval for a range query, must be greater than 0")
+	ctx := context.Background()
+	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", time.Now(), time.Now(), 0)
+	require.EqualError(t, err, "0s is not a valid interval for a range query, must be greater than 0")
 
-		start := time.Date(2024, 3, 22, 3, 0, 0, 0, time.UTC)
-		_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", start, start.Add(-time.Hour), time.Second)
-		require.EqualError(t, err, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z")
-	})
+	start := time.Date(2024, 3, 22, 3, 0, 0, 0, time.UTC)
+	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", start, start.Add(-time.Hour), time.Second)
+	require.EqualError(t, err, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z")
 }
 
 func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
-	testWithAndWithoutQueryPlanner(t, NewTestEngineOpts(), func(t *testing.T, engine *Engine) {
-		ctx := context.Background()
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
 
-		_, err := engine.NewRangeQuery(ctx, nil, nil, "metric[3m]", time.Now(), time.Now(), time.Second)
-		require.EqualError(t, err, "query expression produces a range vector, but expression for range queries must produce an instant vector or scalar")
+	ctx := context.Background()
+	_, err = engine.NewRangeQuery(ctx, nil, nil, "metric[3m]", time.Now(), time.Now(), time.Second)
+	require.EqualError(t, err, "query expression produces a range vector, but expression for range queries must produce an instant vector or scalar")
 
-		_, err = engine.NewRangeQuery(ctx, nil, nil, `"thing"`, time.Now(), time.Now(), time.Second)
-		require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
-	})
+	_, err = engine.NewRangeQuery(ctx, nil, nil, `"thing"`, time.Now(), time.Now(), time.Second)
+	require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
 }
 
 func TestNewInstantQuery_Strings(t *testing.T) {
@@ -166,35 +148,31 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	opts := NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
-	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, mimirEngine *Engine) {
-		storage := promqltest.LoadedStorage(t, ``)
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
 
-		expr := `"thing"`
-		q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
-		require.NoError(t, err)
-		mimir := q.Exec(context.Background())
-		defer q.Close()
+	storage := promqltest.LoadedStorage(t, ``)
 
-		q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
-		require.NoError(t, err)
-		prometheus := q.Exec(context.Background())
-		defer q.Close()
+	expr := `"thing"`
+	q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+	require.NoError(t, err)
+	mimir := q.Exec(context.Background())
+	defer q.Close()
 
-		testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
-	})
+	q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+	require.NoError(t, err)
+	prometheus := q.Exec(context.Background())
+	defer q.Close()
+
+	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
-	optsWithoutQueryPlanner := NewTestEngineOpts()
-	engineWithoutQueryPlanner, err := NewEngine(optsWithoutQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	optsWithQueryPlanner := NewTestEngineOpts()
-	optsWithQueryPlanner.UseQueryPlanning = true
-	engineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
+	opts := NewTestEngineOpts()
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	testdataFS := os.DirFS("./testdata")
@@ -211,29 +189,17 @@ func TestUpstreamTestCases(t *testing.T) {
 			require.NoError(t, err)
 
 			testScript := string(b)
-
-			t.Run("Without query planner", func(t *testing.T) {
-				promqltest.RunTest(t, testScript, engineWithoutQueryPlanner)
-			})
-
-			t.Run("With query planner", func(t *testing.T) {
-				promqltest.RunTest(t, testScript, engineWithQueryPlanner)
-			})
+			promqltest.RunTest(t, testScript, engine)
 		})
 	}
 }
 
 func TestOurTestCases(t *testing.T) {
-	optsWithoutQueryPlanner := NewTestEngineOpts()
-	mimirEngineWithoutQueryPlanner, err := NewEngine(optsWithoutQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
-	optsWithQueryPlanner := NewTestEngineOpts()
-	optsWithQueryPlanner.UseQueryPlanning = true
-	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
-	require.NoError(t, err)
-
-	prometheusEngine := promql.NewEngine(optsWithoutQueryPlanner.CommonOpts)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
@@ -250,12 +216,8 @@ func TestOurTestCases(t *testing.T) {
 
 			testScript := string(b)
 
-			t.Run("Mimir's engine (without query planner)", func(t *testing.T) {
-				promqltest.RunTest(t, testScript, mimirEngineWithoutQueryPlanner)
-			})
-
-			t.Run("Mimir's engine (with query planner)", func(t *testing.T) {
-				promqltest.RunTest(t, testScript, mimirEngineWithQueryPlanner)
+			t.Run("Mimir's engine", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngine)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -277,12 +239,7 @@ func TestOurTestCases(t *testing.T) {
 func TestRangeVectorSelectors(t *testing.T) {
 	opts := NewTestEngineOpts()
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	optsWithQueryPlanner := NewTestEngineOpts()
-	optsWithQueryPlanner.UseQueryPlanning = true
-	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	baseT := timestamp.Time(0)
@@ -799,12 +756,8 @@ func TestRangeVectorSelectors(t *testing.T) {
 				}
 			}
 
-			t.Run("Mimir's engine (without query planner)", func(t *testing.T) {
+			t.Run("Mimir's engine", func(t *testing.T) {
 				runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
-			})
-
-			t.Run("Mimir's engine (with query planner)", func(t *testing.T) {
-				runTest(t, mimirEngineWithQueryPlanner, testCase.expr, testCase.ts, testCase.expected)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -832,12 +785,7 @@ func TestSubqueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnablePerStepStats = true
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	optsWithQueryPlanner := NewTestEngineOpts()
-	optsWithQueryPlanner.UseQueryPlanning = true
-	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	storage := promqltest.LoadedStorage(t, data)
@@ -1247,12 +1195,8 @@ func TestSubqueries(t *testing.T) {
 				qry.Close()
 			}
 
-			t.Run("Mimir's engine (without query planner)", func(t *testing.T) {
+			t.Run("Mimir's engine", func(t *testing.T) {
 				runTest(t, mimirEngine)
-			})
-
-			t.Run("Mimir's engine (with query planner)", func(t *testing.T) {
-				runTest(t, mimirEngineWithQueryPlanner)
 			})
 
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
@@ -1265,7 +1209,7 @@ func TestSubqueries(t *testing.T) {
 
 func TestQueryCancellation(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Simulate the query being cancelled by another goroutine by waiting for the Select() call to be made,
@@ -1293,7 +1237,7 @@ func TestQueryCancellation(t *testing.T) {
 func TestQueryTimeout(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Timeout = 20 * time.Millisecond
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	// Simulate the query doing some work and check that the query context has been cancelled.
@@ -1359,7 +1303,7 @@ func (w cancellationQuerier) waitForCancellation(ctx context.Context) error {
 
 func TestQueryContextCancelledOnceQueryFinished(t *testing.T) {
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	storage := promqltest.LoadedStorage(t, `
@@ -1452,14 +1396,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "some_metric",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool,
-			// and we have five series and each of the series has SeriesMetadata.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
+			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
+			// and we have five series and each of the series has labels of the same size.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
-			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
+			// The output contains five samples with SeriesMetadata, which will be rounded up to eight (the nearest power of two).
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
@@ -1467,13 +1412,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			shouldSucceed: true,
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize,
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize,
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
-			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize),
+			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1491,51 +1438,29 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_metric)",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			//  - the next series from the selector
-			//  - the labels for the output series
-			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.BoolSize) + 8*types.FPointSize + types.SeriesMetadataSize,
+			rangeQueryExpectedPeak: 8*types.FPointSize + 16*types.Float64Size + 8*types.BoolSize + types.SeriesMetadataSize,
+			rangeQueryLimit:        8*types.FPointSize + 16*types.Float64Size + 8*types.BoolSize + types.SeriesMetadataSize + 1,
 
-			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory 9 SeriesMetadata.
-			instantQueryExpectedPeak: 9 * types.SeriesMetadataSize,
-			instantQueryLimit:        9 * types.SeriesMetadataSize,
+			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
 			shouldSucceed: false,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			// - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
-			// - and the next series with SeriesMetadata from the selector.
-			// The last thing to be allocated is the bool slice for the running total, so that won't contribute to the peak before the query is aborted.
-			rangeQueryExpectedPeak: 8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize,
-			rangeQueryLimit:        8*(2*types.Float64Size+types.FPointSize) + types.SeriesMetadataSize + types.BoolSize - 1,
+			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryLimit:        8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 
-			// At peak we'll hold in memory 9 SeriesMetadata.
-			// To make the memory limit fail, we set limit at 8 SeriesMetadata, hence no any small allocation is possible.
-			instantQueryExpectedPeak: 8 * types.SeriesMetadataSize,
-			instantQueryLimit:        8 * types.SeriesMetadataSize,
+			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			// Each series has five samples, which will be rounded up to 8 (the nearest power of two) by the bucketed pool.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer at each step, with the number of steps rounded to the nearest power of 2),
-			//  - and the next series from the selector.
 			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
 			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
-			// Each series has one sample, which is already a power of two.
-			// At peak we'll hold in memory:
-			//  - the running total for the sum() (a histogram pointer),
-			//  - the next series from the selector,
-			//  - and the output sample.
+
 			instantQueryExpectedPeak: types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 			instantQueryLimit:        types.HistogramPointerSize + types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 		},
@@ -1566,7 +1491,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 		opts := NewTestEngineOpts()
 		opts.CommonOpts.Reg = reg
 
-		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), nil, log.NewNopLogger())
+		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), NewQueryPlanner(opts), log.NewNopLogger())
 		require.NoError(t, err)
 
 		spanExporter.Reset()
@@ -1680,8 +1605,8 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 3*8*types.FPointSize + 8*types.SeriesMetadataSize // Allow up to three series and its SeriesMetadatawith five points (which will be rounded up to 8, the nearest power of 2)
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), nil, log.NewNopLogger())
+	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	runQuery := func(expr string, shouldSucceed bool) {
@@ -1747,23 +1672,10 @@ func getHistogram(t *testing.T, reg *prometheus.Registry, name string) *dto.Hist
 	return m[0].Histogram
 }
 
-func TestActiveQueryTracker_SuccessfulQuery_WithoutQueryPlanner(t *testing.T) {
+func TestActiveQueryTracker_SuccessfulQuery(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.CommonOpts.ActiveQueryTracker = tracker
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	testActiveQueryTracker(t, engine, tracker)
-}
-
-func TestActiveQueryTracker_SuccessfulQuery_WithQueryPlanner(t *testing.T) {
-	opts := NewTestEngineOpts()
-
-	tracker := &testQueryTracker{}
-	opts.CommonOpts.ActiveQueryTracker = tracker
-
-	opts.UseQueryPlanning = true
 	planner := NewQueryPlanner(opts)
 
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, log.NewNopLogger())
@@ -1827,7 +1739,7 @@ func TestActiveQueryTracker_FailedQuery(t *testing.T) {
 	opts := NewTestEngineOpts()
 	tracker := &testQueryTracker{}
 	opts.CommonOpts.ActiveQueryTracker = tracker
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	innerStorage := promqltest.LoadedStorage(t, "")
@@ -1918,7 +1830,7 @@ func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) 
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Timeout = 10 * time.Millisecond
 	opts.CommonOpts.ActiveQueryTracker = tracker
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	queryTypes := map[string]func() (promql.Query, error){
@@ -1932,12 +1844,13 @@ func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) 
 
 	for queryType, createQuery := range queryTypes {
 		t.Run(queryType+" query", func(t *testing.T) {
-			tracker.sawTimeout = false
-
+			tracker.shouldWaitForTimeout = false // Query planning adds activities to the tracker, but we're not interested in testing that these activities are considered in the query timeout here.
 			q, err := createQuery()
 			require.NoError(t, err)
+			tracker.shouldWaitForTimeout = true
 			defer q.Close()
 
+			tracker.sawTimeout = false
 			res := q.Exec(context.Background())
 
 			require.True(t, tracker.sawTimeout, "query tracker was not called with a context that timed out")
@@ -1951,7 +1864,8 @@ func TestActiveQueryTracker_WaitingForTrackerIncludesQueryTimeout(t *testing.T) 
 }
 
 type timeoutTestingQueryTracker struct {
-	sawTimeout bool
+	shouldWaitForTimeout bool
+	sawTimeout           bool
 }
 
 func (t *timeoutTestingQueryTracker) GetMaxConcurrent() int {
@@ -1959,6 +1873,10 @@ func (t *timeoutTestingQueryTracker) GetMaxConcurrent() int {
 }
 
 func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, _ string) (int, error) {
+	if !t.shouldWaitForTimeout {
+		return 0, nil
+	}
+
 	select {
 	case <-ctx.Done():
 		t.sawTimeout = true
@@ -1968,9 +1886,7 @@ func (t *timeoutTestingQueryTracker) Insert(ctx context.Context, _ string) (int,
 	}
 }
 
-func (t *timeoutTestingQueryTracker) Delete(_ int) {
-	panic("should not be called")
-}
+func (t *timeoutTestingQueryTracker) Delete(_ int) {}
 
 func (t *timeoutTestingQueryTracker) Close() error {
 	return nil
@@ -1991,7 +1907,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	endT := startT.Add(2 * step)
 
 	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
@@ -3006,14 +2922,8 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 	// - Look backs
 
 	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
-
-	optsWithQueryPlanner := NewTestEngineOpts()
-	optsWithQueryPlanner.UseQueryPlanning = true
-	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(optsWithQueryPlanner), log.NewNopLogger())
-	require.NoError(t, err)
-
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 	timeRanges := []struct {
@@ -3047,14 +2957,8 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 			mimirResults := mimirQuery.Exec(context.Background())
 			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 
-			mimirQueryWithQueryPlanner, err := mimirEngineWithQueryPlanner.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-			require.NoError(t, err)
-			mimirResultsWithQueryPlanner := mimirQueryWithQueryPlanner.Exec(context.Background())
-			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResultsWithQueryPlanner, skipAnnotationComparison)
-
 			prometheusQuery.Close()
 			mimirQuery.Close()
-			mimirQueryWithQueryPlanner.Close()
 		}
 	}
 }
@@ -3256,15 +3160,10 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 func TestQueryStats(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnablePerStepStats = true
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
-	planningOpts := opts
-	planningOpts.UseQueryPlanning = true
-	mimirEngineWithPlanning, err := NewEngine(planningOpts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
-	require.NoError(t, err)
 
 	start := timestamp.Time(0)
 	end := start.Add(10 * time.Minute)
@@ -3312,9 +3211,9 @@ func TestQueryStats(t *testing.T) {
 		expectedTotalSamples        int64
 		expectedTotalSamplesPerStep []int64
 		skipCompareWithPrometheus   string
-		// ...WithPlanner expectations are optional and should be set only if a query with planning reports different stats
-		expectedTotalSamplesWithPlanner        int64
-		expectedTotalSamplesPerStepWithPlanner []int64
+		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats (eg. due to optimisations like common subexpression elimination)
+		expectedTotalSamplesWithMQE        int64
+		expectedTotalSamplesPerStepWithMQE []int64
 	}{
 		"instant vector selector with point at every time step": {
 			expr:                        `dense_series{}`,
@@ -3509,12 +3408,12 @@ func TestQueryStats(t *testing.T) {
 			expectedTotalSamplesPerStep: []int64{6, 12, 18, 24, 30, 30, 30, 30, 30, 30, 30},
 		},
 		"common subexpression elimination": {
-			expr:                                   `sum(dense_series) + sum(dense_series)`,
-			isInstantQuery:                         true,
-			expectedTotalSamples:                   2,
-			expectedTotalSamplesPerStep:            []int64{2},
-			expectedTotalSamplesWithPlanner:        1,
-			expectedTotalSamplesPerStepWithPlanner: []int64{1},
+			expr:                               `sum(dense_series) + sum(dense_series)`,
+			isInstantQuery:                     true,
+			expectedTotalSamples:               2,
+			expectedTotalSamplesPerStep:        []int64{2},
+			expectedTotalSamplesWithMQE:        1,
+			expectedTotalSamplesPerStepWithMQE: []int64{1},
 		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
@@ -3549,22 +3448,14 @@ func TestQueryStats(t *testing.T) {
 				require.Equal(t, testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per stepsamples does not match value from Prometheus' engine")
 			}
 
-			t.Run("without query planner", func(t *testing.T) {
-				mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
-				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStats.TotalSamples)
-				require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
-			})
-
-			t.Run("with query planner", func(t *testing.T) {
-				mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, testCase.expr, testCase.isInstantQuery)
-				if testCase.expectedTotalSamplesWithPlanner != 0 {
-					require.Equal(t, testCase.expectedTotalSamplesWithPlanner, mimirSamplesStatsWithPlanning.TotalSamples)
-					require.Equal(t, testCase.expectedTotalSamplesPerStepWithPlanner, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
-				} else {
-					require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
-					require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
-				}
-			})
+			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			if testCase.expectedTotalSamplesWithMQE != 0 {
+				require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
+				require.Equal(t, testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+			} else {
+				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+				require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+			}
 		})
 	}
 }
@@ -3573,15 +3464,10 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	// TestCases are taken from Prometheus' TestQueryStatistics.
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.EnablePerStepStats = true
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
-	planningOpts := opts
-	planningOpts.UseQueryPlanning = true
-	mimirEngineWithPlanning, err := NewEngine(planningOpts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(planningOpts), log.NewNopLogger())
-	require.NoError(t, err)
 
 	storage := promqltest.LoadedStorage(t, `
 		load 10s
@@ -3622,9 +3508,9 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		interval                    time.Duration
 		expectedTotalSamples        int64
 		expectedTotalSamplesPerStep []int64
-		// ...WithPlanner expectations are optional and should be set only if a query with planning reports different stats
-		expectedTotalSamplesWithPlanner        int64
-		expectedTotalSamplesPerStepWithPlanner []int64
+		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats (eg. due to optimisations like common subexpression elimination)
+		expectedTotalSamplesWithMQE        int64
+		expectedTotalSamplesPerStepWithMQE []int64
 	}{
 		{
 			query:                       `"literal string"`,
@@ -3808,12 +3694,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: []int64{36},
 		},
 		{
-			query:                                  "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			start:                                  time.Unix(201, 0),
-			expectedTotalSamples:                   72, // 2 * (3 sample per query * 12 queries (60/5))
-			expectedTotalSamplesPerStep:            []int64{72},
-			expectedTotalSamplesWithPlanner:        36, // 72/2 due to common subexpression elimination
-			expectedTotalSamplesPerStepWithPlanner: []int64{36},
+			query:                              "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                              time.Unix(201, 0),
+			expectedTotalSamples:               72, // 2 * (3 sample per query * 12 queries (60/5))
+			expectedTotalSamplesPerStep:        []int64{72},
+			expectedTotalSamplesWithMQE:        36, // 72/2 due to common subexpression elimination
+			expectedTotalSamplesPerStepWithMQE: []int64{36},
 		},
 		{
 			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
@@ -3922,14 +3808,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
 		},
 		{
-			query:                                  "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			start:                                  time.Unix(201, 0),
-			end:                                    time.Unix(220, 0),
-			interval:                               5 * time.Second,
-			expectedTotalSamples:                   288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
-			expectedTotalSamplesPerStep:            []int64{72, 72, 72, 72},
-			expectedTotalSamplesWithPlanner:        144, //  288/2 due to common sub-expression elimination
-			expectedTotalSamplesPerStepWithPlanner: []int64{36, 36, 36, 36},
+			query:                              "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                              time.Unix(201, 0),
+			end:                                time.Unix(220, 0),
+			interval:                           5 * time.Second,
+			expectedTotalSamples:               288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
+			expectedTotalSamplesPerStep:        []int64{72, 72, 72, 72},
+			expectedTotalSamplesWithMQE:        144, //  288/2 due to common sub-expression elimination
+			expectedTotalSamplesPerStepWithMQE: []int64{36, 36, 36, 36},
 		},
 		{
 			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
@@ -3947,23 +3833,14 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			require.Equal(t, tc.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
 			require.Equal(t, tc.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per step samples does not match value from Prometheus' engine")
 
-			t.Run("without query planner", func(t *testing.T) {
-				mimirSamplesStats := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
-				require.Equal(t, tc.expectedTotalSamples, mimirSamplesStats.TotalSamples)
-				require.Equal(t, tc.expectedTotalSamplesPerStep, mimirSamplesStats.TotalSamplesPerStep)
-			})
-
-			t.Run("with query planner", func(t *testing.T) {
-				mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngineWithPlanning, tc.query, tc.start, tc.end, tc.interval)
-				if tc.expectedTotalSamplesWithPlanner != 0 {
-					require.Equal(t, tc.expectedTotalSamplesWithPlanner, mimirSamplesStatsWithPlanning.TotalSamples)
-					require.Equal(t, tc.expectedTotalSamplesPerStepWithPlanner, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
-				} else {
-					require.Equal(t, tc.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
-					require.Equal(t, tc.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
-				}
-			})
-
+			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
+			if tc.expectedTotalSamplesWithMQE != 0 {
+				require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
+				require.Equal(t, tc.expectedTotalSamplesPerStepWithMQE, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+			} else {
+				require.Equal(t, tc.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
+				require.Equal(t, tc.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
+			}
 		})
 	}
 }
@@ -3982,7 +3859,7 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 
 	t.Run("engine with no lookback delta configured", func(t *testing.T) {
 		engineOpts := NewTestEngineOpts()
-		engine, err := NewEngine(engineOpts, limitsProvider, stats, nil, logger)
+		engine, err := NewEngine(engineOpts, limitsProvider, stats, NewQueryPlanner(engineOpts), logger)
 		require.NoError(t, err)
 
 		t.Run("lookback delta not set in query options", func(t *testing.T) {
@@ -4003,7 +3880,7 @@ func TestQueryStatementLookbackDelta(t *testing.T) {
 	t.Run("engine with lookback delta configured", func(t *testing.T) {
 		engineOpts := NewTestEngineOpts()
 		engineOpts.CommonOpts.LookbackDelta = 12 * time.Minute
-		engine, err := NewEngine(engineOpts, limitsProvider, stats, nil, logger)
+		engine, err := NewEngine(engineOpts, limitsProvider, stats, NewQueryPlanner(engineOpts), logger)
 		require.NoError(t, err)
 
 		t.Run("lookback delta not set in query options", func(t *testing.T) {
@@ -4036,7 +3913,7 @@ func TestQueryClose(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), nil, log.NewNopLogger())
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
 	require.NoError(t, err)
 
 	start := timestamp.Time(0)
@@ -4072,12 +3949,12 @@ func TestEagerLoadSelectors(t *testing.T) {
 	metrics := stats.NewQueryMetrics(nil)
 	logger := log.NewNopLogger()
 	optsWithoutEagerLoading := NewTestEngineOpts()
-	engineWithoutEagerLoading, err := NewEngine(optsWithoutEagerLoading, limitsProvider, metrics, nil, logger)
+	engineWithoutEagerLoading, err := NewEngine(optsWithoutEagerLoading, limitsProvider, metrics, NewQueryPlanner(optsWithoutEagerLoading), logger)
 	require.NoError(t, err)
 
 	optsWithEagerLoading := NewTestEngineOpts()
 	optsWithEagerLoading.EagerLoadSelectors = true
-	engineWithEagerLoading, err := NewEngine(optsWithEagerLoading, limitsProvider, metrics, nil, logger)
+	engineWithEagerLoading, err := NewEngine(optsWithEagerLoading, limitsProvider, metrics, NewQueryPlanner(optsWithEagerLoading), logger)
 	require.NoError(t, err)
 
 	testCases := []string{

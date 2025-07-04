@@ -604,6 +604,32 @@ How to **investigate**:
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
+### MimirHighVolumeLevel1BlocksQueried
+
+This alert fires when the store-gateway is querying level 1 blocks for more than 6 hours, indicating that the compactor may not be keeping up with compaction work.
+
+How it **works**:
+
+- Level 1 blocks are 2-hour blocks shipped by ingesters, not yet optimized by the compactor
+- When the compactor falls behind, store-gateways must serve queries from these less efficient level 1 blocks instead of well-compacted higher-level blocks
+- This can lead to increased query latency and resource usage
+- Out-of-order blocks are excluded from this alert as they may be shipped for previous dates and queried before being compacted into bigger blocks
+
+How to **investigate**:
+
+- Check the `Mimir / Compactor` dashboard to see if the compactor is healthy and processing blocks normally
+- Look for errors in the compactor logs that might indicate why compaction is falling behind
+- Monitor the `Mimir / Queries` dashboard to see the "Blocks queried / sec by compaction level" panel for the volume of level 1 block queries
+- Check if there's increased write load that the compactor cannot keep up with
+
+How to **fix**:
+
+- Scale up the compactor horizontally if it's CPU or memory constrained
+- Check and increase compactor resources if needed
+- Preventatively check store-gateway CPU/memory/disk usage and scale out if constrained
+- Verify store-gateway auto-scaling has sufficient headroom to handle increased load during compactor catch-up
+- If the issue persists, investigate for corrupted blocks that might be blocking compaction
+
 ### MimirCompactorHasNotSuccessfullyRunCompaction
 
 This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
@@ -933,7 +959,7 @@ How to **fix** it:
     ```
   - Restarting an ingester typically reduces the memory allocated by mmap-ed files. After the restart, ingester may allocate this memory again over time, but it may give more time while working on a longer term solution
 - Check the `Mimir / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
-  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
+  - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (the general rule is ~2 million series per ingester, though some clusters might have a higher target. Series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
 ### MimirGossipMembersTooHigh
@@ -1817,6 +1843,24 @@ How to **investigate**:
 
 Query for the client side metric `cortex_client_invalid_cluster_validation_label_requests_total`, to determine which clients are sending the mislabeled requests.
 
+### MimirGoThreadsTooHigh
+
+This alert fires when a Mimir instance is running a very high number of Go threads.
+
+How it **works**:
+
+- In Go, concurrency is handled via goroutines, which are lightweight threads managed by the Go runtime.
+- Goroutines are multiplexed onto a small number of actual OS threads by the Go scheduler.
+- Go threads are limited to 10K. When this limit is reached, the application panics with error like `runtime: program exceeds 10000-thread limit`.
+- If a goroutine makes a call to a blocking syscall, for example, disk I/O, the Go runtime tries to schedule other goroutines on other OS threads. This process starts new threads on-demand. Note that network syscalls use asynchronous I/O under the hood, and therefore, don't create this problem.
+- Idle go threads are never terminated ([issue](https://github.com/golang/go/issues/14592)), so once an application has a spike in the number of go threads, the process needs to be restarted to get back to a low number of threads.
+
+How to **investigate**:
+
+- Check the process stack trace to find common patterns in where the goroutines are blocked on syscall:
+  - If the application panicked with error like `runtime: program exceeds 10000-thread limit`, check the panic stack trace
+  - If the application has not panicked yet, issue `kill -QUIT <pid>` to dump the current stack trace of the process
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -2660,6 +2704,20 @@ How to **fix** it:
 
 - If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
 - Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+
+### err-mimir-distributor-max-influx-request-size
+
+This error occurs when a distributor rejects an Influx write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming Influx write requests before and after decompression regardless of the compression type.
+- Configure this limit in the `-distributor.max-influx-request-size` setting.
+
+How to **fix** it:
+
+- If you use the `telegraf` agent, decrease the maximum batch size in the `metric_batch_size` setting. Refer to [Agent configuration](https://docs.influxdata.com/telegraf/v1/configuration/#agent-configuration) for details.
+- Increase the allowed limit in the `-distributor.max-influx-request-size` setting.
 
 ### err-mimir-distributor-max-write-request-data-item-size
 

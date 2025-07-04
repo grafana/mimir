@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -118,33 +119,31 @@ func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 		panic(err)
 	}
 	return Extent{
-		Start:            start,
-		End:              end,
-		Response:         marshalled,
-		QueryTimestampMs: queryTime,
-		// mkExtentWithStepAndQueryTime used in tests which don't care about samples processed per step.
-		// If it's important, use mkExtentWithEvenPerStepSamplesProcessed instead.
-		SamplesProcessedPerStep: mxEvenlyDistributedExtentPerStepStats(start, end, step, 0),
+		Start:                   start,
+		End:                     end,
+		Response:                marshalled,
+		QueryTimestampMs:        queryTime,
+		SamplesProcessedPerStep: mkEvenlyDistributedExtentPerStepStats(start, end, step, 1),
 	}
 }
 
 // mkExtentWithEvenPerStepSamplesProcessed creates an extent with an even distribution of samplesPerStep.
 func mkExtentWithEvenPerStepSamplesProcessed(start, end int64, step int64, samplesPerStep int64) Extent {
 	ext := mkExtentWithStepAndQueryTime(start, end, step, 0)
-	ext.SamplesProcessedPerStep = mxEvenlyDistributedExtentPerStepStats(start, end, step, samplesPerStep)
+	ext.SamplesProcessedPerStep = mkEvenlyDistributedExtentPerStepStats(start, end, step, samplesPerStep)
 	return ext
 }
 
-func mxEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []StepStat {
+func mkEvenlyDistributedExtentPerStepStats(start, end int64, step int64, samplesPerStep int64) []stats.StepStat {
 	numSteps := int((end-start)/step) + 1
-	stats := make([]StepStat, numSteps)
+	s := make([]stats.StepStat, numSteps)
 	for i := 0; i < numSteps; i++ {
-		stats[i] = StepStat{
+		s[i] = stats.StepStat{
 			Timestamp: start + int64(i)*step,
 			Value:     samplesPerStep,
 		}
 	}
-	return stats
+	return s
 }
 
 func TestIsRequestCachable(t *testing.T) {
@@ -591,6 +590,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 		request                  MetricsQueryRequest
 		cachedExtents            []Extent
 		expectedSamplesProcessed uint64
+		expectedStepStats        []stats.StepStat
 	}{
 		{
 			name: "Extent equal query range - all samples counted",
@@ -603,6 +603,13 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 50,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 110, Value: 10},
+				{Timestamp: 120, Value: 10},
+				{Timestamp: 130, Value: 10},
+				{Timestamp: 140, Value: 10},
+			},
 		},
 		{
 			name: "Extent within query range - all samples counted",
@@ -615,6 +622,12 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(110, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 40,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 110, Value: 10},
+				{Timestamp: 120, Value: 10},
+				{Timestamp: 130, Value: 10},
+				{Timestamp: 140, Value: 10},
+			},
 		},
 		{
 			name: "Left part of extent is within query range - part of samples counted",
@@ -627,6 +640,12 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(100, 140, 10, 10),
 			},
 			expectedSamplesProcessed: 40,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 110, Value: 10},
+				{Timestamp: 120, Value: 10},
+				{Timestamp: 130, Value: 10},
+			},
 		},
 		{
 			name: "Right part of extent is within query range - part of samples counted",
@@ -639,6 +658,11 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(130, 170, 10, 10),
 			},
 			expectedSamplesProcessed: 30,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 130, Value: 10},
+				{Timestamp: 140, Value: 10},
+				{Timestamp: 150, Value: 10},
+			},
 		},
 		{
 			name: "Non overlapping extents fully within query range - all samples summed",
@@ -652,6 +676,14 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(130, 150, 10, 25),
 			},
 			expectedSamplesProcessed: 120,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 100, Value: 15},
+				{Timestamp: 110, Value: 15},
+				{Timestamp: 120, Value: 15},
+				{Timestamp: 130, Value: 25},
+				{Timestamp: 140, Value: 25},
+				{Timestamp: 150, Value: 25},
+			},
 		},
 		{
 			name: "Overlapping extents - samples are merged",
@@ -667,6 +699,12 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 			// only values at timestamp 120 is merged, due to how partitionCacheExtents is implemented, so:
 			// [T:100; V:10] + [T:110; V:10] + [T:120; V:15] + [T:130; V:15] = 50
 			expectedSamplesProcessed: 50,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 100, Value: 10},
+				{Timestamp: 110, Value: 10},
+				{Timestamp: 120, Value: 15},
+				{Timestamp: 130, Value: 15},
+			},
 		},
 		{
 			name: "No relevant extents - zero samples",
@@ -679,6 +717,7 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(220, 230, 10, 10),
 			},
 			expectedSamplesProcessed: 0,
+			expectedStepStats:        nil,
 		},
 		{
 			name: "Zero samples in extent",
@@ -691,6 +730,10 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(110, 120, 10, 0),
 			},
 			expectedSamplesProcessed: 0,
+			expectedStepStats: []stats.StepStat{
+				{Timestamp: 110, Value: 0},
+				{Timestamp: 120, Value: 0},
+			},
 		},
 	}
 
@@ -698,11 +741,22 @@ func TestPartitionCacheExtentsSamplesProcessed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			extractor := PrometheusResponseExtractor{}
 			minCacheExtent := int64(10)
-			_, _, samplesProcessed, err := partitionCacheExtents(tc.request, tc.cachedExtents, minCacheExtent, extractor)
+			_, _, stepStats, err := partitionCacheExtents(tc.request, tc.cachedExtents, minCacheExtent, extractor)
 			require.NoError(t, err)
-			assert.Equal(t, tc.expectedSamplesProcessed, samplesProcessed,
+
+			// Verify step stats
+			assert.Equal(t, tc.expectedStepStats, stepStats,
+				"Expected step stats %v but got %v",
+				tc.expectedStepStats, stepStats)
+
+			// Verify total samples (calculated from step stats)
+			var actualSamplesProcessed uint64 = 0
+			for _, stepStat := range stepStats {
+				actualSamplesProcessed += uint64(stepStat.Value)
+			}
+			assert.Equal(t, tc.expectedSamplesProcessed, actualSamplesProcessed,
 				"Expected %d samples processed but got %d",
-				tc.expectedSamplesProcessed, samplesProcessed)
+				tc.expectedSamplesProcessed, actualSamplesProcessed)
 		})
 	}
 }
@@ -814,7 +868,7 @@ func TestMergeCacheExtentsForRequest(t *testing.T) {
 				{
 					Start: 100,
 					End:   170,
-					SamplesProcessedPerStep: []StepStat{
+					SamplesProcessedPerStep: []stats.StepStat{
 						{Timestamp: 100, Value: 10},
 						{Timestamp: 110, Value: 10},
 						{Timestamp: 120, Value: 10},
@@ -871,7 +925,7 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-1*time.Hour).UnixMilli(), now.UnixMilli(), 1000, 10)},
 			shouldTruncate: []bool{true},
 			// 1 hour with 1000ms step is a 3601 data points. 10 samples per step, so 36010 samples.
-			// Truncation keeps half the range - 18001 datapoints, 10 samples per step, so 18010 samples.
+			// Truncation keeps half the range - 1801 datapoints, 10 samples per step, so 18010 samples.
 			expectedSamples: []uint64{18010},
 		},
 		{
@@ -890,8 +944,9 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				mkExtentWithEvenPerStepSamplesProcessed(now.Add(-2*time.Hour).UnixMilli(), now.UnixMilli(), 1000, 10),
 			},
 			shouldTruncate: []bool{false, true},
-			// First extent - 1 hour with 1000ms step is a 3601 data points - 36010 samples - not truncated
-			// Second extent - 2 hours with 1000ms step is a 7201 data points - 72010 samples - truncated to 54010 samples
+			// First extent: 1 hour with 1000ms step = 3601 data points × 10 samples/step = 36010 samples (not truncated)
+			// Second extent: 2 hours with 1000ms step = 7201 data points × 10 samples/step = 72010 samples
+			// Truncate last 30 minutes – remaining duration is 1.5 hours. 1.5 hours with 1000ms step is a 5401 datapoints X 10 samples per step 54010 samples.
 			expectedSamples: []uint64{36010, 54010},
 		},
 	}
@@ -928,78 +983,6 @@ func TestFilterRecentCacheExtents(t *testing.T) {
 				assert.Equal(t, tc.expectedSamples[i], totalSamples,
 					"Expected %d samples processed but got %d",
 					tc.expectedSamples[i], totalSamples)
-			}
-		})
-	}
-}
-
-func TestApproximateSamplesProcessedPerStep(t *testing.T) {
-	testCases := []struct {
-		name             string
-		start            int64
-		end              int64
-		step             int64
-		samplesProcessed uint64
-		expectedSteps    int
-		expectedPerStep  int64
-	}{
-		{
-			name:             "Simple even distribution",
-			start:            100,
-			end:              200,
-			step:             10,
-			samplesProcessed: 110,
-			expectedSteps:    11,
-			expectedPerStep:  10,
-		},
-		{
-			name:             "Single step",
-			start:            100,
-			end:              100,
-			step:             10,
-			samplesProcessed: 50,
-			expectedSteps:    1,
-			expectedPerStep:  50,
-		},
-		{
-			name:             "Zero samples processed",
-			start:            100,
-			end:              150,
-			step:             10,
-			samplesProcessed: 0,
-			expectedSteps:    6,
-			expectedPerStep:  0,
-		},
-		{
-			name:             "Uneven division of samples",
-			start:            100,
-			end:              200,
-			step:             10,
-			samplesProcessed: 103,
-			expectedSteps:    11,
-			expectedPerStep:  10, // Ceiling of 103/11 = 9.36... → 10
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := approximateSamplesProcessedPerStep(tc.start, tc.end, tc.step, tc.samplesProcessed)
-
-			// Check number of steps
-			assert.Equal(t, tc.expectedSteps, len(result),
-				"Expected %d steps but got %d", tc.expectedSteps, len(result))
-
-			// Check per-step value
-			for i, step := range result {
-				assert.Equal(t, tc.expectedPerStep, step.Value,
-					"Step %d has incorrect value: expected %d but got %d",
-					i, tc.expectedPerStep, step.Value)
-
-				// Check timestamp calculation
-				expectedTimestamp := tc.start + int64(i)*tc.step
-				assert.Equal(t, expectedTimestamp, step.Timestamp,
-					"Step %d has incorrect timestamp: expected %d but got %d",
-					i, expectedTimestamp, step.Timestamp)
 			}
 		})
 	}

@@ -152,7 +152,8 @@ func TestStartup(t *testing.T) {
 	require.Equal(t, "ingest/65/256", a1key.id)
 }
 
-// Verify that we skip jobs that are before the committed offset due to extraneous bug situations.
+// Verify that we skip jobs that are before the committed offset due to either extraneous bug situations
+// or ongoing job completions.
 func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	sched.cfg.MaxJobsPerPartition = 0
@@ -203,6 +204,43 @@ func TestAssignJobSkipsObsoleteOffsets(t *testing.T) {
 	require.ElementsMatch(t,
 		[]*schedulerpb.JobSpec{&s1, &s3}, assignedJobs,
 		"s2 should be skipped because its start offset is behind p2's committed offset",
+	)
+}
+
+func TestAssignJobSkipsObsoleteOffsets_PriorScheduler(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	sched.cfg.MaxJobsPerPartition = 0
+	sched.completeObservationMode(context.Background())
+	// Add some jobs, then move the committed offsets past some of them.
+	s1 := schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   1,
+		StartOffset: 256,
+		EndOffset:   9111,
+	}
+
+	require.NoError(t, sched.jobs.add("ingest/1/256", s1))
+	require.Equal(t, 1, sched.jobs.count())
+
+	// Simulate a completion of a job that was created by a prior scheduler.
+	sched.advanceCommittedOffset("ingest", 1, 5000)
+	// Advancing offsets doesn't actually remove any jobs.
+	require.Equal(t, 1, sched.jobs.count())
+
+	var assignedJobs []*schedulerpb.JobSpec
+
+	for {
+		_, s, err := sched.assignJob("big-time-worker-64")
+		if errors.Is(err, errNoJobAvailable) {
+			break
+		}
+		require.NoError(t, err)
+		assignedJobs = append(assignedJobs, &s)
+	}
+
+	require.ElementsMatch(t,
+		[]*schedulerpb.JobSpec{&s1}, assignedJobs,
+		"s1 should not have been skipped",
 	)
 }
 

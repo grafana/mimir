@@ -222,7 +222,7 @@ func main() {
 		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
 			fmt.Print(m)
 			if dependents, ok := dependentsByModule[m]; ok {
-				fmt.Print(" (in: ", strings.Join(slices.Collect(maps.Keys(dependents)), ", "), ")")
+				fmt.Print(" (in: ", strings.Join(slices.Sorted(maps.Keys(dependents)), ", "), ")")
 			}
 			fmt.Println()
 		}

@@ -195,7 +195,7 @@ func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			o := &OneToOneVectorVectorBinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
@@ -619,15 +619,15 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 				require.Failf(t, "invalid test case", "expectRightSideClosedAfterOutputSeriesIndex %v is beyond end of expected output series %v", testCase.expectRightSideClosedAfterOutputSeriesIndex, testCase.expectedOutputSeries)
 			}
 
+			ctx := context.Background()
 			timeRange := types.NewInstantQueryTimeRange(time.Now())
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			left := &operators.TestOperator{Series: testCase.leftSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.leftSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			right := &operators.TestOperator{Series: testCase.rightSeries, Data: make([]types.InstantVectorSeriesData, len(testCase.rightSeries)), MemoryConsumptionTracker: memoryConsumptionTracker}
 			vectorMatching := parser.VectorMatching{On: true, MatchingLabels: []string{"group"}}
 			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.ADD, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
-			ctx := context.Background()
 			outputSeries, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
@@ -636,7 +636,6 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -667,6 +666,8 @@ func TestOneToOneVectorVectorBinaryOperation_ClosesInnerOperatorsAsSoonAsPossibl
 				}
 			}
 
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
+
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
 
@@ -693,9 +694,10 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			step2 := step1.Add(time.Minute)
 			timeRange := types.NewRangeQueryTimeRange(step1, step2, time.Minute)
 
-			var err error
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 
+			var err error
 			left1Data := types.InstantVectorSeriesData{}
 			left1Data.Floats, err = types.FPointSlicePool.Get(1, memoryConsumptionTracker)
 			require.NoError(t, err)
@@ -715,11 +717,10 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 			o, err := NewOneToOneVectorVectorBinaryOperation(left, right, vectorMatching, parser.LTE, false, memoryConsumptionTracker, annotations.New(), posrange.PositionRange{}, timeRange)
 			require.NoError(t, err)
 
-			ctx := context.Background()
 			metadata, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(leftSeries), metadata)
-			types.SeriesMetadataSlicePool.Put(metadata, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&metadata, memoryConsumptionTracker)
 
 			// Read the first series.
 			d, err := o.NextSeries(ctx)

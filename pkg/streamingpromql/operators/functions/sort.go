@@ -56,8 +56,7 @@ func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, erro
 		}
 
 		// sort() and sort_desc() ignore histograms.
-		types.HPointSlicePool.Put(d.Histograms, s.MemoryConsumptionTracker)
-		d.Histograms = nil
+		types.HPointSlicePool.Put(&d.Histograms, s.MemoryConsumptionTracker)
 
 		pointCount := len(d.Floats)
 

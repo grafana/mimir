@@ -85,7 +85,7 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 			aggregator := &Aggregation{
 				Inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
 				Grouping:                 testCase.grouping,
@@ -352,7 +352,8 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(0, nil, "")
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			timeRange := rangeQueryTimeRange
 
 			if testCase.instant {
@@ -374,7 +375,6 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			o, err := testCase.createOperator(inner, timeRange, memoryConsumptionTracker)
 			require.NoError(t, err)
 
-			ctx := context.Background()
 			series, err := o.SeriesMetadata(ctx)
 			require.NoError(t, err)
 
@@ -383,7 +383,7 @@ func TestAggregations_ReturnIncompleteGroupsOnEarlyClose(t *testing.T) {
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedSeries), series)
 			}
-			types.SeriesMetadataSlicePool.Put(series, memoryConsumptionTracker)
+			types.SeriesMetadataSlicePool.Put(&series, memoryConsumptionTracker)
 
 			// Read the first output series to force the creation of incomplete groups.
 			seriesData, err := o.NextSeries(ctx)

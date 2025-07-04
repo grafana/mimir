@@ -3,6 +3,7 @@
 package types
 
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -54,7 +55,7 @@ func TestRingBuffer(t *testing.T) {
 			{T: 8, F: 800},
 			{T: 9, F: 900},
 		}
-		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))}
+		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
 		testRingBuffer(t, buf, points)
 	})
 
@@ -70,7 +71,7 @@ func TestRingBuffer(t *testing.T) {
 			{T: 8, H: &histogram.FloatHistogram{Count: 800}},
 			{T: 9, H: &histogram.FloatHistogram{Count: 900}},
 		}
-		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))}
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
 		testRingBuffer(t, buf, points)
 	})
 }
@@ -155,7 +156,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 			{T: 5, F: 500},
 			{T: 6, F: 600},
 		}
-		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))}
+		buf := &fPointRingBufferWrapper{NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
 		testDiscardPointsBeforeThroughWrapAround(t, buf, points)
 	})
 
@@ -168,7 +169,7 @@ func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
 			{T: 5, H: &histogram.FloatHistogram{Count: 500}},
 			{T: 6, H: &histogram.FloatHistogram{Count: 600}},
 		}
-		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))}
+		buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
 		testDiscardPointsBeforeThroughWrapAround(t, buf, points)
 	})
 }
@@ -215,7 +216,7 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		{T: 6, H: &histogram.FloatHistogram{Count: 600}},
 	}
 
-	buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))}
+	buf := &hPointRingBufferWrapper{NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))}
 
 	t.Run("test removing points until none exist", func(t *testing.T) {
 		buf.Reset()
@@ -296,7 +297,7 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 
 func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 	t.Run("FPoint ring buffer", func(t *testing.T) {
-		buf := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))
+		buf := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 		require.NoError(t, buf.Append(promql.FPoint{T: 1, F: 100}))
 		require.NoError(t, buf.Append(promql.FPoint{T: 2, F: 200}))
 		require.NoError(t, buf.Append(promql.FPoint{T: 3, F: 300}))
@@ -322,7 +323,7 @@ func TestRingBuffer_ViewUntilWithExistingView(t *testing.T) {
 		h3 := &histogram.FloatHistogram{Count: 300}
 		h4 := &histogram.FloatHistogram{Count: 400}
 
-		buf := NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(0, nil, ""))
+		buf := NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 		require.NoError(t, buf.Append(promql.HPoint{T: 1, H: h1}))
 		require.NoError(t, buf.Append(promql.HPoint{T: 2, H: h2}))
 		require.NoError(t, buf.Append(promql.HPoint{T: 3, H: h3}))
@@ -498,13 +499,13 @@ func setupRingBufferTestingPools(t *testing.T) {
 		return make([]promql.FPoint, 0, size), nil
 	}
 
-	putFPointSliceForRingBuffer = func(_ []promql.FPoint, _ *limiter.MemoryConsumptionTracker) {}
+	putFPointSliceForRingBuffer = func(_ *[]promql.FPoint, _ *limiter.MemoryConsumptionTracker) {}
 
 	getHPointSliceForRingBuffer = func(size int, _ *limiter.MemoryConsumptionTracker) ([]promql.HPoint, error) {
 		return make([]promql.HPoint, 0, size), nil
 	}
 
-	putHPointSliceForRingBuffer = func(_ []promql.HPoint, _ *limiter.MemoryConsumptionTracker) {}
+	putHPointSliceForRingBuffer = func(_ *[]promql.HPoint, _ *limiter.MemoryConsumptionTracker) {}
 
 	t.Cleanup(func() {
 		getFPointSliceForRingBuffer = originalGetFPointSlice
