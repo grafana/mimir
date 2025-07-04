@@ -2125,8 +2125,12 @@ Usage of ./cmd/mimir/mimir:
     	Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts. (default "./data-parquet-converter/")
   -parquet-converter.disabled-tenants comma-separated-list-of-strings
     	Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.
+  -parquet-converter.discovery-interval duration
+    	The frequency at which user and block discovery runs. (default 5m0s)
   -parquet-converter.enabled-tenants comma-separated-list-of-strings
     	Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.
+  -parquet-converter.max-block-age duration
+    	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
   -parquet-converter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -parquet-converter.ring.consul.cas-retry-delay duration

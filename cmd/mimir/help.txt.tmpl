@@ -547,6 +547,10 @@ Usage of ./cmd/mimir/mimir:
     	The frequency at which the conversion runs. (default 1m0s)
   -parquet-converter.data-dir string
     	Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts. (default "./data-parquet-converter/")
+  -parquet-converter.discovery-interval duration
+    	The frequency at which user and block discovery runs. (default 5m0s)
+  -parquet-converter.max-block-age duration
+    	Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.
   -parquet-converter.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -parquet-converter.ring.etcd.endpoints string
