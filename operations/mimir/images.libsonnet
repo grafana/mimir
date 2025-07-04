@@ -22,11 +22,6 @@
     query_tee: 'grafana/query-tee:2.16.1',
     continuous_test: 'grafana/mimir-continuous-test:2.16.1',
 
-    // Read-write deployment mode.
-    mimir_write: self.mimir,
-    mimir_read: self.mimir,
-    mimir_backend: self.mimir,
-
     // See: https://github.com/grafana/rollout-operator
     rollout_operator: 'grafana/rollout-operator:v0.28.0',
   },

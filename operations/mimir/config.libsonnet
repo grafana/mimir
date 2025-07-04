@@ -10,14 +10,6 @@
 
     aws_region: error 'must specify AWS region',
 
-    // The deployment mode to use. Supported values are:
-    // `microservices`: Provides only the k8s objects for each component as microservices.
-    // `read-write`: Provides only mimir-read, mimir-write, and mimir-backend k8s objects.
-    // `migration`: Provides both the microservices and read-write services.
-    deployment_mode: 'microservices',
-    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'migration',
-    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write' || $._config.deployment_mode == 'migration',
-
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
     // but requires to:
@@ -579,12 +571,6 @@
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
   },
-
-  // Check configured deployment mode to ensure configuration is correct and consistent.
-  assert std.member(['microservices', 'read-write', 'migration'], $._config.deployment_mode)
-         : 'unsupported deployment mode "%s"' % $._config.deployment_mode,
-  assert $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode)
-         : 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
 
   local configMap = $.core.v1.configMap,
 
