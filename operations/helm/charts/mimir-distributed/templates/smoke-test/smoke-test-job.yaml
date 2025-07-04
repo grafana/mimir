@@ -63,15 +63,8 @@ spec:
             {{- if .Values.global.extraVolumeMounts }}
               {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
-          {{- if or .Values.global.extraEnv .Values.smoke_test.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.smoke_test.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "smoke-test") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.smoke_test.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

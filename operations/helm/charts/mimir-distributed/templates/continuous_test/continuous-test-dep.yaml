@@ -88,15 +88,8 @@ spec:
             {{- toYaml .Values.continuous_test.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.continuous_test.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.continuous_test.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.continuous_test.env }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "continuous-test") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.continuous_test.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

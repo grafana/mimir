@@ -166,15 +166,8 @@ spec:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.compactor.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.compactor.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.compactor.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "compactor") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.compactor.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
