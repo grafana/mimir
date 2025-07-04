@@ -87,15 +87,8 @@ spec:
             {{- toYaml .Values.overrides_exporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.overrides_exporter.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.overrides_exporter.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.overrides_exporter.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "overrides-exporter") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.overrides_exporter.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

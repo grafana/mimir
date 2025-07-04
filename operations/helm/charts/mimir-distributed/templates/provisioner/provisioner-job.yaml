@@ -71,10 +71,8 @@ spec:
             - name: admin-token
               mountPath: /bootstrap/token
               subPath: token
-          {{- with $.Values.provisioner.env }}
           env:
-            {{ toYaml . | nindent 12 }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" $ "component" "provisioner") | nindent 12 }}
       containers:
         - name: create-secret
           image: {{ include "mimir.kubectlImage" . }}
