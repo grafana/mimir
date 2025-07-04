@@ -110,26 +110,14 @@ spec:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
+          {{- $defaultEnv := list }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
-          {{- $envKV := dict }}
           {{- if $cpu_request }}
             {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
-            {{- $_ := set $envKV "GOMAXPROCS" (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled 8 | toString)) }}
+            {{- $defaultEnv = mustAppend $defaultEnv (dict "name" "GOMAXPROCS" "value" (max $cpu_request_doubled 8 | toString)) }}
           {{- end }}
-          {{- range (.Values.global.extraEnv | default list) }}
-            {{- $_ := set $envKV .name . }}
-          {{- end }}
-          {{- range (.Values.distributor.env | default list) }}
-            {{- $_ := set $envKV .name . }}
-          {{- end }}
-          {{- $envList := list }}
-          {{- range $name, $envVar := $envKV }}
-            {{- $envList = append $envList $envVar }}
-          {{- end }}
-          {{- if $envList }}
           env:
-            {{- toYaml $envList | nindent 12 }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "distributor" "env" $defaultEnv) | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
