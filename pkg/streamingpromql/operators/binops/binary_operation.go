@@ -61,10 +61,19 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	if vectorMatching.On {
+		lbls := vectorMatching.MatchingLabels
+
+		// We never want to include __name__, even if it's explicitly mentioned in on(...).
+		// See https://github.com/prometheus/prometheus/issues/16631.
+		if i := slices.Index(vectorMatching.MatchingLabels, labels.MetricName); i != -1 {
+			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
+			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
+			lbls = append(lbls, vectorMatching.MatchingLabels[i+1:]...)
+		}
+
 		return func(l labels.Labels) labels.Labels {
 			lb.Reset(l)
-			lb.Keep(vectorMatching.MatchingLabels...)
-			lb.Del(labels.MetricName)
+			lb.Keep(lbls...)
 			return lb.Labels()
 		}
 	}
