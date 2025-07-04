@@ -174,7 +174,7 @@ func newIngesterMetrics(
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
 		}),
 		queryRequestStage: promauto.With(r).NewHistogramVec(prometheus.HistogramOpts{
-			Name:                           "cortex_ingester_query_request_stage_latency",
+			Name:                           "cortex_ingester_query_request_stage_latency_seconds",
 			Help:                           "How much each stage in processing queries took.",
 			NativeHistogramBucketFactor:    1.1,
 			NativeHistogramMaxBucketNumber: 100,
