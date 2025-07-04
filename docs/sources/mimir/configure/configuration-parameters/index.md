@@ -476,6 +476,15 @@ parquet_converter:
   # CLI flag: -parquet-converter.conversion-interval
   [conversion_interval: <duration> | default = 1m]
 
+  # The frequency at which user and block discovery runs.
+  # CLI flag: -parquet-converter.discovery-interval
+  [discovery_interval: <duration> | default = 5m]
+
+  # Maximum age of blocks to convert. Blocks older than this will be skipped.
+  # Set to 0 to disable age filtering.
+  # CLI flag: -parquet-converter.max-block-age
+  [max_block_age: <duration> | default = 0s]
+
   sharding_ring:
     # The key-value store used to share the hash ring across multiple instances.
     kvstore:

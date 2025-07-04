@@ -20069,6 +20069,26 @@
           "fieldType": "duration"
         },
         {
+          "kind": "field",
+          "name": "discovery_interval",
+          "required": false,
+          "desc": "The frequency at which user and block discovery runs.",
+          "fieldValue": null,
+          "fieldDefaultValue": 300000000000,
+          "fieldFlag": "parquet-converter.discovery-interval",
+          "fieldType": "duration"
+        },
+        {
+          "kind": "field",
+          "name": "max_block_age",
+          "required": false,
+          "desc": "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "parquet-converter.max-block-age",
+          "fieldType": "duration"
+        },
+        {
           "kind": "block",
           "name": "sharding_ring",
           "required": false,
