@@ -111,19 +111,10 @@ spec:
           securityContext:
             {{- toYaml .Values.distributor.containerSecurityContext | nindent 12 }}
           {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
-          {{- if or .Values.global.extraEnv .Values.distributor.env $cpu_request }}
+          {{- $containerEnv := include "mimir.lib.containerEnv" (dict "globalExtraEnv" .Values.global.extraEnv "extraEnv" .Values.distributor.env "cpuRequest" $cpu_request) }}
+          {{- if $containerEnv }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.distributor.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- if $cpu_request }}
-            {{- $calculated_max_procs := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 2 | ceil }}
-            - name: "GOMAXPROCS"
-              value: {{ max $calculated_max_procs 8 | toString | toYaml }}
-            {{- end }}
+            {{- $containerEnv | nindent 12 }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.distributor.extraEnvFrom }}
           envFrom:
