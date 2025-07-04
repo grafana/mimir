@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -119,6 +120,8 @@ type ParquetConverter struct {
 	metrics        parquetConverterMetrics
 
 	conversionQueue *priorityQueue
+
+	convertedBlocks sync.Map // map[ulid.ULID]time.Time
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -259,12 +262,17 @@ func (c *ParquetConverter) runBlockDiscovery(ctx context.Context) {
 	discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
 	defer discoveryTicker.Stop()
 
+	cleanupTicker := time.NewTicker(time.Hour)
+	defer cleanupTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-discoveryTicker.C:
 			c.discoverAndEnqueueBlocks(ctx)
+		case <-cleanupTicker.C:
+			c.cleanupConvertedBlocks()
 		}
 	}
 }
@@ -346,6 +354,11 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				continue
 			}
 
+			// TODO(jesusvazquez): Ideally we could add some information to the meta to indicate whether it has been converted or not to stop relying on this in-memory map.
+			if _, alreadyConverted := c.convertedBlocks.Load(m.ULID); alreadyConverted {
+				continue
+			}
+
 			task := newConversionTask(u, m, uBucket)
 
 			if c.conversionQueue.Push(task) {
@@ -358,6 +371,26 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 	}
 
 	c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+}
+
+// cleanupConvertedBlocks removes old entries from the converted blocks map to prevent memory growth
+// Note that many of the blocks will be rediscovered again but that is acceptable as we only keep a 24h history. In exchange,
+// we make sure to remove entries for blocks that were removed or compacted.
+func (c *ParquetConverter) cleanupConvertedBlocks() {
+	cutoff := time.Now().Add(-24 * time.Hour) // Keep 24h history
+	cleanedCount := 0
+
+	c.convertedBlocks.Range(func(key, value interface{}) bool {
+		if conversionTime := value.(time.Time); conversionTime.Before(cutoff) {
+			c.convertedBlocks.Delete(key)
+			cleanedCount++
+		}
+		return true
+	})
+
+	if cleanedCount > 0 {
+		level.Info(c.logger).Log("msg", "cleaned up old converted block entries", "count", cleanedCount)
+	}
 }
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
@@ -409,6 +442,8 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to write conversion mark", "block", meta.ULID.String(), "err", err)
+	} else {
+		c.convertedBlocks.Store(meta.ULID, time.Now())
 	}
 }
 
