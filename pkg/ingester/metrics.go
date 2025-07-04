@@ -6,10 +6,12 @@
 package ingester
 
 import (
+	"context"
 	"time"
 
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
@@ -439,11 +441,17 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 	}
 }
 
-func (m *ingesterMetrics) recordRequestStageLatencies(userID string, regexDuration *atomic.Duration, requestStart time.Time) {
+func (m *ingesterMetrics) recordRequestStageLatencies(ctx context.Context, userID string, regexDuration *atomic.Duration, requestStart time.Time) {
 	totalDuration := time.Since(requestStart)
 	regexDurationSnapshot := regexDuration.Load()
-	m.queryRequestStage.WithLabelValues(userID, "label_matching").Observe(regexDurationSnapshot.Seconds())
-	m.queryRequestStage.WithLabelValues(userID, "other").Observe((totalDuration - regexDurationSnapshot).Seconds())
+
+	traceID, ok := tracing.ExtractSampledTraceID(ctx)
+	var exemplarLabels prometheus.Labels = nil
+	if ok {
+		exemplarLabels = prometheus.Labels{"trace_id": traceID}
+	}
+	m.queryRequestStage.WithLabelValues(userID, "label_matching").(prometheus.ExemplarObserver).ObserveWithExemplar(regexDurationSnapshot.Seconds(), exemplarLabels)
+	m.queryRequestStage.WithLabelValues(userID, "other").(prometheus.ExemplarObserver).ObserveWithExemplar((totalDuration - regexDurationSnapshot).Seconds(), exemplarLabels)
 }
 
 type discardedMetrics struct {

@@ -1835,7 +1835,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	if err != nil {
 		return nil, err
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
@@ -1904,7 +1904,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	if err != nil {
 		return nil, err
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	q, err := db.Querier(mint, maxt)
 	if err != nil {
@@ -1957,7 +1957,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	if err != nil {
 		return nil, err
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
 	q, err := db.Querier(mint, maxt)
@@ -2069,15 +2069,16 @@ const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	ctx := stream.Context()
 
-	userID, err := tenant.TenantID(stream.Context())
+	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
-	if err := i.enforceReadConsistency(stream.Context(), userID); err != nil {
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
 		return err
 	}
 
@@ -2094,7 +2095,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	var valueFilter func(name, value string) (bool, error)
 	switch request.GetCountMethod() {
@@ -2104,7 +2105,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		}
 	case client.ACTIVE:
 		valueFilter = func(name, value string) (bool, error) {
-			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeSeries, name, value)
+			return activeseries.IsLabelValueActive(ctx, index, db.activeSeries, name, value)
 		}
 	default:
 		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
@@ -2120,14 +2121,15 @@ const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	userID, err := tenant.TenantID(srv.Context())
+	ctx := srv.Context()
+	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
-	if err := i.enforceReadConsistency(srv.Context(), userID); err != nil {
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
 		return err
 	}
 
@@ -2145,7 +2147,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err != nil {
 		return err
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
@@ -2213,7 +2215,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	if err != nil {
 		return err
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	// Check if query sharding is enabled for this query. If so, we need to remove the
 	// query sharding label from matchers and pass the shard info down the query execution path.
