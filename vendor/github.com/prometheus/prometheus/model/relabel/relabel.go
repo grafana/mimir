@@ -14,6 +14,7 @@
 package relabel
 
 import (
+	"cmp"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
@@ -100,6 +101,12 @@ type Config struct {
 	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
 	// Action is the action to be performed for the relabeling.
 	Action Action `yaml:"action,omitempty" json:"action,omitempty"`
+	// MetricNameValidationScheme to use when validating labels.
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty" json:"metricNameValidationScheme,omitempty"`
+}
+
+func (c Config) validationScheme() model.ValidationScheme {
+	return cmp.Or(c.MetricNameValidationScheme, model.UTF8Validation)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -112,10 +119,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
-	return c.Validate()
+	return nil
 }
 
-func (c *Config) Validate() error {
+func (c *Config) Validate(defaultValidationScheme model.ValidationScheme) error {
 	if c.Action == "" {
 		return errors.New("relabel action cannot be empty")
 	}
@@ -125,29 +132,28 @@ func (c *Config) Validate() error {
 	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid() {
+
+	if defaultValidationScheme != model.UnsetValidation && c.MetricNameValidationScheme == model.UnsetValidation {
+		c.MetricNameValidationScheme = defaultValidationScheme
+	}
+
+	if c.Action == Replace && !varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid(c.validationScheme()) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
-	isValidLabelNameWithRegexVarFn := func(value string) bool {
-		// UTF-8 allows ${} characters, so standard validation allow $variables by default.
-		// TODO(bwplotka): Relabelling users cannot put $ and ${<...>} characters in metric names or values.
-		// Design escaping mechanism to allow that, once valid use case appears.
-		return model.LabelName(value).IsValid()
-	}
-	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !isValidLabelNameWithRegexVarFn(c.TargetLabel) {
+	if c.Action == Replace && varInRegexTemplate(c.TargetLabel) && !model.LabelName(c.TargetLabel).IsValid(c.validationScheme()) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid() {
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !model.LabelName(c.TargetLabel).IsValid(c.validationScheme()) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
-	if c.Action == LabelMap && !isValidLabelNameWithRegexVarFn(c.Replacement) {
+	if c.Action == LabelMap && !model.LabelName(c.Replacement).IsValid(c.validationScheme()) {
 		return fmt.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
 	}
-	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {
+	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid(c.validationScheme()) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
 
@@ -319,7 +325,7 @@ func relabel(cfg *Config, lb *labels.Builder) (keep bool) {
 			break
 		}
 		target := model.LabelName(cfg.Regex.ExpandString([]byte{}, cfg.TargetLabel, val, indexes))
-		if !target.IsValid() {
+		if !target.IsValid(cfg.validationScheme()) {
 			break
 		}
 		res := cfg.Regex.ExpandString([]byte{}, cfg.Replacement, val, indexes)

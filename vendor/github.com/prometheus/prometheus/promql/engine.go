@@ -156,14 +156,17 @@ type PrometheusQueryOpts struct {
 	enablePerStepStats bool
 	// Lookback delta duration for this query.
 	lookbackDelta time.Duration
+	// validationScheme for metric/label names.
+	validationScheme model.ValidationScheme
 }
 
 var _ QueryOpts = &PrometheusQueryOpts{}
 
-func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration) QueryOpts {
+func NewPrometheusQueryOpts(enablePerStepStats bool, lookbackDelta time.Duration, validationScheme model.ValidationScheme) QueryOpts {
 	return &PrometheusQueryOpts{
 		enablePerStepStats: enablePerStepStats,
 		lookbackDelta:      lookbackDelta,
+		validationScheme:   validationScheme,
 	}
 }
 
@@ -175,11 +178,17 @@ func (p *PrometheusQueryOpts) LookbackDelta() time.Duration {
 	return p.lookbackDelta
 }
 
+func (p *PrometheusQueryOpts) ValidationScheme() model.ValidationScheme {
+	return p.validationScheme
+}
+
 type QueryOpts interface {
 	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
 	EnablePerStepStats() bool
 	// Lookback delta duration for this query.
 	LookbackDelta() time.Duration
+	// ValidationScheme to use for label and metric names.
+	ValidationScheme() model.ValidationScheme
 }
 
 // query implements the Query interface.
@@ -198,6 +207,8 @@ type query struct {
 	matrix Matrix
 	// Cancellation function for the query.
 	cancel func()
+	// validationScheme used for label and metric names.
+	validationScheme model.ValidationScheme
 
 	// The engine against which the query is executed.
 	ng *Engine
@@ -481,7 +492,7 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
-	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0*time.Second)
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
 		return nil, err
@@ -494,7 +505,7 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*pExpr, err = PreprocessExpr(expr, ts, ts)
+	*pExpr, err = PreprocessExpr(expr, ts, ts, 0)
 
 	return qry, err
 }
@@ -518,14 +529,14 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	*pExpr, err = PreprocessExpr(expr, start, end)
+	*pExpr, err = PreprocessExpr(expr, start, end, interval)
 
 	return qry, err
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
 	if opts == nil {
-		opts = NewPrometheusQueryOpts(false, 0)
+		opts = NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
 
 	lookbackDelta := opts.LookbackDelta()
@@ -540,12 +551,13 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
-		q:           qs,
-		stmt:        es,
-		ng:          ng,
-		stats:       stats.NewQueryTimers(),
-		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
-		queryable:   q,
+		q:                qs,
+		stmt:             es,
+		ng:               ng,
+		stats:            stats.NewQueryTimers(),
+		sampleStats:      stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
+		queryable:        q,
+		validationScheme: opts.ValidationScheme(),
 	}
 	return &es.Expr, qry
 }
@@ -750,6 +762,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 			querier:                  querier,
+			validationScheme:         query.validationScheme,
 		}
 		query.sampleStats.InitStepTracking(start, start, 1)
 
@@ -810,6 +823,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
 		enableTypeAndUnitLabels:  ng.enableTypeAndUnitLabels,
 		querier:                  querier,
+		validationScheme:         query.validationScheme,
 	}
 	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(ctxInnerEval, s.Expr)
@@ -1084,6 +1098,7 @@ type evaluator struct {
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
 	querier                  storage.Querier
+	validationScheme         model.ValidationScheme
 }
 
 // errorf causes a panic with the input formatted into an error.
@@ -1671,7 +1686,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if e.Op == parser.COUNT_VALUES {
 			valueLabel := param.(*parser.StringLiteral)
-			if !model.LabelName(valueLabel.Val).IsValid() {
+			if !model.LabelName(valueLabel.Val).IsValid(ev.validationScheme) {
 				ev.errorf("invalid label name %s", valueLabel)
 			}
 			if !e.Without {
@@ -2077,6 +2092,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			validationScheme:         ev.validationScheme,
 		}
 
 		if e.Step != 0 {
@@ -2123,6 +2139,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			enableDelayedNameRemoval: ev.enableDelayedNameRemoval,
 			enableTypeAndUnitLabels:  ev.enableTypeAndUnitLabels,
 			querier:                  ev.querier,
+			validationScheme:         ev.validationScheme,
 		}
 		res, ws := newEv.eval(ctx, e.Expr)
 		ev.currentSamples = newEv.currentSamples
@@ -3730,10 +3747,10 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 // PreprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors and evaluates duration expressions
 // into their numeric values.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
+func PreprocessExpr(expr parser.Expr, start, end time.Time, step time.Duration) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+	if err := parser.Walk(&durationVisitor{step: step}, expr, nil); err != nil {
 		return nil, err
 	}
 
