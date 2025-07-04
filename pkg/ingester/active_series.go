@@ -41,7 +41,7 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	if err != nil {
 		return fmt.Errorf("error parsing label matchers: %w", err)
 	}
-	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
+	defer i.metrics.recordRequestStageLatencies(ctx, userID, regexDuration, time.Now())
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
