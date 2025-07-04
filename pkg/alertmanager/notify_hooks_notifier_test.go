@@ -54,7 +54,7 @@ type testHooksFixture struct {
 	notifier *notifyHooksNotifier
 }
 
-func newTestHooksFixture(t *testing.T) *testHooksFixture {
+func newTestHooksFixture(t *testing.T, handlerStatus int, handlerResponse string) *testHooksFixture {
 	t.Helper()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,16 +78,8 @@ func newTestHooksFixture(t *testing.T) *testHooksFixture {
 			`"Timeout":false}],`+
 			`"groupLabels":{}}`+"\n", string(body))
 
-		w.WriteHeader(http.StatusOK)
-		_, err = w.Write([]byte(`{` +
-			`"alerts":[` +
-			`{"labels":{"label":"changed"},` +
-			`"annotations":null,` +
-			`"startsAt":"0001-01-01T00:00:00Z",` +
-			`"endsAt":"0001-01-01T00:00:00Z",` +
-			`"generatorURL":"",` +
-			`"UpdatedAt":"0001-01-01T00:00:00Z",` +
-			`"Timeout":false}]}`))
+		w.WriteHeader(handlerStatus)
+		_, err = w.Write([]byte(handlerResponse))
 		assert.NoError(t, err)
 	})
 
@@ -136,8 +128,18 @@ func makeContext() context.Context {
 }
 
 func TestNotifyHooksNotifier(t *testing.T) {
+	const okResponse = `{` +
+		`"alerts":[` +
+		`{"labels":{"label":"changed"},` +
+		`"annotations":null,` +
+		`"startsAt":"0001-01-01T00:00:00Z",` +
+		`"endsAt":"0001-01-01T00:00:00Z",` +
+		`"generatorURL":"",` +
+		`"UpdatedAt":"0001-01-01T00:00:00Z",` +
+		`"Timeout":false}]}`
+
 	t.Run("hook invoked", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
 		require.NoError(t, err)
@@ -145,7 +147,7 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		require.Equal(t, [][]*types.Alert{makeAlert("changed")}, f.upstream.calls)
 	})
 	t.Run("hook not invoked when empty url configured", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 		f.limits.url = ""
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
@@ -154,7 +156,7 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
 	})
 	t.Run("hook not invoked when matching receiver name configured ", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 		f.limits.receivers = []string{"otherrecv"}
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
@@ -163,12 +165,40 @@ func TestNotifyHooksNotifier(t *testing.T) {
 		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
 	})
 	t.Run("hook invoked when matching receiver name configured ", func(t *testing.T) {
-		f := newTestHooksFixture(t)
+		f := newTestHooksFixture(t, http.StatusOK, okResponse)
 		f.limits.receivers = []string{"recv"}
 
 		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
 		require.NoError(t, err)
 
 		require.Equal(t, [][]*types.Alert{makeAlert("changed")}, f.upstream.calls)
+	})
+
+	t.Run("hook failing with 500 does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusInternalServerError, ``)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+	})
+	t.Run("hook failing with 500 but returning data does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusInternalServerError, okResponse)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
+	})
+	t.Run("hook yielding 204 with empty response does not modify alerts", func(t *testing.T) {
+		f := newTestHooksFixture(t, http.StatusNoContent, ``)
+		f.limits.receivers = []string{"recv"}
+
+		_, err := f.notifier.Notify(makeContext(), makeAlert("foo")...)
+		require.NoError(t, err)
+
+		require.Equal(t, [][]*types.Alert{makeAlert("foo")}, f.upstream.calls)
 	})
 }
