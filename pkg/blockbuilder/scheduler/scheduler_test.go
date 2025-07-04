@@ -533,8 +533,8 @@ func TestUpdateSchedule(t *testing.T) {
 	sched.completeObservationMode(ctx)
 
 	// Partition i gets i records.
-	for i := int32(0); i < 4; i++ {
-		for n := int32(0); n < i; n++ {
+	for i := range int32(4) {
+		for n := range i {
 			produceResult := cli.ProduceSync(ctx, &kgo.Record{
 				Timestamp: time.Unix(int64(i*n), 1),
 				Value:     []byte(fmt.Sprintf("value-%d-%d", i, n)),
