@@ -113,7 +113,7 @@ The following features are currently experimental:
     - `-distributor.otel-keep-identifying-resource-attributes`
   - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
     - `-distributor.otel-convert-histograms-to-nhcb`
-  - Enable native ingestion of delta OTLP metrics. This means storing the raw delta sample values without converting them to cumulative and having the metric type set to "Unknown". Delta support is in an early stage of development. The ingestion and querying process is likely to change over time. You can find considerations around querying and gotchas in the [corresponding Prometheus documentation](https://prometheus.io/docs/prometheus/3.4/feature_flags/#otlp-native-delta-support).
+  - Enable native ingestion of delta OTLP metrics. This means storing the raw delta sample values without converting them to cumulative values and having the metric type set to "Unknown". Delta support is in an early stage of development. The ingestion and querying process is likely to change over time. You can find considerations around querying and gotchas in the [corresponding Prometheus documentation](https://prometheus.io/docs/prometheus/3.4/feature_flags/#otlp-native-delta-support).
     - `distributor.otel-native-delta-ingestion`
 - Hash ring
   - Disabling ring heartbeat timeouts
