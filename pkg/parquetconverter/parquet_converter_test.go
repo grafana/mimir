@@ -111,6 +111,7 @@ func prepareConfig(t *testing.T) Config {
 
 	// Speed up tests
 	cfg.ConversionInterval = 100 * time.Millisecond
+	cfg.DiscoveryInterval = 100 * time.Millisecond
 	return cfg
 }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -83,6 +84,8 @@ type Config struct {
 	DataDir string `yaml:"data_dir"`
 
 	ConversionInterval time.Duration `yaml:"conversion_interval"`
+	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
+	MaxBlockAge        time.Duration `yaml:"max_block_age"`
 
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
@@ -94,6 +97,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.EnabledTenants, "parquet-converter.enabled-tenants", "Comma-separated list of tenants that can have their TSDB blocks converted into Parquet. If specified, the Parquet-converter only converts these tenants. Otherwise, it converts all tenants. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.")
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
+	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
+	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
 }
 
@@ -115,6 +120,10 @@ type ParquetConverter struct {
 
 	blockConverter blockConverter
 	metrics        parquetConverterMetrics
+
+	conversionQueue *priorityQueue
+
+	queuedBlocks sync.Map // map[ulid.ULID]time.Time - persistent cache of blocks that have been queued
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -140,6 +149,7 @@ func newParquetConverter(
 		limits:              limits,
 		blockConverter:      blockConverter,
 		metrics:             newParquetConverterMetrics(registerer),
+		conversionQueue:     newPriorityQueue(),
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping).WithName("parquet-converter")
@@ -236,65 +246,147 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 }
 
 func (c *ParquetConverter) running(ctx context.Context) error {
-	convertBlocksTicker := time.NewTicker(c.Cfg.ConversionInterval)
+	go c.runBlockDiscovery(ctx)
+	go c.runBlockProcessing(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case err := <-c.ringSubservicesWatcher.Chan():
 			return errors.Wrap(err, "parquet-converter ring subservice failed")
-
-		case <-convertBlocksTicker.C:
-			users, err := c.discoverUsers(ctx)
-			if err != nil {
-				level.Error(c.logger).Log("msg", "error scanning users", "err", err)
-				return err
-			}
-
-			for _, u := range users {
-				ulogger := util_log.WithUserID(u, c.logger)
-				uBucket := bucket.NewUserBucketClient(u, c.bucketClient, c.limits)
-
-				fetcher, err := block.NewMetaFetcher(
-					ulogger,
-					20,
-					uBucket,
-					c.metaSyncDirForUser(u),
-					prometheus.NewRegistry(), // TODO: we are discarding metrics for now
-					[]block.MetadataFilter{},
-					nil, // TODO: No Meta cache for now
-					0,   // No lookback limit, we take all blocks
-				)
-				if err != nil {
-					level.Error(ulogger).Log("msg", "error creating meta fetcher", "err", err)
-					continue
-				}
-
-				metas, _, err := fetcher.Fetch(ctx)
-				if err != nil {
-					level.Error(ulogger).Log("msg", "error fetching metas", "err", err)
-					continue
-				}
-
-				for _, m := range metas {
-					if ctx.Err() != nil {
-						return ctx.Err()
-					}
-
-					ok, err := c.ownBlock(m.ULID.String())
-					if err != nil {
-						level.Error(ulogger).Log("msg", "error checking if block is owned", "err", err)
-						continue
-					}
-					if !ok {
-						continue
-					}
-
-					c.processBlock(ctx, u, m, uBucket, ulogger)
-				}
-			}
 		}
 	}
+}
+
+// runBlockDiscovery discovers blocks and enqueues them for processing
+func (c *ParquetConverter) runBlockDiscovery(ctx context.Context) {
+	discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
+	defer discoveryTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-discoveryTicker.C:
+			c.discoverAndEnqueueBlocks(ctx)
+		}
+	}
+}
+
+// runBlockProcessing processes blocks from the priority queue
+func (c *ParquetConverter) runBlockProcessing(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			task, ok := c.conversionQueue.Pop()
+			if !ok {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(1 * time.Second):
+					continue
+				}
+			}
+
+			c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+			c.metrics.queueItemsProcessed.WithLabelValues(task.UserID).Inc()
+
+			waitTime := time.Since(task.EnqueuedAt)
+			c.metrics.queueWaitTime.WithLabelValues(task.UserID).Observe(waitTime.Seconds())
+
+			ulogger := util_log.WithUserID(task.UserID, c.logger)
+			c.processBlock(ctx, task.UserID, task.Meta, task.Bucket, ulogger)
+		}
+	}
+}
+
+// discoverAndEnqueueBlocks discovers blocks and adds them to the priority queue
+func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
+	users, err := c.discoverUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "error scanning users", "err", err)
+		return
+	}
+
+	for _, u := range users {
+		if ctx.Err() != nil {
+			return
+		}
+
+		ulogger := util_log.WithUserID(u, c.logger)
+		uBucket := bucket.NewUserBucketClient(u, c.bucketClient, c.limits)
+
+		fetcher, err := block.NewMetaFetcher(
+			ulogger,
+			20,
+			uBucket,
+			c.metaSyncDirForUser(u),
+			prometheus.NewRegistry(), // TODO: we are discarding metrics for now
+			[]block.MetadataFilter{},
+			nil, // TODO: No Meta cache for now
+			0,   // No lookback limit, we take all blocks
+		)
+		if err != nil {
+			level.Error(ulogger).Log("msg", "error creating meta fetcher", "err", err)
+			continue
+		}
+
+		metas, _, err := fetcher.Fetch(ctx)
+		if err != nil {
+			level.Error(ulogger).Log("msg", "error fetching metas", "err", err)
+			continue
+		}
+
+		for _, m := range metas {
+			if ctx.Err() != nil {
+				return
+			}
+
+			ok, err := c.ownBlock(m.ULID.String())
+			if err != nil {
+				level.Error(ulogger).Log("msg", "error checking if block is owned", "err", err)
+				continue
+			}
+			if !ok {
+				continue
+			}
+
+			if c.Cfg.MaxBlockAge > 0 {
+				blockAge := time.Since(time.UnixMilli(m.MinTime))
+				if blockAge > c.Cfg.MaxBlockAge {
+					continue
+				}
+			}
+
+			if _, alreadyQueued := c.queuedBlocks.Load(m.ULID); alreadyQueued {
+				continue
+			}
+
+			mark, err := ReadConversionMark(ctx, m.ULID, uBucket, ulogger)
+			if err != nil {
+				level.Debug(ulogger).Log("msg", "failed to read conversion mark, assuming not converted", "block", m.ULID.String(), "err", err)
+			} else if mark.Version == CurrentVersion {
+				continue
+			}
+
+			task := newConversionTask(u, m, uBucket)
+
+			if c.conversionQueue.Push(task) {
+				c.metrics.queueItemsEnqueued.WithLabelValues(u).Inc()
+				// Mark block as queued to prevent duplicate queuing
+				c.queuedBlocks.Store(m.ULID, time.Now())
+			} else {
+				c.metrics.queueItemsDropped.WithLabelValues(u).Inc()
+				level.Warn(ulogger).Log("msg", "failed to enqueue block, queue closed", "block", m.ULID.String())
+			}
+
+			c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
+		}
+	}
+
 }
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
@@ -303,6 +395,9 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	var err error
 	var skipped bool
 	defer func() {
+		// Remove block from queued blocks map when processing completes (success or failure)
+		c.queuedBlocks.Delete(meta.ULID)
+
 		duration := time.Since(start)
 		c.metrics.conversionDuration.WithLabelValues(userID).Observe(duration.Seconds())
 		if err != nil {
@@ -351,6 +446,8 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 
 func (c *ParquetConverter) stopping(_ error) error {
 	ctx := context.Background()
+
+	c.conversionQueue.Close()
 
 	if c.ringSubservices != nil {
 		return services.StopManagerAndAwaitStopped(ctx, c.ringSubservices)
