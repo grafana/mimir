@@ -68,6 +68,8 @@ spec:
             - -c 16384
             - -v
             - -u 11211
+          env:
+            []
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
