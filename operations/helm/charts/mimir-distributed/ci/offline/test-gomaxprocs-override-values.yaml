@@ -1,0 +1,15 @@
+# Test that user-defined GOMAXPROCS takes precedence over calculated values
+kubeVersionOverride: "1.20"
+
+distributor:
+  resources:
+    requests:
+      cpu: 2 # This would normally calculate GOMAXPROCS as max(2*2, 8) = 8
+  env:
+    - name: TEST_ENV
+      valueFrom:
+        secretKeyRef:
+          name: my-secret
+          key: test
+    - name: GOMAXPROCS
+      value: "16" # This should override the calculated value
