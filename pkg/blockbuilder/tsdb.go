@@ -139,7 +139,27 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
+		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
+
 		for _, s := range ts.Samples {
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs &&
+				(processEverything || !recordAlreadyProcessed || ts.CreatedTimestamp >= lastBlockMax) &&
+				(processEverything || ts.CreatedTimestamp < blockMax) &&
+				(!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
+				if ref != 0 {
+					// If the cached reference exists, we try to use it.
+					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				} else {
+					// Copy the label set because TSDB may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+				}
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					level.Warn(b.logger).Log("msg", "failed to store zero float sample for created timestamp", "tenant", userID, "err", err)
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+			}
+
 			if !processEverything && s.TimestampMs >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
@@ -177,6 +197,33 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 
 		for _, h := range ts.Histograms {
+			if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp &&
+				(processEverything || !recordAlreadyProcessed || ts.CreatedTimestamp >= lastBlockMax) &&
+				(processEverything || ts.CreatedTimestamp < blockMax) {
+				var (
+					ih *histogram.Histogram
+					fh *histogram.FloatHistogram
+				)
+				// AppendHistogramCTZeroSample doesn't care about the content of the passed histograms,
+				// just uses it to decide the type, so don't convert the input, use dummy histograms.
+				if h.IsFloatHistogram() {
+					fh = zeroFloatHistogram
+				} else {
+					ih = zeroHistogram
+				}
+				if ref != 0 {
+					_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+				} else {
+					// Copy the label set because both TSDB and the active series tracker may retain it.
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+				}
+				if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					level.Warn(b.logger).Log("msg", "failed to store zero histogram sample for created timestamp", "tenant", userID, "err", err)
+				}
+				ingestCreatedTimestamp = false // Only try to append created timestamp once per series.
+			}
+
 			if !processEverything && h.Timestamp >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
@@ -230,6 +277,11 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 
 	return allSamplesProcessed, app.Commit()
 }
+
+var (
+	zeroHistogram      = &histogram.Histogram{}
+	zeroFloatHistogram = &histogram.FloatHistogram{}
+)
 
 func (b *TSDBBuilder) getOrCreateTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	b.tsdbsMu.RLock()
