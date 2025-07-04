@@ -34,6 +34,13 @@ var noRejected = []uint64{}
 
 func TestPartitionHandler(t *testing.T) {
 	const tenantID = "tenant-1"
+	oneSeriesPerShard := func() []uint64 {
+		series := make([]uint64, shards)
+		for s := range series {
+			series[s] = uint64(s)
+		}
+		return series
+	}
 
 	startPartitionHandlerTrackTwoSeriesAndShutDown := func(t *testing.T, h *partitionHandlerTestHelper) *partitionHandler {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -74,28 +81,53 @@ func TestPartitionHandler(t *testing.T) {
 	})
 
 	t.Run("create and load snapshots", func(t *testing.T) {
-		t.Parallel()
+		for maxFileSize, expectedSnapshotFiles := range map[int]int{
+			10e3: 1,
+			1e3:  4, // If the snapshot file change, we need to update this value.
+		} {
+			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
+				t.Parallel()
 
-		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-		defer cancel()
+				ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+				defer cancel()
 
-		h := newPartitionHandlerTestHelper(t)
-		h.limiter[tenantID] = 10
+				h := newPartitionHandlerTestHelper(t)
+				h.limiter[tenantID] = 0 // no limit.
 
-		// First partitionHandler is created, tracks some series and creates a snapshot.
-		startPartitionHandlerTrackTwoSeriesAndShutDown(t, h)
+				// First partitionHandler is created, tracks some series and creates a snapshot.
+				ph1 := h.newHandler(t, func(cfg *Config) {
+					cfg.TargetSnapshotFileSizeBytes = maxFileSize
+				})
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ph1))
+				requireTrackSeries(t, ph1, tenantID, oneSeriesPerShard(), noRejected)
+				h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, oneSeriesPerShard()})
+				require.NoError(t, ph1.publishSnapshot(ctx))
+				for i := 0; i < expectedSnapshotFiles; i++ {
+					h.expectEvents(t, expectedSnapshotEvent{})
+				}
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph1))
 
-		// New partitionHandler is created, loads the snapshot and should contain the same series.
-		ph := h.newHandler(t)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, ph))
-		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 2})
-		requireTrackSeries(t, ph, tenantID, []uint64{2, 3}, noRejected)
+				snapshotFiles := 0
+				require.NoError(t, h.snapshotsBucket.Iter(context.Background(), "", func(name string) error {
+					snapshotFiles++
+					return nil
+				}))
+				require.Equal(t, expectedSnapshotFiles, snapshotFiles, "There should be exactly %d snapshot files created, got %d", expectedSnapshotFiles, snapshotFiles)
 
-		// The series 2 is already tracked, so it should not be published again.
-		h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{3}})
-		requirePerTenantSeries(t, ph, map[string]uint64{tenantID: 3})
+				// New partitionHandler is created, loads the snapshot and should contain the same series.
+				// Since we generated one series per shard, we're checking here that all shards are loaded.
+				ph2 := h.newHandler(t)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
+				requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: shards})
+				requireTrackSeries(t, ph2, tenantID, []uint64{shards / 2, shards * 2}, noRejected)
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ph))
+				// The series shards/2 is already tracked, so it should not be published again.
+				h.expectEvents(t, expectedSeriesCreatedEvent{tenantID, []uint64{shards * 2}})
+				requirePerTenantSeries(t, ph2, map[string]uint64{tenantID: shards + 1})
+
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ph2))
+			})
+		}
 	})
 
 	t.Run("snapshot events are loaded continuously", func(t *testing.T) {
@@ -115,7 +147,10 @@ func TestPartitionHandler(t *testing.T) {
 
 		// New partitionHandler is created it loads the events.
 		// We need to create this partitionHandler on a different instance because otherwise own events are ignored.
-		ph2 := h.newHandlerOnDifferentInstance(t)
+		ph2 := h.newHandler(t, func(cfg *Config) {
+			cfg.InstanceRing.InstanceID = "usage-tracker-zone-b-1"
+			cfg.InstanceRing.InstanceZone = "zone-b" // Doesn't necessarily need to be different.
+		})
 		consumedEvents := make(chan string, 10)
 		ph2.onConsumeEvent = func(typ string) { consumedEvents <- typ }
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ph2))
@@ -129,7 +164,6 @@ func TestPartitionHandler(t *testing.T) {
 		h.expectEvents(t, expectedSnapshotEvent{})
 
 		// Wait until ph2 consumes the snapshot event.
-		// TODO
 		select {
 		case typ := <-consumedEvents:
 			require.Equal(t, eventTypeSnapshot, typ, "expected ph2 to consume snapshot event, got %s", typ)
@@ -307,9 +341,7 @@ func TestPartitionHandler(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// New partitionHandler is created, it has IdleTimeout set to 1 second, which already passed, so old snapshot should not be loaded.
-		cfg := h.cfg
-		cfg.IdleTimeout = time.Second
-		ph := h.newHandlerForConfig(t, cfg)
+		ph := h.newHandler(t, func(cfg *Config) { cfg.IdleTimeout = time.Second })
 		// This partitionHandler has a slow bucket reader.
 		getCalls := atomic.NewInt64(0)
 		ph.snapshotsBucket = &getCounterBucketReader{ph.snapshotsBucket, getCalls}
@@ -410,20 +442,7 @@ type partitionHandlerTestHelper struct {
 	pidx int // Identify each partitionHandler in the logs.
 }
 
-func (h *partitionHandlerTestHelper) newHandler(t *testing.T) *partitionHandler {
-	t.Helper()
-	return h.newHandlerForConfig(t, h.cfg)
-}
-
-func (h *partitionHandlerTestHelper) newHandlerOnDifferentInstance(t *testing.T) *partitionHandler {
-	t.Helper()
-	cfg := h.cfg
-	cfg.InstanceRing.InstanceID = "usage-tracker-zone-b-1"
-	cfg.InstanceRing.InstanceZone = "zone-b" // Doesn't necessarily need to be different.
-	return h.newHandlerForConfig(t, cfg)
-}
-
-func (h *partitionHandlerTestHelper) newHandlerForConfig(t *testing.T, cfg Config) *partitionHandler {
+func (h *partitionHandlerTestHelper) newHandler(t *testing.T, maybeConfigure ...func(cfg *Config)) *partitionHandler {
 	t.Helper()
 	// Wrap logger to understand test logs easier.
 	logger := log.With(h.logger, "pidx", h.pidx)
@@ -431,6 +450,10 @@ func (h *partitionHandlerTestHelper) newHandlerForConfig(t *testing.T, cfg Confi
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"pidx": strconv.Itoa(h.pidx)}, h.reg)
 	h.pidx++
 
+	cfg := h.cfg
+	for _, configure := range maybeConfigure {
+		configure(&cfg)
+	}
 	instanceRing, err := NewInstanceRingClient(cfg.InstanceRing, logger, reg)
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)
