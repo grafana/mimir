@@ -5,7 +5,9 @@ package usagetracker
 import (
 	"context"
 	"math/rand"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -221,7 +223,7 @@ func TestTrackerStore_CreatedSeriesCommunication(t *testing.T) {
 	}
 }
 
-func TestTrackerStore_Snapshot(t *testing.T) {
+func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 	const idleTimeoutMinutes = 20
 	const testUser1 = "user1"
 	const testUser2 = "user2"
@@ -280,6 +282,43 @@ func TestTrackerStore_Snapshot(t *testing.T) {
 
 	// Check that they hold the same data.
 	requireTrackersSameData(t, tracker1, tracker2)
+}
+
+func TestTrackerStore_Snapshot_Size(t *testing.T) {
+	const idleTimeoutMinutes = 20
+	const shardBits = 7
+	require.Equal(t, shards, 1<<shardBits, "shards should be a power of 2")
+
+	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
+
+	r := rand.NewSource(0)
+
+	totalSeriesCountForAllUsers := 1_000_000
+	usersCount := 1_000
+	seriesPerUser := totalSeriesCountForAllUsers / usersCount
+	tr := newTrackerStore(idleTimeoutMinutes*time.Minute, log.NewNopLogger(), limiterMock{}, noopEvents{})
+
+	for u := 0; u < usersCount; u++ {
+		userID := strconv.Itoa(int(r.Int63() % (1 << 16)))
+		series := make([]uint64, seriesPerUser)
+		for i := range seriesPerUser {
+			series[i] = uint64(r.Int63() << shardBits) // all on the same shard.
+		}
+
+		rejected, err := tr.trackSeries(t.Context(), userID, series, now)
+		require.NoError(t, err)
+		require.Empty(t, rejected)
+	}
+
+	snapshot := tr.snapshot(0, now, nil)
+	t.Logf("one shard size for series=%d,users=%d: %d bytes", totalSeriesCountForAllUsers, usersCount, len(snapshot))
+
+	// Make sure that nobody commits a huge number of series and we run that in CI, that would be a waste of resources.
+	// It's ok to play with numbers without committing.
+	// We still want to run the test in CI, so it doesn't break.
+	if os.Getenv("GITHUB_WORKFLOW") == "true" {
+		require.LessOrEqual(t, totalSeriesCountForAllUsers, 1_000_000, "Please don't commit large totalSeriesCountForAllUsers number.")
+	}
 }
 
 func TestTrackerStore_Cleanup_OffByOneError(t *testing.T) {
