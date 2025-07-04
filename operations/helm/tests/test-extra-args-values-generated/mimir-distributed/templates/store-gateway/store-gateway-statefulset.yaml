@@ -166,6 +166,7 @@ metadata:
     rollout-max-unavailable: "50"
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-extra-args-values-mimir-store-gateway-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -313,6 +314,7 @@ metadata:
     rollout-max-unavailable: "50"
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-extra-args-values-mimir-store-gateway-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
