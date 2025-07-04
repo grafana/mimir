@@ -1593,9 +1593,10 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(1)), "cortex_querier_queries_rejected_total"))
 					}
 
-					spanStubs := spanExporter.GetSpans()
-					assert.Len(t, spanStubs, 1)
-					spanStub := spanStubs[0]
+					var spanStub tracetest.SpanStub
+					if spanStubs := spanExporter.GetSpans(); assert.Len(t, spanStubs, 1) {
+						spanStub = spanStubs[0]
+					}
 					assertEstimatedPeakMemoryConsumption(t, reg, spanStub, expectedPeakMemoryConsumption, queryType)
 				})
 			}
