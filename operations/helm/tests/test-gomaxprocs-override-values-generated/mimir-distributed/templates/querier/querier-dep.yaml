@@ -80,7 +80,7 @@ spec:
             initialDelaySeconds: 45
           resources:
             requests:
-              cpu: 100m
+              cpu: 1
               memory: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
@@ -90,7 +90,7 @@ spec:
             readOnlyRootFilesystem: true
           env:
             - name: GOMAXPROCS
-              value: "5"
+              value: "8"
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname

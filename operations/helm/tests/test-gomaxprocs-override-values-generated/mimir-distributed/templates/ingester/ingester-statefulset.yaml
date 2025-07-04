@@ -125,7 +125,7 @@ spec:
             initialDelaySeconds: 60
           resources:
             requests:
-              cpu: 100m
+              cpu: 1
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
@@ -135,7 +135,7 @@ spec:
             readOnlyRootFilesystem: true
           env:
             - name: GOMAXPROCS
-              value: "4"
+              value: "12"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -264,7 +264,7 @@ spec:
             initialDelaySeconds: 60
           resources:
             requests:
-              cpu: 100m
+              cpu: 1
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
@@ -274,7 +274,7 @@ spec:
             readOnlyRootFilesystem: true
           env:
             - name: GOMAXPROCS
-              value: "4"
+              value: "12"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
@@ -403,7 +403,7 @@ spec:
             initialDelaySeconds: 60
           resources:
             requests:
-              cpu: 100m
+              cpu: 1
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
@@ -413,4 +413,4 @@ spec:
             readOnlyRootFilesystem: true
           env:
             - name: GOMAXPROCS
-              value: "4"
+              value: "12"
