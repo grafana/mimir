@@ -1826,7 +1826,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
-	labelName, startTimestampMs, endTimestampMs, hints, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, startTimestampMs, endTimestampMs, hints, matchers, regexDuration, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1835,6 +1835,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	if err != nil {
 		return nil, err
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
 	// in this ingester yet, but there's some to ingest in the backlog).
@@ -1899,10 +1900,11 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return &client.LabelNamesResponse{}, nil
 	}
 
-	mint, maxt, hints, matchers, err := client.FromLabelNamesRequest(req)
+	mint, maxt, hints, matchers, regexDuration, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	q, err := db.Querier(mint, maxt)
 	if err != nil {
@@ -1951,10 +1953,11 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	// Parse the request
-	hints, matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, matchersSet, regexDuration, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
 	q, err := db.Querier(mint, maxt)
@@ -2087,10 +2090,11 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 	defer index.Close()
-	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	matchers, regexDuration, err := client.FromLabelMatchers(request.GetMatchers())
 	if err != nil {
 		return err
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	var valueFilter func(name, value string) (bool, error)
 	switch request.GetCountMethod() {
@@ -2137,10 +2141,11 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	}
 	defer idx.Close()
 
-	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	matchers, regexDuration, err := client.FromLabelMatchers(req.GetMatchers())
 	if err != nil {
 		return err
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
@@ -2204,10 +2209,11 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	from, through, matchers, err := client.FromQueryRequest(req)
+	from, through, matchers, regexDuration, err := client.FromQueryRequest(req)
 	if err != nil {
 		return err
 	}
+	defer i.metrics.recordRequestStageLatencies(userID, regexDuration, time.Now())
 
 	// Check if query sharding is enabled for this query. If so, we need to remove the
 	// query sharding label from matchers and pass the shard info down the query execution path.
