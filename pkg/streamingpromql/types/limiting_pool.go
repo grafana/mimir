@@ -49,6 +49,7 @@ var (
 		FPointSize,
 		false,
 		nil,
+		nil,
 	)
 
 	HPointSlicePool = NewLimitingBucketedPool(
@@ -62,6 +63,7 @@ var (
 			point.H = mangleHistogram(point.H)
 			return point
 		},
+		nil,
 	)
 
 	VectorPool = NewLimitingBucketedPool(
@@ -71,6 +73,7 @@ var (
 		limiter.Vectors,
 		VectorSampleSize,
 		false,
+		nil,
 		nil,
 	)
 
@@ -82,6 +85,7 @@ var (
 		Float64Size,
 		true,
 		nil,
+		nil,
 	)
 
 	IntSlicePool = NewLimitingBucketedPool(
@@ -91,6 +95,7 @@ var (
 		limiter.IntSlices,
 		IntSize,
 		true,
+		nil,
 		nil,
 	)
 
@@ -102,6 +107,7 @@ var (
 		Int64Size,
 		true,
 		nil,
+		nil,
 	)
 
 	BoolSlicePool = NewLimitingBucketedPool(
@@ -111,6 +117,7 @@ var (
 		limiter.BoolSlices,
 		BoolSize,
 		true,
+		nil,
 		nil,
 	)
 
@@ -122,6 +129,7 @@ var (
 		HistogramPointerSize,
 		true,
 		mangleHistogram,
+		nil,
 	)
 
 	SeriesMetadataSlicePool = NewLimitingBucketedPool(
@@ -132,6 +140,12 @@ var (
 		SeriesMetadataSize,
 		true,
 		nil,
+		func(sms []SeriesMetadata, tracker *limiter.MemoryConsumptionTracker) {
+			// When putting SeriesMetadata slices back to the pool, we decrease the memory consumption for each label in the metadata.
+			for _, sm := range sms {
+				tracker.DecreaseMemoryConsumptionForLabels(sm.Labels)
+			}
+		},
 	)
 )
 
@@ -169,15 +183,17 @@ type LimitingBucketedPool[S ~[]E, E any] struct {
 	elementSize uint64
 	clearOnGet  bool
 	mangle      func(E) E
+	onPutHook   func(S, *limiter.MemoryConsumptionTracker)
 }
 
-func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E) *LimitingBucketedPool[S, E] {
+func NewLimitingBucketedPool[S ~[]E, E any](inner *pool.BucketedPool[S, E], source limiter.MemoryConsumptionSource, elementSize uint64, clearOnGet bool, mangle func(E) E, onPutHook func(S, *limiter.MemoryConsumptionTracker)) *LimitingBucketedPool[S, E] {
 	return &LimitingBucketedPool[S, E]{
 		inner:       inner,
 		source:      source,
 		elementSize: elementSize,
 		clearOnGet:  clearOnGet,
 		mangle:      mangle,
+		onPutHook:   onPutHook,
 	}
 }
 
@@ -211,23 +227,28 @@ func (p *LimitingBucketedPool[S, E]) Get(size int, tracker *limiter.MemoryConsum
 }
 
 // Put returns a slice of E to the pool and updates the current memory consumption.
-func (p *LimitingBucketedPool[S, E]) Put(s S, tracker *limiter.MemoryConsumptionTracker) {
+func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptionTracker) {
 	if s == nil {
 		return
 	}
 
 	if EnableManglingReturnedSlices && p.mangle != nil {
-		for i, e := range s {
-			s[i] = p.mangle(e)
+		for i, e := range *s {
+			(*s)[i] = p.mangle(e)
 		}
 	}
 
-	tracker.DecreaseMemoryConsumption(uint64(cap(s))*p.elementSize, p.source)
-	p.inner.Put(s)
+	tracker.DecreaseMemoryConsumption(uint64(cap(*s))*p.elementSize, p.source)
+	if p.onPutHook != nil {
+		p.onPutHook(*s, tracker)
+	}
+	p.inner.Put(*s)
+
+	*s = nil
 }
 
 // PutInstantVectorSeriesData is equivalent to calling FPointSlicePool.Put(d.Floats) and HPointSlicePool.Put(d.Histograms).
 func PutInstantVectorSeriesData(d InstantVectorSeriesData, tracker *limiter.MemoryConsumptionTracker) {
-	FPointSlicePool.Put(d.Floats, tracker)
-	HPointSlicePool.Put(d.Histograms, tracker)
+	FPointSlicePool.Put(&d.Floats, tracker)
+	HPointSlicePool.Put(&d.Histograms, tracker)
 }

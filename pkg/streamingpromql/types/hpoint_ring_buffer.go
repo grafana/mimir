@@ -138,7 +138,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 		// those instances instead of creating new FloatHistograms.
 		clear(b.points)
 
-		putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+		putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 		b.points = newSlice
 		b.firstIndex = 0
 		b.pointsIndexMask = cap(newSlice) - 1
@@ -175,7 +175,7 @@ func (b *HPointRingBuffer) Reset() {
 // The buffer can be used again and will acquire a new slice when required.
 func (b *HPointRingBuffer) Release() {
 	b.Reset()
-	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 
@@ -191,7 +191,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 		return fmt.Errorf("slice capacity must be a power of two, but is %v", cap(s))
 	}
 
-	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 
 	b.points = s[:cap(s)]
 	b.firstIndex = 0
@@ -202,7 +202,7 @@ func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
 
 // Close releases any resources associated with this buffer.
 func (b *HPointRingBuffer) Close() {
-	putHPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
+	putHPointSliceForRingBuffer(&b.points, b.memoryConsumptionTracker)
 	b.points = nil
 }
 

@@ -31,6 +31,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 		FPointSize,
 		false,
 		nil,
+		nil,
 	)
 
 	// Get a slice from the pool, the current and peak stats should be updated based on the capacity of the slice returned, not the size requested.
@@ -48,7 +49,7 @@ func TestLimitingBucketedPool_Unlimited(t *testing.T) {
 	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
 	// Put a slice back into the pool, the current stat should be updated but peak should be unchanged.
-	p.Put(s100, tracker)
+	p.Put(&s100, tracker)
 	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, 130*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 
@@ -85,6 +86,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 		FPointSize,
 		false,
 		nil,
+		nil,
 	)
 
 	// Get a slice from the pool beneath the limit.
@@ -104,7 +106,7 @@ func TestLimitingPool_Limited(t *testing.T) {
 	assertRejectedQueryCount(t, reg, 0)
 
 	// Return a slice to the pool.
-	p.Put(s1, tracker)
+	p.Put(&s1, tracker)
 	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, 9*FPointSize, tracker.PeakEstimatedMemoryConsumptionBytes())
 	assertRejectedQueryCount(t, reg, 0)
@@ -156,7 +158,8 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 		s[0] = 123
 		s[1] = 456
 
-		Float64SlicePool.Put(s, tracker)
+		Float64SlicePool.Put(&s, tracker)
+		require.Nil(t, s, "reference to slice should be cleared on Put")
 
 		s, err = Float64SlicePool.Get(2, tracker)
 		require.NoError(t, err)
@@ -171,7 +174,8 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 		s[0] = false
 		s[1] = true
 
-		BoolSlicePool.Put(s, tracker)
+		BoolSlicePool.Put(&s, tracker)
+		require.Nil(t, s, "reference to slice should be cleared on Put")
 
 		s, err = BoolSlicePool.Get(2, tracker)
 		require.NoError(t, err)
@@ -186,7 +190,8 @@ func TestLimitingPool_ClearsReturnedSlices(t *testing.T) {
 		s[0] = &histogram.FloatHistogram{Count: 1}
 		s[1] = &histogram.FloatHistogram{Count: 2}
 
-		HistogramSlicePool.Put(s, tracker)
+		HistogramSlicePool.Put(&s, tracker)
+		require.Nil(t, s, "reference to slice should be cleared on Put")
 
 		s, err = HistogramSlicePool.Get(2, tracker)
 		require.NoError(t, err)
@@ -211,6 +216,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 		1,
 		false,
 		func(_ int) int { return 123 },
+		nil,
 	)
 
 	// Test with mangling disabled.
@@ -218,18 +224,20 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	s, err := p.Get(4, tracker)
 	require.NoError(t, err)
 	s = append(s, 1000, 2000, 3000, 4000)
+	sCopy := s // Take another reference to s, so that we can check that it was mangled. (Put will set s to nil when it is called below, so we need to take a copy.)
 
-	p.Put(s, tracker)
-	require.Equal(t, []int{1000, 2000, 3000, 4000}, s, "returned slice should not be mangled when mangling is disabled")
+	p.Put(&s, tracker)
+	require.Equal(t, []int{1000, 2000, 3000, 4000}, sCopy, "returned slice should not be mangled when mangling is disabled")
 
 	// Test with mangling enabled.
 	EnableManglingReturnedSlices = true
 	s, err = p.Get(4, tracker)
 	require.NoError(t, err)
 	s = append(s, 1000, 2000, 3000, 4000)
+	sCopy = s
 
-	p.Put(s, tracker)
-	require.Equal(t, []int{123, 123, 123, 123}, s, "returned slice should be mangled when mangling is enabled")
+	p.Put(&s, tracker)
+	require.Equal(t, []int{123, 123, 123, 123}, sCopy, "returned slice should be mangled when mangling is enabled")
 }
 
 func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {

@@ -19,7 +19,7 @@ type MatrixSelector struct {
 }
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -28,6 +28,10 @@ func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types
 
 func (m *MatrixSelector) Details() proto.Message {
 	return m.MatrixSelectorDetails
+}
+
+func (m *MatrixSelector) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
 func (m *MatrixSelector) Children() []planning.Node {
@@ -49,7 +53,8 @@ func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
-		m.Range == otherMatrixSelector.Range
+		m.Range == otherMatrixSelector.Range &&
+		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
@@ -70,6 +75,7 @@ func (m *MatrixSelector) OperatorFactory(_ []types.Operator, timeRange types.Que
 		Range:                    m.Range,
 		Matchers:                 matchers,
 		EagerLoad:                params.EagerLoadSelectors,
+		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.ExpressionPosition.ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}

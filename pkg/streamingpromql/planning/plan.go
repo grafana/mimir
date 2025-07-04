@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -30,6 +29,9 @@ type QueryPlan struct {
 type Node interface {
 	// Details returns the properties of this node that should be encoded during serialization.
 	Details() proto.Message
+
+	// NodeType returns the identifier of this node that should be used during serialization.
+	NodeType() NodeType
 
 	// Children returns a slice of all children of this node, if any.
 	//
@@ -168,8 +170,9 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	}
 
 	if e.includeDetails {
+		encoded.NodeType = n.NodeType()
 		var err error
-		encoded.Details, err = prototypes.MarshalAny(n.Details())
+		encoded.Details, err = proto.Marshal(n.Details())
 		if err != nil {
 			return -1, err
 		}
@@ -246,22 +249,13 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 		children = append(children, child)
 	}
 
-	if encodedNode.Details == nil {
-		return nil, fmt.Errorf("node %v has no details (was the encoded query plan created with includeDetails = false?)", idx)
-	}
-
-	name, err := prototypes.AnyMessageName(encodedNode.Details)
-	if err != nil {
-		return nil, err
-	}
-
-	nodeFactory, exists := knownNodeTypes[name]
+	nodeFactory, exists := knownNodeTypes[encodedNode.NodeType]
 	if !exists {
-		return nil, fmt.Errorf("unknown node type: %s", name)
+		return nil, fmt.Errorf("unknown node type: %d", encodedNode.NodeType)
 	}
 
 	node := nodeFactory()
-	if err := prototypes.UnmarshalAny(encodedNode.Details, node.Details()); err != nil {
+	if err := proto.Unmarshal(encodedNode.Details, node.Details()); err != nil {
 		return nil, err
 	}
 
@@ -276,29 +270,19 @@ func (d *queryPlanDecoder) decodeNode(idx int64) (Node, error) {
 
 type NodeFactory func() Node
 
-// Map of details message type (eg. "planning.SubqueryDetails") to a factory method that returns a new instance of that type of node (eg. Subquery).
-var knownNodeTypes = map[string]NodeFactory{}
+// Map of node type to a factory method that returns a new instance of that type of node (eg. Subquery).
+var knownNodeTypes = map[NodeType]NodeFactory{}
 
 // RegisterNodeFactory registers a NodeFactory used during deserialization of a query plan.
 func RegisterNodeFactory(f NodeFactory) {
-	n := f()
-	details := n.Details()
-	if details == nil {
-		panic("RegisterNodeFactory called with factory that returns node with nil Details()")
+	node := f()
+	id := node.NodeType()
+
+	if _, exists := knownNodeTypes[id]; exists {
+		panic(fmt.Sprintf("RegisterNodeFactory already registered node type %d", id))
 	}
 
-	name := proto.MessageName(details)
-
-	if name == "" {
-		// If you're seeing the message below, then you likely need to enable the gogoproto.messagename_all option for the .proto file.
-		panic("RegisterNodeFactory called with details type that returns empty name - is the type missing a XXX_MessageName method?")
-	}
-
-	if _, exists := knownNodeTypes[name]; exists {
-		panic(fmt.Sprintf("RegisterNodeFactory already registered name %v", name))
-	}
-
-	knownNodeTypes[name] = f
+	knownNodeTypes[id] = f
 }
 
 // String returns a human-readable representation of the query plan, intended for use during debugging and tests.

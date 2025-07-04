@@ -84,6 +84,10 @@ func (b *BinaryExpression) Details() proto.Message {
 	return b.BinaryExpressionDetails
 }
 
+func (b *BinaryExpression) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_BINARY_EXPRESSION
+}
+
 func (b *BinaryExpression) Children() []planning.Node {
 	return []planning.Node{b.LHS, b.RHS}
 }

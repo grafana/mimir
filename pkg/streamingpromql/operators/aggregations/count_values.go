@@ -91,7 +91,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(innerMetadata, c.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, c.MemoryConsumptionTracker)
 
 	c.labelsBuilder = labels.NewBuilder(labels.EmptyLabels())
 	c.labelsBytesBuffer = make([]byte, 0, 1024) // Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
@@ -133,7 +133,10 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	c.series = make([][]promql.FPoint, 0, len(accumulator))
 
 	for _, s := range accumulator {
-		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: s.labels})
+		outputMetadata, err = types.AppendSeriesMetadata(c.MemoryConsumptionTracker, outputMetadata, types.SeriesMetadata{Labels: s.labels})
+		if err != nil {
+			return nil, err
+		}
 
 		points, err := s.toPoints(c.MemoryConsumptionTracker, c.TimeRange)
 		if err != nil {
@@ -142,8 +145,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 		c.series = append(c.series, points)
 
-		types.IntSlicePool.Put(s.count, c.MemoryConsumptionTracker)
-		s.count = nil
+		types.IntSlicePool.Put(&s.count, c.MemoryConsumptionTracker)
 		countValuesSeriesPool.Put(s)
 	}
 
@@ -255,7 +257,7 @@ func (c *CountValues) Close() {
 	c.LabelName.Close()
 
 	for _, d := range c.series {
-		types.FPointSlicePool.Put(d, c.MemoryConsumptionTracker)
+		types.FPointSlicePool.Put(&d, c.MemoryConsumptionTracker)
 	}
 
 	c.series = nil

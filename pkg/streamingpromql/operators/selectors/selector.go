@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -18,12 +19,13 @@ import (
 )
 
 type Selector struct {
-	Queryable storage.Queryable
-	TimeRange types.QueryTimeRange
-	Timestamp *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
-	Offset    int64  // In milliseconds
-	Matchers  []*labels.Matcher
-	EagerLoad bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
+	Queryable            storage.Queryable
+	TimeRange            types.QueryTimeRange
+	Timestamp            *int64 // Milliseconds since Unix epoch, only set if selector uses @ modifier (eg. metric{...} @ 123)
+	Offset               int64  // In milliseconds
+	Matchers             []*labels.Matcher
+	EagerLoad            bool // If true, Select() call is made when Prepare() is called. This is used by query-frontends when evaluating shardable queries so that all selectors are evaluated in parallel.
+	SkipHistogramBuckets bool
 
 	ExpressionPosition posrange.PositionRange
 
@@ -69,7 +71,13 @@ func (s *Selector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, 
 	s.series = newSeriesList(s.MemoryConsumptionTracker)
 
 	for s.seriesSet.Next() {
-		s.series.Add(s.seriesSet.At())
+		series := s.seriesSet.At()
+
+		if s.SkipHistogramBuckets {
+			series = &skipHistogramBucketsSeries{series}
+		}
+
+		s.series.Add(series)
 	}
 
 	metadata, err := s.series.ToSeriesMetadata()
@@ -213,7 +221,10 @@ func (l *seriesList) ToSeriesMetadata() ([]types.SeriesMetadata, error) {
 
 	for batch != nil {
 		for _, s := range batch.series {
-			metadata = append(metadata, types.SeriesMetadata{Labels: s.Labels()})
+			metadata, err = types.AppendSeriesMetadata(l.memoryConsumptionTracker, metadata, types.SeriesMetadata{Labels: s.Labels()})
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		batch = batch.next
@@ -276,4 +287,22 @@ func putSeriesBatch(b *seriesBatch) {
 	b.series = b.series[:0]
 	b.next = nil
 	seriesBatchPool.Put(b)
+}
+
+type skipHistogramBucketsSeries struct {
+	series storage.Series
+}
+
+func (s *skipHistogramBucketsSeries) Labels() labels.Labels {
+	return s.series.Labels()
+}
+
+func (s *skipHistogramBucketsSeries) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	// Try to reuse the iterator if we can.
+	if statsIterator, ok := iterator.(*promql.HistogramStatsIterator); ok {
+		statsIterator.Reset(s.series.Iterator(statsIterator.Iterator))
+		return statsIterator
+	}
+
+	return promql.NewHistogramStatsIterator(s.series.Iterator(iterator))
 }

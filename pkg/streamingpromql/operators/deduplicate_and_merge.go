@@ -57,7 +57,7 @@ func (d *DeduplicateAndMerge) SeriesMetadata(ctx context.Context) ([]types.Serie
 
 	d.groups = groups
 	d.buffer = NewInstantVectorOperatorBuffer(d.Inner, nil, len(innerMetadata), d.MemoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(innerMetadata, d.MemoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&innerMetadata, d.MemoryConsumptionTracker)
 
 	return outputMetadata, nil
 }
@@ -100,7 +100,10 @@ func (d *DeduplicateAndMerge) computeOutputSeriesGroups(innerMetadata []types.Se
 	}
 
 	for _, group := range outputGroups {
-		outputMetadata = append(outputMetadata, innerMetadata[group[0]])
+		outputMetadata, err = types.AppendSeriesMetadata(d.MemoryConsumptionTracker, outputMetadata, innerMetadata[group[0]])
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	return outputGroups, outputMetadata, nil

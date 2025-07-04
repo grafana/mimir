@@ -1219,6 +1219,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
+  -compactor.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.cas-retry-delay duration
@@ -1441,6 +1443,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum duration of the Retry-After HTTP header in responses to 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either direction. RetryAttempt is the value of the Retry-Attempt HTTP header. (default 6s)
   -distributor.reusable-ingester-push-workers int
     	Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.) (default 2000)
+  -distributor.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -1954,7 +1958,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.abort-if-join-fails
     	Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.
   -memberlist.acquire-writer-timeout duration
-    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 250ms)
+    	Timeout for acquiring one of the concurrent write slots. After this time, the message will be dropped. (default 1s)
   -memberlist.advertise-addr string
     	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
   -memberlist.advertise-port int
@@ -1986,7 +1990,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.left-ingesters-timeout duration
     	How long to keep LEFT ingesters in the ring. (default 5m0s)
   -memberlist.max-concurrent-writes int
-    	Maximum number of concurrent writes to other nodes. (default 3)
+    	Maximum number of concurrent writes to other nodes. (default 5)
   -memberlist.max-join-backoff duration
     	Max backoff duration to join other cluster members. (default 1m0s)
   -memberlist.max-join-retries int
@@ -2002,9 +2006,9 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.obsolete-entries-timeout duration
     	[experimental] How long to keep obsolete entries in the KV store. (default 30s)
   -memberlist.packet-dial-timeout duration
-    	Timeout used when connecting to other nodes to send packet. (default 2s)
+    	Timeout used when connecting to other nodes to send packet. (default 500ms)
   -memberlist.packet-write-timeout duration
-    	Timeout for writing 'packet' data. (default 5s)
+    	Timeout for writing 'packet' data. (default 500ms)
   -memberlist.pullpush-interval duration
     	How often to use pull/push sync. (default 30s)
   -memberlist.randomize-node-name
@@ -2039,6 +2043,8 @@ Usage of ./cmd/mimir/mimir:
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
     	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
+  -overrides-exporter.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 4)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -2185,6 +2191,8 @@ Usage of ./cmd/mimir/mimir:
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 20)
+  -querier.max-concurrent-remote-read-queries int
+    	Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency. (default 2)
   -querier.max-estimated-fetched-chunks-per-query-multiplier float
     	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-estimated-memory-consumption-per-query uint
@@ -2209,6 +2217,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
+  -querier.mimir-query-engine.enable-skipping-histogram-decoding
+    	[experimental] Enable skipping decoding native histograms when evaluating queries that do not require full histograms. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
@@ -2611,6 +2621,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -query-scheduler.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
   -query-scheduler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -query-scheduler.ring.consul.cas-retry-delay duration
@@ -3139,6 +3151,8 @@ Usage of ./cmd/mimir/mimir:
     	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.resend-delay duration
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
+  -ruler.ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 2)
   -ruler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ruler.ring.consul.cas-retry-delay duration
@@ -3348,7 +3362,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
   -store-gateway.sharding-ring.auto-forget-enabled
-    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
+    	[deprecated] When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than the configured -store-gateway.sharding-ring.auto-forget-unhealthy-periods times the configured -store-gateway.sharding-ring.heartbeat-timeout. This setting is deprecated. Set -store-gateway.sharding-ring.auto-forget-unhealthy-periods to 0 to disable auto-forget. (default true)
+  -store-gateway.sharding-ring.auto-forget-unhealthy-periods int
+    	Number of consecutive timeout periods an unhealthy instance in the ring is automatically removed after. Set to 0 to disable auto-forget. (default 10)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration

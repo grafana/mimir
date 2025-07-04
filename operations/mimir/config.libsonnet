@@ -113,6 +113,9 @@
     // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
     store_gateway_lazy_loading_enabled: true,
 
+    // Control the maximum size of a response from the store-gateway. Used by store-gateways and queriers to set send and receive limits, respectively.
+    store_gateway_grpc_max_query_response_size_bytes: 200 * 1024 * 1024,
+
     // Number of memcached replicas for each memcached statefulset
     memcached_frontend_replicas: 3,
     memcached_index_queries_replicas: 3,

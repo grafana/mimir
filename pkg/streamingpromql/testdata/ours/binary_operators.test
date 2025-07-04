@@ -1785,3 +1785,27 @@ load 1m
 
 eval instant at 0m left_side{pod="pod-1"} * on(pod) group_left(base_name, region, system_name) right_side{pod="pod-1"}
   {base_name="base-1", region="region-1", system_name="system-1", pod="pod-1"} 1
+
+clear
+
+# Test the behaviour of 'on (__name__)', which is not as expected in Prometheus:
+# https://github.com/prometheus/prometheus/issues/16631
+load 1m
+  a{env="prod"} 10
+  a{env="test"} 12
+  b{env="prod"} 20
+  b{env="test"} 25
+
+eval instant at 0 a + on (__name__, env) a
+  {env="prod"} 20
+  {env="test"} 24
+
+eval_fail instant at 0 {__name__=~"a|b"} + on (__name__, env) {__name__=~"a|b"}
+  expected_fail_regexp (vector cannot contain metrics with the same labelset|found duplicate series for the match group \{env="prod"\} on the left side of the operation.*)
+
+eval instant at 0 a + on (__name__, env) group_left a
+  {env="prod"} 20
+  {env="test"} 24
+
+eval_fail instant at 0 {__name__=~"a|b"} + on (__name__, env) group_left {__name__=~"a|b"}
+  expected_fail_regexp (vector cannot contain metrics with the same labelset|multiple matches for labels: grouping labels must ensure unique matches)

@@ -20,6 +20,17 @@ type SeriesMetadata struct {
 	Labels labels.Labels
 }
 
+// AppendSeriesMetadata appends base SeriesMetadataSlice with the provided otherSeriesMetadata.
+func AppendSeriesMetadata(tracker *limiter.MemoryConsumptionTracker, base []SeriesMetadata, otherSeriesMetadata ...SeriesMetadata) ([]SeriesMetadata, error) {
+	for _, metadata := range otherSeriesMetadata {
+		err := tracker.IncreaseMemoryConsumptionForLabels(metadata.Labels)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return append(base, otherSeriesMetadata...), nil
+}
+
 type InstantVectorSeriesData struct {
 	// Floats contains floating point samples for this series.
 	// Samples must be sorted in timestamp order, earliest timestamps first.

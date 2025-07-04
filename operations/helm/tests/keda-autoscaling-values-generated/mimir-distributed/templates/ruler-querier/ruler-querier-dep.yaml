@@ -52,6 +52,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-querier.scheduler-address=keda-autoscaling-values-mimir-ruler-query-scheduler-headless.citestns.svc:9095"
+            - "-querier.store-gateway-client.grpc-max-recv-msg-size=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir

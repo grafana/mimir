@@ -77,7 +77,7 @@ func (b *DuplicationBuffer) SeriesMetadata(ctx context.Context) ([]types.SeriesM
 		return nil, err
 	}
 
-	return append(metadata, b.seriesMetadata...), nil
+	return types.AppendSeriesMetadata(b.MemoryConsumptionTracker, metadata, b.seriesMetadata...)
 }
 
 func (b *DuplicationBuffer) NextSeries(ctx context.Context, consumerIndex int) (types.InstantVectorSeriesData, error) {
@@ -187,8 +187,7 @@ func (b *DuplicationBuffer) Prepare(ctx context.Context, params *types.PreparePa
 }
 
 func (b *DuplicationBuffer) close() {
-	types.SeriesMetadataSlicePool.Put(b.seriesMetadata, b.MemoryConsumptionTracker)
-	b.seriesMetadata = nil
+	types.SeriesMetadataSlicePool.Put(&b.seriesMetadata, b.MemoryConsumptionTracker)
 
 	for b.buffer.Size() > 0 {
 		types.PutInstantVectorSeriesData(b.buffer.RemoveFirst(), b.MemoryConsumptionTracker)

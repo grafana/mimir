@@ -36,8 +36,8 @@ func TestOperator_Buffering(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(metadata1, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
 	// Read some data from the first consumer and ensure that it was buffered for the second consumer.
 	d, err := consumer1.NextSeries(ctx)
@@ -127,8 +127,8 @@ func TestOperator_ClosedWithBufferedData(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(metadata1, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 
 	// Read some data for the first consumer and ensure that it was buffered for the second consumer.
 	d, err := consumer1.NextSeries(ctx)
@@ -203,8 +203,8 @@ func TestOperator_Cloning(t *testing.T) {
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata1, "first consumer should get expected series metadata")
 	require.Equal(t, testutils.LabelsToSeriesMetadata(inner.Series), metadata2, "second consumer should get expected series metadata")
 	require.NotSame(t, &metadata1[0], &metadata2[0], "consumers should not share series metadata slices")
-	types.SeriesMetadataSlicePool.Put(metadata1, memoryConsumptionTracker)
-	types.SeriesMetadataSlicePool.Put(metadata2, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata2, memoryConsumptionTracker)
 
 	// Both consumers should get the same data, but not the same slice, and not the same histogram instances.
 	d1, err := consumer1.NextSeries(ctx)
@@ -260,7 +260,8 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(1, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series")})
+	require.NoError(t, err)
 
 	buffer := NewDuplicationBuffer(&failingOperator{series: series}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
@@ -269,7 +270,7 @@ func TestOperator_ClosingAfterFirstReadFails(t *testing.T) {
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 
 	data, err := consumer1.NextSeries(ctx)
 	require.EqualError(t, err, "something went wrong reading data")
@@ -286,8 +287,10 @@ func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	series, err := types.SeriesMetadataSlicePool.Get(2, memoryConsumptionTracker)
 	require.NoError(t, err)
 
-	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
-	series = append(series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_1")})
+	require.NoError(t, err)
+	series, err = types.AppendSeriesMetadata(memoryConsumptionTracker, series, types.SeriesMetadata{Labels: labels.FromStrings(labels.MetricName, "test_series_2")})
+	require.NoError(t, err)
 
 	buffer := NewDuplicationBuffer(&failingOperator{series: series, returnErrorAtSeriesIdx: 1}, memoryConsumptionTracker)
 	consumer1 := buffer.AddConsumer()
@@ -296,7 +299,7 @@ func TestOperator_ClosingAfterSubsequentReadFails(t *testing.T) {
 	metadata1, err := consumer1.SeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, series, metadata1, "first consumer should get expected series metadata")
-	types.SeriesMetadataSlicePool.Put(metadata1, memoryConsumptionTracker)
+	types.SeriesMetadataSlicePool.Put(&metadata1, memoryConsumptionTracker)
 
 	data, err := consumer1.NextSeries(ctx)
 	require.NoError(t, err)

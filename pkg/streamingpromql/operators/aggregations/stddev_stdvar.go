@@ -119,12 +119,7 @@ func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, t
 }
 
 func (g *StddevStdvarAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker) {
-	types.Float64SlicePool.Put(g.floats, memoryConsumptionTracker)
-	g.floats = nil
-
-	types.Float64SlicePool.Put(g.floatMeans, memoryConsumptionTracker)
-	g.floatMeans = nil
-
-	types.Float64SlicePool.Put(g.groupSeriesCounts, memoryConsumptionTracker)
-	g.groupSeriesCounts = nil
+	types.Float64SlicePool.Put(&g.floats, memoryConsumptionTracker)
+	types.Float64SlicePool.Put(&g.floatMeans, memoryConsumptionTracker)
+	types.Float64SlicePool.Put(&g.groupSeriesCounts, memoryConsumptionTracker)
 }

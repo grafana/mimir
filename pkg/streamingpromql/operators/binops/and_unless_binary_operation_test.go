@@ -325,7 +325,6 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 			} else {
 				require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeries), outputSeries)
 			}
-			types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
 
 			if testCase.expectLeftSideClosedAfterOutputSeriesIndex == -1 {
 				require.True(t, left.Closed, "left side should be closed after SeriesMetadata, but it is not")
@@ -355,6 +354,8 @@ func TestAndUnlessBinaryOperation_ClosesInnerOperatorsAsSoonAsPossible(t *testin
 					require.Falsef(t, right.Closed, "right side should not be closed after output series at index %v, but it is", outputSeriesIdx)
 				}
 			}
+
+			types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 			_, err = o.NextSeries(ctx)
 			require.Equal(t, types.EOS, err)
@@ -447,7 +448,7 @@ func TestAndUnlessBinaryOperation_ReleasesIntermediateStateIfClosedEarly(t *test
 					} else {
 						require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedAndOutputSeries), outputSeries)
 					}
-					types.SeriesMetadataSlicePool.Put(outputSeries, memoryConsumptionTracker)
+					types.SeriesMetadataSlicePool.Put(&outputSeries, memoryConsumptionTracker)
 
 					// Read the first output series to trigger the loading of some intermediate state for at least one of the output groups.
 					_, err = o.NextSeries(ctx)
