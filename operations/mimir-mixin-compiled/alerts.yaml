@@ -124,7 +124,7 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, pod) (
-                increase(kube_pod_container_status_restarts_total{container=~"(ingester|mimir-write)"}[30m])
+                increase(kube_pod_container_status_restarts_total{container=~"(ingester)"}[30m])
               )
               >= 2
             )
@@ -155,7 +155,7 @@ groups:
             message: '{{ $labels.job }}/{{ $labels.pod }} has a number of mmap-ed areas close to the limit.'
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemorymapareastoohigh
           expr: |
-            process_memory_map_areas{job=~".*/(ingester.*|cortex|mimir|mimir-write.*|store-gateway.*|cortex|mimir|mimir-backend.*)"} / process_memory_map_areas_limit{job=~".*/(ingester.*|cortex|mimir|mimir-write.*|store-gateway.*|cortex|mimir|mimir-backend.*)"} > 0.8
+            process_memory_map_areas{job=~".*/(ingester.*|cortex|mimir|store-gateway.*|cortex|mimir)"} / process_memory_map_areas_limit{job=~".*/(ingester.*|cortex|mimir|store-gateway.*|cortex|mimir)"} > 0.8
           for: 5m
           labels:
             severity: critical
@@ -257,8 +257,8 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirringmembersmismatch
           expr: |
             (
-              avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir|mimir-write.*)",job!~".*/(ingester.*-partition)"}))
-              != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)",job!~".*/(ingester.*-partition)"})
+              avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"}))
+              != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir)",job!~".*/(ingester.*-partition)"})
             )
             and
             (
@@ -478,9 +478,9 @@ groups:
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
+              container_memory_rss{container=~"(ingester)"}
                 /
-              ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(ingester)"} > 0 )
             )
             # Match only Mimir namespaces.
             * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
@@ -497,9 +497,9 @@ groups:
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
+              container_memory_rss{container=~"(ingester)"}
                 /
-              ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(ingester)"} > 0 )
             )
             # Match only Mimir namespaces.
             * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
@@ -603,7 +603,7 @@ groups:
           expr: |
             max by (cluster, namespace) (memberlist_client_cluster_members_count)
             >
-            (sum by (cluster, namespace) (up{job=~".*/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
+            (sum by (cluster, namespace) (up{job=~".*/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir)"}) + 10)
           for: 20m
           labels:
             severity: warning
@@ -614,7 +614,7 @@ groups:
           expr: |
             min by (cluster, namespace) (memberlist_client_cluster_members_count)
             <
-            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) * 0.5)
+            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir)"}) * 0.5)
           for: 20m
           labels:
             severity: warning
@@ -973,7 +973,7 @@ groups:
             message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirhighvolumelevel1blocksqueried
           expr: |
-            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir|mimir-backend.*)"}[5m])) > 0
+            sum by(cluster, namespace) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",job=~".*/(store-gateway.*|cortex|mimir)"}[5m])) > 0
           for: 6h
           labels:
             severity: warning
@@ -1043,8 +1043,7 @@ groups:
             and
             (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(cluster, namespace, pod) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           for: 15m
           labels:
@@ -1057,8 +1056,7 @@ groups:
           expr: |
             (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(cluster, namespace, pod) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           for: 24h
           labels:
