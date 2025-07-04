@@ -2229,6 +2229,17 @@
         },
         {
           "kind": "field",
+          "name": "max_concurrent_remote_read_queries",
+          "required": false,
+          "desc": "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "querier.max-concurrent-remote-read-queries",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",

@@ -1609,6 +1609,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.filter-queryables-enabled
 [filter_queryables_enabled: <boolean> | default = false]
 
+# (advanced) Maximum number of remote read queries that can be executed
+# concurrently. 0 or negative values mean unlimited concurrency.
+# CLI flag: -querier.max-concurrent-remote-read-queries
+[max_concurrent_remote_read_queries: <int> | default = 2]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
