@@ -33,12 +33,12 @@ func newConversionTask(userID string, meta *block.Meta, bucket objstore.Instrume
 }
 
 // conversionHeap implements heap.Interface for conversionTask priority queue see https://pkg.go.dev/container/heap
-// for more details. The heap is a max-heap, meaning that the task with the highest priority (most recent ULID
+// for more details. The heap is a min-heap, meaning that the task with the lowest priority (oldest ULID
 // timestamp) is at the top.
 type conversionHeap []*conversionTask
 
 func (h *conversionHeap) Len() int           { return len(*h) }
-func (h *conversionHeap) Less(i, j int) bool { return (*h)[i].Priority > (*h)[j].Priority } // Max-heap: higher priority first. The priority is based on ULID timestamp, so we want the most recent (highest timestamp) first.
+func (h *conversionHeap) Less(i, j int) bool { return (*h)[i].Priority < (*h)[j].Priority } // Min-heap: lower priority first. The priority is based on ULID timestamp, so we want the oldest (lowest timestamp) first.
 func (h *conversionHeap) Swap(i, j int)      { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
 func (h *conversionHeap) Push(x interface{}) {

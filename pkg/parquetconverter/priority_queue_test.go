@@ -87,32 +87,32 @@ func TestPriorityQueue_PriorityOrdering(t *testing.T) {
 
 	// Create blocks with different ages
 	task1 := createTestTask(t, "user-1", baseTime.Add(-2*time.Hour)) // Oldest
-	task2 := createTestTask(t, "user-2", baseTime.Add(-1*time.Hour)) // Middle  
+	task2 := createTestTask(t, "user-2", baseTime.Add(-1*time.Hour)) // Middle
 	task3 := createTestTask(t, "user-3", baseTime)                   // Newest
 
-	t.Run("priority queue orders by ULID timestamp (newest first)", func(t *testing.T) {
+	t.Run("priority queue orders by ULID timestamp (oldest first)", func(t *testing.T) {
 		// Add in random order
 		require.True(t, pq.Push(task2)) // Middle
-		require.True(t, pq.Push(task1)) // Oldest  
+		require.True(t, pq.Push(task1)) // Oldest
 		require.True(t, pq.Push(task3)) // Newest
 
 		assert.Equal(t, 3, pq.Size())
 
-		// Should pop newest first (task3), then task2, then task1
-		poppedTask3, ok := pq.Pop()
+		// Should pop oldest first (task1), then task2, then task3
+		poppedTask1, ok := pq.Pop()
 		require.True(t, ok)
-		assert.Equal(t, "user-3", poppedTask3.UserID)
-		assert.Equal(t, task3.Priority, poppedTask3.Priority)
+		assert.Equal(t, "user-1", poppedTask1.UserID)
+		assert.Equal(t, task1.Priority, poppedTask1.Priority)
 
 		poppedTask2, ok := pq.Pop()
 		require.True(t, ok)
 		assert.Equal(t, "user-2", poppedTask2.UserID)
 		assert.Equal(t, task2.Priority, poppedTask2.Priority)
 
-		poppedTask1, ok := pq.Pop()
+		poppedTask3, ok := pq.Pop()
 		require.True(t, ok)
-		assert.Equal(t, "user-1", poppedTask1.UserID)
-		assert.Equal(t, task1.Priority, poppedTask1.Priority)
+		assert.Equal(t, "user-3", poppedTask3.UserID)
+		assert.Equal(t, task3.Priority, poppedTask3.Priority)
 
 		assert.Equal(t, 0, pq.Size())
 	})
@@ -124,7 +124,7 @@ func TestPriorityQueue_RealisticScenario(t *testing.T) {
 	// Simulate discovery scenario: first find older blocks, then newer blocks
 	now := time.Now()
 
-	t.Run("newer blocks jump ahead of older blocks", func(t *testing.T) {
+	t.Run("older blocks are processed before newer blocks", func(t *testing.T) {
 		// First discovery run: add blocks from last 2 hours
 		oldTasks := make([]*conversionTask, 5)
 		for i := 0; i < 5; i++ {
@@ -145,7 +145,7 @@ func TestPriorityQueue_RealisticScenario(t *testing.T) {
 
 		assert.Equal(t, 8, pq.Size())
 
-		// Pop all tasks and verify newest come first
+		// Pop all tasks and verify oldest come first
 		var poppedTasks []*conversionTask
 		for pq.Size() > 0 {
 			task, ok := pq.Pop()
@@ -153,20 +153,20 @@ func TestPriorityQueue_RealisticScenario(t *testing.T) {
 			poppedTasks = append(poppedTasks, task)
 		}
 
-		// Verify order: newest blocks should come first
+		// Verify order: oldest blocks should come first
 		assert.Equal(t, 8, len(poppedTasks))
 
-		// First 3 should be the new tasks (in priority order)
-		assert.Equal(t, "user-new-2", poppedTasks[0].UserID) // 20min ago (newest)
-		assert.Equal(t, "user-new-1", poppedTasks[1].UserID) // 25min ago
-		assert.Equal(t, "user-new-0", poppedTasks[2].UserID) // 30min ago
+		// First should be the oldest task
+		assert.Equal(t, "user-old-0", poppedTasks[0].UserID) // 120min ago (oldest)
+		assert.Equal(t, "user-old-1", poppedTasks[1].UserID) // 110min ago
+		assert.Equal(t, "user-old-2", poppedTasks[2].UserID) // 100min ago
+		assert.Equal(t, "user-old-3", poppedTasks[3].UserID) // 90min ago
+		assert.Equal(t, "user-old-4", poppedTasks[4].UserID) // 80min ago
 
-		// Then the old tasks should follow
-		assert.Equal(t, "user-old-4", poppedTasks[3].UserID) // 80min ago (newest of old)
-		assert.Equal(t, "user-old-3", poppedTasks[4].UserID) // 90min ago
-		assert.Equal(t, "user-old-2", poppedTasks[5].UserID) // 100min ago
-		assert.Equal(t, "user-old-1", poppedTasks[6].UserID) // 110min ago
-		assert.Equal(t, "user-old-0", poppedTasks[7].UserID) // 120min ago (oldest)
+		// Then the newer tasks should follow
+		assert.Equal(t, "user-new-0", poppedTasks[5].UserID) // 30min ago
+		assert.Equal(t, "user-new-1", poppedTasks[6].UserID) // 25min ago
+		assert.Equal(t, "user-new-2", poppedTasks[7].UserID) // 20min ago (newest)
 	})
 }
 
@@ -200,17 +200,17 @@ func TestPriorityQueue_MultipleUsers(t *testing.T) {
 			poppedTasks = append(poppedTasks, task)
 		}
 
-		// Verify strict priority ordering (highest priority first)
+		// Verify strict priority ordering (lowest priority first)
 		for i := 1; i < len(poppedTasks); i++ {
-			assert.GreaterOrEqual(t, poppedTasks[i-1].Priority, poppedTasks[i].Priority,
-				"Task %d should have higher or equal priority than task %d", i-1, i)
+			assert.LessOrEqual(t, poppedTasks[i-1].Priority, poppedTasks[i].Priority,
+				"Task %d should have lower or equal priority than task %d", i-1, i)
 		}
 
-		// First task should be the newest block
-		assert.Equal(t, "tenant-a", poppedTasks[0].UserID)
+		// First task should be the oldest block
+		assert.Equal(t, "tenant-c", poppedTasks[0].UserID)
 
-		// Last task should be the oldest block  
-		assert.Equal(t, "tenant-c", poppedTasks[8].UserID)
+		// Last task should be the newest block
+		assert.Equal(t, "tenant-a", poppedTasks[8].UserID)
 	})
 }
 

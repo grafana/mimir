@@ -85,6 +85,7 @@ type Config struct {
 
 	ConversionInterval time.Duration `yaml:"conversion_interval"`
 	DiscoveryInterval  time.Duration `yaml:"discovery_interval"`
+	MaxBlockAge        time.Duration `yaml:"max_block_age"`
 
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 }
@@ -97,6 +98,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Var(&cfg.DisabledTenants, "parquet-converter.disabled-tenants", "Comma-separated list of tenants that cannot have their TSDB blocks converted into Parquet. If specified, and the Parquet-converter would normally pick a given tenant to convert the blocks to Parquet (via -parquet-converter.enabled-tenants or sharding), it is ignored instead.")
 	f.DurationVar(&cfg.ConversionInterval, "parquet-converter.conversion-interval", time.Minute, "The frequency at which the conversion runs.")
 	f.DurationVar(&cfg.DiscoveryInterval, "parquet-converter.discovery-interval", 5*time.Minute, "The frequency at which user and block discovery runs.")
+	f.DurationVar(&cfg.MaxBlockAge, "parquet-converter.max-block-age", 0, "Maximum age of blocks to convert. Blocks older than this will be skipped. Set to 0 to disable age filtering.")
 	f.StringVar(&cfg.DataDir, "parquet-converter.data-dir", "./data-parquet-converter/", "Directory to temporarily store blocks during conversion. This directory is not required to persist between restarts.")
 }
 
@@ -121,7 +123,7 @@ type ParquetConverter struct {
 
 	conversionQueue *priorityQueue
 
-	convertedBlocks sync.Map // map[ulid.ULID]time.Time
+	queuedBlocks sync.Map // map[ulid.ULID]time.Time - persistent cache of blocks that have been queued
 }
 
 func NewParquetConverter(cfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, registerer prometheus.Registerer, limits *validation.Overrides) (*ParquetConverter, error) {
@@ -262,17 +264,12 @@ func (c *ParquetConverter) runBlockDiscovery(ctx context.Context) {
 	discoveryTicker := time.NewTicker(c.Cfg.DiscoveryInterval)
 	defer discoveryTicker.Stop()
 
-	cleanupTicker := time.NewTicker(time.Hour)
-	defer cleanupTicker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-discoveryTicker.C:
 			c.discoverAndEnqueueBlocks(ctx)
-		case <-cleanupTicker.C:
-			c.cleanupConvertedBlocks()
 		}
 	}
 }
@@ -286,9 +283,12 @@ func (c *ParquetConverter) runBlockProcessing(ctx context.Context) {
 		default:
 			task, ok := c.conversionQueue.Pop()
 			if !ok {
-				// Queue is empty, wait a bit before checking again
-				time.Sleep(1 * time.Second)
-				continue
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(1 * time.Second):
+					continue
+				}
 			}
 
 			c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
@@ -354,8 +354,21 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				continue
 			}
 
-			// TODO(jesusvazquez): Ideally we could add some information to the meta to indicate whether it has been converted or not to stop relying on this in-memory map.
-			if _, alreadyConverted := c.convertedBlocks.Load(m.ULID); alreadyConverted {
+			if c.Cfg.MaxBlockAge > 0 {
+				blockAge := time.Since(time.UnixMilli(m.MinTime))
+				if blockAge > c.Cfg.MaxBlockAge {
+					continue
+				}
+			}
+
+			if _, alreadyQueued := c.queuedBlocks.Load(m.ULID); alreadyQueued {
+				continue
+			}
+
+			mark, err := ReadConversionMark(ctx, m.ULID, uBucket, ulogger)
+			if err != nil {
+				level.Debug(ulogger).Log("msg", "failed to read conversion mark, assuming not converted", "block", m.ULID.String(), "err", err)
+			} else if mark.Version == CurrentVersion {
 				continue
 			}
 
@@ -363,34 +376,17 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 
 			if c.conversionQueue.Push(task) {
 				c.metrics.queueItemsEnqueued.WithLabelValues(u).Inc()
+				// Mark block as queued to prevent duplicate queuing
+				c.queuedBlocks.Store(m.ULID, time.Now())
 			} else {
 				c.metrics.queueItemsDropped.WithLabelValues(u).Inc()
 				level.Warn(ulogger).Log("msg", "failed to enqueue block, queue closed", "block", m.ULID.String())
 			}
+
+			c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
 		}
 	}
 
-	c.metrics.queueSize.Set(float64(c.conversionQueue.Size()))
-}
-
-// cleanupConvertedBlocks removes old entries from the converted blocks map to prevent memory growth
-// Note that many of the blocks will be rediscovered again but that is acceptable as we only keep a 24h history. In exchange,
-// we make sure to remove entries for blocks that were removed or compacted.
-func (c *ParquetConverter) cleanupConvertedBlocks() {
-	cutoff := time.Now().Add(-24 * time.Hour) // Keep 24h history
-	cleanedCount := 0
-
-	c.convertedBlocks.Range(func(key, value interface{}) bool {
-		if conversionTime := value.(time.Time); conversionTime.Before(cutoff) {
-			c.convertedBlocks.Delete(key)
-			cleanedCount++
-		}
-		return true
-	})
-
-	if cleanedCount > 0 {
-		level.Info(c.logger).Log("msg", "cleaned up old converted block entries", "count", cleanedCount)
-	}
 }
 
 // processBlock handles the conversion of a single block with proper metrics tracking.
@@ -399,6 +395,9 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	var err error
 	var skipped bool
 	defer func() {
+		// Remove block from queued blocks map when processing completes (success or failure)
+		c.queuedBlocks.Delete(meta.ULID)
+
 		duration := time.Since(start)
 		c.metrics.conversionDuration.WithLabelValues(userID).Observe(duration.Seconds())
 		if err != nil {
@@ -442,8 +441,6 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to write conversion mark", "block", meta.ULID.String(), "err", err)
-	} else {
-		c.convertedBlocks.Store(meta.ULID, time.Now())
 	}
 }
 
