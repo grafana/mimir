@@ -9,11 +9,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-<<<<<<< HEAD
-=======
-	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/common/model"
->>>>>>> 37d2a4953b (feat(pkg/streamingpromql): use utf8 naming scheme in count_values unit test)
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
