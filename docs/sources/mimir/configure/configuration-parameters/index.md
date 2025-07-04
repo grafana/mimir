@@ -4149,7 +4149,7 @@ ruler_alertmanager_client_config:
 
 # (experimental) Whether to enable native ingestion of delta OTLP metrics, which
 # stores the raw delta sample values without conversion. If disabled, delta
-# metrics will be rejected. Delta support is in an early stage of development.
+# metrics are rejected. Delta support is in an early stage of development.
 # The ingestion and querying process is likely to change over time.
 # CLI flag: -distributor.otel-native-delta-ingestion
 [otel_native_delta_ingestion: <boolean> | default = false]
