@@ -115,6 +115,10 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if rrConf.Name != "" {
 			name = rrConf.Name
 		}
+		validationScheme := rrConf.MetricNameValidationScheme
+		if validationScheme == model.UnsetValidation {
+			validationScheme = model.UTF8Validation
+		}
 
 		c, err := NewReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,
@@ -122,6 +126,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			ChunkedReadLimit: rrConf.ChunkedReadLimit,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
 			Headers:          rrConf.Headers,
+			ValidationScheme: validationScheme,
 		})
 		if err != nil {
 			return err

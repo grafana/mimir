@@ -33,7 +33,7 @@ require (
 	github.com/prometheus/alertmanager v0.28.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.65.0
+	github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -307,7 +307,7 @@ require (
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/ncw/swift v1.0.53 // indirect
-	github.com/oklog/run v1.1.0 // indirect
+	github.com/oklog/run v1.2.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
@@ -345,7 +345,22 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20250704054056-de508a582ea0
+// https://github.com/prometheus/common/pull/796
+replace github.com/prometheus/common => github.com/juliusmh/common v0.65.1-0.20250704082317-5d72c76b6117
+
+// https://github.com/grafana/mimir-prometheus/pull/892
+replace github.com/prometheus/prometheus => github.com/juliusmh/mimir-prometheus v1.8.2-0.20250704091229-c0349fdf57b1
+
+// https://github.com/grafana/prometheus-alertmanager/pull/118
+replace github.com/prometheus/alertmanager => github.com/juliusmh/alertmanager v0.26.1-0.20250624114102-96969065f8d2
+
+// https://github.com/prometheus/client_golang/pull/1822
+replace github.com/prometheus/client_golang => github.com/juliusmh/client_golang v1.22.1-0.20250701110037-ceb5803cbf1f
+
+// https://github.com/open-telemetry/opentelemetry-go/pull/6927
+replace go.opentelemetry.io/otel => github.com/juliusmh/opentelemetry-go v1.36.1-0.20250630105543-32a3e6508937
+
+replace go.opentelemetry.io/otel/exporters/prometheus => github.com/juliusmh/opentelemetry-go/exporters/prometheus v0.58.1-0.20250630105543-32a3e6508937
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -371,12 +386,9 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 // Replace opentracing-contrib/go-grpc with a fork until https://github.com/opentracing-contrib/go-grpc/pull/16 is merged.
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 
-// Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
-
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
-replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250527173959-2573485683d5
+replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
 
 // Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
 replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb

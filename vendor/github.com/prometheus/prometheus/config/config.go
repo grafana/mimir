@@ -14,6 +14,7 @@
 package config
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -68,11 +69,6 @@ var (
 	}
 )
 
-const (
-	LegacyValidationConfig = "legacy"
-	UTF8ValidationConfig   = "utf8"
-)
-
 // Load parses the YAML input s into a Config.
 func Load(s string, logger *slog.Logger) (*Config, error) {
 	cfg := &Config{}
@@ -112,7 +108,7 @@ func Load(s string, logger *slog.Logger) (*Config, error) {
 	case UnderscoreEscapingWithSuffixes:
 	case "":
 	case NoTranslation, NoUTF8EscapingWithSuffixes:
-		if cfg.GlobalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+		if cfg.GlobalConfig.MetricNameValidationScheme == model.LegacyValidation {
 			return nil, fmt.Errorf("OTLP translation strategy %q is not allowed when UTF8 is disabled", cfg.OTLPConfig.TranslationStrategy)
 		}
 	default:
@@ -172,7 +168,7 @@ var (
 		ScrapeProtocols:                DefaultScrapeProtocols,
 		ConvertClassicHistogramsToNHCB: false,
 		AlwaysScrapeClassicHistograms:  false,
-		MetricNameValidationScheme:     UTF8ValidationConfig,
+		MetricNameValidationScheme:     model.UTF8Validation,
 		MetricNameEscapingScheme:       model.AllowUTF8,
 	}
 
@@ -422,6 +418,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if rwcfg == nil {
 			return errors.New("empty or null remote write config section")
 		}
+		if err := rwcfg.Validate(c.GlobalConfig); err != nil {
+			return err
+		}
 		// Skip empty names, we fill their name with their config hash in remote write code.
 		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
 			return fmt.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
@@ -438,6 +437,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return fmt.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
 		}
 		rrNames[rrcfg.Name] = struct{}{}
+	}
+	if err := c.AlertingConfig.Validate(c.GlobalConfig); err != nil {
+		return errors.New("invalid alerting config: " + err.Error())
 	}
 	return nil
 }
@@ -486,8 +488,8 @@ type GlobalConfig struct {
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
-	// have a value if a ScrapeConfig is created programmatically.
-	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	// have a value if a GlobalConfig is created programmatically.
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
@@ -600,15 +602,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if err := gc.ExternalLabels.Validate(func(l labels.Label) error {
-		if !model.LabelName(l.Name).IsValid() {
-			return fmt.Errorf("%q is not a valid label name", l.Name)
-		}
-		if !model.LabelValue(l.Value).IsValid() {
-			return fmt.Errorf("%q is not a valid label value", l.Value)
-		}
-		return nil
-	}); err != nil {
+	if err := gc.validateExternalLabels(); err != nil {
 		return err
 	}
 
@@ -640,6 +634,23 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	*c = *gc
 	return nil
+}
+
+// validationScheme if specified, utf-8 validation otherwise.
+func (c GlobalConfig) validationScheme() model.ValidationScheme {
+	return cmp.Or(c.MetricNameValidationScheme, model.UTF8Validation)
+}
+
+func (c GlobalConfig) validateExternalLabels() error {
+	return c.ExternalLabels.Validate(func(l labels.Label) error {
+		if !model.LabelName(l.Name).IsValid(c.validationScheme()) {
+			return fmt.Errorf("%q is not a valid label name", l.Name)
+		}
+		if !model.LabelValue(l.Value).IsValid() {
+			return fmt.Errorf("%q is not a valid label value", l.Value)
+		}
+		return nil
+	})
 }
 
 // isZero returns true iff the global config is the zero value.
@@ -755,7 +766,7 @@ type ScrapeConfig struct {
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
 	// have a value if a ScrapeConfig is created programmatically.
-	MetricNameValidationScheme string `yaml:"metric_name_validation_scheme,omitempty"`
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 	// Metric name escaping mode to request through content negotiation. Can be
 	// blank in config files but must have a value if a ScrapeConfig is created
 	// programmatically.
@@ -876,38 +887,33 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		}
 	}
 
-	//nolint:staticcheck
-	if model.NameValidationScheme != model.UTF8Validation {
-		return errors.New("model.NameValidationScheme must be set to UTF8")
-	}
-
 	switch globalConfig.MetricNameValidationScheme {
-	case "":
-		globalConfig.MetricNameValidationScheme = UTF8ValidationConfig
-	case LegacyValidationConfig, UTF8ValidationConfig:
+	case model.UnsetValidation:
+		globalConfig.MetricNameValidationScheme = model.UTF8Validation
+	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return fmt.Errorf("unknown global name validation method specified, must be either 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
+		return fmt.Errorf("unknown global name validation method specified, must be either '', 'legacy' or 'utf8', got %s", globalConfig.MetricNameValidationScheme)
 	}
 	// Scrapeconfig validation scheme matches global if left blank.
 	switch c.MetricNameValidationScheme {
-	case "":
+	case model.UnsetValidation:
 		c.MetricNameValidationScheme = globalConfig.MetricNameValidationScheme
-	case LegacyValidationConfig, UTF8ValidationConfig:
+	case model.LegacyValidation, model.UTF8Validation:
 	default:
-		return fmt.Errorf("unknown scrape config name validation method specified, must be either 'legacy' or 'utf8', got %s", c.MetricNameValidationScheme)
+		return fmt.Errorf("unknown scrape config name validation method specified, must be either 'legacy' or 'utf8', got %v", c.MetricNameValidationScheme)
 	}
 
 	// Escaping scheme is based on the validation scheme if left blank.
 	switch globalConfig.MetricNameEscapingScheme {
 	case "":
-		if globalConfig.MetricNameValidationScheme == LegacyValidationConfig {
+		if globalConfig.MetricNameValidationScheme == model.LegacyValidation {
 			globalConfig.MetricNameEscapingScheme = model.EscapeUnderscores
 		} else {
 			globalConfig.MetricNameEscapingScheme = model.AllowUTF8
 		}
 	case model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameValidationScheme)
+		return fmt.Errorf("unknown global name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, globalConfig.MetricNameEscapingScheme)
 	}
 
 	if c.MetricNameEscapingScheme == "" {
@@ -916,12 +922,12 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 
 	switch c.MetricNameEscapingScheme {
 	case model.AllowUTF8:
-		if c.MetricNameValidationScheme != UTF8ValidationConfig {
+		if c.MetricNameValidationScheme != model.UTF8Validation {
 			return errors.New("utf8 metric names requested but validation scheme is not set to UTF8")
 		}
 	case model.EscapeUnderscores, model.EscapeDots, model.EscapeValues:
 	default:
-		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %s", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameValidationScheme)
+		return fmt.Errorf("unknown scrape config name escaping method specified, must be one of '%s', '%s', '%s', or '%s', got %q", model.AllowUTF8, model.EscapeUnderscores, model.EscapeDots, model.EscapeValues, c.MetricNameEscapingScheme)
 	}
 
 	if c.ConvertClassicHistogramsToNHCB == nil {
@@ -934,32 +940,39 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 		c.AlwaysScrapeClassicHistograms = &global
 	}
 
+	// Validate relabel configs
+	namingScheme := c.MetricNameValidationScheme
+
+	// Check for users putting URLs in target groups.
+	if len(c.RelabelConfigs) == 0 {
+		if err := checkStaticTargets(c.ServiceDiscoveryConfigs); err != nil {
+			return err
+		}
+	}
+
+	for _, rlcfg := range c.RelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null target relabeling rule in scrape config")
+		}
+		if err := rlcfg.Validate(namingScheme); err != nil {
+			return errors.New("invalid relabel config: " + err.Error())
+		}
+	}
+	for _, rlcfg := range c.MetricRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null metric relabeling rule in scrape config")
+		}
+		if err := rlcfg.Validate(namingScheme); err != nil {
+			return errors.New("invalid metric relabel config: " + err.Error())
+		}
+	}
+
 	return nil
 }
 
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
-}
-
-// ToValidationScheme returns the validation scheme for the given string config value.
-func ToValidationScheme(s string) (validationScheme model.ValidationScheme, err error) {
-	switch s {
-	case "":
-		// This is a workaround for third party exporters that don't set the validation scheme.
-		if DefaultGlobalConfig.MetricNameValidationScheme == "" {
-			return model.UTF8Validation, errors.New("global metric name validation scheme is not set")
-		}
-		return ToValidationScheme(DefaultGlobalConfig.MetricNameValidationScheme)
-	case UTF8ValidationConfig:
-		validationScheme = model.UTF8Validation
-	case LegacyValidationConfig:
-		validationScheme = model.LegacyValidation
-	default:
-		return model.UTF8Validation, fmt.Errorf("invalid metric name validation scheme, %s", s)
-	}
-
-	return validationScheme, nil
 }
 
 // ToEscapingScheme wraps the equivalent common library function with the
@@ -972,6 +985,10 @@ func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme,
 			return model.NoEscaping, nil
 		case model.LegacyValidation:
 			return model.UnderscoreEscaping, nil
+		case model.UnsetValidation:
+			return model.NoEscaping, fmt.Errorf("v is unset: %s", v)
+		default:
+			panic(fmt.Errorf("unhandled validation scheme: %s", v))
 		}
 	}
 	return model.ToEscapingScheme(s)
@@ -1118,10 +1135,24 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	return nil
+}
 
+func (c *AlertingConfig) Validate(globalConfig GlobalConfig) error {
+	for _, amcfg := range c.AlertmanagerConfigs {
+		if amcfg == nil {
+			return errors.New("empty or null alert manager config")
+		}
+		if err := amcfg.Validate(globalConfig); err != nil {
+			return err
+		}
+	}
 	for _, rlcfg := range c.AlertRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null alert relabeling rule")
+		}
+		if err := rlcfg.Validate(globalConfig.MetricNameValidationScheme); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1195,6 +1226,10 @@ type AlertmanagerConfig struct {
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// Relabel alerts before sending to the specific alertmanager.
 	AlertRelabelConfigs []*relabel.Config `yaml:"alert_relabel_configs,omitempty"`
+
+	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
+	// have a value if a AlertmanagerConfig is created programmatically.
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1209,7 +1244,10 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {
 		return err
 	}
+	return nil
+}
 
+func (c *AlertmanagerConfig) Validate(globalConfig GlobalConfig) error {
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.
 	// We cannot make it a pointer as the parser panics for inlined pointer structs.
 	// Thus we just do its validation here.
@@ -1231,15 +1269,26 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		}
 	}
 
+	validationScheme := cmp.Or(
+		c.MetricNameValidationScheme,
+		globalConfig.validationScheme(),
+	)
+
 	for _, rlcfg := range c.RelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null Alertmanager target relabeling rule")
+		}
+		if err := rlcfg.Validate(validationScheme); err != nil {
+			return errors.New("invalid relabel config: " + err.Error())
 		}
 	}
 
 	for _, rlcfg := range c.AlertRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null Alertmanager alert relabeling rule")
+		}
+		if err := rlcfg.Validate(validationScheme); err != nil {
+			return errors.New("invalid alert relabel config: " + err.Error())
 		}
 	}
 
@@ -1343,6 +1392,10 @@ type RemoteWriteConfig struct {
 	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 	AzureADConfig    *azuread.AzureADConfig  `yaml:"azuread,omitempty"`
 	GoogleIAMConfig  *googleiam.Config       `yaml:"google_iam,omitempty"`
+
+	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
+	// have a value if a RemoteWriteConfig is created programmatically.
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -1357,12 +1410,24 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (c *RemoteWriteConfig) Validate(globalConfig GlobalConfig) error {
 	if c.URL == nil {
 		return errors.New("url for remote_write is empty")
 	}
+
+	namingScheme := cmp.Or(
+		c.MetricNameValidationScheme,
+		globalConfig.validationScheme(),
+	)
 	for _, rlcfg := range c.WriteRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null relabeling rule in remote write config")
+		}
+		if err := rlcfg.Validate(namingScheme); err != nil {
+			return errors.New("invalid relabel config: " + err.Error())
 		}
 	}
 	if err := validateHeaders(c.Headers); err != nil {
@@ -1498,6 +1563,10 @@ type RemoteReadConfig struct {
 
 	// Whether to use the external labels as selectors for the remote read endpoint.
 	FilterExternalLabels bool `yaml:"filter_external_labels,omitempty"`
+
+	// Allow UTF8 Metric and Label Names. Can be blank in config files but must
+	// have a value if a RemoteReadConfig is created programmatically.
+	MetricNameValidationScheme model.ValidationScheme `yaml:"metric_name_validation_scheme,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
