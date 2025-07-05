@@ -134,7 +134,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
@@ -273,7 +273,7 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"
 ---
 # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
@@ -412,5 +412,5 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
-            - name: "GOMAXPROCS"
+            - name: GOMAXPROCS
               value: "4"

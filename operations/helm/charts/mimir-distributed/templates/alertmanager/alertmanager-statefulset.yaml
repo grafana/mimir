@@ -213,15 +213,8 @@ spec:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.alertmanager.env }}
           env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.alertmanager.env }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+            {{- include "mimir.lib.containerEnv" (dict "ctx" . "component" "alertmanager") | nindent 12 }}
           {{- if or .Values.global.extraEnvFrom .Values.alertmanager.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
