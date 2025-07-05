@@ -496,6 +496,46 @@ func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
+func SortByLabelOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
+	functionName := "sort_by_label"
+	if descending {
+		functionName = "sort_by_label_desc"
+	}
+
+	return func(args []types.Operator, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) < 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected at least 1 argument for %s, got %v", functionName, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		var labels []string
+		for i := 1; i < len(args); i++ {
+			l, ok := args[i].(types.StringOperator)
+			if !ok {
+				// Should be caught by the PromQL parser, but we check here for safety.
+				return nil, fmt.Errorf("expected a string for argument %d, got %T", i+1, args[i])
+			}
+
+			labels = append(labels, l.GetValue())
+		}
+
+		// sort_by_labels and sort_by_labels_desc only affect the results of instant queries
+		// since range query results have a fixed output ordering. However, we still validate
+		// all the arguments as if we were going to sort for consistency.
+		if !timeRange.IsInstant {
+			return inner, nil
+		}
+
+		return NewSortByLabel(inner, descending, labels, memoryConsumptionTracker, expressionPosition), nil
+	}
+}
+
 func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 	functionName := "sort"
 
@@ -589,6 +629,8 @@ var InstantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sin":                          InstantVectorTransformationFunctionOperatorFactory("sin", Sin),
 	"sinh":                         InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh),
 	"sort":                         SortOperatorFactory(false),
+	"sort_by_label":                SortByLabelOperatorFactory(false),
+	"sort_by_label_desc":           SortByLabelOperatorFactory(true),
 	"sort_desc":                    SortOperatorFactory(true),
 	"sqrt":                         InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt),
 	"stddev_over_time":             FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime),
