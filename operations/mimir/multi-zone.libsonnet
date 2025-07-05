@@ -70,8 +70,6 @@
   // Multi-zone ingesters.
   //
 
-  local multi_zone_ingesters_deployed = $._config.is_microservices_deployment_mode && $._config.multi_zone_ingester_enabled,
-
   ingester_zone_a_args:: {},
   ingester_zone_b_args:: {},
   ingester_zone_c_args:: {},
@@ -129,34 +127,34 @@
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
-  ingester_zone_a_container:: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_a_container:: if !$._config.multi_zone_ingester_enabled then null else
     self.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
 
-  ingester_zone_a_statefulset: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_a_statefulset: if !$._config.multi_zone_ingester_enabled then null else
     self.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers),
 
-  ingester_zone_a_service: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_a_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_a_statefulset),
 
-  ingester_zone_b_container:: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_b_container:: if !$._config.multi_zone_ingester_enabled then null else
     self.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
 
-  ingester_zone_b_statefulset: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_b_statefulset: if !$._config.multi_zone_ingester_enabled then null else
     self.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers),
 
-  ingester_zone_b_service: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_b_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_b_statefulset),
 
-  ingester_zone_c_container:: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_c_container:: if !$._config.multi_zone_ingester_enabled then null else
     self.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
 
-  ingester_zone_c_statefulset: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_c_statefulset: if !$._config.multi_zone_ingester_enabled then null else
     self.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers),
 
-  ingester_zone_c_service: if !multi_zone_ingesters_deployed then null else
+  ingester_zone_c_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
-  ingester_rollout_pdb: if !multi_zone_ingesters_deployed then null else
+  ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
     podDisruptionBudget.new('ingester-rollout') +
     podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }) +
@@ -168,22 +166,19 @@
 
   ingester_statefulset:
     // Remove the default "ingester" StatefulSet if multi-zone is enabled and no migration is in progress.
-    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
+    if ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
     then null
     else super.ingester_statefulset,
 
   ingester_service:
     // Remove the default "ingester" service if multi-zone is enabled and no migration is in progress.
-    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
+    if ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
     then null
     else super.ingester_service,
 
   ingester_pdb:
-    // There's no parent PDB if deployment mode is not microservices.
-    if !$._config.is_microservices_deployment_mode
-    then null
     // Keep it if multi-zone is disabled.
-    else if !$._config.multi_zone_ingester_enabled
+    if !$._config.multi_zone_ingester_enabled
     then super.ingester_pdb
     // We don’t want Kubernetes to terminate any "ingester" StatefulSet's pod while migration is in progress.
     else if $._config.multi_zone_ingester_migration_enabled
@@ -194,8 +189,6 @@
   //
   // Multi-zone store-gateways.
   //
-
-  local multi_zone_store_gateways_deployed = $._config.is_microservices_deployment_mode && $._config.multi_zone_store_gateway_enabled,
 
   store_gateway_zone_a_args:: {},
   store_gateway_zone_b_args:: {},
@@ -267,36 +260,36 @@
     },
   },
 
-  store_gateway_zone_a_container:: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_a_container:: if !$._config.multi_zone_store_gateway_enabled then null else
     self.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
 
-  store_gateway_zone_a_statefulset: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
     (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers),
 
-  store_gateway_zone_a_service: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_a_service: if !$._config.multi_zone_store_gateway_enabled then null else
     self.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
 
-  store_gateway_zone_b_container:: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_b_container:: if !$._config.multi_zone_store_gateway_enabled then null else
     self.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
 
-  store_gateway_zone_b_statefulset: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
     (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers),
 
-  store_gateway_zone_b_service: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_b_service: if !$._config.multi_zone_store_gateway_enabled then null else
     self.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
 
-  store_gateway_zone_c_container:: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_c_container:: if !$._config.multi_zone_store_gateway_enabled then null else
     self.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args, $.store_gateway_zone_c_env_map),
 
-  store_gateway_zone_c_statefulset: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_c_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
     (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers),
 
-  store_gateway_zone_c_service: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_zone_c_service: if !$._config.multi_zone_store_gateway_enabled then null else
     self.newStoreGatewayZoneService($.store_gateway_zone_c_statefulset),
 
   // Create a service backed by all store-gateway replicas (in all zone).
   // This service is used to access the store-gateway admin UI.
-  store_gateway_multi_zone_service: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_multi_zone_service: if !$._config.multi_zone_store_gateway_enabled then null else
     local name = 'store-gateway-multi-zone';
     local labels = { 'rollout-group': 'store-gateway' };
     local ports = [
@@ -307,7 +300,7 @@
     service.new(name, labels, ports) +
     service.mixin.metadata.withLabels({ name: name }),
 
-  store_gateway_rollout_pdb: if !multi_zone_store_gateways_deployed then null else
+  store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
     podDisruptionBudget.new('store-gateway-rollout') +
     podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }) +
@@ -319,19 +312,19 @@
 
   store_gateway_statefulset:
     // Remove the default store-gateway StatefulSet if multi-zone is enabled and no migration is in progress.
-    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
+    if ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
     then null
     else super.store_gateway_statefulset,
 
   store_gateway_service:
     // Remove the default store-gateway service if multi-zone is enabled and no migration is in progress.
-    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
+    if ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
     then null
     else super.store_gateway_service,
 
   store_gateway_pdb:
     // Remove the default store-gateway PodDisruptionBudget if multi-zone is enabled and no migration is in progress.
-    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
+    if ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
     then null
     else super.store_gateway_pdb,
 }

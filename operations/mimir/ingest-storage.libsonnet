@@ -26,7 +26,6 @@
   // Basic configuration.
   //
 
-  assert !$._config.ingest_storage_enabled || $._config.is_microservices_deployment_mode : 'ingest storage requires microservices deployment mode',
   assert !$._config.ingest_storage_enabled || $._config.ruler_remote_evaluation_enabled : 'ingest storage requires ruler remote evaluation',
 
   // The generic ingest storage config that should be applied to every component.

@@ -70,13 +70,13 @@
   // of not causing some store-gateways getting overwhelmed (due to increased owned blocks) when several
   // store-gateways in a zone are unhealthy for an extended period of time (e.g. when running 1 out of 3
   // zones on spot VMs).
-  store_gateway_zone_a_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_zone_a_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+  store_gateway_zone_a_args+:: if !$._config.store_gateway_automated_downscale_zone_a_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     'store-gateway.sharding-ring.auto-forget-enabled': false,
   },
-  store_gateway_zone_b_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_zone_b_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+  store_gateway_zone_b_args+:: if !$._config.store_gateway_automated_downscale_zone_b_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     'store-gateway.sharding-ring.auto-forget-enabled': false,
   },
-  store_gateway_zone_c_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_zone_c_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+  store_gateway_zone_c_args+:: if !$._config.store_gateway_automated_downscale_zone_c_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     'store-gateway.sharding-ring.auto-forget-enabled': false,
   },
 }

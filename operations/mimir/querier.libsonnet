@@ -21,7 +21,7 @@
       'server.http-listen-port': $._config.server_http_port,
       'querier.max-concurrent': $._config.querier_max_concurrency,
 
-      'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
+      'querier.frontend-address': if $._config.query_scheduler_enabled then null else
         'query-frontend-discovery.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 
@@ -78,12 +78,12 @@
     // Set a termination grace period greater than query timeout.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
-  querier_deployment: if !$._config.is_microservices_deployment_mode then null else
+  querier_deployment:
     self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),
 
-  querier_service: if !$._config.is_microservices_deployment_mode then null else
+  querier_service:
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
 
-  querier_pdb: if !$._config.is_microservices_deployment_mode then null else
+  querier_pdb:
     $.newMimirPdb('querier'),
 }
