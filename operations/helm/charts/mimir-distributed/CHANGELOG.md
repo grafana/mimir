@@ -37,7 +37,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Memcached: Set resource requests for the Memcached Prometheus exporter by default. #11933
 * [CHANGE] Add `store_gateway.grpcMaxQueryResponseSizeBytes` value to set the max store-gateway gRCP query response send size (and corresponsing querier receive size), and set to 200MB by default. #11968
 * [ENHANCEMENT] Add values for setting annotations and labels for the rollout-operator. #6733 #11924
-* [ENHANCEMENT] Components with predefined `GOMAXPROCS` and/or `GOMEMLIMIT` environment variables (ie. distributor, ingester, querier, ruler-querier, store-gateway) allow user-defined overrides through the components `env` values. #11983
+* [ENHANCEMENT] Allow user-defined overrides through the `env` values for components with predefined `GOMAXPROCS` or `GOMEMLIMIT` environment variables, including the distributor, ingester, querier, ruler-querier, and store-gateway. #11983
 * [BUGFIX] Memcached: Use `dnssrvnoa+` address prefix instead of `dns+` which results in DNS `SRV` record lookups instead of `A` or `AAAA`. This results in fewer cache evictions when the members of the Memcached cluster change. #11041
 * [BUGFIX] Helm: Fix extra spaces in the extra-manifest helm chart.
 * [BUGFIX] Helm: Work around [Helm PR 12879](https://github.com/helm/helm/pull/12879) not clearing fields with `null`, instead setting them to `null`. #11140
