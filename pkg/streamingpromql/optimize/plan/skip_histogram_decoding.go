@@ -8,6 +8,7 @@ package plan
 import (
 	"context"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -56,10 +57,10 @@ func (s *SkipHistogramDecodingOptimizationPass) applyToNode(node planning.Node, 
 	}
 
 	if f, ok := node.(*core.FunctionCall); ok {
-		switch f.FunctionName {
-		case "histogram_count", "histogram_sum", "histogram_avg":
+		switch f.Function {
+		case functions.FUNCTION_HISTOGRAM_COUNT, functions.FUNCTION_HISTOGRAM_SUM, functions.FUNCTION_HISTOGRAM_AVG:
 			skipHistogramBuckets = true
-		case "histogram_fraction", "histogram_quantile":
+		case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE:
 			skipHistogramBuckets = false
 		default:
 			// Nothing to do.

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
@@ -16,17 +17,17 @@ func TestFunctionCall_Describe(t *testing.T) {
 	t.Run("ordinary function call", func(t *testing.T) {
 		f := &FunctionCall{
 			FunctionCallDetails: &FunctionCallDetails{
-				FunctionName: "foo",
+				Function: functions.FUNCTION_ABS,
 			},
 		}
 
-		require.Equal(t, "foo(...)", f.Describe())
+		require.Equal(t, "abs(...)", f.Describe())
 	})
 
 	t.Run("absent()", func(t *testing.T) {
 		f := &FunctionCall{
 			FunctionCallDetails: &FunctionCallDetails{
-				FunctionName: "absent",
+				Function:     functions.FUNCTION_ABSENT,
 				AbsentLabels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "foo", "env", "bar")),
 			},
 		}
@@ -37,7 +38,7 @@ func TestFunctionCall_Describe(t *testing.T) {
 	t.Run("absent_over_time()", func(t *testing.T) {
 		f := &FunctionCall{
 			FunctionCallDetails: &FunctionCallDetails{
-				FunctionName: "absent_over_time",
+				Function:     functions.FUNCTION_ABSENT_OVER_TIME,
 				AbsentLabels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "foo", "env", "bar")),
 			},
 		}
@@ -55,14 +56,14 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"identical without labels for absent()/absent_over_time()": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
 			},
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -72,7 +73,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"identical with labels for absent()/absent_over_time()": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABSENT,
 					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "prod"}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
@@ -80,7 +81,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 			},
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABSENT,
 					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "prod"}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
@@ -91,14 +92,14 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"different expression position": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
 			},
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 3, End: 4},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -108,14 +109,14 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"different function": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
 			},
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "bar",
+					Function:           functions.FUNCTION_ACOS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -125,7 +126,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"different type": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
@@ -136,14 +137,14 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"different children": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(12)},
 			},
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABS,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
 				Args: []planning.Node{numberLiteralOf(13)},
@@ -153,7 +154,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 		"different labels for absent()/absent_over_time()": {
 			a: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABSENT,
 					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "prod"}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},
@@ -161,7 +162,7 @@ func TestFunctionCall_Equivalence(t *testing.T) {
 			},
 			b: &FunctionCall{
 				FunctionCallDetails: &FunctionCallDetails{
-					FunctionName:       "foo",
+					Function:           functions.FUNCTION_ABSENT,
 					AbsentLabels:       []mimirpb.LabelAdapter{{Name: "env", Value: "test"}},
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 				},

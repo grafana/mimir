@@ -8,6 +8,7 @@ import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/operators/functions/functions.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -87,7 +88,7 @@ message VectorMatching {
 }
 
 message FunctionCallDetails {
-  string functionName = 1;
+  functions.Function function = 1;
 
   // Labels used by absent() or absent_over_time(). Only populated if this instance is for either of these two functions.
   repeated cortexpb.LabelPair absentLabels = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
