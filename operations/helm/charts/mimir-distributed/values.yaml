@@ -3579,6 +3579,8 @@ gateway:
     nameOverride: ""
     # -- Ingress Class Name. MAY be required for Kubernetes versions >= 1.18
     ingressClassName: ""
+    # -- Labels for the Ingress
+    labels: {}
     # -- Annotations for the Ingress
     annotations: {}
     # -- Hosts configuration for the Ingress
