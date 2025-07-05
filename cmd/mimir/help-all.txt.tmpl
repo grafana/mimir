@@ -1425,6 +1425,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
+  -distributor.otel-native-delta-ingestion
+    	[experimental] Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.
   -distributor.otel-promote-resource-attributes comma-separated-list-of-strings
     	[experimental] Optionally specify OTel resource attributes to promote to labels.
   -distributor.otel-promote-scope-metadata
