@@ -200,6 +200,14 @@
       $._config.ingest_storage_ingester_autoscaling_index_metrics,
     ),
 
+  // Ensure that the min and max replicas set on the ScaledObject are greater than 0, otherwise Keda fails to create
+  // HPA and it could cause outages during migrations if it gets unnoticed. We check min/max replicas on the manifest
+  // instead of the configuration field, to ensure it doesn't get manipulated by overrides.
+  assert $.ingest_storage_ingester_primary_zone_scaling == null || $.ingest_storage_ingester_primary_zone_scaling.spec.minReplicaCount > 0 :
+         'the %s ScaledObject must have minReplicaCount > 0' % $._config.ingest_storage_ingester_autoscaling_primary_zone,
+  assert $.ingest_storage_ingester_primary_zone_scaling == null || $.ingest_storage_ingester_primary_zone_scaling.spec.maxReplicaCount > 0 :
+         'the %s ScaledObject must have maxReplicaCount > 0' % $._config.ingest_storage_ingester_autoscaling_primary_zone,
+
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
