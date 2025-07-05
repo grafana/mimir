@@ -112,6 +112,7 @@ func OTLPHandler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.contentLength = r.ContentLength
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {

@@ -8247,6 +8247,7 @@ func TestStartFinishRequest(t *testing.T) {
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
 		addIngestionRateBeforePush     int64
+		skipDecompress                 bool
 
 		expectedStartError error
 		expectedPushError  error
@@ -8307,13 +8308,23 @@ func TestStartFinishRequest(t *testing.T) {
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
+		// initial httpgrpcRequestSize check passes, decompressed request exceeds estimated size + limit size and the push fails
 		"too many inflight bytes requests, external with httpgrpc size within limit": {
 			externalCheck:                  true,
-			httpgrpcRequestSize:            500,
-			inflightRequestsBeforePush:     1,
-			inflightRequestsSizeBeforePush: inflightBytesLimit - 500,
+			httpgrpcRequestSize:            10,
+			inflightRequestsSizeBeforePush: inflightBytesLimit - (decompressionEstMultiplier+1)*10 - 1,
 			expectedStartError:             nil, // httpgrpc request size fits into inflight request size limit.
 			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		// initial httpgrpcRequestSize check fails, skip decompression
+		"too many inflight bytes requests, external with httpgrpc size estimate above limit": {
+			externalCheck:                  true,
+			httpgrpcRequestSize:            50,
+			inflightRequestsSizeBeforePush: inflightBytesLimit - 50,
+			expectedStartError:             errMaxInflightRequestsBytesReached,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+			skipDecompress:                 true,
 		},
 
 		"too many inflight bytes requests, external with httpgrpc size outside limit": {
@@ -8371,6 +8382,10 @@ func TestStartFinishRequest(t *testing.T) {
 			ctx = context.WithValue(ctx, distributorKey, ds[0])
 			ctx = context.WithValue(ctx, expectedInflightRequestsKey, int64(tc.inflightRequestsBeforePush)+1)
 			ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize+int64(pushReq.Size()))
+
+			if tc.skipDecompress {
+				ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize)
+			}
 
 			if tc.externalCheck {
 				var err error
