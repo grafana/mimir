@@ -778,10 +778,11 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 	if complete {
 		if err := s.jobs.completeJob(key, workerID); err != nil {
-			// job not found is fine, as clients will be re-informing us.
-			if !errors.Is(err, errJobNotFound) {
-				return fmt.Errorf("complete job: %w", err)
+			if errors.Is(err, errJobNotFound) {
+				// job not found is fine, as clients will be re-informing us.
+				return nil
 			}
+			return fmt.Errorf("complete job: %w", err)
 		}
 
 		ps.committed.advance(key, j)

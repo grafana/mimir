@@ -1186,3 +1186,116 @@ func TestBlockBuilderScheduler_EnqueuePendingJobs_GapDetection(t *testing.T) {
 		requireGaps(t, reg, part, 2, commitGaps, "expected %d commit gaps at job %d", commitGaps, j)
 	}
 }
+
+func TestInitialJobPlanningWithObservationTransition(t *testing.T) {
+	sched, _ := mustScheduler(t)
+	reg := sched.register.(*prometheus.Registry)
+
+	// Set up initial partition states with committed offsets (simulating Kafka state)
+	sched.getPartitionState("ingest", 1).initCommit(1000)
+	sched.getPartitionState("ingest", 2).initCommit(2000)
+	sched.getPartitionState("ingest", 3).initCommit(3000)
+
+	// Scenario 1: Partition 1 - No gaps, continuous job sequence
+	// Simulate jobs that have been observed during startup
+	j1 := job[schedulerpb.JobSpec]{
+		key: jobKey{id: "ingest/1/1000", epoch: 10},
+		spec: schedulerpb.JobSpec{
+			Topic: "ingest", Partition: 1,
+			StartOffset: 1000, EndOffset: 1100,
+		},
+	}
+	j2 := job[schedulerpb.JobSpec]{
+		key: jobKey{id: "ingest/1/1100", epoch: 11},
+		spec: schedulerpb.JobSpec{
+			Topic: "ingest", Partition: 1,
+			StartOffset: 1100, EndOffset: 1200,
+		},
+	}
+	j3 := job[schedulerpb.JobSpec]{
+		key: jobKey{id: "ingest/1/1200", epoch: 12},
+		spec: schedulerpb.JobSpec{
+			Topic: "ingest", Partition: 1,
+			StartOffset: 1200, EndOffset: 1300,
+		},
+	}
+
+	// Scenario 2: Partition 2 - With gaps in observed jobs
+	j4 := job[schedulerpb.JobSpec]{
+		key: jobKey{id: "ingest/2/2000", epoch: 20},
+		spec: schedulerpb.JobSpec{
+			Topic: "ingest", Partition: 2,
+			StartOffset: 2000, EndOffset: 2100,
+		},
+	}
+	j5 := job[schedulerpb.JobSpec]{
+		key: jobKey{id: "ingest/2/2100", epoch: 21},
+		spec: schedulerpb.JobSpec{
+			Topic: "ingest", Partition: 2,
+			StartOffset: 2100, EndOffset: 2200,
+		},
+	}
+	// Gap: missing job from 2200 to 2300
+	j6 := job[schedulerpb.JobSpec]{
+		key: jobKey{id: "ingest/2/2300", epoch: 22},
+		spec: schedulerpb.JobSpec{
+			Topic: "ingest", Partition: 2,
+			StartOffset: 2300, EndOffset: 2400,
+		},
+	}
+
+	// Scenario 3: Partition 3 - No observed jobs (dormant partition)
+
+	// Send job updates during observation mode
+	// Partition 1: All jobs completed (continuous sequence)
+	require.NoError(t, sched.updateJob(j1.key, "w1", true, j1.spec))
+	require.NoError(t, sched.updateJob(j2.key, "w1", true, j2.spec))
+	require.NoError(t, sched.updateJob(j3.key, "w1", true, j3.spec))
+
+	// Partition 2: Jobs with gap, some completed, one in progress
+	require.NoError(t, sched.updateJob(j4.key, "w2", true, j4.spec))
+	require.NoError(t, sched.updateJob(j5.key, "w2", true, j5.spec))
+	require.NoError(t, sched.updateJob(j6.key, "w2", false, j6.spec)) // in progress
+
+	// Verify we're still in observation mode
+	{
+		_, _, err := sched.assignJob("w0")
+		require.ErrorContains(t, err, "observation period not complete")
+	}
+
+	// Transition out of observation mode
+	sched.completeObservationMode(context.Background())
+
+	// Verify committed offsets after observation mode completion
+	// Partition 1: Should advance to 1300 (all jobs completed continuously)
+	sched.requireOffset(t, "ingest", 1, 1300, "partition 1 should advance to end of completed continuous sequence")
+
+	// Partition 2: Should advance to 2200 (gap prevents advancing further)
+	sched.requireOffset(t, "ingest", 2, 2200, "partition 2 should advance only to before the gap")
+
+	// Partition 3: Should remain at initial offset (no observed jobs)
+	sched.requireOffset(t, "ingest", 3, 3000, "partition 3 should remain at initial offset")
+
+	offs, err := sched.consumptionOffsets(context.Background(), "ingest", time.Now())
+	require.NoError(t, err)
+	require.ElementsMatch(t, []partitionOffsets{
+		{topic: "ingest", partition: 0, start: 0, resume: 0, end: 0},
+		{topic: "ingest", partition: 1, start: 0, resume: 1300, end: 0},
+		{topic: "ingest", partition: 2, start: 0, resume: 2200, end: 0},
+		{topic: "ingest", partition: 3, start: 0, resume: 3000, end: 0},
+	}, offs)
+
+	// Verify gap detection metrics (no gaps should be detected in metrics during observation mode)
+	// The gap detection during observation mode doesn't increment metrics, only warns in logs
+	requireGaps(t, reg, 1, 0, 0, "should detect no gaps on partition 1")
+	requireGaps(t, reg, 2, 0, 0, "should detect no gaps on partition 2")
+	requireGaps(t, reg, 3, 0, 0, "should detect no gaps on partition 3")
+	// And we'll not allow updates for post-gap jobs:
+	e := sched.updateJob(j6.key, "w2", false, j6.spec)
+	require.ErrorIs(t, e, errJobNotFound)
+
+	// Neither will we allow them to be completed:
+	e = sched.updateJob(j6.key, "w2", true, j6.spec)
+	require.NoError(t, e)
+	sched.requireOffset(t, "ingest", 2, 2200, "partition 2 should not be advanced by post-gap job completion")
+}
