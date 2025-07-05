@@ -7321,6 +7321,7 @@ func valueToStringMimir(v interface{}) string {
 }
 func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 	var metadata map[string]*MetricMetadata
+	seenFirstSymbol := false
 
 	l := len(dAtA)
 	iNdEx := 0
@@ -7477,6 +7478,10 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
+			if !seenFirstSymbol && intStringLen > 0 {
+				return errorInvalidFirstSymbol
+			}
+			seenFirstSymbol = true
 			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		case 5:
