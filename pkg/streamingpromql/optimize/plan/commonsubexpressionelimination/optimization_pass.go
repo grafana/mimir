@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -14,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // This file implements common subexpression elimination.
@@ -55,18 +57,21 @@ func (e *OptimizationPass) Name() string {
 	return "Eliminate common subexpressions"
 }
 
-func (e *OptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// Find all the paths to leaves
 	paths := e.accumulatePaths(plan)
 
 	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
-	selectorsEliminated, err := e.groupAndApplyDeduplication(paths, 0)
+	selectorsEliminated, err := e.groupAndApplyDeduplication(ctx, paths, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	e.selectorsInspected.Add(float64(len(paths)))
 	e.selectorsEliminated.Add(float64(selectorsEliminated))
+
+	spanLog := spanlogger.FromContext(ctx, log.NewNopLogger())
+	spanLog.DebugLog("msg", "attempted common subexpression elimination", "inspected_selectors", len(paths), "eliminated_selectors", selectorsEliminated)
 
 	return plan, nil
 }
@@ -117,12 +122,12 @@ func (e *OptimizationPass) accumulatePath(soFar *path) []*path {
 	return paths
 }
 
-func (e *OptimizationPass) groupAndApplyDeduplication(paths []*path, offset int) (int, error) {
+func (e *OptimizationPass) groupAndApplyDeduplication(ctx context.Context, paths []*path, offset int) (int, error) {
 	groups := e.groupPaths(paths, offset)
 	totalPathsEliminated := 0
 
 	for _, group := range groups {
-		pathsEliminated, err := e.applyDeduplication(group, offset)
+		pathsEliminated, err := e.applyDeduplication(ctx, group, offset)
 		if err != nil {
 			return 0, err
 		}
@@ -188,9 +193,9 @@ func (e *OptimizationPass) groupPaths(paths []*path, offset int) [][]*path {
 	return groups
 }
 
-// applyDuplication replaces duplicate expressions at the tails of paths in group with a single expression.
+// applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, error) {
+func (e *OptimizationPass) applyDeduplication(ctx context.Context, group []*path, offset int) (int, error) {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
@@ -206,11 +211,11 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 
 	// We only want to deduplicate instant vectors.
 	if resultType == parser.ValueTypeVector {
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
+		skipLongerExpressions, err = e.introduceDuplicateNode(ctx, group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
 		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
+		skipLongerExpressions, err = e.introduceDuplicateNode(ctx, group, duplicatePathLength-1)
 	} else {
 		// Duplicated range vector selector, but the function that encloses each instance isn't the same (or isn't the same on all paths).
 		pathsEliminated = 0
@@ -235,7 +240,7 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
+	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(ctx, group, duplicatePathLength); err != nil {
 		return 0, err
 	} else if pathsEliminated == 0 {
 		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
@@ -248,7 +253,7 @@ func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, e
 
 // introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
 // If a Duplicate node already exists at the expected location, then introduceDuplicateNode does not introduce a new node and returns true.
-func (e *OptimizationPass) introduceDuplicateNode(group []*path, duplicatePathLength int) (skipLongerExpressions bool, err error) {
+func (e *OptimizationPass) introduceDuplicateNode(ctx context.Context, group []*path, duplicatePathLength int) (skipLongerExpressions bool, err error) {
 	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
 	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
 	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
@@ -263,6 +268,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group []*path, duplicatePathLe
 	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
+	spanlogger.FromContext(ctx, log.NewNopLogger()).DebugLog("msg", "eliminated common subexpression", "expression_root", duplicatedExpression.Describe())
 
 	for _, path := range group {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
