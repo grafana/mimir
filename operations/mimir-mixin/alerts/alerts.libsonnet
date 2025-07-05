@@ -244,7 +244,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (
               sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
-                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[30m])
+                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s)"}[30m])
               )
               >= 2
             )
@@ -254,7 +254,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )
           ||| % $._config {
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
           },
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
@@ -699,8 +698,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.65',
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
-            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
@@ -717,8 +714,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
             threshold: '0.8',
             ingester: $._config.container_names.ingester,
-            mimir_write: $._config.container_names.mimir_write,
-            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {

@@ -32,9 +32,6 @@
     // This mapping is intentionally local and can't be overridden. If the final user needs to customize
     // dashboards and alerts, they should override the final matcher regexp (e.g. container_names or instance_names).
     local componentNameRegexp = {
-      // Microservices deployment mode. The following matchers MUST match only
-      // the instance when deployed in microservices mode (e.g. "distributor"
-      // matcher shouldn't match "mimir-write" too).
       compactor: 'compactor',
       alertmanager: 'alertmanager',
       alertmanager_im: 'alertmanager-im',
@@ -53,12 +50,6 @@
       overrides_exporter: 'overrides-exporter',
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
 
-      // Read-write deployment mode. The following matchers MUST match only
-      // the instance when deployed in read-write deployment mode (e.g. "mimir-write"
-      // matcher shouldn't match "distributor" too).
-      mimir_write: 'mimir-write',
-      mimir_read: 'mimir-read',
-      mimir_backend: 'mimir-backend',
       federation_frontend: 'federation-frontend',
     },
 
@@ -66,9 +57,9 @@
     // This mapping configures which components belong to each group. A component can belong
     // to multiple groups.
     local componentGroups = {
-      write: ['distributor', 'ingester', 'mimir_write'],
-      read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
-      backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter', 'mimir_backend'],
+      write: ['distributor', 'ingester'],
+      read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier'],
+      backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter'],
       remote_ruler_read: ['ruler_query_frontend', 'ruler_query_scheduler', 'ruler_querier'],
     },
 
@@ -77,33 +68,33 @@
     // Whenever you do any change here, please reflect it in the doc at:
     // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
-      ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
+      ingester: ['ingester.*', 'cortex', 'mimir'],  // Match also custom and per-zone ingester deployments.
       ingester_partition: ['ingester.*-partition'],  // Match exclusively temporarily partition ingesters run during the migration to ingest storage.
       block_builder: ['block-builder.*'],
       block_builder_scheduler: ['block-builder-scheduler.*'],
-      distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
-      querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
+      distributor: ['distributor.*', 'cortex', 'mimir'],  // Match also per-zone distributor deployments.
+      querier: ['querier.*', 'cortex', 'mimir'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
-      ruler: ['ruler', 'cortex', 'mimir', 'mimir-backend.*'],
-      query_frontend: ['query-frontend.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom query-frontend deployments.
+      ruler: ['ruler', 'cortex', 'mimir'],
+      query_frontend: ['query-frontend.*', 'cortex', 'mimir'],  // Match also custom query-frontend deployments.
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
-      query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
+      query_scheduler: ['query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
-      store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
+      store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
-      compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
-      alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
-      overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
+      compactor: ['compactor.*', 'cortex', 'mimir'],  // Match also custom compactor deployments.
+      alertmanager: ['alertmanager', 'cortex', 'mimir'],
+      overrides_exporter: ['overrides-exporter'],
 
       // The following are job matchers used to select all components in the read path.
       main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
       remote_ruler_read_path: std.uniq(std.sort(self.ruler_query_frontend + self.ruler_query_scheduler + self.ruler_querier)),
 
       // The following are job matchers used to select all components in a given "path".
-      write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
-      read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
-      backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
+      write: ['distributor.*', 'ingester.*'],
+      read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*'],
+      backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
 
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
@@ -116,9 +107,7 @@
       local baremetalCompatibleMatcher = function(regexp) if $._config.deployment_type == 'baremetal' then '.*%s' % regexp else regexp,
       local instanceMatcher = function(regexp) baremetalCompatibleMatcher(helmCompatibleMatcher('%s.*' % regexp)),
 
-      // Microservices deployment mode. The following matchers MUST match only
-      // the instance when deployed in microservices mode (e.g. "distributor"
-      // matcher shouldn't match "mimir-write" too).
+      // The following matchers MUST match only the individual instances.
       compactor: instanceMatcher(componentNameRegexp.compactor),
       block_builder: instanceMatcher(componentNameRegexp.block_builder),
       block_builder_scheduler: instanceMatcher(componentNameRegexp.block_builder_scheduler),
@@ -137,15 +126,7 @@
       overrides_exporter: instanceMatcher(componentNameRegexp.overrides_exporter),
       gateway: instanceMatcher(componentNameRegexp.gateway),
 
-      // Read-write deployment mode. The following matchers MUST match only
-      // the instance when deployed in read-write deployment mode (e.g. "mimir-write"
-      // matcher shouldn't match "distributor" too).
-      mimir_write: instanceMatcher(componentNameRegexp.mimir_write),
-      mimir_read: instanceMatcher(componentNameRegexp.mimir_read),
-      mimir_backend: instanceMatcher(componentNameRegexp.mimir_backend),
-
       // The following are instance matchers used to select all components in a given "path".
-      // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components)
         instanceMatcher('(%s)' % std.join('|', std.map(function(name) componentNameRegexp[name], components))),
 
@@ -159,9 +140,7 @@
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
     container_names: {
-      // Microservices deployment mode. The following matchers MUST match only
-      // the instance when deployed in microservices mode (e.g. "distributor"
-      // matcher shouldn't match "mimir-write" too).
+      // The following matchers MUST match only the individual instances.
       block_builder: componentNameRegexp.block_builder,
       block_builder_scheduler: componentNameRegexp.block_builder_scheduler,
       gateway: componentNameRegexp.gateway,
@@ -179,15 +158,7 @@
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
 
-      // Read-write deployment mode. The following matchers MUST match only
-      // the container when deployed in read-write deployment mode (e.g. "mimir-write"
-      // matcher shouldn't match "distributor" too).
-      mimir_write: componentNameRegexp.mimir_write,
-      mimir_read: componentNameRegexp.mimir_read,
-      mimir_backend: componentNameRegexp.mimir_backend,
-
       // The following are container matchers used to select all components in a given "path".
-      // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
 
       write: componentsGroupMatcher(componentGroups.write),
@@ -285,9 +256,9 @@
           (
             # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
             # See: https://github.com/grafana/mimir/issues/2466
-            container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
+            container_memory_rss{container=~"(%(ingester)s)"}
               /
-            ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
+            ( container_spec_memory_limit_bytes{container=~"(%(ingester)s)"} > 0 )
           )
           # Match only Mimir namespaces.
           * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
@@ -297,7 +268,7 @@
       baremetal: {
         memory_allocation: |||
           (
-            process_resident_memory_bytes{job=~".*/(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
+            process_resident_memory_bytes{job=~".*/(%(ingester)s)"}
               /
             on(%(per_instance_label)s) node_memory_MemTotal_bytes{}
           ) > %(threshold)s
