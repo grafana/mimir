@@ -72,6 +72,10 @@ type ingesterMetrics struct {
 	appenderCommitDuration   prometheus.Histogram
 	idleTsdbChecks           *prometheus.CounterVec
 
+	// TSDB head block min/max timestamps by tenant
+	tsdbHeadMinTimestamp *prometheus.GaugeVec
+	tsdbHeadMaxTimestamp *prometheus.GaugeVec
+
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
 
@@ -367,6 +371,16 @@ func newIngesterMetrics(
 		}),
 
 		idleTsdbChecks: idleTsdbChecks,
+
+		tsdbHeadMinTimestamp: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_min_timestamp_seconds",
+			Help: "Minimum timestamp of the head block per user.",
+		}, []string{"user"}),
+
+		tsdbHeadMaxTimestamp: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_tsdb_head_max_timestamp_seconds",
+			Help: "Maximum timestamp of the head block per user.",
+		}, []string{"user"}),
 
 		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_open_duration_seconds_total",
