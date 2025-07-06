@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -39,13 +40,16 @@ func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderSchedul
 	cli := mustKafkaClient(t, addr)
 	cfg := Config{
 		Kafka: ingest.KafkaConfig{
-			Topic: "ingest",
+			Address:      addr,
+			Topic:        "ingest",
+			FetchMaxWait: 10 * time.Millisecond,
 		},
 		ConsumerGroup:       "test-builder",
 		SchedulingInterval:  1000000 * time.Hour,
 		JobSize:             1 * time.Hour,
 		MaxJobsPerPartition: 1,
 	}
+
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
 	sched.adminClient = kadm.NewClient(cli)
@@ -56,6 +60,88 @@ func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderSchedul
 func mustScheduler(t *testing.T, partitions int32) (*BlockBuilderScheduler, *kgo.Client) {
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitions, "ingest")
 	return mustSchedulerWithKafkaAddr(t, kafkaAddr)
+}
+
+// observationCompleteLocked: a getter for tests.
+func (s *BlockBuilderScheduler) observationCompleteLocked() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.observationComplete
+}
+
+// TestService tests the scheduler in a very basic way through its Service interface.
+func TestService(t *testing.T) {
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, 4, "ingest")
+	sched, cli := mustSchedulerWithKafkaAddr(t, kafkaAddr)
+
+	// Signal our channel any time the schedule is updated.
+	scheduleUpdated := make(chan struct{})
+	sched.onScheduleUpdated = func() {
+		select {
+		case scheduleUpdated <- struct{}{}:
+		default:
+		}
+	}
+
+	// Configure all timers and intervals to be muy rapido.
+	sched.cfg.SchedulingInterval = 5 * time.Millisecond
+	sched.cfg.EnqueueInterval = 5 * time.Millisecond
+	sched.cfg.StartupObserveTime = 10 * time.Millisecond
+	sched.cfg.JobLeaseExpiry = 10 * time.Millisecond
+	sched.cfg.LookbackOnNoCommit = 1 * time.Minute
+	sched.cfg.MaxScanAge = 1 * time.Hour
+	sched.cfg.JobSize = 3 * time.Millisecond
+
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, sched))
+
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.WithoutCancel(ctx), sched))
+	})
+
+	require.Eventually(t, sched.observationCompleteLocked, 5*time.Second, 10*time.Millisecond)
+
+	// Partition i gets 10*i records.
+	for i := range int32(4) {
+		for n := range 10 * i {
+			<-scheduleUpdated
+
+			produceResult := cli.ProduceSync(ctx, &kgo.Record{
+				Timestamp: time.Now(),
+				Value:     fmt.Appendf(nil, "value-%d-%d", i, n),
+				Topic:     "ingest",
+				Partition: i,
+			})
+			require.NoError(t, produceResult.FirstErr())
+		}
+	}
+
+	require.Eventually(t, func() bool {
+		return sched.jobs.count() > 0
+	}, 30*time.Second, 10*time.Millisecond)
+
+	var spec schedulerpb.JobSpec
+	clientDone := make(chan struct{})
+
+	// Simulate a client doing some client stuff.
+	go func() {
+		var key jobKey
+		var err error
+		key, spec, err = sched.assignJob("w0")
+		require.NoError(t, err)
+		require.NoError(t, sched.updateJob(key, "w0", true, spec))
+		close(clientDone)
+	}()
+	<-clientDone
+
+	require.NoError(t, sched.flushOffsetsToKafka(ctx))
+
+	// And our offsets should have advanced.
+	offs, err := sched.fetchCommittedOffsets(ctx)
+	require.NoError(t, err)
+	o, ok := offs.Lookup(spec.Topic, spec.Partition)
+	require.True(t, ok)
+	require.Equal(t, spec.EndOffset, o.At)
 }
 
 func TestStartup(t *testing.T) {

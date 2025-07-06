@@ -42,6 +42,9 @@ type BlockBuilderScheduler struct {
 	observations        obsMap
 	observationComplete bool
 	partState           map[int32]*partitionState
+
+	// for synchronizing tests.
+	onScheduleUpdated func()
 }
 
 func New(
@@ -58,6 +61,8 @@ func New(
 
 		observations: make(obsMap),
 		partState:    make(map[int32]*partitionState),
+
+		onScheduleUpdated: func() {},
 	}
 	s.Service = services.NewBasicService(s.starting, s.running, s.stopping)
 	return s, nil
@@ -137,6 +142,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			}
 
 			s.updateSchedule(ctx)
+			s.onScheduleUpdated()
 
 		case <-ctx.Done():
 			return nil
