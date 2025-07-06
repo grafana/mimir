@@ -79,6 +79,44 @@ func TestConsumerGroupCommand_commitOffset_copyOffset_listOffsets(t *testing.T) 
 	assert.Regexp(t, expectedLineRegexpByComponents("Topic:", topic, "Partition:", "2", "Offset:", "200"), printer.Lines[1])
 }
 
+func TestConsumerGroupCommand_deleteOffset(t *testing.T) {
+	const (
+		numPartitions = 3
+		topic         = "test"
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic)
+	clientProvider, err := createKafkaClientProvider(t, clusterAddr, "")
+	require.NoError(t, err)
+
+	app := newTestApp()
+	_, printer := newTestConsumerGroupCommand(app, clientProvider)
+
+	// Commit some offsets.
+	_, err = app.Parse([]string{"consumer-group", "commit-offset", "--group", "consumer-group-1", "--topic", topic, "--partition", "1", "--offset", "100"})
+	require.NoError(t, err)
+	require.Len(t, printer.Lines, 1)
+	assert.Contains(t, printer.Lines[0], "successfully committed offset 100")
+
+	printer.Reset()
+	_, err = app.Parse([]string{"consumer-group", "commit-offset", "--group", "consumer-group-1", "--topic", topic, "--partition", "1", "--offset", "200"})
+	require.NoError(t, err)
+	require.Len(t, printer.Lines, 1)
+	assert.Contains(t, printer.Lines[0], "successfully committed offset 200")
+
+	// Delete the offsets.
+	printer.Reset()
+	_, err = app.Parse([]string{"consumer-group", "delete-offsets", "--group", "consumer-group-1", "--topic", topic, "--partition", "1"})
+	require.NoError(t, err)
+	require.Len(t, printer.Lines, 1)
+
+	// List offsets to verify deletion.
+	printer.Reset()
+	_, err = app.Parse([]string{"consumer-group", "list-offsets", "--group", "consumer-group-1"})
+	require.NoError(t, err)
+	require.Len(t, printer.Lines, 0)
+}
+
 func newTestConsumerGroupCommand(app *kingpin.Application, getKafkaClient func() *kgo.Client) (*ConsumerGroupCommand, *BufferedPrinter) {
 	printer := &BufferedPrinter{}
 
