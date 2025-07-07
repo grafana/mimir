@@ -4082,3 +4082,36 @@ func (s *synchronisingQuerier) Select(ctx context.Context, sortSeries bool, hint
 func (s *synchronisingQuerier) Close() error {
 	return s.inner.Close()
 }
+
+func TestInstantQueryDurationExpression(t *testing.T) {
+	// promqltest's "check an instant query works as a range query" behaviour makes it difficult to test step() in an instant query, so we do it here instead.
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1ms
+			some_metric 0+1x300
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := NewTestEngineOpts()
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	expr := "count_over_time(some_metric[step()+1ms])"
+	ts := timestamp.Time(0).Add(5 * time.Millisecond)
+
+	prometheusQuery, err := prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, ts)
+	require.NoError(t, err)
+	prometheusResult := prometheusQuery.Exec(ctx)
+	require.NoError(t, prometheusResult.Err)
+	t.Cleanup(prometheusQuery.Close)
+
+	mimirQuery, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, ts)
+	require.NoError(t, err)
+	mimirResult := mimirQuery.Exec(ctx)
+	require.NoError(t, mimirResult.Err)
+	t.Cleanup(mimirQuery.Close)
+
+	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
+}
