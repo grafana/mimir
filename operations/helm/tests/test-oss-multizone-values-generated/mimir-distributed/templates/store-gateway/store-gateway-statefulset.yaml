@@ -167,6 +167,7 @@ metadata:
     zone: zone-b
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/rollout-downscale-leader: test-oss-multizone-values-mimir-store-gateway-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -319,6 +320,7 @@ metadata:
     zone: zone-c
   annotations:
     rollout-max-unavailable: "50"
+    grafana.com/rollout-downscale-leader: test-oss-multizone-values-mimir-store-gateway-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady

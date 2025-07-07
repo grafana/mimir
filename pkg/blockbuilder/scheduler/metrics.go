@@ -18,6 +18,7 @@ type schedulerMetrics struct {
 	assignedJobs             prometheus.Gauge
 	pendingJobs              *prometheus.GaugeVec
 	persistentJobFailures    prometheus.Counter
+	jobGapDetected           *prometheus.CounterVec
 }
 
 func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
@@ -64,5 +65,9 @@ func newSchedulerMetrics(reg prometheus.Registerer) schedulerMetrics {
 			Name: "cortex_blockbuilder_scheduler_pending_jobs",
 			Help: "The number of jobs in the pending queues.",
 		}, []string{"partition"}),
+		jobGapDetected: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_blockbuilder_scheduler_job_gap_detected",
+			Help: "The number of times an unexpected gap was detected between jobs.",
+		}, []string{"offset_type", "partition"}),
 	}
 }
