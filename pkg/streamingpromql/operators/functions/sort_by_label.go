@@ -55,9 +55,13 @@ func (s *SortByLabel) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	// Store the original indexes of each piece of metadata and then sort them alongside
 	// the metadata. This allows us to return series in sorted order when requesting them
 	// from the inner operator by their original index.
-	indexes := make([]int, len(innerMetadata))
-	for i := range indexes {
-		indexes[i] = i
+	indexes, err := types.IntSlicePool.Get(len(innerMetadata), s.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < len(innerMetadata); i++ {
+		indexes = append(indexes, i)
 	}
 
 	sort.Sort(&sortableMetadata{
@@ -146,7 +150,12 @@ func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) 
 }
 
 func (s *SortByLabel) Close() {
-	// Closing the buffer also closes its source operator which is our `inner`.
-	s.buffer.Close()
-	s.originalIndexes = nil
+	if s.buffer != nil {
+		// Closing the buffer also closes its source operator which is our `inner`.
+		s.buffer.Close()
+	}
+	// If the buffer hasn't been initialized yet, we still need to close `inner`
+	// ourselves. It's safe to call Close on operators multiple times.
+	s.inner.Close()
+	types.IntSlicePool.Put(&s.originalIndexes, s.memoryConsumptionTracker)
 }
