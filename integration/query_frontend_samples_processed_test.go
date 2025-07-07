@@ -77,7 +77,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_gap_in_front_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-30*time.Minute), "test_gap_before_end_series")
 			},
 		},
 		{
@@ -264,8 +264,8 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-5 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_gap_in_front_behind_and_inside_series")
-				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-10*time.Minute), "test_gap_in_front_behind_and_inside_series")
+				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_gap_before_end_after_start_and_inside_series")
+				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-10*time.Minute), "test_gap_before_end_after_start_and_inside_series")
 			},
 		},
 	}
