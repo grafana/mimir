@@ -711,7 +711,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, earlies
 			TimestampMs: timestamp.UnixMilli(),
 		})
 	}
-	if len(ts.Samples) == 0 || ts.Samples[len(ts.Samples)-1].Timestamp < latestTimestamp.UnixMilli() {
+	if len(ts.Samples) == 0 || ts.Samples[len(ts.Samples)-1].TimestampMs < latestTimestamp.UnixMilli() {
 		ts.Samples = append(ts.Samples, mimirpb.Sample{
 			Value:       float64(1),
 			TimestampMs: latestTimestamp.UnixMilli(),
