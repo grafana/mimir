@@ -8,7 +8,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
-	"github.com/grafana/mimir/pkg/usagetracker/dynamictenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
@@ -20,15 +19,8 @@ func BenchmarkTenantShard(b *testing.B) {
 				series[i] = rand.Uint64() << 7
 			}
 
-			b.Run("impl=tenantshard", func(b *testing.B) {
-				m := tenantshard.New(uint32(len(series)), 0, tenantshard.Shards)
-				benchmarkWithSeries(b, m, series)
-			})
-
-			b.Run("impl=dynamictenantshard", func(b *testing.B) {
-				m := dynamictenantshard.New(uint32(len(series)))
-				benchmarkWithSeries(b, m, series)
-			})
+			m := tenantshard.New(uint32(len(series)))
+			benchmarkWithSeries(b, m, series)
 		})
 	}
 }

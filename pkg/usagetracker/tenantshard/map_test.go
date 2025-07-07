@@ -16,10 +16,10 @@ func TestMap(t *testing.T) {
 	series := atomic.NewUint64(0)
 	const events = 5
 	const seriesPerEvent = 5
-	limit := atomic.NewUint64(events * seriesPerEvent)
+	limit := atomic.NewUint64(uint64(events * seriesPerEvent))
 
 	// Start small, let rehashing happen.
-	m := New(seriesPerEvent, 0, Shards)
+	m := New(seriesPerEvent)
 
 	storedValues := map[uint64]clock.Minutes{}
 	for i := 1; i <= events; i++ {
@@ -66,11 +66,14 @@ func TestMap(t *testing.T) {
 func TestMapValues(t *testing.T) {
 	const count = 10e3
 	stored := map[uint64]clock.Minutes{}
-	m := New(100, 0, Shards)
+	m := New(100)
 	total := atomic.NewUint64(0)
 	for i := 0; i < count; i++ {
-		key := rand.Uint64() &^ valueMask // we can only store values of this shard.
-		val := clock.Minutes(i) % valueMask
+		key := rand.Uint64()
+		val := clock.Minutes(i)
+		if val == 0xff {
+			continue
+		}
 		stored[key] = val
 		m.Put(key, val, total, nil, false)
 	}
