@@ -14,11 +14,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -74,6 +76,16 @@ type partitionHandler struct {
 
 	pendingCreatedSeriesMarshaledEvents chan []byte
 
+	eventFetchFailures prometheus.Counter
+
+	seriesCreatedEventsReceived        prometheus.Counter
+	seriesCreatedEventsTotalErrors     *prometheus.CounterVec
+	seriesCreatedEventsPublishFailures prometheus.Counter
+
+	snapshotEventsReceived        prometheus.Counter
+	snapshotEventsTotalErrors     *prometheus.CounterVec
+	snapshotEventsPublishFailures prometheus.Counter
+
 	// Dependencies.
 	subservicesWatcher *services.FailureWatcher
 
@@ -114,6 +126,37 @@ func newPartitionHandler(
 		snapshotsFromEvents:  make(chan *usagetrackerpb.SnapshotEvent, shards),
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
+
+		eventFetchFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_event_fetch_failures_total",
+			Help: "Total number of failures while fetching events from Kafka.",
+		}),
+
+		seriesCreatedEventsReceived: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_series_created_events_received_total",
+			Help: "Total number of series created events received from Kafka.",
+		}),
+		seriesCreatedEventsTotalErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_series_created_events_errors_total",
+			Help: "Total number of errors while processing series created events from Kafka.",
+		}, []string{"error"}),
+		seriesCreatedEventsPublishFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_series_created_events_publish_failures_total",
+			Help: "Total number of failures while publishing series created events to Kafka.",
+		}),
+
+		snapshotEventsReceived: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_snapshot_events_received_total",
+			Help: "Total number of snapshot events received from Kafka.",
+		}),
+		snapshotEventsTotalErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_snapshot_events_errors_total",
+			Help: "Total number of errors while processing snapshot events from Kafka.",
+		}, []string{"error"}),
+		snapshotEventsPublishFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_snapshot_events_publish_failures_total",
+			Help: "Total number of failures while publishing snapshot events to Kafka.",
+		}),
 
 		instanceIDBytes: []byte(cfg.InstanceRing.InstanceID),
 	}
@@ -256,29 +299,21 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 	go func() {
 		defer close(downloaded)
 		t0 := time.Now()
+		buf := new(bytes.Buffer)
 		for _, filename := range files {
-			// TODO: Maybe retry with backoff here?
-			rc, err := p.snapshotsBucket.Get(ctx, filename)
+			n, err := p.loadSnapshotIntoBufferWithBackoff(ctx, filename, buf)
 			if err != nil {
-				errs <- errors.Wrapf(err, "failed to get snapshot file %s from bucket %s", filename, p.snapshotsBucket.Name())
+				errs <- errors.Wrapf(err, "failed to load snapshot file %s from bucket %s", filename, p.snapshotsBucket.Name())
 				return
 			}
-			data, err := io.ReadAll(rc)
-			if err != nil {
-				errs <- errors.Wrapf(err, "failed to read snapshot file %s from bucket %s", filename, p.snapshotsBucket.Name())
-				return
-			}
-			if err := rc.Close(); err != nil {
-				errs <- errors.Wrapf(err, "failed to close snapshot file %s from bucket %s", filename, p.snapshotsBucket.Name())
-				return
-			}
+
 			var file usagetrackerpb.SnapshotFile
-			if err := file.Unmarshal(data); err != nil {
+			if err := file.Unmarshal(buf.Bytes()); err != nil {
 				errs <- errors.Wrapf(err, "failed to unmarshal snapshot file %s from bucket %s", filename, p.snapshotsBucket.Name())
 				return
 			}
 
-			level.Info(p.logger).Log("msg", "downloaded first snapshot file", "filename", filename, "elapsed", time.Since(t0), "bytes", len(data))
+			level.Info(p.logger).Log("msg", "downloaded first snapshot file", "filename", filename, "elapsed", time.Since(t0), "bytes", n)
 			select {
 			case downloaded <- downloadedSnapshot{filename, file.Data}:
 			case <-ctx.Done():
@@ -297,6 +332,37 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 		}
 		return err
 	}
+}
+
+func (p *partitionHandler) loadSnapshotIntoBufferWithBackoff(ctx context.Context, filename string, buf *bytes.Buffer) (int64, error) {
+	backoff := backoff.New(ctx, p.cfg.SnapshotsLoadBackoff)
+	var err error
+	for backoff.Ongoing() {
+		var rc io.ReadCloser
+		rc, err = p.snapshotsBucket.Get(ctx, filename)
+		if err != nil {
+			level.Error(p.logger).Log("msg", "failed to get snapshot file from bucket", "filename", filename, "err", err, "retries", backoff.NumRetries())
+			err = errors.Wrapf(err, "failed to get snapshot file %s from bucket %s (%d retries)", filename, p.snapshotsBucket.Name(), backoff.NumRetries())
+			backoff.Wait()
+			continue
+		}
+		buf.Reset()
+		var n int64
+		n, err = buf.ReadFrom(rc)
+		if err != nil {
+			level.Error(p.logger).Log("msg", "failed to read snapshot file from bucket", "filename", filename, "err", err, "retries", backoff.NumRetries())
+			err = errors.Wrapf(err, "failed to read snapshot file %s from bucket %s (%d retries)", filename, p.snapshotsBucket.Name(), backoff.NumRetries())
+			backoff.Wait()
+			continue
+		}
+		if err := rc.Close(); err != nil {
+			level.Error(p.logger).Log("msg", "failed to close snapshot file from bucket", "filename", filename, "err", err, "retries", backoff.NumRetries())
+			// Retrying here would only make the situation worse.
+		}
+
+		return n, nil
+	}
+	return 0, fmt.Errorf("%w (%s)", err, backoff.Err())
 }
 
 func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) error {
@@ -351,7 +417,7 @@ func (p *partitionHandler) loadEvents(ctx context.Context, eventsOffset int64) e
 	lastEventOffset := int64(-1)
 	for lastEventOffset < lastExpectedEventOffset && ctx.Err() == nil {
 		pollCtx, cancel := context.WithTimeout(ctx, time.Second)
-		fetches := p.eventsKafkaReader.PollRecords(pollCtx, p.cfg.MaxEventsFetchSize) // TODO: maybe configure the max amount of records to fetch here?
+		fetches := p.eventsKafkaReader.PollRecords(pollCtx, p.cfg.MaxEventsFetchSize)
 		cancel()
 
 		if err := fetches.Err(); err != nil {
@@ -429,10 +495,11 @@ func (p *partitionHandler) consumeEvents(ctx context.Context) {
 		fetches := p.eventsKafkaReader.PollRecords(ctx, p.cfg.MaxEventsFetchSize)
 		fetches.EachError(func(_ string, part int32, err error) {
 			if !errors.Is(err, context.Canceled) { // Ignore when we're shutting down.
-				// TODO: observability? Handle this?
-				level.Error(p.logger).Log("msg", "failed to fetch records", "fetch_partition", part, "err", err)
+				p.eventFetchFailures.Inc()
+				level.Error(p.logger).Log("msg", "failed to fetch event records", "fetch_partition", part, "err", err)
 			}
 		})
+
 		fetches.EachRecord(func(r *kgo.Record) {
 			instanceID, eventType, err := eventRecordHeaders(r)
 			if err != nil {
@@ -457,9 +524,11 @@ func (p *partitionHandler) consumeEvents(ctx context.Context) {
 }
 
 func (p *partitionHandler) processSeriesCreatedEventRecord(r *kgo.Record) {
+	p.seriesCreatedEventsReceived.Inc()
+
 	var ev usagetrackerpb.SeriesCreatedEvent
 	if err := ev.Unmarshal(r.Value); err != nil {
-		// TODO increment a metric here, alert on it.
+		p.seriesCreatedEventsTotalErrors.WithLabelValues("unmarshal").Inc()
 		level.Error(p.logger).Log("msg", "failed to unmarshal series created event", "err", err, "offset", r.Offset, "value_len", len(r.Value))
 		return
 	}
@@ -470,7 +539,7 @@ func (p *partitionHandler) processSeriesCreatedEventRecord(r *kgo.Record) {
 
 func (p *partitionHandler) processSnapshotEventSync(ctx context.Context, r *kgo.Record) {
 	p.processSnapshotEvent(r, func(ev *usagetrackerpb.SnapshotEvent) {
-		p.loadSnapshot(ctx, ev)
+		p.loadSnapshot(ctx, ev, new(bytes.Buffer))
 	})
 }
 
@@ -494,7 +563,7 @@ func (p *partitionHandler) processSnapshotEvent(r *kgo.Record, process func(even
 
 	var ev usagetrackerpb.SnapshotEvent
 	if err := ev.Unmarshal(r.Value); err != nil {
-		// TODO increment a metric here, alert on it.
+		p.snapshotEventsTotalErrors.WithLabelValues("unmarshal_event").Inc()
 		level.Error(p.logger).Log("msg", "failed to unmarshal shard snapshot event", "err", err, "offset", r.Offset, "value_len", len(r.Value))
 		return
 	}
@@ -510,55 +579,47 @@ func (p *partitionHandler) processSnapshotEvent(r *kgo.Record, process func(even
 }
 
 func (p *partitionHandler) loadSnapshotsFromEvents(ctx context.Context) {
+	buf := bytes.NewBuffer(nil)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case r := <-p.snapshotsFromEvents:
-			p.loadSnapshot(ctx, r)
+			p.loadSnapshot(ctx, r, buf)
 		}
 	}
 }
 
-func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.SnapshotEvent) {
+func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.SnapshotEvent, buf *bytes.Buffer) {
+	p.snapshotEventsReceived.Inc()
+
 	t0 := time.Now()
-	rc, err := p.snapshotsBucket.Get(ctx, r.Filename)
+	n, err := p.loadSnapshotIntoBufferWithBackoff(ctx, r.Filename, buf)
 	if err != nil {
-		// TODO increment a metric here, alert on it.
-		level.Error(p.logger).Log("msg", "failed to get snapshot file from bucket", "filename", r.Filename, "err", err)
-		return
-	}
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		// TODO increment a metric here, alert on it.
-		level.Error(p.logger).Log("msg", "failed to read snapshot file from bucket", "filename", r.Filename, "err", err)
+		p.snapshotEventsTotalErrors.WithLabelValues("download").Inc()
+		level.Error(p.logger).Log("msg", "failed to load snapshot file", "filename", r.Filename, "err", err)
 		return
 	}
 
-	if err := rc.Close(); err != nil {
-		// TODO increment a metric here, alert on it.
-		level.Error(p.logger).Log("msg", "failed to close snapshot file from bucket", "filename", r.Filename, "err", err)
-		return
-	}
 	td := time.Now()
 
 	var file usagetrackerpb.SnapshotFile
-	if err := file.Unmarshal(data); err != nil {
-		// TODO increment a metric here, alert on it.
+	if err := file.Unmarshal(buf.Bytes()); err != nil {
+		p.snapshotEventsTotalErrors.WithLabelValues("unmarshal_file").Inc()
 		level.Error(p.logger).Log("msg", "failed to unmarshal snapshot file", "filename", r.Filename, "err", err)
 		return
 	}
 
 	for i, data := range file.Data {
 		if err := p.store.loadSnapshot(data, time.Now()); err != nil {
-			// TODO increment a metric here, alert on it.
+			p.snapshotEventsTotalErrors.WithLabelValues("load").Inc()
 			level.Error(p.logger).Log("msg", "failed to load snapshot data", "filename", r.Filename, "shard_index", i, "err", err)
 			return
 		}
 		level.Debug(p.logger).Log("msg", "loaded snapshot shard", "filename", r.Filename, "shard_index", i, "bytes", len(data))
 	}
 
-	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", len(data), "elapsed_download", time.Since(t0), "elapsed_total", time.Since(td))
+	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", n, "elapsed_download", time.Since(t0), "elapsed_total", time.Since(td))
 }
 
 func (p *partitionHandler) publishSeriesCreatedEvents(ctx context.Context) {
@@ -572,12 +633,11 @@ func (p *partitionHandler) publishSeriesCreatedEvents(ctx context.Context) {
 		wg.Go(func() {
 			for batch := range publish {
 				level.Debug(p.logger).Log("msg", "producing batch of series created events", "size", len(batch))
-				// TODO: maybe use a slightly longer-deadline context here, to avoid dropping the pending events from the queue?
 				// TODO: make sure we don't send the traceparent header here.
 				res := p.eventsKafkaWriter.ProduceSync(ctx, batch...)
 				for _, r := range res {
 					if r.Err != nil {
-						// TODO: what should we do here?
+						p.seriesCreatedEventsPublishFailures.Inc()
 						level.Error(p.logger).Log("msg", "failed to publish series created event", "err", r.Err)
 						continue
 					}
@@ -657,7 +717,7 @@ func (p *partitionHandler) publishSnapshots(ctx context.Context) {
 			return
 		case <-time.After(delay):
 			if err := p.publishSnapshot(ctx); err != nil {
-				// TODO: increment a metric and alert on it.
+				p.snapshotEventsPublishFailures.Inc()
 				level.Error(p.logger).Log("msg", "failed to publish snapshot", "err", err)
 			}
 		}

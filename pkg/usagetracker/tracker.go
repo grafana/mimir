@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -62,6 +63,7 @@ type Config struct {
 	SnapshotsMetadataWriter ingest.KafkaConfig `yaml:"snapshots_metadata_writer"`
 	SnapshotsMetadataReader ingest.KafkaConfig `yaml:"snapshots_metadata_reader"`
 	SnapshotsStorage        bucket.Config      `yaml:"snapshots_storage"`
+	SnapshotsLoadBackoff    backoff.Config     `yaml:"snapshots_load_backoff"`
 
 	IdleTimeout                           time.Duration `yaml:"idle_timeout"`
 	CreatedSeriesEventsMaxPending         int           `yaml:"max_pending_created_series_events"`
@@ -96,6 +98,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.SnapshotsMetadataReader.RegisterFlagsWithPrefix("usage-tracker.snapshots-metadata.reader.", f)
 
 	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshot-storage.", "usagetrackersnapshots", f)
+	c.SnapshotsLoadBackoff.RegisterFlagsWithPrefix("usage-tracker.snapshots-load-backoff", f)
 
 	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
 	f.IntVar(&c.CreatedSeriesEventsMaxPending, "usage-tracker.created-series-events-max-pending", 10_000, "Maximum number of pending created series events waiting to be published.")
@@ -265,23 +268,23 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 	// Only instance 0 performs cleanups of the snapshots bucket, it doesn't make sense to export the metric on the rest of the instances.
 	if t.shouldPerformCleanups() {
 		t.snapshotCleanupsTotal = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "mimir_usage_tracker_snapshot_cleanups_total",
+			Name: "cortex_usage_tracker_snapshot_cleanups_total",
 			Help: "Total number of performed snapshots cleanups.",
 		})
 		t.snapshotCleanupsFailed = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "mimir_usage_tracker_snapshot_cleanups_failed_total",
+			Name: "cortex_usage_tracker_snapshot_cleanups_failed_total",
 			Help: "Total number of snapshots cleanups that failed.",
 		})
 		t.snapshotCleanupsFailedFiles = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "mimir_usage_tracker_snapshot_cleanups_failed_files_total",
+			Name: "cortex_usage_tracker_snapshot_cleanups_failed_files_total",
 			Help: "Total number of files that failed to be deleted during snapshots cleanup.",
 		})
 		t.snapshotCleanupsDeletedFiles = promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "mimir_usage_tracker_snapshot_cleanups_deleted_files_total",
+			Name: "cortex_usage_tracker_snapshot_cleanups_deleted_files_total",
 			Help: "Total number of snapshots deleted during snapshots cleanup.",
 		})
 		t.snapshotsRemainingInTheBucket = promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
-			Name: "mimir_usage_tracker_snapshots_remaining_in_the_bucket",
+			Name: "cortex_usage_tracker_snapshots_remaining_in_the_bucket",
 			Help: "Number of snapshots remaining in the bucket.",
 		})
 		t.snapshotsRemainingInTheBucket.Set(-1) // We don't know yet.
