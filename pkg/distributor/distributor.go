@@ -1230,7 +1230,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+		pushReq.group = d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
@@ -1295,7 +1295,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			rawSamples := len(ts.Samples)
 			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1392,7 +1392,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			if len(req.Timeseries) > 0 {
 				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(validatedSamples), reasonRateLimited, now)
 			}
-			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
+			d.discardedSamplesRateLimited.WithLabelValues(userID, pushReq.group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 
@@ -1491,8 +1491,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 			req.Timeseries = req.Timeseries[:o]
 
-			// TODO this metric should be tracked by "group"
-			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, "").Add(float64(discardedSamples))
+			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
 		}
 
 		// TODO inject the soft error in the response

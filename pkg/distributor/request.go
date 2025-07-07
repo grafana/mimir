@@ -24,6 +24,9 @@ type Request struct {
 	request *mimirpb.WriteRequest
 	err     error
 
+	// group is the value of the configured `group` label for the customer metrics.
+	group string
+
 	// artificialDelay is the artificial delay for the request.
 	// Negative values are treated as "not set".
 	artificialDelay time.Duration
