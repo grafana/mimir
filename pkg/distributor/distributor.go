@@ -101,7 +101,7 @@ const (
 	// Multiplier used to estimate the decompressed size from compressed size of an incoming request. It prevents
 	// decompressing requests when the distributor is near the inflight bytes limit and the uncompressed request
 	// will likely exceed the limit.
-	decompressionEstMultiplier = 6
+	decompressionEstMultiplier = 8
 )
 
 // Distributor forwards appends and queries to individual ingesters.
