@@ -38,29 +38,32 @@ func (b *SeriesDataRingBuffer) Append(d types.InstantVectorSeriesData, seriesInd
 	b.seriesCount++
 }
 
+// Remove removes and returns the first series in the buffer, and panics if that is not the series with index seriesIndex.
 func (b *SeriesDataRingBuffer) Remove(seriesIndex int) types.InstantVectorSeriesData {
 	if b.seriesCount == 0 {
 		panic(fmt.Sprintf("attempted to remove series at index %v, but buffer is empty", seriesIndex))
 	}
 
-	if seriesIndex < b.firstSeriesIndex || seriesIndex >= (b.firstSeriesIndex+b.seriesCount) {
+	if seriesIndex != b.firstSeriesIndex {
 		panic(fmt.Sprintf("attempted to remove series at index %v, but have series from index %v to %v", seriesIndex, b.firstSeriesIndex, b.firstSeriesIndex+b.seriesCount-1))
 	}
 
 	idx := b.startIndex % len(b.data)
 	d := b.data[idx]
 	b.data[idx] = types.InstantVectorSeriesData{} // Clear the slot.
-	b.startIndex++
+	b.startIndex = (b.startIndex + 1) % len(b.data)
 	b.firstSeriesIndex++
 	b.seriesCount--
 
-	if b.startIndex > len(b.data) || b.seriesCount == 0 {
+	if b.seriesCount == 0 {
 		b.startIndex = 0
 	}
 
 	return d
 }
 
+// RemoveFirst removes and returns the first series in the buffer.
+// Calling RemoveFirst on an empty buffer panics.
 func (b *SeriesDataRingBuffer) RemoveFirst() types.InstantVectorSeriesData {
 	if b.seriesCount == 0 {
 		panic("attempted to remove first series of empty buffer")
