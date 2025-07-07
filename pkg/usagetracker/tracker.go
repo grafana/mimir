@@ -625,7 +625,7 @@ func (t *UsageTracker) instancesServingPartitions() int32 {
 }
 
 func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
-	globalLimit := t.overrides.MaxGlobalSeriesPerUser(userID) // TODO: use a new active series limit.
+	globalLimit := t.overrides.MaxActiveSeriesPerUser(userID)
 	if globalLimit <= 0 {
 		return 0
 	}
