@@ -211,11 +211,11 @@ func (e *OptimizationPass) applyDeduplication(ctx context.Context, group []*path
 
 	// We only want to deduplicate instant vectors.
 	if resultType == parser.ValueTypeVector {
-		skipLongerExpressions, err = e.introduceDuplicateNode(ctx, group, duplicatePathLength)
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// If we've identified a subquery is duplicated (but not the function that encloses it), we don't want to deduplicate
 		// the subquery itself, but we do want to deduplicate the inner expression of the subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(ctx, group, duplicatePathLength-1)
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
 	} else {
 		// Duplicated range vector selector, but the function that encloses each instance isn't the same (or isn't the same on all paths).
 		pathsEliminated = 0
@@ -253,7 +253,7 @@ func (e *OptimizationPass) applyDeduplication(ctx context.Context, group []*path
 
 // introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
 // If a Duplicate node already exists at the expected location, then introduceDuplicateNode does not introduce a new node and returns true.
-func (e *OptimizationPass) introduceDuplicateNode(ctx context.Context, group []*path, duplicatePathLength int) (skipLongerExpressions bool, err error) {
+func (e *OptimizationPass) introduceDuplicateNode(group []*path, duplicatePathLength int) (skipLongerExpressions bool, err error) {
 	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
 	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
 	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
