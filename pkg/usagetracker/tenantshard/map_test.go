@@ -25,7 +25,7 @@ func TestMap(t *testing.T) {
 	for i := 1; i <= events; i++ {
 		refs := make([]uint64, seriesPerEvent)
 		for j := range refs {
-			refs[j] = uint64((i*100 + j) << valueBits)
+			refs[j] = uint64(i*100 + j)
 			storedValues[refs[j]] = clock.Minutes(i)
 			created, rejected := m.Put(refs[j], clock.Minutes(i), series, limit, false)
 			require.True(t, created)
@@ -38,7 +38,7 @@ func TestMap(t *testing.T) {
 
 	{
 		// No more series will fit.
-		created, rejected := m.Put(uint64(65535)<<valueBits, 1, series, limit, true)
+		created, rejected := m.Put(uint64(65535), 1, series, limit, true)
 		require.False(t, created)
 		require.True(t, rejected)
 	}

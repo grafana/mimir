@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	valueBits = 7
+	indexEntryBits = 7
 )
 
 // Map is an open-addressing hash map based on Abseil's flat_hash_map.
@@ -161,10 +161,10 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
-	datas, ks, indices := m.data, m.keys, m.index
-	m.data = make([]data, n)
-	m.keys = make([]keys, n)
+	indices, ks, datas := m.index, m.keys, m.data
 	m.index = make([]index, n)
+	m.keys = make([]keys, n)
+	m.data = make([]data, n)
 	m.limit = n * maxAvgGroupLoad
 	m.resident, m.dead = 0, 0
 	for g := range indices {
@@ -192,13 +192,13 @@ func numGroups(n uint32) (groups uint32) {
 // prefix is the upper 7 bits plus two, suffix is the lower 57 bits.
 // By adding 2 to the prefix, it ensures that prefix is never uint8(0) or uint8(1).
 func splitHash(h uint64) (prefix, suffix) {
-	return prefix(h>>(64-valueBits)) + prefixOffset, suffix(h << valueBits >> valueBits)
+	return prefix(h>>(64-indexEntryBits)) + prefixOffset, suffix(h << indexEntryBits >> indexEntryBits)
 }
 
 func probeStart(s suffix, groups int) uint32 {
-	// ignore the lower |valueBits| bits for probing as they're always the same in this shard.
+	// ignore the lower bits for probing as they're always the same in this shard.
 	// We're going to convert it to uint32 anyway, so we don't really care.
-	return fastModN(uint32(s>>valueBits), uint32(groups))
+	return fastModN(uint32(s>>8), uint32(groups))
 }
 
 // lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
