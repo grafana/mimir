@@ -73,7 +73,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:       "series with gap before the end of the query range",
-			query:      "test_gap_in_front_series",
+			query:      "test_gap_before_end_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
@@ -82,11 +82,11 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		},
 		{
 			name:       "series with gap after the start of the query range",
-			query:      "test_gap_behind_series",
+			query:      "test_gap_after_start_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-20 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-20*time.Minute), "test_gap_behind_series")
+				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-20*time.Minute), "test_gap_after_start_series")
 			},
 		},
 		{
@@ -102,12 +102,12 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenWholeQueryIsCached(t 
 		{
 			name: "series with gap after the start, before the end and inside of a query range",
 
-			query:      "test_gap_in_front_behind_and_inside_series",
+			query:      "test_gap_before_end_after_start_and_inside_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-10 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_gap_in_front_behind_and_inside_series")
-				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-20*time.Minute), "test_gap_in_front_behind_and_inside_series")
+				pushSeries(t, writeClient, now.Add(-50*time.Minute), now.Add(-40*time.Minute), "test_gap_before_end_after_start_and_inside_series")
+				pushSeries(t, writeClient, now.Add(-30*time.Minute), now.Add(-20*time.Minute), "test_gap_before_end_after_start_and_inside_series")
 			},
 		},
 	}
@@ -232,20 +232,20 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:       "series with gap before the end of the query range",
-			query:      "test_gap_in_front_series",
+			query:      "test_gap_before_end_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now,
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-5*time.Minute), "test_gap_in_front_series")
+				pushSeries(t, writeClient, now.Add(-60*time.Minute), now.Add(-5*time.Minute), "test_gap_before_end_series")
 			},
 		},
 		{
 			name:       "series with gap after the start of the query range",
-			query:      "test_gap_behind_series",
+			query:      "test_gap_after_start_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now,
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
-				pushSeries(t, writeClient, now.Add(-15*time.Minute), now, "test_gap_behind_series")
+				pushSeries(t, writeClient, now.Add(-15*time.Minute), now, "test_gap_after_start_series")
 			},
 		},
 		{
@@ -260,7 +260,7 @@ func TestQueryFrontendStatsFromResultsCacheShouldBeSameWhenQueryHitMaxCacheFresh
 		},
 		{
 			name:       "series with gap after the start, before the end and inside of a query range",
-			query:      "test_gap_in_front_behind_and_inside_series",
+			query:      "test_gap_before_end_after_start_and_inside_series",
 			queryStart: now.Add(-60 * time.Minute),
 			queryEnd:   now.Add(-5 * time.Minute),
 			setupSeries: func(t *testing.T, writeClient *e2emimir.Client) {
