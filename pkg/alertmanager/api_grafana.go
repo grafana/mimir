@@ -133,6 +133,8 @@ type UserGrafanaState struct {
 
 type PostableUserGrafanaState struct {
 	UserGrafanaState
+
+	// Deprecated: This field is not used.
 	Promoted bool `json:"promoted"`
 }
 
@@ -166,6 +168,43 @@ type successResult struct {
 type errorResult struct {
 	Status string `json:"status"`
 	Error  string `json:"error"`
+}
+
+func (am *MultitenantAlertmanager) GetUserState(w http.ResponseWriter, r *http.Request) {
+	logger := util_log.WithContext(r.Context(), am.logger)
+
+	userID, err := tenant.TenantID(r.Context())
+	if err != nil {
+		level.Error(logger).Log("msg", errNoOrgID, "err", err.Error())
+		w.WriteHeader(http.StatusUnauthorized)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errNoOrgID, err.Error())})
+		return
+	}
+
+	st, err := am.store.GetFullState(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		}
+		return
+	}
+
+	bytes, err := st.State.Marshal()
+	if err != nil {
+		level.Error(logger).Log("msg", errMarshallingState, "err", err, "user", userID)
+		w.WriteHeader(http.StatusInternalServerError)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errMarshallingState, err.Error())})
+		return
+	}
+
+	util.WriteJSONResponse(w, successResult{
+		Status: statusSuccess,
+		Data:   &UserGrafanaState{State: base64.StdEncoding.EncodeToString(bytes)},
+	})
 }
 
 func (am *MultitenantAlertmanager) GetUserGrafanaState(w http.ResponseWriter, r *http.Request) {
