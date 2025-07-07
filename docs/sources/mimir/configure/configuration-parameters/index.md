@@ -1217,43 +1217,56 @@ usage_tracker:
   snapshots_storage:
     # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
     # filesystem.
-    # CLI flag: -usage-tracker.snapshot-storage.backend
+    # CLI flag: -usage-tracker.snapshots-storage.backend
     [backend: <string> | default = "filesystem"]
 
     # The s3_backend block configures the connection to Amazon S3 object storage
     # backend.
     # The CLI flags prefix for this block configuration is:
-    # usage-tracker.snapshot-storage
+    # usage-tracker.snapshots-storage
     [s3: <s3_storage_backend>]
 
     # The gcs_backend block configures the connection to Google Cloud Storage
     # object storage backend.
     # The CLI flags prefix for this block configuration is:
-    # usage-tracker.snapshot-storage
+    # usage-tracker.snapshots-storage
     [gcs: <gcs_storage_backend>]
 
     # The azure_storage_backend block configures the connection to Azure object
     # storage backend.
     # The CLI flags prefix for this block configuration is:
-    # usage-tracker.snapshot-storage
+    # usage-tracker.snapshots-storage
     [azure: <azure_storage_backend>]
 
     # The swift_storage_backend block configures the connection to OpenStack
     # Object Storage (Swift) object storage backend.
     # The CLI flags prefix for this block configuration is:
-    # usage-tracker.snapshot-storage
+    # usage-tracker.snapshots-storage
     [swift: <swift_storage_backend>]
 
     # The filesystem_storage_backend block configures the usage of local file
     # system as object storage backend.
     # The CLI flags prefix for this block configuration is:
-    # usage-tracker.snapshot-storage
+    # usage-tracker.snapshots-storage
     [filesystem: <filesystem_storage_backend>]
 
     # Prefix for all objects stored in the backend storage. For simplicity, it
     # may only contain digits and English alphabet letters.
-    # CLI flag: -usage-tracker.snapshot-storage.storage-prefix
+    # CLI flag: -usage-tracker.snapshots-storage.storage-prefix
     [storage_prefix: <string> | default = ""]
+
+  snapshots_load_backoff:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -usage-tracker.snapshots-load-backoff.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -usage-tracker.snapshots-load-backoff.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -usage-tracker.snapshots-load-backoff.backoff-retries
+    [max_retries: <int> | default = 10]
 
   # The time after which series are considered idle and not active anymore. Must
   # be greater than 0 and less than 1 hour.
@@ -4364,6 +4377,11 @@ The `memberlist` block configures the Gossip memberlist.
 The `limits` block configures default and per-tenant limits imposed by components.
 
 ```yaml
+# Maximum number of active series per user. 0 means no limit. This limit only
+# applies with ingest storage enabled.
+# CLI flag: -distributor.max-active-series-per-user
+[max_active_series_per_user: <int> | default = 0]
+
 # Per-tenant push request rate limit in requests per second. 0 to disable.
 # CLI flag: -distributor.request-rate-limit
 [request_rate: <float> | default = 0]
@@ -6647,7 +6665,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
-- `usage-tracker.snapshot-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -6823,7 +6841,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
-- `usage-tracker.snapshot-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -6914,7 +6932,7 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
-- `usage-tracker.snapshot-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -7021,7 +7039,7 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
-- `usage-tracker.snapshot-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 
@@ -7123,7 +7141,7 @@ The `filesystem_storage_backend` block configures the usage of local file system
 - `blocks-storage`
 - `common.storage`
 - `ruler-storage`
-- `usage-tracker.snapshot-storage`
+- `usage-tracker.snapshots-storage`
 
 &nbsp;
 

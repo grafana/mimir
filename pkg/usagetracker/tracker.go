@@ -97,7 +97,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.SnapshotsMetadataWriter.RegisterFlagsWithPrefix("usage-tracker.snapshots-metadata.writer.", f)
 	c.SnapshotsMetadataReader.RegisterFlagsWithPrefix("usage-tracker.snapshots-metadata.reader.", f)
 
-	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshot-storage.", "usagetrackersnapshots", f)
+	c.SnapshotsStorage.RegisterFlagsWithPrefixAndDefaultDirectory("usage-tracker.snapshots-storage.", "usagetrackersnapshots", f)
 	c.SnapshotsLoadBackoff.RegisterFlagsWithPrefix("usage-tracker.snapshots-load-backoff", f)
 
 	f.DurationVar(&c.IdleTimeout, "usage-tracker.idle-timeout", 20*time.Minute, "The time after which series are considered idle and not active anymore. Must be greater than 0 and less than 1 hour.")
