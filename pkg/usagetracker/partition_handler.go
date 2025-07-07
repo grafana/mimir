@@ -743,7 +743,6 @@ func (p *partitionHandler) publishSnapshot(ctx context.Context) error {
 			return nil
 		}
 
-		// TODO Optimization: we could use an io.Pipe() here to avoid allocating the whole file in memory again.
 		fileData, err := file.Marshal()
 		if err != nil {
 			level.Error(p.logger).Log("msg", "failed to marshal snapshot file", "err", err)
