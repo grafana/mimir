@@ -165,6 +165,7 @@
 * [CHANGE] Enable `memberlist.abort-if-fast-join-fails` for ingesters using memberlist #11931 #11950
 * [CHANGE] Remove average per-pod series scaling trigger for ingest storage ingester HPA and use one based on max owned series instead. #11952
 * [CHANGE] Add `store_gateway_grpc_max_query_response_size_bytes` config option to set the max store-gateway gRCP query response send size (and corresponsing querier receive size), and set to 200MB by default. #11968
+* [CHANGE] Removed support for the experimental read-write deployment mode. #11974
 * [FEATURE] Make ingest storage ingester HPA behavior configurable through `_config.ingest_storage_ingester_hpa_behavior`. #11168
 * [FEATURE] Add an alternate ingest storage HPA trigger that targets maximum owned series per pod. #11356
 * [FEATURE] Make tracing of HTTP headers as span attributes configurable through `_config.trace_request_headers`. You can exclude certain headers from being traced using `_config.trace_request_exclude_headers_list`. #11655 #11714
