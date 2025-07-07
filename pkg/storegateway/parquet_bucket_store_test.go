@@ -19,7 +19,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/sharding"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -109,11 +110,80 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 		require.Contains(t, resp.Values, metricName)
 	})
 
+	t.Run("Series_NonStreaming", func(t *testing.T) {
+		req := &storepb.SeriesRequest{
+			MinTime: 0,
+			MaxTime: 100,
+			Matchers: []storepb.LabelMatcher{
+				{
+					Type:  storepb.LabelMatcher_EQ,
+					Name:  labels.MetricName,
+					Value: metricName,
+				},
+			},
+		}
+		seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		require.Len(t, seriesSet, 1)
+	})
+
+	t.Run("Series_Streaming", func(t *testing.T) {
+		req := &storepb.SeriesRequest{
+			MinTime:                  0,
+			MaxTime:                  100,
+			StreamingChunksBatchSize: 10,
+			Matchers: []storepb.LabelMatcher{
+				{
+					Type:  storepb.LabelMatcher_EQ,
+					Name:  labels.MetricName,
+					Value: metricName,
+				},
+			},
+		}
+		seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
+		require.NoError(t, err)
+		require.Empty(t, warnings)
+		require.Len(t, seriesSet, 1)
+	})
+
+	t.Run("Series_Sharding", func(t *testing.T) {
+		const shardCount = 3
+
+		seriesResultCount := 0
+		for shardID := range shardCount {
+			shardLabelValue := sharding.FormatShardIDLabelValue(uint64(shardID), shardCount)
+			req := &storepb.SeriesRequest{
+				MinTime:                  0,
+				MaxTime:                  100,
+				StreamingChunksBatchSize: 10,
+				Matchers: []storepb.LabelMatcher{
+					{
+						Type:  storepb.LabelMatcher_EQ,
+						Name:  labels.MetricName,
+						Value: metricName,
+					},
+					{
+						Type:  storepb.LabelMatcher_EQ,
+						Name:  sharding.ShardLabel,
+						Value: shardLabelValue,
+					},
+				},
+			}
+			seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
+			require.NoError(t, err)
+			require.Empty(t, warnings)
+			require.LessOrEqual(t, len(seriesSet), 1, "Expected at most one series result per shard")
+			seriesResultCount += len(seriesSet)
+		}
+		require.Equal(t, seriesResultCount, 1, "Expected only one series result across all shards")
+	})
+
 }
 
 func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Bucket) *ParquetBucketStore {
 	localDir := t.TempDir()
-	cfg := tsdb.BucketStoreConfig{
+	cfg := mimir_tsdb.BucketStoreConfig{
 		StreamingBatchSize:   1000,
 		BlockSyncConcurrency: 10,
 		IndexHeader: indexheader.Config{

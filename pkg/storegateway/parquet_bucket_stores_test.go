@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -168,7 +169,7 @@ func generateParquetStorageBlock(t *testing.T, storageDir string, bkt objstore.B
 
 }
 
-func queryParquetSeries(t *testing.T, stores *ParquetBucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
+func queryParquetSeries(t *testing.T, store storegatewaypb.StoreGatewayServer, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime:                  minT,
 		MaxTime:                  maxT,
@@ -182,8 +183,11 @@ func queryParquetSeries(t *testing.T, stores *ParquetBucketStores, userID, metri
 			Value: metricName,
 		})
 	}
+	return grpcSeries(t, setUserIDToGRPCContext(context.Background(), userID), store, req)
+}
 
-	srv := newStoreGatewayTestServer(t, stores)
-	seriesSet, warnings, _, _, err := srv.Series(setUserIDToGRPCContext(context.Background(), userID), req)
+func grpcSeries(t *testing.T, ctx context.Context, store storegatewaypb.StoreGatewayServer, req *storepb.SeriesRequest) ([]*storepb.Series, annotations.Annotations, error) {
+	srv := newStoreGatewayTestServer(t, store)
+	seriesSet, warnings, _, _, err := srv.Series(ctx, req)
 	return seriesSet, warnings, err
 }
