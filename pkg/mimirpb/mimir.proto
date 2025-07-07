@@ -56,6 +56,7 @@ enum ErrorCause {
   CIRCUIT_BREAKER_OPEN = 10;
   METHOD_NOT_ALLOWED = 11;
   TENANT_LIMIT = 12;
+  ACTIVE_SERIES_LIMITED = 13;
 }
 
 message ErrorDetails {

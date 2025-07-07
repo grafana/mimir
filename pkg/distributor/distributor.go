@@ -1494,8 +1494,21 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
 		}
 
-		// TODO inject the soft error in the response
-		return next(ctx, pushReq)
+		if len(req.Timeseries) == 0 {
+			// All series have been rejected, no need to talk to ingesters.
+			return newActiveSeriesLimitedError(d.limits.MaxActiveSeriesPerUser(userID))
+		}
+
+		// If there's an error coming from the ingesters, prioritize that one.
+		if err := next(ctx, pushReq); err != nil {
+			return err
+		}
+
+		if len(rejectedHashes) > 0 {
+			return newActiveSeriesLimitedError(d.limits.MaxActiveSeriesPerUser(userID))
+		}
+
+		return nil
 	}
 }
 

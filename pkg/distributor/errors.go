@@ -51,6 +51,11 @@ var (
 		validation.RequestRateFlag,
 		validation.RequestBurstSizeFlag,
 	)
+
+	activeSeriesLimitedMsgFormat = globalerror.MaxActiveSeries.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the active series limit, set to %d",
+		validation.MaxActiveSeriesPerUserFlag,
+	)
 )
 
 // Error is a marker interface for the errors returned by distributor.
@@ -126,6 +131,27 @@ func (e validationError) Unwrap() error {
 
 // Ensure that validationError implements Error.
 var _ Error = validationError{}
+
+func newActiveSeriesLimitedError(limit int) activeSeriesLimitedError {
+	return activeSeriesLimitedError{
+		limit: limit,
+	}
+}
+
+type activeSeriesLimitedError struct {
+	limit int
+}
+
+func (e activeSeriesLimitedError) Error() string {
+	return fmt.Sprintf(activeSeriesLimitedMsgFormat, e.limit)
+}
+
+func (e activeSeriesLimitedError) Cause() mimirpb.ErrorCause {
+	return mimirpb.ACTIVE_SERIES_LIMITED
+}
+
+// Ensure that activeSeriesLimitedError implements Error.
+var _ Error = activeSeriesLimitedError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -283,6 +309,8 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 		return codes.InvalidArgument
 	case mimirpb.TENANT_LIMIT:
 		return codes.FailedPrecondition
+	case mimirpb.ACTIVE_SERIES_LIMITED:
+		return codes.ResourceExhausted
 	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 		if serviceOverloadErrorEnabled {
 			return codes.Unavailable
@@ -302,10 +330,12 @@ func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 
 func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
 	switch errCause {
-	case mimirpb.BAD_DATA:
+	case mimirpb.BAD_DATA,
+		mimirpb.TOO_MANY_CLUSTERS,
+		mimirpb.TENANT_LIMIT,
+		mimirpb.ACTIVE_SERIES_LIMITED:
 		return http.StatusBadRequest
-	case mimirpb.TENANT_LIMIT:
-		return http.StatusBadRequest
+
 	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
@@ -314,19 +344,23 @@ func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErro
 			return StatusServiceOverloaded
 		}
 		return http.StatusTooManyRequests
+
 	case mimirpb.REPLICAS_DID_NOT_MATCH:
 		return http.StatusAccepted
-	case mimirpb.TOO_MANY_CLUSTERS:
-		return http.StatusBadRequest
+
 	case mimirpb.TSDB_UNAVAILABLE:
 		return http.StatusServiceUnavailable
+
 	case mimirpb.CIRCUIT_BREAKER_OPEN:
 		return http.StatusServiceUnavailable
+
 	case mimirpb.METHOD_NOT_ALLOWED:
 		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
 		return http.StatusNotImplemented
+		
+	default:
+		return http.StatusInternalServerError
 	}
-	return http.StatusInternalServerError
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {
