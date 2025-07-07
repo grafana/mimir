@@ -284,9 +284,10 @@ func (ls Labels) WithoutEmpty() Labels {
 }
 
 // ByteSize returns the approximate size of the labels in bytes.
-// String header size is ignored because it should be amortized to zero.
-func (ls Labels) ByteSize() int {
-	return len(ls.data)
+// String header size is ignored because it should be amortized to zero
+// because it may be shared across multiple copies of the Labels.
+func (ls Labels) ByteSize() uint64 {
+	return uint64(len(ls.data))
 }
 
 // Equal returns whether the two label sets are equal.
@@ -298,6 +299,7 @@ func Equal(ls, o Labels) bool {
 func EmptyLabels() Labels {
 	return Labels{}
 }
+
 func yoloBytes(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
@@ -370,7 +372,7 @@ func Compare(a, b Labels) int {
 	return +1
 }
 
-// Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
+// CopyFrom will copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
 func (ls *Labels) CopyFrom(b Labels) {
 	ls.data = b.data // strings are immutable
 }
@@ -616,7 +618,7 @@ func (b *ScratchBuilder) Add(name, value string) {
 	b.add = append(b.add, Label{Name: name, Value: value})
 }
 
-// Add a name/value pair, using []byte instead of string to reduce memory allocations.
+// UnsafeAddBytes adds a name/value pair using []byte instead of string to reduce memory allocations.
 // The values must remain live until Labels() is called.
 func (b *ScratchBuilder) UnsafeAddBytes(name, value []byte) {
 	b.add = append(b.add, Label{Name: yoloString(name), Value: yoloString(value)})
@@ -644,7 +646,7 @@ func (b *ScratchBuilder) Labels() Labels {
 	return b.output
 }
 
-// Write the newly-built Labels out to ls, reusing an internal buffer.
+// Overwrite will write the newly-built Labels out to ls, reusing an internal buffer.
 // Callers must ensure that there are no other references to ls, or any strings fetched from it.
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	size := labelsSize(b.add)
@@ -657,7 +659,7 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	ls.data = yoloString(b.overwriteBuffer)
 }
 
-// Symbol-table is no-op, just for api parity with dedupelabels.
+// SymbolTable is no-op, just for api parity with dedupelabels.
 type SymbolTable struct{}
 
 func NewSymbolTable() *SymbolTable { return nil }
