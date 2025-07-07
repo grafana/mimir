@@ -62,7 +62,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	paths := e.accumulatePaths(plan)
 
 	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
-	selectorsEliminated, err := e.groupAndApplyDeduplication(ctx, paths, 0)
+	selectorsEliminated, err := e.groupAndApplyDeduplication(paths, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -122,12 +122,12 @@ func (e *OptimizationPass) accumulatePath(soFar *path) []*path {
 	return paths
 }
 
-func (e *OptimizationPass) groupAndApplyDeduplication(ctx context.Context, paths []*path, offset int) (int, error) {
+func (e *OptimizationPass) groupAndApplyDeduplication(paths []*path, offset int) (int, error) {
 	groups := e.groupPaths(paths, offset)
 	totalPathsEliminated := 0
 
 	for _, group := range groups {
-		pathsEliminated, err := e.applyDeduplication(ctx, group, offset)
+		pathsEliminated, err := e.applyDeduplication(group, offset)
 		if err != nil {
 			return 0, err
 		}
@@ -195,7 +195,7 @@ func (e *OptimizationPass) groupPaths(paths []*path, offset int) [][]*path {
 
 // applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(ctx context.Context, group []*path, offset int) (int, error) {
+func (e *OptimizationPass) applyDeduplication(group []*path, offset int) (int, error) {
 	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
 
 	firstPath := group[0]
@@ -240,7 +240,7 @@ func (e *OptimizationPass) applyDeduplication(ctx context.Context, group []*path
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(ctx, group, duplicatePathLength); err != nil {
+	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
 		return 0, err
 	} else if pathsEliminated == 0 {
 		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
