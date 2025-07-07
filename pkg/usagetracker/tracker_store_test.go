@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"context"
+	math_bits "math/bits"
 	"math/rand"
 	"os"
 	"slices"
@@ -286,9 +287,6 @@ func TestTrackerStore_Snapshot_E2E(t *testing.T) {
 
 func TestTrackerStore_Snapshot_Size(t *testing.T) {
 	const idleTimeoutMinutes = 20
-	const shardBits = 7
-	require.Equal(t, shards, 1<<shardBits, "shards should be a power of 2")
-
 	now := time.Date(2020, 1, 1, 1, 2, 3, 0, time.UTC)
 
 	r := rand.NewSource(0)
@@ -302,7 +300,7 @@ func TestTrackerStore_Snapshot_Size(t *testing.T) {
 		userID := strconv.Itoa(int(r.Int63() % (1 << 16)))
 		series := make([]uint64, seriesPerUser)
 		for i := range seriesPerUser {
-			series[i] = uint64(r.Int63() << shardBits) // all on the same shard.
+			series[i] = uint64(r.Int63() << math_bits.TrailingZeros(shards)) // all on the same shard.
 		}
 
 		rejected, err := tr.trackSeries(t.Context(), userID, series, now)

@@ -17,12 +17,12 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
-	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
+	"github.com/grafana/mimir/pkg/usagetracker/dynamictenantshard"
 )
 
 var refsPool zeropool.Pool[[]uint64]
 
-const shards = tenantshard.Shards
+const shards = 16
 const noLimit = math.MaxUint64
 
 // trackerStore holds the core business logic of the usage-tracker abstracted in a testable way.
@@ -186,7 +186,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 		capacity = math.MaxUint32
 	}
 	for i := range tenant.shards {
-		tenant.shards[i] = tenantshard.New(uint32(capacity), uint8(i), shards)
+		tenant.shards[i] = dynamictenantshard.New(uint32(capacity))
 	}
 	t.tenants[tenantID] = tenant
 	tenant.RLock()
@@ -264,7 +264,7 @@ type trackedTenant struct {
 	sync.RWMutex
 	series       *atomic.Uint64
 	currentLimit *atomic.Uint64
-	shards       [shards]*tenantshard.Map
+	shards       [shards]*dynamictenantshard.Map
 }
 
 func zeroAsNoLimit(v uint64) uint64 {

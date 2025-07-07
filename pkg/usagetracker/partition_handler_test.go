@@ -83,7 +83,7 @@ func TestPartitionHandler(t *testing.T) {
 	t.Run("create and load snapshots", func(t *testing.T) {
 		for maxFileSize, expectedSnapshotFiles := range map[int]int{
 			10e3: 1,
-			1e3:  4, // If the snapshot file change, we need to update this value.
+			100:  4, // If the snapshot file change, we need to update this value.
 		} {
 			t.Run("maxFileSize="+strconv.Itoa(maxFileSize), func(t *testing.T) {
 				t.Parallel()
