@@ -120,7 +120,7 @@ func deleteConsumerGroupOffsets(adm *kadm.Client, group, topic string, partition
 		return fmt.Errorf("unable to delete committed offsets for consumer group %s, topic %s and partition %d: %w", group, topic, partitionID, err)
 	}
 
-	printer.PrintLine(fmt.Sprintf("successfully deleted comitted offsets for consumer group %s, topic %s and partition %d", group, topic, partitionID))
+	printer.PrintLine(fmt.Sprintf("successfully deleted committed offsets for consumer group %s, topic %s and partition %d", group, topic, partitionID))
 
 	return nil
 }
