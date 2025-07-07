@@ -802,6 +802,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.dedupedSamples.DeleteLabelValues(userID, group)
+	d.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID, group)
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
 	d.sampleValidationMetrics.deleteUserMetricsForGroup(userID, group)
