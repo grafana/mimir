@@ -100,7 +100,6 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			Timestamp clock.Minutes
 		}
 
-		// TODO: it's probably less-blocking to work on a cloned iterator here.
 		refs := make([]refTimestamp, 0, seriesLen)
 		for i := 0; i < seriesLen; i++ {
 			s := snapshot.Be64()
