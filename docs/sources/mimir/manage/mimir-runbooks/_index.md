@@ -1416,12 +1416,18 @@ How it **works**:
 
 - The metric exported by the ingester computes the maximum timestamp from all TSDBs open in the ingester.
 - The alert checks the metric and fires if the maximum timestamp is more than 1h in the future.
+- This alert doesn't respect the per-user creation grace period.
 
 How to **investigate**
 
-- Find the tenant with a bad sample on an affected ingester's tenants list (obtained via the `/ingester/tenants` endpoint), where a warning "TSDB Head max timestamp too far in the future" is displayed.
-- Flush the tenant's data to blocks storage.
-- Remove the tenant's directory on disk and the restart ingester.
+- Find an affected ingester pod and connect to its http API. For example, using `kubectl port-forward <pod> 8080:80`.
+- Find the tenant with a bad sample on the ingester's tenants list, which you can get through the `/ingester/tenants` endpoint. The sample should display the warning "TSDB Head max timestamp too far in the future".
+- If there are no warnings, the sample is likely within the tenant's grace interval and the alert is a false positive.
+
+If it's not a false positive:
+
+- Flush the tenant's data to blocks storage through the `/ingester/flush?wait=true&tenant=foo` endpoint.
+- Remove the tenant's directory on disk and restart the ingester.
 
 ### MimirStoreGatewayTooManyFailedOperations
 
