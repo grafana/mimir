@@ -126,7 +126,14 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), time.Duration(timeRange.IntervalMilliseconds)*time.Millisecond)
+		step := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
+
+		if timeRange.IsInstant {
+			// timeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
+			step = 0
+		}
+
+		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), step)
 	})
 
 	if err != nil {
