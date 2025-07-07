@@ -174,6 +174,7 @@
 * [ENHANCEMENT] Add `query_frontend_only_args` option to specify CLI flags that apply only to query-frontends but not ruler-query-frontends. #11799
 * [ENHANCEMENT] Make querier scale up (`$_config.autoscaling_querier_scaleup_percent_cap`) and scale down rates (`$_config.autoscaling_querier_scaledown_percent_cap`) configurable. #11862
 * [ENHANCEMENT] Set resource requests and limits for the Memcached Prometheus exporter. #11933 #11946
+* [ENHANCEMENT] Add assertion to ensure ingester ScaledObject has minimum and maximum replicas set to a value greater than 0. #11979
 * [BUGFIX] Honor `weight` argument when building memory HPA query for resource scaled objects. #11935
 
 ### Mimirtool
