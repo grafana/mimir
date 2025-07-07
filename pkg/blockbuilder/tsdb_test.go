@@ -68,59 +68,41 @@ func histogramSample(ts int64) []mimirpb.Histogram {
 }
 
 func TestTSDBBuilder(t *testing.T) {
-	userID := "user1"
-
 	ctx := t.Context()
 
-	// Set OOO window and other overrides for testing tenant.
-	limits := map[string]*validation.Limits{
-		userID: {
-			OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
-			NativeHistogramsIngestionEnabled: true,
-		},
-	}
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	processingRange := time.Hour.Milliseconds()
+	blockRange := 2 * time.Hour.Milliseconds()
 
-	// Hold samples for all cases and check for the correctness.
-	var expSamples []mimirpb.Sample
-	var expHistograms []mimirpb.Histogram
-
-	createRequest := func(userID string, samples []mimirpb.Sample, histograms []mimirpb.Histogram) *kgo.Record {
+	createRecord := func(userID string, samples []mimirpb.Sample, histograms []mimirpb.Histogram) *kgo.Record {
 		return &kgo.Record{
 			Key:   []byte(userID),
 			Value: createWriteRequest(t, "", samples, histograms),
 		}
 	}
-	addFloatSample := func(builder *TSDBBuilder, ts int64, val float64) {
-		samples := floatSample(ts, val)
-		expSamples = append(expSamples, samples...)
-		rec := createRequest(userID, samples, nil)
-		err := builder.Process(ctx, rec)
-		require.NoError(t, err)
-	}
-	addHistogramSample := func(builder *TSDBBuilder, ts int64) {
-		histograms := histogramSample(ts)
-		for i := range histograms {
-			histograms[i].ResetHint = 0
-			expHistograms = append(expHistograms, histograms[i])
-		}
-		rec := createRequest(userID, nil, histograms)
-		err := builder.Process(ctx, rec)
-		require.NoError(t, err)
-	}
-
-	processingRange := time.Hour.Milliseconds()
-	blockRange := 2 * time.Hour.Milliseconds()
 
 	testCases := []struct {
 		name                        string
-		lastEnd, currEnd            int64
+		limits                      *validation.Limits
+		samples                     []testSample
+		histograms                  []testHistogram
 		verifyBlocksAfterCompaction func(blocks []*tsdb.Block)
 	}{
 		{
-			name:    "current start is at even hour",
-			lastEnd: 2 * processingRange,
-			currEnd: 3 * processingRange,
+			name: "current start is at even hour",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 2*processingRange + 100, val: 1},
+				{ts: 3*processingRange + 1, val: 1},
+				{ts: 3*processingRange + 2, val: 1},
+			},
+			histograms: []testHistogram{
+				{ts: 2*processingRange + 100},
+				{ts: 3*processingRange + 1},
+				{ts: 3*processingRange + 2},
+			},
 			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
 				require.Len(t, blocks, 1) // 1 block for main userID
 
@@ -131,9 +113,21 @@ func TestTSDBBuilder(t *testing.T) {
 			},
 		},
 		{
-			name:    "current start is at odd hour",
-			lastEnd: 3 * processingRange,
-			currEnd: 4 * processingRange,
+			name: "current start is at odd hour",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 3*processingRange + 100, val: 1},
+				{ts: 4*processingRange + 1, val: 1},
+				{ts: 4*processingRange + 2, val: 1},
+			},
+			histograms: []testHistogram{
+				{ts: 3*processingRange + 100},
+				{ts: 4*processingRange + 1},
+				{ts: 4*processingRange + 2},
+			},
 			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
 				require.Len(t, blocks, 2) // 2 blocks due to spanning across 2 block ranges
 
@@ -145,27 +139,132 @@ func TestTSDBBuilder(t *testing.T) {
 				require.Equal(t, currEnd+blockRange, blocks[1].MaxTime())
 			},
 		},
+		{
+			name: "out-of-order samples within OOO window",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 2*processingRange + 1000, val: 1.0},
+				{ts: 2*processingRange + 200, val: 2.0}, // 800ms before the in-order sample
+			},
+			histograms: []testHistogram{
+				{ts: 2*processingRange + 1000},
+				{ts: 2*processingRange + 200}, // 800ms before the in-order histogram
+			},
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				// OOO samples may create multiple blocks (in-order + out-of-order)
+				require.GreaterOrEqual(t, len(blocks), 1) // At least 1 block
+			},
+		},
+		{
+			name: "out-of-order samples beyond OOO window",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 2*processingRange + 1000, val: 1.0},
+				{ts: 2*processingRange + 1000 - 1900000, val: 2.0, shouldDiscard: true}, // More than 30 minutes before
+			},
+			histograms: []testHistogram{
+				{ts: 2*processingRange + 1000},
+				{ts: 2*processingRange + 1000 - 1900000, shouldDiscard: true}, // More than 30 minutes before
+			},
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				require.GreaterOrEqual(t, len(blocks), 1) // At least 1 block
+			},
+		},
+		{
+			name: "out-of-order samples for tenant without OOO window",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(0), // No OOO window
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 2*processingRange + 1000, val: 1.0},
+				{ts: 2*processingRange + 500, val: 2.0, shouldDiscard: true}, // Before the in-order sample
+			},
+			histograms: []testHistogram{
+				{ts: 2*processingRange + 1000},
+				{ts: 2*processingRange + 500, shouldDiscard: true}, // Before the in-order histogram
+			},
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				require.GreaterOrEqual(t, len(blocks), 1) // At least 1 block
+			},
+		},
+		{
+			name: "duplicate samples with different values",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 2*processingRange + 1000, val: 1.0},
+				{ts: 2*processingRange + 1000, val: 2.0, shouldDiscard: true}, // Same timestamp, different value
+			},
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				require.GreaterOrEqual(t, len(blocks), 1) // At least 1 block
+			},
+		},
+		{
+			name: "samples too old beyond retention",
+			limits: &validation.Limits{
+				OutOfOrderTimeWindow:             model.Duration(30 * time.Minute),
+				NativeHistogramsIngestionEnabled: true,
+			},
+			samples: []testSample{
+				{ts: 2*processingRange + 1000, val: 1.0},
+				{ts: 0, val: 2.0, shouldDiscard: true}, // Very old sample
+			},
+			verifyBlocksAfterCompaction: func(blocks []*tsdb.Block) {
+				require.GreaterOrEqual(t, len(blocks), 1) // At least 1 block
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			expSamples = expSamples[:0]
-			expHistograms = expHistograms[:0]
-
+			userID := "user1"
+			limits := map[string]*validation.Limits{
+				userID: tc.limits,
+			}
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+
 			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 
-			currEnd, lastEnd := tc.currEnd, tc.lastEnd
+			// Hold samples for all cases and check for the correctness.
+			var (
+				expSamples    []mimirpb.Sample
+				expHistograms []mimirpb.Histogram
+			)
 
-			// Add float samples.
-			addFloatSample(builder, lastEnd+100, 1)
-			addFloatSample(builder, currEnd+1, 1)
-			addFloatSample(builder, currEnd+2, 1)
+			// Add float samples
+			for _, s := range tc.samples {
+				samples := floatSample(s.ts, s.val)
+				if !s.shouldDiscard {
+					expSamples = append(expSamples, samples...)
+				}
+				rec := createRecord(userID, samples, nil)
+				err := builder.Process(ctx, rec)
+				require.NoError(t, err)
+			}
 
-			// Add native histogram samples.
-			addHistogramSample(builder, lastEnd+100)
-			addHistogramSample(builder, currEnd+1)
-			addHistogramSample(builder, currEnd+2)
+			// Add histogram samples
+			for _, h := range tc.histograms {
+				histograms := histogramSample(h.ts)
+				if !h.shouldDiscard {
+					for i := range histograms {
+						histograms[i].ResetHint = 0
+						expHistograms = append(expHistograms, histograms[i])
+					}
+				}
+				rec := createRecord(userID, nil, histograms)
+				err := builder.Process(ctx, rec)
+				require.NoError(t, err)
+			}
 
 			// Query the TSDB for the expected samples.
 			tenant := tsdbTenant{
@@ -187,8 +286,6 @@ func TestTSDBBuilder(t *testing.T) {
 			newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
 			require.NoError(t, err)
 
-			// One for the in-order current range. Two for the out-of-order blocks: one for the current range
-			// and one for the previous range.
 			blocks := newDB.Blocks()
 			tc.verifyBlocksAfterCompaction(blocks)
 
@@ -197,6 +294,17 @@ func TestTSDBBuilder(t *testing.T) {
 			require.NoError(t, newDB.Close())
 		})
 	}
+}
+
+type testSample struct {
+	ts            int64
+	val           float64
+	shouldDiscard bool
+}
+
+type testHistogram struct {
+	ts            int64
+	shouldDiscard bool
 }
 
 func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
