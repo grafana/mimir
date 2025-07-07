@@ -6,7 +6,6 @@
 package tenantshard
 
 import (
-	"slices"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -162,7 +161,6 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
-	// TODO if we're just removing dead elements, we can reuse same m.index.
 	datas, ks, indices := m.data, m.keys, m.index
 	m.data = make([]data, n)
 	m.keys = make([]keys, n)
@@ -212,24 +210,42 @@ type LengthCallback func(int)
 
 type IteratorCallback func(k uint64, v clock.Minutes)
 
+var (
+	keysPool = &sync.Pool{New: func() any { return new([]keys) }}
+	dataPool = &sync.Pool{New: func() any { return new([]data) }}
+)
+
+func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
+	pooled := pool.Get().(*[]T)
+	if cap(*pooled) > len(input) {
+		*pooled = (*pooled)[:len(input)]
+	} else {
+		*pooled = make([]T, len(input))
+	}
+	copy(*pooled, input)
+	return pooled
+}
+
 func (m *Map) Iterator() func(LengthCallback, IteratorCallback) {
-	keys := slices.Clone(m.keys)
-	clone := slices.Clone(m.data)
+	keysClone := pooledClone(m.keys, keysPool)
+	dataClone := pooledClone(m.data, dataPool)
 	count := m.count()
 
 	return func(length LengthCallback, iterSeries IteratorCallback) {
 		length(count)
 
-		for i, g := range clone {
+		for i, g := range *dataClone {
 			for j, xor := range g {
 				if xor == 0 {
-					// TODO: document somewhwere that we can't store 127 as a value.
 					// There's nothing here.
 					continue
 				}
 				value := ^xor
-				iterSeries(keys[i][j], value)
+				iterSeries((*keysClone)[i][j], value)
 			}
 		}
+
+		keysPool.Put(keysClone)
+		dataPool.Put(dataClone)
 	}
 }
