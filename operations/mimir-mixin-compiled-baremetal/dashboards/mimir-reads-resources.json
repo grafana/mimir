@@ -73,7 +73,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -121,7 +121,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}\n",
+                        "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"}\n",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -169,7 +169,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"})",
+                        "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier).*\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null
@@ -1372,7 +1372,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})",
+                        "expr": "sum by(instance) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "{{instance}}",
                         "legendLink": null

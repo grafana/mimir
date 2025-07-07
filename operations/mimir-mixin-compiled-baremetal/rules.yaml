@@ -293,7 +293,7 @@ groups:
               count without(cpu, mode) (
                 label_replace(
                   node_cpu_seconds_total{mode="idle"},
-                  "deployment", "$1", "instance", ".*(distributor|ingester|mimir-write|query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read|query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*"
+                  "deployment", "$1", "instance", ".*(distributor|ingester|query-frontend|querier|ruler-query-frontend|ruler-querier|query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*"
                 )
               )
             )
@@ -323,7 +323,7 @@ groups:
             sum by (cluster, namespace, deployment) (
               label_replace(
                 node_memory_MemTotal_bytes,
-                "deployment", "$1", "instance", ".*(distributor|ingester|mimir-write|query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read|query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*"
+                "deployment", "$1", "instance", ".*(distributor|ingester|query-frontend|querier|ruler-query-frontend|ruler-querier|query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter).*"
               )
             )
           record: cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum
