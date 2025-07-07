@@ -587,7 +587,7 @@ func (s *ParquetBucketStore) createLabelsAndChunksIterators(
 	// not support streaming results, the iterator we get from q.Select is
 	// already backed by a slice. So we are not losing as much as it may seem.
 	// We are planning to implement proper streaming.
-	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, req.SkipChunks)
+	lbls, aggrChunks, err := toLabelsAndAggChunksSlice(chunkSeriesSet, shardSelector, req.SkipChunks)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "error converting parquet series set to labels and chunks slice")
 	}
@@ -1099,14 +1099,18 @@ func (s *ParquetBucketStore) cleanUpUnownedBlocks() error {
 // storage.ChunkSeriesSet and returns them as slices, converting the chunks to
 // storepb.AggrChunk format. If skipChunks is true, the chunks slice will be
 // empty.
-func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
+func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, shardSelector *sharding.ShardSelector, skipChunks bool) ([]labels.Labels, [][]storepb.AggrChunk, error) {
 	var seriesLabels []labels.Labels
 	var aggrChunks [][]storepb.AggrChunk
 
 	for chunkSeriesSet.Next() {
 		chunkSeries := chunkSeriesSet.At()
+		lbls := chunkSeries.Labels()
+		if !shardOwnedUncached(shardSelector, lbls) {
+			continue
+		}
 
-		seriesLabels = append(seriesLabels, chunkSeries.Labels())
+		seriesLabels = append(seriesLabels, lbls)
 
 		if skipChunks {
 			continue
@@ -1131,6 +1135,21 @@ func toLabelsAndAggChunksSlice(chunkSeriesSet storage.ChunkSeriesSet, skipChunks
 
 	return seriesLabels, aggrChunks, chunkSeriesSet.Err()
 }
+
+// shardOwnedUncached checks if the given labels belong to the shard specified
+// by the shard selector. As opposed to shardOwned & friends from the
+// non-Parquet path, this function does not cache hashes. This is because, at
+// least yet, we don't have easy access to an identifier for the series in the
+// block to use as a cache key.
+func shardOwnedUncached(shard *sharding.ShardSelector, lset labels.Labels) bool {
+	if shard == nil {
+		return true
+	}
+
+	hash := labels.StableHash(lset)
+	return hash%shard.ShardCount == shard.ShardIndex
+}
+
 func prometheusChunkEncodingToStorePBChunkType(enc chunkenc.Encoding) storepb.Chunk_Encoding {
 	switch enc {
 	case chunkenc.EncXOR:
