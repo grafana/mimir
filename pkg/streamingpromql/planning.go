@@ -126,14 +126,13 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	}
 
 	expr, err = p.runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
-		step := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
-
+		start, end := timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT)
+		interval := time.Duration(timeRange.IntervalMilliseconds) * time.Millisecond
 		if timeRange.IsInstant {
-			// timeRange.IntervalMilliseconds is 1 for instant queries, but we need to pass 0 for instant queries to PreprocessExpr.
-			step = 0
+			// Prometheus expects interval to be zero for instant queries but we use 1.
+			interval = 0
 		}
-
-		return promql.PreprocessExpr(expr, timestamp.Time(timeRange.StartT), timestamp.Time(timeRange.EndT), step)
+		return promql.PreprocessExpr(expr, start, end, interval)
 	})
 
 	if err != nil {
@@ -438,7 +437,7 @@ func isKnownFunction(name string) bool {
 // Materialize converts a query plan into an executable query.
 func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
 	if opts == nil {
-		opts = promql.NewPrometheusQueryOpts(false, 0)
+		opts = promql.NewPrometheusQueryOpts(false, 0, model.UTF8Validation)
 	}
 
 	queryID, err := e.activeQueryTracker.Insert(ctx, plan.OriginalExpression+" # (materialization)")
@@ -464,6 +463,7 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		Annotations:              q.annotations,
 		LookbackDelta:            q.lookbackDelta,
 		EagerLoadSelectors:       q.engine.eagerLoadSelectors,
+		NameValidationScheme:     q.nameValidationScheme,
 	}
 
 	q.statement = &parser.EvalStmt{
