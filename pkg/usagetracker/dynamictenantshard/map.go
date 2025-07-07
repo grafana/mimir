@@ -139,7 +139,7 @@ func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 				// There's nothing here.
 				continue
 			}
-			if watermark.GreaterOrEqualThan(^xor) {
+			if value := ^xor; watermark.GreaterOrEqualThan(value) {
 				m.index[i][j] = tombstone
 				m.keys[i][j] = 0
 				m.data[i][j] = 0
@@ -227,7 +227,8 @@ func (m *Map) Iterator() func(LengthCallback, IteratorCallback) {
 					// There's nothing here.
 					continue
 				}
-				iterSeries(keys[i][j], ^xor)
+				value := ^xor
+				iterSeries(keys[i][j], value)
 			}
 		}
 	}
