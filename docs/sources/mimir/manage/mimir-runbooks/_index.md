@@ -1526,6 +1526,20 @@ How to **investigate** and **fix** it:
 
   - After the resizing process finishes, revert this change.
 
+### MimirHighGRPCConcurrentStreamsPerConnection
+
+How it **works**:
+
+This alert fires when GRPC connections are getting close to maxing out their maximum number of concurrent streams. By default, each component accepts up to 100 concurrent streams on each GRPC connection.
+
+When the number of concurrent streams is maxed out, it causes hard-to-explain latency increases between components.
+
+How to **investigate**:
+
+- Check the `grpc_concurrent_streams_by_conn_max` metric to see if a sudden increase in streams per connection can be attributed to another issue.
+- If the number of streams has grown organically, consider setting the `-server.grpc-max-concurrent-streams` flag to a value higher than the current setting (see the `cortex_grpc_concurrent_streams_limit` metric for the current value).
+- Scaling up the component horizontally can also reduce the number of concurrent streams on each replica.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.

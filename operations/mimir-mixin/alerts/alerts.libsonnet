@@ -95,6 +95,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  local highGRPCConcurrentStreamsPerConnection(threshold, severity) = {
+    alert: $.alertName('HighGRPCConcurrentStreamsPerConnection'),
+    expr: |||
+      max(avg_over_time(grpc_concurrent_streams_by_conn_max[5m])) by (%(alert_aggregation_labels)s, container)
+      /
+      min(cortex_grpc_concurrent_streams_limit) by (%(alert_aggregation_labels)s, container) > %(threshold)s
+    ||| % {
+      alert_aggregation_labels: $._config.alert_aggregation_labels,
+      threshold: threshold,
+    },
+    labels: {
+      severity: severity,
+    },
+    annotations: {
+      message: |||
+        Container {{ $labels.container }} in %(alert_aggregation_variables)s is experiencing high GRPC concurrent streams per connection.
+      ||| % $._config,
+    },
+  },
+
   local alertGroups = [
     {
       name: 'mimir_alerts',
@@ -469,6 +489,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % { alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
           },
         },
+
+        highGRPCConcurrentStreamsPerConnection('0.75', 'warning'),
+        highGRPCConcurrentStreamsPerConnection('0.9', 'critical'),
       ],
     },
     {
