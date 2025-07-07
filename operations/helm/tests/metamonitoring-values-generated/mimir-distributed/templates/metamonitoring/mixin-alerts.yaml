@@ -713,7 +713,7 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgothreadstoohigh
             expr: |
               # We filter by the namespace because go_threads can be very high cardinality in a large organization.
-              max by(cluster, namespace, pod) (go_threads{namespace=~".*(cortex|mimir).*"} > 5000)
+              max by(cluster, namespace, pod) (go_threads{job=~".*(cortex|mimir).*"} > 5000)
   
               # Further filter on namespaces actually running Mimir.
               and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
@@ -727,7 +727,7 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgothreadstoohigh
             expr: |
               # We filter by the namespace because go_threads can be very high cardinality in a large organization.
-              max by(cluster, namespace, pod) (go_threads{namespace=~".*(cortex|mimir).*"} > 8000)
+              max by(cluster, namespace, pod) (go_threads{job=~".*(cortex|mimir).*"} > 8000)
   
               # Further filter on namespaces actually running Mimir.
               and on (cluster, namespace) (count by (cluster, namespace) (cortex_build_info))
