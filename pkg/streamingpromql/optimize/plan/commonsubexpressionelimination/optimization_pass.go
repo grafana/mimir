@@ -268,7 +268,6 @@ func (e *OptimizationPass) introduceDuplicateNode(ctx context.Context, group []*
 	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
-	spanlogger.FromContext(ctx, log.NewNopLogger()).DebugLog("msg", "eliminated common subexpression", "expression_root", duplicatedExpression.Describe())
 
 	for _, path := range group {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
