@@ -1,7 +1,7 @@
 {
   // If mTLS is enabled for connections to Memcached, add the appropriate secrets to all
   // components that need access to the cache. This needs to be included last because it
-  // overrides all components of the read path (including those for read-write mode).
+  // overrides all components of the read path.
 
   local statefulSet = $.apps.v1.statefulSet,
   local deployment = $.apps.v1.deployment,
@@ -33,7 +33,7 @@
     volume.fromSecret($._config.memcached_mtls_client_key_secret, $._config.memcached_mtls_client_key_secret),
   ]),
 
-  querier_container+:: if !$._config.is_microservices_deployment_mode then {} else client_container,
+  querier_container+:: client_container,
   querier_deployment: overrideSuperIfExists('querier_deployment', client_deployment),
 
   ruler_querier_container+:: if !$._config.ruler_remote_evaluation_enabled then {} else client_container,
@@ -42,7 +42,7 @@
     if !$._config.ruler_remote_evaluation_enabled then {} else client_deployment,
   ),
 
-  query_frontend_container+:: if !$._config.is_microservices_deployment_mode then {} else client_container,
+  query_frontend_container+:: client_container,
   query_frontend_deployment: overrideSuperIfExists('query_frontend_deployment', client_deployment),
 
   ruler_query_frontend_container+:: if !$._config.ruler_remote_evaluation_enabled then {} else client_container,
@@ -51,17 +51,9 @@
     if !$._config.ruler_remote_evaluation_enabled then {} else client_deployment,
   ),
 
-  store_gateway_container+:: if !$._config.is_microservices_deployment_mode then {} else client_container,
+  store_gateway_container+:: client_container,
   store_gateway_statefulset: overrideSuperIfExists('store_gateway_statefulset', client_statefulset),
   store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', client_statefulset),
   store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', client_statefulset),
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', client_statefulset),
-
-  mimir_read_container:: overrideSuperIfExists('mimir_read_container', client_container),
-  mimir_read_deployment: overrideSuperIfExists('mimir_read_deployment', client_deployment),
-
-  mimir_backend_container:: overrideSuperIfExists('mimir_backend_container', client_container),
-  mimir_backend_zone_a_statefulset: overrideSuperIfExists('mimir_backend_zone_a_statefulset', client_statefulset),
-  mimir_backend_zone_b_statefulset: overrideSuperIfExists('mimir_backend_zone_b_statefulset', client_statefulset),
-  mimir_backend_zone_c_statefulset: overrideSuperIfExists('mimir_backend_zone_c_statefulset', client_statefulset),
 }

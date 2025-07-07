@@ -27,6 +27,10 @@ func (d *Duplicate) Details() proto.Message {
 	return d.DuplicateDetails
 }
 
+func (d *Duplicate) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_DUPLICATE
+}
+
 func (d *Duplicate) Children() []planning.Node {
 	return []planning.Node{d.Inner}
 }

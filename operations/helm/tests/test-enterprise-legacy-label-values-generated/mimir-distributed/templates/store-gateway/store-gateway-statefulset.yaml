@@ -91,6 +91,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-a"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -153,6 +154,7 @@ metadata:
     rollout-max-unavailable: "50"
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway-zone-a
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -227,6 +229,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-b"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -289,6 +292,7 @@ metadata:
     rollout-max-unavailable: "50"
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "8080"
+    grafana.com/rollout-downscale-leader: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway-zone-b
   namespace: "citestns"
 spec:
   podManagementPolicy: OrderedReady
@@ -363,6 +367,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-c"
+            - "-server.grpc-max-send-msg-size-bytes=209715200"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir

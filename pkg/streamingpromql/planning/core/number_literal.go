@@ -30,6 +30,10 @@ func (n *NumberLiteral) Details() proto.Message {
 	return n.NumberLiteralDetails
 }
 
+func (n *NumberLiteral) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_NUMBER_LITERAL
+}
+
 func (n *NumberLiteral) Children() []planning.Node {
 	return nil
 }

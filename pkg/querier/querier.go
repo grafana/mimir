@@ -66,6 +66,10 @@ type Config struct {
 
 	FilterQueryablesEnabled bool `yaml:"filter_queryables_enabled" category:"advanced"`
 
+	// MaxConcurrentRemoteReadQueries limits the number of remote read queries that execute concurrently.
+	// 0 or negative values mean unlimited concurrency.
+	MaxConcurrentRemoteReadQueries int `yaml:"max_concurrent_remote_read_queries" category:"advanced"`
+
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 }
@@ -98,6 +102,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
 
 	f.BoolVar(&cfg.FilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.")
+
+	f.IntVar(&cfg.MaxConcurrentRemoteReadQueries, "querier.max-concurrent-remote-read-queries", 2, "Maximum number of remote read queries that can be executed concurrently. 0 or negative values mean unlimited concurrency.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }

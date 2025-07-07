@@ -21,7 +21,7 @@ metadata:
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
     {{- if $rolloutZone.downscaleLeader }}
-    grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
+    grafana.com/rollout-downscale-leader: {{ $rolloutZone.downscaleLeader }}
     {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:

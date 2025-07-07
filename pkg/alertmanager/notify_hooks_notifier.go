@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,10 @@ import (
 	"github.com/prometheus/alertmanager/types"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+)
+
+var (
+	ErrNoContent = errors.New("no content")
 )
 
 type notifyHooksLimits interface {
@@ -92,7 +97,11 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 
 	newAlerts, err := n.invoke(ctx, l, url, timeout, alerts)
 	if err != nil {
-		level.Error(l).Log("msg", "Notify hooks failed", "err", err)
+		if errors.Is(err, ErrNoContent) {
+			level.Debug(l).Log("msg", "Notify hooks applied but returned no content")
+		} else {
+			level.Error(l).Log("msg", "Notify hooks failed", "err", err)
+		}
 		return alerts
 	}
 
@@ -152,6 +161,16 @@ func (n *notifyHooksNotifier) invoke(ctx context.Context, l log.Logger, url stri
 		return nil, notify.RedactURL(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode/100 != 2 {
+		errBuf, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected response code=%d body=\"%q\"", resp.StatusCode, string(errBuf))
+	}
+
+	if resp.StatusCode == http.StatusNoContent {
+		// If the response indicates there's content, then ignore the response.
+		return nil, ErrNoContent
+	}
 
 	respBuf, err := io.ReadAll(resp.Body)
 	if err != nil {

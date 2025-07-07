@@ -633,6 +633,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// to a Prometheus API struct instantiated with the Mimir Queryable.
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
+		t.Cfg.Querier,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
 		t.MetadataSupplier,

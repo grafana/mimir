@@ -2645,6 +2645,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.filter-queryables-enabled
 [filter_queryables_enabled: <boolean> | default = false]
 
+# (advanced) Maximum number of remote read queries that can be executed
+# concurrently. 0 or negative values mean unlimited concurrency.
+# CLI flag: -querier.max-concurrent-remote-read-queries
+[max_concurrent_remote_read_queries: <int> | default = 2]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
@@ -6703,7 +6708,8 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING,
-# GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+# GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE,
+# FSX_OPENZFS
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 

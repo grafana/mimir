@@ -81,6 +81,13 @@ func (m mockChunkQuerier) Select(ctx context.Context, sorted bool, hints *storag
 	return storage.ErrChunkSeriesSet(errors.New("the Select() function has not been mocked in the test"))
 }
 
+func (m mockChunkQuerier) Close() error {
+	if m.ChunkQuerier != nil {
+		return m.ChunkQuerier.Close()
+	}
+	return nil
+}
+
 type partiallyFailingSeriesSet struct {
 	ss        storage.SeriesSet
 	failAfter int
@@ -303,7 +310,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 					}, nil
 				},
 			}
-			handler := RemoteReadHandler(q, log.NewNopLogger())
+			handler := RemoteReadHandler(q, log.NewNopLogger(), Config{})
 
 			requestBody, err := proto.Marshal(&prompb.ReadRequest{Queries: queryData.query})
 			require.NoError(t, err)
@@ -830,7 +837,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 			// frame to contain at most 2 chunks.
 			maxBytesInFrame := 10 + 165*2
 
-			handler := remoteReadHandler(q, maxBytesInFrame, log.NewNopLogger())
+			handler := remoteReadHandler(q, maxBytesInFrame, 0, log.NewNopLogger())
 
 			requestBody, err := proto.Marshal(&prompb.ReadRequest{
 				Queries:               testData.query,
@@ -1071,7 +1078,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 						}, err
 					},
 				}
-				handler := remoteReadHandler(q, 1024*1024, log.NewNopLogger())
+				handler := remoteReadHandler(q, 1024*1024, 0, log.NewNopLogger())
 
 				// Create queries based on the number of expected errors/series sets
 				var queries []*prompb.Query
@@ -1125,7 +1132,7 @@ func TestRemoteReadErrorParsing(t *testing.T) {
 						}, err
 					},
 				}
-				handler := remoteReadHandler(q, 1024*1024, log.NewNopLogger())
+				handler := remoteReadHandler(q, 1024*1024, 0, log.NewNopLogger())
 
 				// Create queries based on the number of expected errors/series sets
 				var queries []*prompb.Query
@@ -1241,6 +1248,134 @@ func TestQueryFromRemoteReadQuery(t *testing.T) {
 			require.Equal(t, testData.expectedMaxT, actualMaxT)
 			require.Equal(t, testData.expectedMatchers, actualMatchers)
 			require.Equal(t, testData.expectedHints, actualHints)
+		})
+	}
+}
+
+func TestRemoteReadHandler_ConcurrencyLimit(t *testing.T) {
+	concurrentQueries := atomic.NewInt32(0)
+	controlChan := make(chan struct{})
+
+	// Mock queryable that waits for control signal
+	q := mockSampleAndChunkQueryable{
+		queryableFn: func(mint, maxt int64) (storage.Querier, error) {
+			return &mockQuerier{
+				selectFn: func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+					concurrentQueries.Inc()
+					defer concurrentQueries.Dec()
+					<-controlChan
+
+					// Return a simple series set
+					return series.NewConcreteSeriesSetFromUnsortedSeries(
+						[]storage.Series{
+							series.NewConcreteSeries(labels.FromStrings("foo", "bar"), []model.SamplePair{{Timestamp: 1, Value: 1.0}}, nil),
+						},
+					)
+				},
+			}, nil
+		},
+	}
+
+	tests := []struct {
+		name                  string
+		queries               int
+		maxConcurrency        int
+		expectedMaxConcurrent int32
+	}{
+		{
+			name:                  "unlimited concurrency (0) allows all queries to run concurrently",
+			queries:               5,
+			maxConcurrency:        0,
+			expectedMaxConcurrent: 5,
+		},
+		{
+			name:                  "concurrency limit of 2 restricts to 2 concurrent queries",
+			queries:               5,
+			maxConcurrency:        2,
+			expectedMaxConcurrent: 2,
+		},
+		{
+			name:                  "concurrency limit of 1 serializes all queries",
+			queries:               3,
+			maxConcurrency:        1,
+			expectedMaxConcurrent: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset counters and ensure control channel is empty
+			concurrentQueries.Store(0)
+			controlChan = make(chan struct{})
+
+			// Create handler with configurable concurrency
+			handler := RemoteReadHandler(q, log.NewNopLogger(), Config{MaxConcurrentRemoteReadQueries: tt.maxConcurrency})
+
+			// Create multiple queries
+			queries := make([]*prompb.Query, tt.queries)
+			for i := 0; i < tt.queries; i++ {
+				queries[i] = &prompb.Query{
+					StartTimestampMs: 1,
+					EndTimestampMs:   10,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+					},
+				}
+			}
+
+			requestBody, err := proto.Marshal(&prompb.ReadRequest{Queries: queries})
+			require.NoError(t, err)
+			requestBody = snappy.Encode(nil, requestBody)
+
+			request, err := http.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(requestBody))
+			require.NoError(t, err)
+			request.Header.Add("Content-Encoding", "snappy")
+			request.Header.Set("Content-Type", "application/x-protobuf")
+
+			response := httptest.NewRecorder()
+
+			// Start request in goroutine
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				handler.ServeHTTP(response, request)
+			}()
+
+			// Wait for expected concurrency to be reached and verify limits
+			maxObserved := int32(0)
+			require.Eventually(t, func() bool {
+				current := concurrentQueries.Load()
+				maxObserved = max(current, maxObserved)
+
+				// Check that we never exceed the expected limit
+				require.LessOrEqualf(t, current, tt.expectedMaxConcurrent,
+					"concurrent queries (%d) exceeded limit (%d)", current, tt.expectedMaxConcurrent)
+
+				// Return true when we've reached the expected concurrency
+				return current == tt.expectedMaxConcurrent
+			}, 10*time.Second, 100*time.Millisecond, "failed to reach expected concurrency level")
+
+			// Release all queries by sending signals to control channel
+			for i := 0; i < tt.queries; i++ {
+				controlChan <- struct{}{}
+			}
+
+			// Wait for request to complete
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for request to complete")
+			}
+
+			// Verify response is successful
+			require.Equal(t, http.StatusOK, response.Code)
+
+			// Verify we observed the expected maximum concurrency
+			require.Equal(t, tt.expectedMaxConcurrent, maxObserved,
+				"expected max concurrent queries: %d, observed: %d", tt.expectedMaxConcurrent, maxObserved)
+
+			// Verify control channel is empty (all signals consumed)
+			require.Equal(t, 0, len(controlChan), "control channel should be empty")
 		})
 	}
 }
