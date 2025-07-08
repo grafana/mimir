@@ -106,9 +106,10 @@ func TestConsumerGroupCommand_deleteOffset(t *testing.T) {
 
 	// Delete the offsets.
 	printer.Reset()
-	_, err = app.Parse([]string{"consumer-group", "delete-offsets", "--group", "consumer-group-1", "--topic", topic, "--partition", "1"})
+	_, err = app.Parse([]string{"consumer-group", "delete-offset", "--group", "consumer-group-1", "--topic", topic, "--partition", "1"})
 	require.NoError(t, err)
 	require.Len(t, printer.Lines, 1)
+	assert.Contains(t, printer.Lines[0], "successfully deleted committed offset for consumer group consumer-group-1, topic test and partition 1")
 
 	// List offsets to verify deletion.
 	printer.Reset()
