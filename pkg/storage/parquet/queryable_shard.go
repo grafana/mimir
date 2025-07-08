@@ -28,7 +28,7 @@ func newQueryableShard(opts *querierOpts, block storage.ParquetShard, d *schema.
 	if err != nil {
 		return nil, err
 	}
-	m, err := search.NewMaterializer(s, d, block, opts.concurrency, opts.pagePartitioningMaxGapSize)
+	m, err := search.NewMaterializer(s, d, block, opts.concurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 	results := make([]prom_storage.ChunkSeries, 0, 1024)
 	rMtx := sync.Mutex{}
 
-	for i, group := range b.shard.LabelsFile().RowGroups() {
+	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
 			cs, err := search.MatchersToConstraint(matchers...)
 			if err != nil {
@@ -57,7 +57,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, group, cs...)
+			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
 			if err != nil {
 				return err
 			}
@@ -66,7 +66,7 @@ func (b queryableShard) Query(ctx context.Context, sorted bool, mint, maxt int64
 				return nil
 			}
 
-			series, err := b.m.Materialize(ctx, i, mint, maxt, skipChunks, rr)
+			series, err := b.m.Materialize(ctx, rgi, mint, maxt, skipChunks, rr)
 			if err != nil {
 				return err
 			}
@@ -97,7 +97,7 @@ func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []
 
 	results := make([][]string, len(b.shard.LabelsFile().RowGroups()))
 
-	for i, group := range b.shard.LabelsFile().RowGroups() {
+	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
 			cs, err := search.MatchersToConstraint(matchers...)
 			if err != nil {
@@ -107,15 +107,15 @@ func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, group, cs...)
+			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
 			if err != nil {
 				return err
 			}
-			series, err := b.m.MaterializeLabelNames(ctx, i, rr)
+			series, err := b.m.MaterializeLabelNames(ctx, rgi, rr)
 			if err != nil {
 				return err
 			}
-			results[i] = series
+			results[rgi] = series
 			return nil
 		})
 	}
@@ -137,7 +137,7 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 
 	results := make([][]string, len(b.shard.LabelsFile().RowGroups()))
 
-	for i, group := range b.shard.LabelsFile().RowGroups() {
+	for rgi := range b.shard.LabelsFile().RowGroups() {
 		errGroup.Go(func() error {
 			cs, err := search.MatchersToConstraint(matchers...)
 			if err != nil {
@@ -147,15 +147,15 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 			if err != nil {
 				return err
 			}
-			rr, err := search.Filter(ctx, group, cs...)
+			rr, err := search.Filter(ctx, b.shard, rgi, cs...)
 			if err != nil {
 				return err
 			}
-			series, err := b.m.MaterializeLabelValues(ctx, name, i, rr)
+			series, err := b.m.MaterializeLabelValues(ctx, name, rgi, rr)
 			if err != nil {
 				return err
 			}
-			results[i] = series
+			results[rgi] = series
 			return nil
 		})
 	}

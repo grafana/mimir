@@ -99,7 +99,7 @@ func (b optimisticReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
 	return b.r.ReadAt(p, off)
 }
 
-func newOptimisticReaderAt(r io.ReaderAt, minOffset, maxOffset int64) io.ReaderAt {
+func NewOptimisticReaderAt(r io.ReaderAt, minOffset, maxOffset int64) io.ReaderAt {
 	if minOffset < maxOffset {
 		b := make([]byte, maxOffset-minOffset)
 		n, err := r.ReadAt(b, minOffset)
