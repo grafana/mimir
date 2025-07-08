@@ -5,8 +5,9 @@ package ast
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 // ReorderHistogramAgg optimizes queries by reordering histogram functions and aggregations

@@ -5,9 +5,10 @@ package ast
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 // PropagateMatchers optimizes queries by propagating matchers across binary operations.

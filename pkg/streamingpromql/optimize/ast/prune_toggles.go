@@ -5,8 +5,9 @@ package ast
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 // PruneToggles optimizes queries by pruning expressions that are toggled off.
