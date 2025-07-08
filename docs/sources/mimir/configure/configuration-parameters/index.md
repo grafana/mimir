@@ -1792,8 +1792,13 @@ results_cache:
 # (experimental) True to enable pruning dead code (eg. expressions that cannot
 # produce any results) and simplifying expressions (eg. expressions that can be
 # evaluated immediately) in queries.
-# CLI flag: -query-frontend.prune-queries
-[prune_queries: <boolean> | default = false]
+# CLI flag: -query-frontend.prune-queries-toggle
+[prune_queries_toggle: <boolean> | default = false]
+
+# (experimental) True to enable rewriting queries to optimise query execution by
+# copying matchers where relevant across binary expressions.
+# CLI flag: -query-frontend.prune-queries-matcher-propagate
+[prune_queries_matcher_propagate: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,

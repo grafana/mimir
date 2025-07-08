@@ -7543,12 +7543,23 @@
         },
         {
           "kind": "field",
-          "name": "prune_queries",
+          "name": "prune_queries_toggle",
           "required": false,
           "desc": "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.prune-queries",
+          "fieldFlag": "query-frontend.prune-queries-toggle",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "prune_queries_matcher_propagate",
+          "required": false,
+          "desc": "True to enable rewriting queries to optimise query execution by copying matchers where relevant across binary expressions.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.prune-queries-matcher-propagate",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

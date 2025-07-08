@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestQueryPruner(t *testing.T) {
-	pruner := NewQueryPruner(context.Background(), log.NewNopLogger())
+func TestQueryPrunerToggle(t *testing.T) {
+	pruner := NewQueryPrunerToggle(context.Background(), log.NewNopLogger())
 
 	for _, tt := range []struct {
 		in  string
