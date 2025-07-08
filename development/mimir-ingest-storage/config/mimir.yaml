@@ -130,7 +130,7 @@ usage_tracker:
     auto_create_topic_default_partitions: 64
   snapshots_metadata_reader:
     address: kafka_1:9092
-    topic: usage-tracker-events
+    topic: usage-tracker-snapshots-metadata
 
 limits:
   native_histograms_ingestion_enabled: true
