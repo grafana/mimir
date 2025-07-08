@@ -67,7 +67,6 @@ type Config struct {
 	ShardedQueries               bool               `yaml:"parallelize_shardable_queries"`
 	PruneQueriesToggle           bool               `yaml:"prune_queries_toggle" category:"experimental"`
 	PruneQueriesMatcherPropagate bool               `yaml:"prune_queries_matcher_propagate" category:"experimental"`
-	PruneQueriesHistogram        bool               `yaml:"prune_queries_histogram" category:"experimental"`
 	TargetSeriesPerShard         uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries     bool               `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder       bool               `yaml:"use_active_series_decoder" category:"experimental"`
@@ -101,7 +100,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.PruneQueriesToggle, "query-frontend.prune-queries-toggle", false, "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.")
 	f.BoolVar(&cfg.PruneQueriesMatcherPropagate, "query-frontend.prune-queries-matcher-propagate", false, "True to enable rewriting queries to optimise query execution by copying matchers where relevant across binary expressions.")
-	f.BoolVar(&cfg.PruneQueriesHistogram, "query-frontend.prune-queries-histogram", false, "True to enable rewriting histogram queries for a more efficient order of execution.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
@@ -135,7 +133,7 @@ func (cfg *Config) cardinalityBasedShardingEnabled() bool {
 }
 
 func (cfg *Config) isPruningQueriesEnabled() bool {
-	return cfg.PruneQueriesToggle || cfg.PruneQueriesMatcherPropagate || cfg.PruneQueriesHistogram
+	return cfg.PruneQueriesToggle || cfg.PruneQueriesMatcherPropagate
 }
 
 // HandlerFunc is like http.HandlerFunc, but for MetricsQueryHandler.

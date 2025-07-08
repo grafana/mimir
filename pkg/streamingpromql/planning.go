@@ -52,6 +52,7 @@ func NewQueryPlanner(opts EngineOpts) *QueryPlanner {
 	//  2. We don't want to register these optimization passes in queriers.
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+	planner.RegisterASTOptimizationPass(&ast.ReorderHistogramAgg{})
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg))

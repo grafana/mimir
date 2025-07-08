@@ -2431,8 +2431,6 @@ Usage of ./cmd/mimir/mimir:
     	True to enable query sharding.
   -query-frontend.prom2-range-compat
     	[experimental] Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics
-  -query-frontend.prune-queries-histogram
-    	[experimental] True to enable rewriting histogram queries for a more efficient order of execution.
   -query-frontend.prune-queries-matcher-propagate
     	[experimental] True to enable rewriting queries to optimise query execution by copying matchers where relevant across binary expressions.
   -query-frontend.prune-queries-toggle
