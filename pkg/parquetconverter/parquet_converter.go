@@ -378,6 +378,15 @@ func (c *ParquetConverter) discoverAndEnqueueBlocks(ctx context.Context) {
 				c.metrics.queueItemsEnqueued.WithLabelValues(u).Inc()
 				// Mark block as queued to prevent duplicate queuing
 				c.queuedBlocks.Store(m.ULID, time.Now())
+
+				ulidTime := time.UnixMilli(int64(m.ULID.Time()))
+				level.Info(ulogger).Log(
+					"msg", "enqueued block for conversion",
+					"block", m.ULID.String(),
+					"ulid_timestamp_ms", m.ULID.Time(),
+					"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
+					"queue_size", c.conversionQueue.Size(),
+				)
 			} else {
 				c.metrics.queueItemsDropped.WithLabelValues(u).Inc()
 				level.Warn(ulogger).Log("msg", "failed to enqueue block, queue closed", "block", m.ULID.String())
@@ -416,6 +425,13 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 
 	if mark.Version == CurrentVersion {
 		skipped = true
+		ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
+		level.Info(logger).Log(
+			"msg", "skipped block, already converted",
+			"block", meta.ULID.String(),
+			"ulid_timestamp_ms", meta.ULID.Time(),
+			"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
+		)
 		return
 	}
 
@@ -436,7 +452,15 @@ func (c *ParquetConverter) processBlock(ctx context.Context, userID string, meta
 		return
 	}
 
-	level.Info(logger).Log("msg", "converted block", "block", meta.ULID.String())
+	ulidTime := time.UnixMilli(int64(meta.ULID.Time()))
+	level.Info(logger).Log(
+		"msg", "converted block",
+		"block", meta.ULID.String(),
+		"ulid_timestamp_ms", meta.ULID.Time(),
+		"ulid_time_human", ulidTime.UTC().Format(time.RFC3339),
+		"duration_seconds", time.Since(start).Seconds(),
+		"block_size_bytes", meta.BlockBytes(),
+	)
 
 	err = WriteConversionMark(ctx, meta.ULID, uBucket)
 	if err != nil {
