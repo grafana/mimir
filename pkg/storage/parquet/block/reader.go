@@ -48,7 +48,7 @@ func NewParquetBucketOpener(bkt objstore.BucketReader, prefix string) *ParquetBu
 }
 
 func (o *ParquetBucketOpener) Open(
-	ctx context.Context, name string, opts ...storage.ShardOption,
+	ctx context.Context, name string, opts ...storage.FileOption,
 ) (*storage.ParquetFile, error) {
 	return storage.OpenFromBucket(ctx, o.bkt, filepath.Join(o.prefix, name), opts...)
 }
@@ -64,7 +64,7 @@ func NewParquetLocalFileOpener(dir string) *ParquetLocalFileOpener {
 }
 
 func (o *ParquetLocalFileOpener) Open(
-	ctx context.Context, name string, opts ...storage.ShardOption,
+	ctx context.Context, name string, opts ...storage.FileOption,
 ) (*storage.ParquetFile, error) {
 	return storage.OpenFromFile(ctx, filepath.Join(o.dir, name), opts...)
 }
@@ -84,7 +84,7 @@ func NewBasicReader(
 	shard int,
 	labelsFileOpener storage.ParquetOpener,
 	chunksFileOpener storage.ParquetOpener,
-	opts ...storage.ShardOption,
+	opts ...storage.FileOption,
 ) (*BasicReader, error) {
 	labelsFileName := schema.LabelsPfileNameForShard(blockID, shard)
 	chunksFileName := schema.ChunksPfileNameForShard(blockID, shard)
