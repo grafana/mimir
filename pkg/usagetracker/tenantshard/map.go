@@ -30,8 +30,6 @@ const (
 type Map struct {
 	sync.Mutex
 
-	shard uint8
-
 	index []index
 	keys  []keys
 	data  []data
