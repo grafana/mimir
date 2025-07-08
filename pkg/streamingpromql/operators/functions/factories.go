@@ -517,6 +517,46 @@ func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, me
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
+func SortByLabelOperatorFactory(descending bool) FunctionOperatorFactory {
+	functionName := "sort_by_label"
+	if descending {
+		functionName = "sort_by_label_desc"
+	}
+
+	return func(args []types.Operator, _ labels.Labels, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+		if len(args) < 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected at least 1 argument for %s, got %v", functionName, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		var labels []string
+		for i := 1; i < len(args); i++ {
+			l, ok := args[i].(types.StringOperator)
+			if !ok {
+				// Should be caught by the PromQL parser, but we check here for safety.
+				return nil, fmt.Errorf("expected a string for argument %d, got %T", i+1, args[i])
+			}
+
+			labels = append(labels, l.GetValue())
+		}
+
+		// sort_by_labels and sort_by_labels_desc only affect the results of instant queries
+		// since range query results have a fixed output ordering. However, we still validate
+		// all the arguments as if we were going to sort for consistency.
+		if !timeRange.IsInstant {
+			return inner, nil
+		}
+
+		return NewSortByLabel(inner, descending, labels, memoryConsumptionTracker, expressionPosition), nil
+	}
+}
+
 func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 	functionName := "sort"
 
@@ -719,6 +759,8 @@ func init() {
 	must(RegisterFunction(FUNCTION_SIN, "sin", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sin", Sin)))
 	must(RegisterFunction(FUNCTION_SINH, "sinh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sinh", Sinh)))
 	must(RegisterFunction(FUNCTION_SORT, "sort", parser.ValueTypeVector, SortOperatorFactory(false)))
+	must(RegisterFunction(FUNCTION_SORT_BY_LABEL, "sort_by_label", parser.ValueTypeVector, SortByLabelOperatorFactory(false)))
+	must(RegisterFunction(FUNCTION_SORT_BY_LABEL_DESC, "sort_by_label_desc", parser.ValueTypeVector, SortByLabelOperatorFactory(true)))
 	must(RegisterFunction(FUNCTION_SORT_DESC, "sort_desc", parser.ValueTypeVector, SortOperatorFactory(true)))
 	must(RegisterFunction(FUNCTION_SQRT, "sqrt", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt)))
 	must(RegisterFunction(FUNCTION_STDDEV_OVER_TIME, "stddev_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime)))
