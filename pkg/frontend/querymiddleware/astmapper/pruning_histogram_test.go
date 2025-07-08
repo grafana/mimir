@@ -27,14 +27,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 			`sum(histogram_sum(foo))`,
 		},
 		{
-			`histogram_sum(count(foo))`,
-			`count(histogram_sum(foo))`,
-		},
-		{
-			`count(histogram_sum(foo))`,
-			`count(histogram_sum(foo))`,
-		},
-		{
 			`histogram_sum(avg(foo))`,
 			`avg(histogram_sum(foo))`,
 		},
@@ -49,14 +41,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 		{
 			`sum(histogram_sum(rate(foo[5m])))`,
 			`sum(histogram_sum(rate(foo[5m])))`,
-		},
-		{
-			`histogram_sum(count(rate(foo[5m])))`,
-			`count(histogram_sum(rate(foo[5m])))`,
-		},
-		{
-			`count(histogram_sum(rate(foo[5m])))`,
-			`count(histogram_sum(rate(foo[5m])))`,
 		},
 		{
 			`histogram_sum(avg(rate(foo[5m])))`,
@@ -75,14 +59,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 			`sum(histogram_count(foo))`,
 		},
 		{
-			`histogram_count(count(foo))`,
-			`count(histogram_count(foo))`,
-		},
-		{
-			`count(histogram_count(foo))`,
-			`count(histogram_count(foo))`,
-		},
-		{
 			`histogram_count(avg(foo))`,
 			`avg(histogram_count(foo))`,
 		},
@@ -97,14 +73,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 		{
 			`sum(histogram_count(rate(foo[5m])))`,
 			`sum(histogram_count(rate(foo[5m])))`,
-		},
-		{
-			`histogram_count(count(rate(foo[5m])))`,
-			`count(histogram_count(rate(foo[5m])))`,
-		},
-		{
-			`count(histogram_count(rate(foo[5m])))`,
-			`count(histogram_count(rate(foo[5m])))`,
 		},
 		{
 			`histogram_count(avg(rate(foo[5m])))`,
@@ -123,14 +91,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 			`sum(histogram_avg(foo))`,
 		},
 		{
-			`histogram_avg(count(foo))`,
-			`count(histogram_avg(foo))`,
-		},
-		{
-			`count(histogram_avg(foo))`,
-			`count(histogram_avg(foo))`,
-		},
-		{
 			`histogram_avg(avg(foo))`,
 			`avg(histogram_avg(foo))`,
 		},
@@ -145,14 +105,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 		{
 			`sum(histogram_avg(rate(foo[5m])))`,
 			`sum(histogram_avg(rate(foo[5m])))`,
-		},
-		{
-			`histogram_avg(count(rate(foo[5m])))`,
-			`count(histogram_avg(rate(foo[5m])))`,
-		},
-		{
-			`count(histogram_avg(rate(foo[5m])))`,
-			`count(histogram_avg(rate(foo[5m])))`,
 		},
 		{
 			`histogram_avg(avg(rate(foo[5m])))`,

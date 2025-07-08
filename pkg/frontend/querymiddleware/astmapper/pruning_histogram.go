@@ -65,5 +65,5 @@ func (pruner *queryPrunerHistogram) isSwitchableCall(callFunc *parser.Function) 
 }
 
 func (pruner *queryPrunerHistogram) isSwitchableAgg(op parser.ItemType) bool {
-	return op == parser.SUM || op == parser.COUNT || op == parser.AVG
+	return op == parser.SUM || op == parser.AVG
 }
