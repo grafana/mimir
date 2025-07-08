@@ -69,6 +69,7 @@ func TestPropagateMatchers(t *testing.T) {
 		`sum by (foo) (up) / sum(down)`:                                            `sum by (foo) (up) / sum(down)`,
 		`sum by (foo) (up{foo!="bar"}) / sum(down)`:                                `sum by (foo) (up{foo!="bar"}) / sum(down)`,
 		`sum by (foo) (up{foo!="bar"}) / sum by (foo) (down{boo="far"})`:           `sum by (foo) (up{foo!="bar"}) / sum by (foo) (down{foo!="bar", boo="far"})`,
+		`sum by (foo) (up{foo!="bar"}) / sum by (boo) (down{boo="far"})`:           `sum by (foo) (up{foo!="bar"}) / sum by (boo) (down{boo="far"})`,
 	}
 
 	optimizer := &PropagateMatchers{}

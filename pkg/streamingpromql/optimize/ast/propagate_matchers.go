@@ -43,7 +43,13 @@ func (mapper *propagateMatchers) MapExpr(expr parser.Expr) (mapped parser.Expr, 
 	return e, boolResult, nil
 }
 
-func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
+type vectorSelectorWrapper struct {
+	vs        *parser.VectorSelector
+	labelsSet map[string]struct{}
+	whitelist bool
+}
+
+func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
 	if e.Op == parser.LOR || e.Op == parser.LUNLESS {
 		return nil, nil, false
 	}
@@ -63,23 +69,24 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		return nil, nil, false
 	}
 
-	newMatchersL := mapper.getMatchersToPropagate(matchersR, e.VectorMatching.MatchingLabels, e.VectorMatching.On)
-	newMatchersR := mapper.getMatchersToPropagate(matchersL, e.VectorMatching.MatchingLabels, e.VectorMatching.On)
+	matchingLabelsSet := makeStringSet(e.VectorMatching.MatchingLabels)
+	newMatchersL := mapper.getMatchersToPropagate(matchersR, matchingLabelsSet, e.VectorMatching.On)
+	newMatchersR := mapper.getMatchersToPropagate(matchersL, matchingLabelsSet, e.VectorMatching.On)
 	for _, vsL := range vssL {
-		vsL.LabelMatchers = combineMatchers(vsL.LabelMatchers, newMatchersL)
+		vsL.vs.LabelMatchers = combineMatchers(vsL.vs.LabelMatchers, newMatchersL, vsL.labelsSet, vsL.whitelist)
 	}
 	for _, vsR := range vssR {
-		vsR.LabelMatchers = combineMatchers(vsR.LabelMatchers, newMatchersR)
+		vsR.vs.LabelMatchers = combineMatchers(vsR.vs.LabelMatchers, newMatchersR, vsR.labelsSet, vsR.whitelist)
 	}
 	vss := append(vssL, vssR...)
-	matchers := combineMatchers(newMatchersL, newMatchersR)
+	matchers := combineMatchers(newMatchersL, newMatchersR, map[string]struct{}{}, false)
 	return vss, matchers, true
 }
 
-func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*vectorSelectorWrapper, []*labels.Matcher, bool) {
 	vs, ok := expr.(*parser.VectorSelector)
 	if ok {
-		return []*parser.VectorSelector{vs}, vs.LabelMatchers, true
+		return []*vectorSelectorWrapper{{vs: vs}}, vs.LabelMatchers, true
 	}
 
 	pe, ok := expr.(*parser.ParenExpr)
@@ -97,7 +104,13 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*pa
 		if !ok {
 			return nil, nil, false
 		}
-		newMatchers := mapper.getMatchersToPropagate(labelMatchers, agg.Grouping, !agg.Without)
+		groupingSet := makeStringSet(agg.Grouping)
+		for _, vs := range vss {
+			// TODO: what if these fields are already set?
+			vs.labelsSet = groupingSet
+			vs.whitelist = !agg.Without
+		}
+		newMatchers := mapper.getMatchersToPropagate(labelMatchers, groupingSet, !agg.Without)
 		return vss, newMatchers, ok
 	}
 
@@ -109,12 +122,7 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*pa
 	return nil, nil, false
 }
 
-func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsList []string, whitelist bool) []*labels.Matcher {
-	labelsSet := make(map[string]struct{})
-	for _, l := range labelsList {
-		labelsSet[l] = struct{}{}
-	}
-
+func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsSet map[string]struct{}, whitelist bool) []*labels.Matcher {
 	matchersToAdd := make([]*labels.Matcher, 0, len(labelsSet))
 	for _, m := range matchersSrc {
 		if isMetricNameMatcher(m) {
@@ -136,12 +144,22 @@ func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Ma
 	return matchersToAdd
 }
 
-func combineMatchers(matchers, matchersToAdd []*labels.Matcher) []*labels.Matcher {
+func combineMatchers(matchers, matchersToAdd []*labels.Matcher, labelsSet map[string]struct{}, whitelist bool) []*labels.Matcher {
 	matchersMap := makeMatchersMap(matchers)
 	newMatchers := make([]*labels.Matcher, 0, len(matchers)+len(matchersToAdd))
 	newMatchers = append(newMatchers, matchers...)
 	for _, m := range matchersToAdd {
 		if _, ok := matchersMap[m.String()]; !ok {
+			_, exists := labelsSet[m.Name]
+			if whitelist {
+				if !exists {
+					continue
+				}
+			} else {
+				if exists {
+					continue
+				}
+			}
 			newMatchers = append(newMatchers, m)
 		}
 	}
@@ -150,6 +168,14 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher) []*labels.Matche
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
 	return m.Name == labels.MetricName
+}
+
+func makeStringSet(list []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(list))
+	for _, l := range list {
+		set[l] = struct{}{}
+	}
+	return set
 }
 
 func makeMatchersMap(matchers []*labels.Matcher) map[string]*labels.Matcher {
