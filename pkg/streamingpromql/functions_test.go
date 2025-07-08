@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -110,10 +111,11 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"year":                         `year({__name__=~"float.*"})`,
 	}
 
-	for name := range functions.InstantVectorFunctionOperatorFactories {
+	for f, functionMetadata := range functions.RegisteredFunctions {
+		name := f.PromQLName()
 		expr, haveExpression := expressions[name]
 
-		if expr == "<skip>" {
+		if expr == "<skip>" || functionMetadata.ReturnType == parser.ValueTypeScalar {
 			continue
 		}
 
