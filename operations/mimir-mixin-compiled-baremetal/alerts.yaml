@@ -1355,7 +1355,6 @@ groups:
             (min by(cluster, namespace, instance) (time() - cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 60 * 60 * 4)
             and
             (max by(cluster, namespace, instance) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
-            and
             # Only if blocks aren't shipped by ingesters.
             unless on (cluster, namespace)
             (max by (cluster, namespace) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
