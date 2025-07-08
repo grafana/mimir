@@ -68,6 +68,9 @@ type alertmanagerMetrics struct {
 	initialSyncDuration     *prometheus.Desc
 	persistTotal            *prometheus.Desc
 	persistFailed           *prometheus.Desc
+	notifyHookTotal         *prometheus.Desc
+	notifyHookNoop          *prometheus.Desc
+	notifyHookFailed        *prometheus.Desc
 
 	// exported metrics, gathered from Alertmanager Dispatcher
 	dispatcherAggrGroups                    *prometheus.Desc
@@ -243,6 +246,18 @@ func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 			"cortex_alertmanager_state_persist_failed_total",
 			"Number of times we have failed to persist the running state to storage.",
 			nil, nil),
+		notifyHookTotal: prometheus.NewDesc(
+			"cortex_alertmanager_notify_hook_total",
+			"Number of times a pre-notify hook was invoked.",
+			nil, nil),
+		notifyHookNoop: prometheus.NewDesc(
+			"cortex_alertmanager_notify_hook_noop_total",
+			"Number of times a pre-notify hook was invoked successfully but did nothing.",
+			nil, nil),
+		notifyHookFailed: prometheus.NewDesc(
+			"cortex_alertmanager_notify_hook_failed_total",
+			"Number of times a pre-notify was attempted but failed.",
+			nil, nil),
 		dispatcherAggrGroups: prometheus.NewDesc(
 			"cortex_alertmanager_dispatcher_aggregation_groups",
 			"Number of active aggregation groups",
@@ -325,6 +340,9 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.initialSyncDuration
 	out <- m.persistTotal
 	out <- m.persistFailed
+	out <- m.notifyHookTotal
+	out <- m.notifyHookNoop
+	out <- m.notifyHookFailed
 	out <- m.dispatcherAggrGroups
 	out <- m.dispatcherProcessingDuration
 	out <- m.dispatcherAggregationGroupsLimitReached
@@ -382,6 +400,10 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfHistograms(out, m.initialSyncDuration, "alertmanager_state_initial_sync_duration_seconds")
 	data.SendSumOfCounters(out, m.persistTotal, "alertmanager_state_persist_total")
 	data.SendSumOfCounters(out, m.persistFailed, "alertmanager_state_persist_failed_total")
+
+	data.SendSumOfCounters(out, m.notifyHookTotal, "alertmanager_notify_hook_total")
+	data.SendSumOfCounters(out, m.notifyHookNoop, "alertmanager_notify_hook_noop_total")
+	data.SendSumOfCounters(out, m.notifyHookFailed, "alertmanager_notify_hook_failed_total")
 
 	data.SendSumOfGauges(out, m.dispatcherAggrGroups, "alertmanager_dispatcher_aggregation_groups")
 	data.SendSumOfSummaries(out, m.dispatcherProcessingDuration, "alertmanager_dispatcher_alert_processing_duration_seconds")

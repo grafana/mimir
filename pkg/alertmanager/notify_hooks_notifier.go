@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 )
@@ -38,9 +40,13 @@ type notifyHooksNotifier struct {
 	user     string
 	logger   log.Logger
 	client   *http.Client
+
+	hookTotal  prometheus.Counter
+	hookNoop   prometheus.Counter
+	hookFailed prometheus.Counter
 }
 
-func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger) (*notifyHooksNotifier, error) {
+func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger, reg prometheus.Registerer) (*notifyHooksNotifier, error) {
 	clientCfg := commoncfg.DefaultHTTPClientConfig
 
 	// Inject user as X-Scope-OrgID into requests to hooks.
@@ -63,6 +69,19 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 		user:     userID,
 		logger:   logger,
 		client:   client,
+
+		hookTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "alertmanager_notify_hook_total",
+			Help: "Number of times a pre-notify hook was invoked.",
+		}),
+		hookNoop: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "alertmanager_notify_hook_noop_total",
+			Help: "Number of times a pre-notify hook was invoked successfully but did nothing.",
+		}),
+		hookFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "alertmanager_notify_hook_failed_total",
+			Help: "Number of times a pre-notify was attempted but failed.",
+		}),
 	}, nil
 }
 
@@ -95,11 +114,17 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 
 	timeout := n.limits.AlertmanagerNotifyHookTimeout(n.user)
 
+	start := time.Now()
 	newAlerts, err := n.invoke(ctx, l, url, timeout, alerts)
+	l = log.With(l, "duration", time.Since(start))
+
+	n.hookTotal.Inc()
 	if err != nil {
 		if errors.Is(err, ErrNoContent) {
+			n.hookNoop.Inc()
 			level.Debug(l).Log("msg", "Notify hooks applied but returned no content")
 		} else {
+			n.hookFailed.Inc()
 			level.Error(l).Log("msg", "Notify hooks failed", "err", err)
 		}
 		return alerts
