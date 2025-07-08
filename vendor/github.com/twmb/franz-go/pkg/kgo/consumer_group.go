@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -359,7 +360,7 @@ func (c *consumer) initGroup() {
 			if user != nil {
 				dup := make(map[string][]int32)
 				for k, vs := range m {
-					dup[k] = append([]int32(nil), vs...)
+					dup[k] = slices.Clone(vs)
 				}
 				user(ctx, cl, dup)
 			}
@@ -1503,14 +1504,14 @@ func (g *groupConsumer) joinGroupProtocols() []kmsg.JoinGroupRequestProtocol {
 	}
 	lastDup := make(map[string][]int32, len(g.lastAssigned))
 	for t, ps := range g.lastAssigned {
-		lastDup[t] = append([]int32(nil), ps...) // deep copy to allow modifications
+		lastDup[t] = slices.Clone(ps) // deep copy to allow modifications
 	}
 
 	g.mu.Unlock()
 
 	sort.Strings(topics) // we guarantee to JoinGroupMetadata that the input strings are sorted
 	for _, partitions := range lastDup {
-		sort.Slice(partitions, func(i, j int) bool { return partitions[i] < partitions[j] }) // same for partitions
+		slices.Sort(partitions) // same for partitions
 	}
 
 	gen := g.memberGen.generation()
@@ -2832,9 +2833,7 @@ func (g *groupConsumer) commit(
 			}
 			dupPs := make(map[int32]EpochOffset, len(ps))
 			dup[t] = dupPs
-			for p, eo := range ps {
-				dupPs[p] = eo
-			}
+			maps.Copy(dupPs, ps)
 		}
 		uncommitted = dup
 	}

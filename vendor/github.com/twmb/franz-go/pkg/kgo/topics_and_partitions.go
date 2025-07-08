@@ -3,6 +3,7 @@ package kgo
 import (
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -19,9 +20,7 @@ import (
 
 func dupmsi32(m map[string]int32) map[string]int32 {
 	d := make(map[string]int32, len(m))
-	for t, ps := range m {
-		d[t] = ps
-	}
+	maps.Copy(d, m)
 	return d
 }
 
@@ -98,7 +97,7 @@ func (m mtps) String() string {
 	sort.Strings(ts)
 	for _, t := range ts {
 		ps = append(ps[:0], m[t]...)
-		sort.Slice(ps, func(i, j int) bool { return ps[i] < ps[j] })
+		slices.Sort(ps)
 		topicsWritten++
 		fmt.Fprintf(&sb, "%s%v", t, ps)
 		if topicsWritten < len(m) {
@@ -327,9 +326,7 @@ func (t *topicsPartitions) storeTopics(topics []string)      { t.v.Store(t.ensur
 func (t *topicsPartitions) clone() topicsPartitionsData {
 	current := t.load()
 	clone := make(map[string]*topicPartitions, len(current))
-	for k, v := range current {
-		clone[k] = v
-	}
+	maps.Copy(clone, current)
 	return clone
 }
 
@@ -804,8 +801,8 @@ func (k *kip951move) doMove(cl *Client) {
 			}
 			dup := *l.load()
 			r := &dup
-			r.writablePartitions = append([]*topicPartition{}, r.writablePartitions...)
-			r.partitions = append([]*topicPartition{}, r.partitions...)
+			r.writablePartitions = slices.Clone(r.writablePartitions)
+			r.partitions = slices.Clone(r.partitions)
 			lr = oldNew{l, r}
 			topics[topic] = lr
 		}

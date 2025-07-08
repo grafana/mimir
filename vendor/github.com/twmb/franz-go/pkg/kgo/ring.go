@@ -1,9 +1,14 @@
 package kgo
 
-import "sync"
+import (
+	"sync"
+)
 
-// The ring types below are fixed sized blocking MPSC ringbuffers. These
-// replace channels in a few places in this client. The *main* advantage they
+// The ring types below are based on fixed sized blocking MPSC ringbuffer.
+// One type is a fixed size ring, and the other type is an unlimited ring
+// that uses a fixed size ring if the number of elements is less than 8.
+//
+// These rings replace channels in a few places in this client. The *main* advantage they
 // provide is to allow loops that terminate.
 //
 // With channels, we always have to have a goroutine draining the channel.  We
@@ -40,11 +45,11 @@ const (
 	eight = mask7 + 1
 )
 
-type ringReq struct {
+type fixedRing[T any] struct {
 	mu sync.Mutex
 	c  *sync.Cond
 
-	elems [eight]promisedReq
+	elems [eight]T
 
 	head uint8
 	tail uint8
@@ -52,7 +57,7 @@ type ringReq struct {
 	dead bool
 }
 
-func (r *ringReq) die() {
+func (r *fixedRing[T]) die() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -62,7 +67,7 @@ func (r *ringReq) die() {
 	}
 }
 
-func (r *ringReq) push(pr promisedReq) (first, dead bool) {
+func (r *fixedRing[T]) push(elem T) (first, dead bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -77,18 +82,19 @@ func (r *ringReq) push(pr promisedReq) (first, dead bool) {
 		return false, true
 	}
 
-	r.elems[r.tail] = pr
+	r.elems[r.tail] = elem
 	r.tail = (r.tail + 1) & mask7
 	r.l++
 
 	return r.l == 1, false
 }
 
-func (r *ringReq) dropPeek() (next promisedReq, more, dead bool) {
+func (r *fixedRing[T]) dropPeek() (next T, more, dead bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.elems[r.head] = promisedReq{}
+	var zero T
+	r.elems[r.head] = zero
 	r.head = (r.head + 1) & mask7
 	r.l--
 
@@ -101,169 +107,88 @@ func (r *ringReq) dropPeek() (next promisedReq, more, dead bool) {
 	return r.elems[r.head], r.l > 0, r.dead
 }
 
-// ringResp duplicates the code above, but for promisedResp
-type ringResp struct {
+// This type is slightly different because we can have overflow.
+// If we have overflow, we add to overflow until overflow is drained -- we
+// always want strict ordering.
+type unlimitedRing[T any] struct {
 	mu sync.Mutex
-	c  *sync.Cond
 
-	elems [eight]promisedResp
+	elems [eight]T
 
 	head uint8
 	tail uint8
 	l    uint8
 	dead bool
+
+	overflow []T
 }
 
-func (r *ringResp) die() {
+func (r *unlimitedRing[T]) die() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.dead = true
-	if r.c != nil {
-		r.c.Broadcast()
-	}
 }
 
-func (r *ringResp) push(pr promisedResp) (first, dead bool) {
+func (r *unlimitedRing[T]) push(elem T) (first, dead bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	for r.l == eight && !r.dead {
-		if r.c == nil {
-			r.c = sync.NewCond(&r.mu)
-		}
-		r.c.Wait()
-	}
 
 	if r.dead {
 		return false, true
 	}
 
-	r.elems[r.tail] = pr
+	// If the ring is full, we go into overflow; if overflow is non-empty,
+	// for ordering purposes, we add to the end of overflow. We only go
+	// back to using the ring once overflow is finally empty.
+	if r.l == eight || len(r.overflow) > 0 {
+		r.overflow = append(r.overflow, elem)
+		return false, false
+	}
+
+	r.elems[r.tail] = elem
 	r.tail = (r.tail + 1) & mask7
 	r.l++
 
 	return r.l == 1, false
 }
 
-func (r *ringResp) dropPeek() (next promisedResp, more, dead bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.elems[r.head] = promisedResp{}
-	r.head = (r.head + 1) & mask7
-	r.l--
-
-	if r.c != nil {
-		r.c.Signal()
-	}
-
-	return r.elems[r.head], r.l > 0, r.dead
-}
-
-// ringSeqResp duplicates the code above, but for *seqResp. We leave off die
-// because we do not use it, but we keep `c` for testing lowering eight/mask7.
-type ringSeqResp struct {
-	mu sync.Mutex
-	c  *sync.Cond
-
-	elems [eight]*seqResp
-
-	head uint8
-	tail uint8
-	l    uint8
-}
-
-func (r *ringSeqResp) push(sr *seqResp) (first bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for r.l == eight {
-		if r.c == nil {
-			r.c = sync.NewCond(&r.mu)
-		}
-		r.c.Wait()
-	}
-
-	r.elems[r.tail] = sr
-	r.tail = (r.tail + 1) & mask7
-	r.l++
-
-	return r.l == 1
-}
-
-func (r *ringSeqResp) dropPeek() (next *seqResp, more bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.elems[r.head] = nil
-	r.head = (r.head + 1) & mask7
-	r.l--
-
-	if r.c != nil {
-		r.c.Signal()
-	}
-
-	return r.elems[r.head], r.l > 0
-}
-
-// Also no die; this type is slightly different because we can have overflow.
-// If we have overflow, we add to overflow until overflow is drained -- we
-// always want strict odering.
-type ringBatchPromise struct {
-	mu sync.Mutex
-
-	elems [eight]batchPromise
-
-	head uint8
-	tail uint8
-	l    uint8
-
-	overflow []batchPromise
-}
-
-func (r *ringBatchPromise) push(b batchPromise) (first bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// If the ring is full, we go into overflow; if overflow is non-empty,
-	// for ordering purposes, we add to the end of overflow. We only go
-	// back to using the ring once overflow is finally empty.
-	if r.l == eight || len(r.overflow) > 0 {
-		r.overflow = append(r.overflow, b)
-		return false
-	}
-
-	r.elems[r.tail] = b
-	r.tail = (r.tail + 1) & mask7
-	r.l++
-
-	return r.l == 1
-}
-
-func (r *ringBatchPromise) dropPeek() (next batchPromise, more bool) {
+func (r *unlimitedRing[T]) dropPeek() (next T, more, dead bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	// We always drain the ring first. If the ring is ever empty, there
 	// must be overflow: we would not be here if the ring is not-empty.
 	if r.l > 1 {
-		r.elems[r.head] = batchPromise{}
+		var zero T
+		r.elems[r.head] = zero
 		r.head = (r.head + 1) & mask7
 		r.l--
-		return r.elems[r.head], true
+		return r.elems[r.head], true, r.dead
 	} else if r.l == 1 {
-		r.elems[r.head] = batchPromise{}
+		var zero T
+		r.elems[r.head] = zero
 		r.head = (r.head + 1) & mask7
 		r.l--
 		if len(r.overflow) == 0 {
-			return next, false
+			return next, false, r.dead
 		}
-		return r.overflow[0], true
+		return r.overflow[0], true, r.dead
 	}
 	r.overflow = r.overflow[1:]
-	if len(r.overflow) > 0 {
-		return r.overflow[0], true
+
+	// If the overflow slice is 8x the fixed ring size, and the overflow length
+	// is less than 1/8 of the capacity, then we do shrink the overflow slice
+	// to 2x the currently required capacity. This prevents edge cases where
+	// the overflow slice could grow indefinitely.
+	if cap(r.overflow) > 64 && len(r.overflow) < cap(r.overflow)/8 {
+		shrunk := make([]T, len(r.overflow), len(r.overflow)*2)
+		copy(shrunk, r.overflow)
+		r.overflow = shrunk
 	}
-	return next, false
+
+	if len(r.overflow) > 0 {
+		return r.overflow[0], true, r.dead
+	}
+	return next, false, r.dead
 }

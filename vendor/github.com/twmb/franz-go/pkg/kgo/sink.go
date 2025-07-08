@@ -33,7 +33,7 @@ type sink struct {
 	// seqRespsMu, guarded by seqRespsMu, contains responses that must
 	// be handled sequentially. These responses are handled asynchronously,
 	// but sequentially.
-	seqResps ringSeqResp
+	seqResps unlimitedRing[*seqResp] // we never call die() on it
 
 	backoffMu   sync.Mutex // guards the following
 	needBackoff bool
@@ -108,7 +108,7 @@ func (s *sink) createReq(id int64, epoch int16) (*produceRequest, *kmsg.AddParti
 	defer s.recBufsMu.Unlock()
 
 	recBufsIdx := s.recBufsStart
-	for i := 0; i < len(s.recBufs); i++ {
+	for range s.recBufs {
 		recBuf := s.recBufs[recBufsIdx]
 		recBufsIdx = (recBufsIdx + 1) % len(s.recBufs)
 
@@ -127,7 +127,7 @@ func (s *sink) createReq(id int64, epoch int16) (*produceRequest, *kmsg.AddParti
 
 		if s.cl.cfg.disableIdempotency {
 			if cctx := batch.records[0].cancelingCtx(); cctx != nil && req.firstCancelingCtx == nil {
-				req.firstCancelingCtx = cctx
+				req.firstCancelingCtx = cctx //nolint:fatcontext // we are only here if firstCancelingCtx is currently nil
 			}
 		}
 
@@ -339,7 +339,9 @@ func (s *sink) produce(sem <-chan struct{}) bool {
 	ctxFn := func() context.Context {
 		holCtxMu.Lock()
 		defer holCtxMu.Unlock()
-		holCtx = s.anyCtx()
+		if holCtx == nil {
+			holCtx = s.anyCtx() //nolint:fatcontext // not sure why this is flagged
+		}
 		return holCtx
 	}
 	isHolCtxDone := func() bool {
@@ -513,7 +515,7 @@ func (s *sink) doSequenced(
 		wait.br = br
 	}
 
-	if first := s.seqResps.push(wait); first {
+	if first, _ := s.seqResps.push(wait); first {
 		go s.handleSeqResps(wait)
 	}
 }
@@ -525,7 +527,7 @@ start:
 	<-wait.done
 	wait.promise(wait.br, wait.resp, wait.err)
 
-	wait, more = s.seqResps.dropPeek()
+	wait, more, _ = s.seqResps.dropPeek()
 	if more {
 		goto start
 	}

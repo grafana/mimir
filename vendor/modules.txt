@@ -1370,7 +1370,7 @@ github.com/tklauser/go-sysconf
 # github.com/tklauser/numcpus v0.6.1
 ## explicit; go 1.13
 github.com/tklauser/numcpus
-# github.com/twmb/franz-go v1.19.4
+# github.com/twmb/franz-go v1.19.4 => github.com/pracucci/franz-go v0.0.0-20250708160408-d19d8f9241c8
 ## explicit; go 1.23.8
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
@@ -2136,3 +2136,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
 # github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
+# github.com/twmb/franz-go => github.com/pracucci/franz-go v0.0.0-20250708160408-d19d8f9241c8

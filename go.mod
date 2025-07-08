@@ -380,3 +380,6 @@ replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptra
 
 // Replace objstore with a fork containing https://github.com/thanos-io/objstore/pull/181.
 replace github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb
+
+// Marco is testing https://github.com/twmb/franz-go/pull/1057.
+replace github.com/twmb/franz-go => github.com/pracucci/franz-go v0.0.0-20250708160408-d19d8f9241c8

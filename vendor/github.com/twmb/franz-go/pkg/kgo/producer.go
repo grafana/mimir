@@ -58,7 +58,7 @@ type producer struct {
 	idMu      sync.Mutex
 	idVersion int16
 
-	batchPromises ringBatchPromise
+	batchPromises unlimitedRing[batchPromise] // we never call die() on it
 
 	txnMu   sync.Mutex
 	inTxn   bool
@@ -595,7 +595,7 @@ type batchPromise struct {
 }
 
 func (p *producer) promiseBatch(b batchPromise) {
-	if first := p.batchPromises.push(b); first {
+	if first, _ := p.batchPromises.push(b); first {
 		go p.finishPromises(b)
 	}
 }
@@ -639,7 +639,7 @@ start:
 		cl.prsPool.put(b.recs)
 	}
 
-	b, more = p.batchPromises.dropPeek()
+	b, more, _ = p.batchPromises.dropPeek()
 	if more {
 		goto start
 	}

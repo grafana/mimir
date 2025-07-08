@@ -18,6 +18,7 @@ import (
 	"net"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -596,7 +597,7 @@ func (cl *Client) Ping(ctx context.Context) error {
 	req.Topics = []kmsg.MetadataRequestTopic{}
 
 	cl.brokersMu.RLock()
-	brokers := append([]*broker(nil), cl.brokers...)
+	brokers := slices.Clone(cl.brokers)
 	cl.brokersMu.RUnlock()
 
 	var lastErr error
@@ -1316,9 +1317,9 @@ func (cl *Client) RequestCachedMetadata(ctx context.Context, req *kmsg.MetadataR
 	}
 	dupp := func(p kmsg.MetadataResponseTopicPartition) kmsg.MetadataResponseTopicPartition {
 		p2 := p
-		p2.Replicas = append([]int32(nil), p2.Replicas...)
-		p2.ISR = append([]int32(nil), p2.ISR...)
-		p2.OfflineReplicas = append([]int32(nil), p2.OfflineReplicas...)
+		p2.Replicas = slices.Clone(p2.Replicas)
+		p2.ISR = slices.Clone(p2.ISR)
+		p2.OfflineReplicas = slices.Clone(p2.OfflineReplicas)
 		p2.UnknownTags = kmsg.Tags{}
 		return p2
 	}
@@ -2451,7 +2452,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				} else if issue.any {
 					brokerAnys = append(brokerAnys, "any")
 				} else {
-					brokerAnys = append(brokerAnys, fmt.Sprintf("%d", issue.broker))
+					brokerAnys = append(brokerAnys, strconv.Itoa(int(issue.broker)))
 				}
 			}
 			l.Log(LogLevelDebug, "sharded request", "req", kmsg.Key(key).Name(), "destinations", brokerAnys)
@@ -2460,6 +2461,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 		for i := range issues {
 			myIssue := issues[i]
 			var isPinned bool
+			ctx := ctx // loop local context, in case we override by pinning
 			if isPinned = myIssue.pin != nil; isPinned {
 				ctx = context.WithValue(ctx, ctxPinReq, myIssue.pin)
 			}
@@ -2779,7 +2781,7 @@ func (l *unknownErrShards) err(err error, topic string, partition any) {
 // partitions is a slice where each element has type of arg1 of l.fn.
 func (l *unknownErrShards) errs(err error, topic string, partitions any) {
 	v := reflect.ValueOf(partitions)
-	for i := 0; i < v.Len(); i++ {
+	for i := range v.Len() {
 		l.err(err, topic, v.Index(i).Interface())
 	}
 }
@@ -3226,7 +3228,7 @@ func (*findCoordinatorSharder) shard(_ context.Context, kreq kmsg.Request, lastE
 		sreq.CoordinatorType = req.CoordinatorType
 		sreq.CoordinatorKey = key
 		issues = append(issues, issueShard{
-			req: req,
+			req: sreq,
 			pin: &pinReq{pinMax: true, max: 3},
 			any: true,
 		})

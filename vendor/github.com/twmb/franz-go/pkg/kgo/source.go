@@ -577,10 +577,7 @@ func (s *source) takeNBuffered(paused pausedTopics, n int) (Fetch, int, bool) {
 			rt.Partitions = append(rt.Partitions, *p)
 			rp := &rt.Partitions[len(rt.Partitions)-1]
 
-			take := n
-			if take > len(p.Records) {
-				take = len(p.Records)
-			}
+			take := min(n, len(p.Records))
 
 			rp.Records = p.Records[:take:take]
 			p.Records = p.Records[take:]
@@ -662,7 +659,7 @@ func (s *source) createReq() *fetchRequest {
 	defer s.cursorsMu.Unlock()
 
 	cursorIdx := s.cursorsStart
-	for i := 0; i < len(s.cursors); i++ {
+	for range s.cursors {
 		c := s.cursors[cursorIdx]
 		cursorIdx = (cursorIdx + 1) % len(s.cursors)
 		if !c.usable() || paused.has(c.topic, c.partition) {
@@ -849,7 +846,7 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	}
 
 	var didBackoff bool
-	backoff := func(why interface{}) {
+	backoff := func(why any) {
 		// We preemptively allow more fetches (since we are not buffering)
 		// and reset our session because of the error (who knows if kafka
 		// processed the request but the client failed to receive it).
@@ -1561,7 +1558,7 @@ func (a aborter) trackAbortedPID(producerID int64) {
 // readRawRecordsInto reads records from in and returns them, returning early
 // if there were partial records.
 func readRawRecordsInto(rs []kmsg.Record, in []byte) []kmsg.Record {
-	for i := 0; i < len(rs); i++ {
+	for i := range rs {
 		length, used := kbin.Varint(in)
 		total := used + int(length)
 		if used == 0 || length < 0 || len(in) < total {
@@ -1693,7 +1690,7 @@ func (o *ProcessFetchPartitionOpts) processRecordBatch(
 			&krecords[i],
 			record,
 		)
-		record.Context = poolsCtx
+		record.Context = poolsCtx   //nolint:fatcontext // not a nested context
 		krecords[i] = kmsg.Record{} // prevent the kmsg.Record from hanging onto anything
 		if kept := o.maybeKeepRecord(fp, record, abortBatch); kept {
 			nkept++
@@ -2214,7 +2211,7 @@ func (f *fetchRequest) adjustPreferringLag() {
 	}
 	pall := make(map[string][]int32, len(f.porder))
 	for t, ps := range f.porder {
-		pall[t] = append([]int32(nil), ps...)
+		pall[t] = slices.Clone(ps)
 	}
 
 	lag := make(map[string]map[int32]int64, len(f.torder))
@@ -2222,10 +2219,7 @@ func (f *fetchRequest) adjustPreferringLag() {
 		plag := make(map[int32]int64, len(ps))
 		lag[t] = plag
 		for p, c := range ps {
-			hwm := c.hwm
-			if c.hwm < 0 {
-				hwm = 0
-			}
+			hwm := max(c.hwm, 0)
 			lag := hwm - c.offset
 			if c.offset <= 0 {
 				lag = hwm
@@ -2251,7 +2245,7 @@ func (f *fetchRequest) adjustPreferringLag() {
 		for i := 0; i < len(torder); i++ {
 			t := torder[i]
 			if _, exists := tall[t]; !exists {
-				torder = append(torder[:i], torder[i+1:]...) // user gave topic we were not fetching
+				torder = slices.Delete(torder, i, i+1) // user gave topic we were not fetching
 				i--
 			}
 			delete(tall, t)
@@ -2282,7 +2276,7 @@ func (f *fetchRequest) adjustPreferringLag() {
 		for i := 0; i < len(order); i++ {
 			p := order[i]
 			if _, exists := pused[p]; !exists {
-				order = append(order[:i], order[i+1:]...)
+				order = slices.Delete(order, i, i+1)
 				i--
 			}
 			delete(pused, p)

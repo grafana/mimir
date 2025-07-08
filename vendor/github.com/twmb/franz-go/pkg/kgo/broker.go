@@ -159,7 +159,7 @@ type broker struct {
 	reapMu sync.Mutex // held when modifying a brokerCxn
 
 	// reqs manages incoming message requests.
-	reqs ringReq
+	reqs unlimitedRing[promisedReq]
 	// dead is an atomic so a backed up reqs cannot block broker stoppage.
 	dead atomicBool
 }
@@ -725,7 +725,7 @@ type brokerCxn struct {
 	successes uint64
 
 	// resps manages reading kafka responses.
-	resps ringResp
+	resps unlimitedRing[promisedResp]
 	// dead is an atomic so that a backed up resps cannot block cxn death.
 	dead atomicBool
 	// closed in cloneConn; allows throttle waiting to quit
@@ -1027,10 +1027,7 @@ func (cxn *brokerCxn) doSasl(authenticate bool) error {
 		// every second after, we add between 0.05s or 0.08s to our
 		// backoff. At 12hr, we reauth ~24 to 28min before the
 		// lifetime.
-		usePessimismMillis := maxPessimismMillis
-		if minPessimismMillis > maxPessimismMillis {
-			usePessimismMillis = minPessimismMillis
-		}
+		usePessimismMillis := max(minPessimismMillis, maxPessimismMillis)
 		useLifetimeMillis := lifetimeMillis - int64(usePessimismMillis)
 
 		// Subtracting our min pessimism may result in our connection

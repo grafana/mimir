@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -33,9 +34,9 @@ const atCommitted = -999
 // MarshalJSON implements json.Marshaler.
 func (o Offset) MarshalJSON() ([]byte, error) {
 	if o.relative == 0 {
-		return []byte(fmt.Sprintf(`{"At":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.at, o.epoch, o.currentEpoch)), nil
+		return fmt.Appendf(nil, `{"At":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.at, o.epoch, o.currentEpoch), nil
 	}
-	return []byte(fmt.Sprintf(`{"At":%d,"Relative":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.at, o.relative, o.epoch, o.currentEpoch)), nil
+	return fmt.Appendf(nil, `{"At":%d,"Relative":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.at, o.relative, o.epoch, o.currentEpoch), nil
 }
 
 // String returns the offset as a string; the purpose of this is for logs.
@@ -1318,9 +1319,9 @@ func (o offsetLoad) MarshalJSON() ([]byte, error) {
 		return o.Offset.MarshalJSON()
 	}
 	if o.relative == 0 {
-		return []byte(fmt.Sprintf(`{"Replica":%d,"At":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.replica, o.at, o.epoch, o.currentEpoch)), nil
+		return fmt.Appendf(nil, `{"Replica":%d,"At":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.replica, o.at, o.epoch, o.currentEpoch), nil
 	}
-	return []byte(fmt.Sprintf(`{"Replica":%d,"At":%d,"Relative":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.replica, o.at, o.relative, o.epoch, o.currentEpoch)), nil
+	return fmt.Appendf(nil, `{"Replica":%d,"At":%d,"Relative":%d,"Epoch":%d,"CurrentEpoch":%d}`, o.replica, o.at, o.relative, o.epoch, o.currentEpoch), nil
 }
 
 func (o offsetLoadMap) errToLoaded(err error) []loadedOffset {
@@ -1569,7 +1570,7 @@ func (s *consumerSession) manageFetchConcurrency() {
 			var found bool
 			for i, want := range wantFetch {
 				if want == cancel {
-					wantFetch = append(wantFetch[:i], wantFetch[i+1:]...)
+					wantFetch = slices.Delete(wantFetch, i, i+1)
 					found = true
 					break
 				}
@@ -2380,12 +2381,12 @@ func (o offsetLoadMap) buildListReq(isolationLevel int8) (r1, r2 *kmsg.ListOffse
 	if createEnd {
 		r2 = kmsg.NewPtrListOffsetsRequest()
 		*r2 = *r1
-		r2.Topics = append([]kmsg.ListOffsetsRequestTopic(nil), r1.Topics...)
+		r2.Topics = slices.Clone(r1.Topics)
 		for i := range r1.Topics {
 			l := &r2.Topics[i]
 			r := &r1.Topics[i]
 			*l = *r
-			l.Partitions = append([]kmsg.ListOffsetsRequestTopicPartition(nil), r.Partitions...)
+			l.Partitions = slices.Clone(r.Partitions)
 			for i := range l.Partitions {
 				l.Partitions[i].Timestamp = -1
 			}
