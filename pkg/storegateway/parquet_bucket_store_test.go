@@ -179,6 +179,39 @@ func TestParquetBucketStore_Queries(t *testing.T) {
 		require.Equal(t, seriesResultCount, 1, "Expected only one series result across all shards")
 	})
 
+	t.Run("Series_SkipChunks", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			batch uint64
+		}{
+			{name: "NonStreaming", batch: 0},
+			{name: "Streaming", batch: 10},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				req := &storepb.SeriesRequest{
+					MinTime:                  0,
+					MaxTime:                  100,
+					SkipChunks:               true,
+					StreamingChunksBatchSize: tc.batch,
+					Matchers: []storepb.LabelMatcher{
+						{
+							Type:  storepb.LabelMatcher_EQ,
+							Name:  labels.MetricName,
+							Value: metricName,
+						},
+					},
+				}
+				seriesSet, warnings, err := grpcSeries(t, context.Background(), store, req)
+				require.NoError(t, err)
+				require.Empty(t, warnings)
+				require.Len(t, seriesSet, 1)
+				series := seriesSet[0]
+				require.NotEmpty(t, series.Labels)
+				require.Empty(t, series.Chunks)
+				require.Equal(t, metricName, series.Labels[0].Value)
+			})
+		}
+	})
 }
 
 func createTestParquetBucketStore(t *testing.T, userID string, bkt objstore.Bucket) *ParquetBucketStore {

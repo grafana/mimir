@@ -771,14 +771,14 @@ func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv st
 		stats.streamingSeriesSendResponseDuration += sendDuration
 	})
 
-	for labelsIt.Next() && chunksIt.Next() {
+	for labelsIt.Next() && (req.SkipChunks || chunksIt.Next()) {
 		lset := labelsIt.At()
-		chks := chunksIt.At()
 		seriesCount++
 		series := storepb.Series{
 			Labels: mimirpb.FromLabelsToLabelAdapters(lset),
 		}
 		if !req.SkipChunks {
+			chks := chunksIt.At()
 			series.Chunks = chks
 			chunksCount += len(chks)
 			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
@@ -792,7 +792,7 @@ func (s *ParquetBucketStore) sendSeriesChunks(req *storepb.SeriesRequest, srv st
 	if labelsIt.Err() != nil {
 		return errors.Wrap(labelsIt.Err(), "error iterating labels")
 	}
-	if chunksIt.Err() != nil {
+	if !req.SkipChunks && chunksIt.Err() != nil {
 		return errors.Wrap(chunksIt.Err(), "error iterating chunks")
 	}
 
