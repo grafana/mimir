@@ -492,7 +492,7 @@ usage_tracker:
         # CLI flag: -usage-tracker.partition-ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
-  writer:
+  events_storage_writer:
     # The Kafka backend address.
     # CLI flag: -usage-tracker.events-storage.writer.address
     [address: <string> | default = ""]
@@ -672,7 +672,7 @@ usage_tracker:
     # CLI flag: -usage-tracker.events-storage.writer.ingestion-concurrency-estimated-bytes-per-sample
     [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
 
-  reader:
+  events_storage_reader:
     # The Kafka backend address.
     # CLI flag: -usage-tracker.events-storage.reader.address
     [address: <string> | default = ""]

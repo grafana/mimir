@@ -115,15 +115,22 @@ usage_tracker:
   snapshots_storage:
     s3:
       bucket_name: usage-tracker-snapshots
-  events_storage:
-    writer:
-      address: kafka_1:9092
-      topic: usage-tracker-events
-      auto_create_topic_enabled: true
-      auto_create_topic_default_partitions: 64
-    reader:
-      address: kafka_1:9092
-      topic: usage-tracker-events
+  events_storage_writer:
+    address: kafka_1:9092
+    topic: usage-tracker-events
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 64
+  events_storage_reader:
+    address: kafka_1:9092
+    topic: usage-tracker-events
+  snapshots_metadata_writer:
+    address: kafka_1:9092
+    topic: usage-tracker-snapshots-metadata
+    auto_create_topic_enabled: true
+    auto_create_topic_default_partitions: 64
+  snapshots_metadata_reader:
+    address: kafka_1:9092
+    topic: usage-tracker-events
 
 limits:
   native_histograms_ingestion_enabled: true

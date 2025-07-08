@@ -57,8 +57,8 @@ type Config struct {
 	InstanceRing  InstanceRingConfig  `yaml:"instance_ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
-	EventsStorageWriter ingest.KafkaConfig `yaml:"writer"`
-	EventsStorageReader ingest.KafkaConfig `yaml:"reader"`
+	EventsStorageWriter ingest.KafkaConfig `yaml:"events_storage_writer"`
+	EventsStorageReader ingest.KafkaConfig `yaml:"events_storage_reader"`
 
 	SnapshotsMetadataWriter ingest.KafkaConfig `yaml:"snapshots_metadata_writer"`
 	SnapshotsMetadataReader ingest.KafkaConfig `yaml:"snapshots_metadata_reader"`

@@ -20749,7 +20749,7 @@
         },
         {
           "kind": "block",
-          "name": "writer",
+          "name": "events_storage_writer",
           "required": false,
           "desc": "",
           "blockEntries": [
@@ -21070,7 +21070,7 @@
         },
         {
           "kind": "block",
-          "name": "reader",
+          "name": "events_storage_reader",
           "required": false,
           "desc": "",
           "blockEntries": [
