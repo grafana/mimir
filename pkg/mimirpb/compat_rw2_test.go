@@ -366,7 +366,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.ErrorContains(t, err, "invalid")
 	})
 
-	t.Run("messages where the first symbol is empty string are rejected", func(t *testing.T) {
+	t.Run("messages where the first symbol is not empty string are rejected", func(t *testing.T) {
 		writeRequest := &rw2.Request{
 			Symbols: []string{"__name__", "test_metric_total", "job", "my_job"},
 			Timeseries: []rw2.TimeSeries{
