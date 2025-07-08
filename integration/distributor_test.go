@@ -65,7 +65,9 @@ type distributorTestCase struct {
 	exemplarQueries map[string][]promv1.ExemplarQueryResult
 	metadataQueries map[string]metadataResponse
 	// Expected statistics for RW2 per request.
-	expectedStats []promRemote.WriteResponseStats
+	expectedStats  []promRemote.WriteResponseStats
+	shouldReject   bool
+	expectedStatus int
 }
 
 func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataEnabled bool) {
@@ -997,6 +999,33 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				    max_native_histogram_buckets: 7
 			`),
 		},
+		"invalid rw2 symbols": {
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{0, 1},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+								HelpRef: 2,
+								UnitRef: 3,
+							},
+						},
+					},
+					Symbols: []string{"__name__", "invalid_series_bad_symbols", "some helpC", "someunitC"},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    0,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
+			expectedStatus: http.StatusBadRequest,
+			shouldReject:   true,
+		},
 	}
 
 	for _, rwVersion := range []string{"rw1", "rw2"} {
@@ -1109,11 +1138,17 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				for _, wreq := range tc.rw1request {
 					res, err := client.PushRW1(&wreq)
 					require.NoError(t, err)
-					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					if tc.expectedStatus != 0 {
+						require.Equal(t, tc.expectedStatus, res.StatusCode)
+					} else {
+						require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					}
 					assertNoStats(t, res)
 				}
 
-				requestCount += len(tc.rw1request)
+				if !tc.shouldReject {
+					requestCount += len(tc.rw1request)
+				}
 				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
 					labels.MustNewMatcher(labels.MatchEqual, "version", "1.0")))
 				require.NoError(t, err)
@@ -1122,13 +1157,19 @@ func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVers
 				for i, wreq := range tc.rw2request {
 					res, err := client.PushRW2(&wreq)
 					require.NoError(t, err)
-					require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					if tc.expectedStatus != 0 {
+						require.Equal(t, tc.expectedStatus, res.StatusCode)
+					} else {
+						require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
+					}
 					if tc.expectedStats != nil {
 						assertStats(t, tc.expectedStats[i], res)
 					}
 				}
 
-				requestCount += len(tc.rw2request)
+				if !tc.shouldReject {
+					requestCount += len(tc.rw2request)
+				}
 				err = distributor.WaitSumMetricsWithOptions(e2e.Equals(float64(requestCount)), []string{"cortex_distributor_requests_in_total"}, e2e.WithLabelMatchers(
 					labels.MustNewMatcher(labels.MatchEqual, "version", "2.0")))
 				require.NoError(t, err)
