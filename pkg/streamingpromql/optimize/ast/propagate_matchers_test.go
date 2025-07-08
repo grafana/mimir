@@ -60,6 +60,15 @@ func TestPropagateMatchers(t *testing.T) {
 		`up{foo="bar"} or down`:                                                    `up{foo="bar"} or down`,
 		`up{foo="bar"} unless down`:                                                `up{foo="bar"} unless down`,
 		`{__name__=~"left_side.*"} == ignoring(env) right_side`:                    `{__name__=~"left_side.*"} == ignoring(env) right_side`,
+		`sum(up) / sum(down)`:                                                      `sum(up) / sum(down)`,
+		`sum(up{foo!="bar"}) / sum(down)`:                                          `sum(up{foo!="bar"}) / sum(down)`,
+		`sum by (foo) (up) / sum by (foo) (down)`:                                  `sum by (foo) (up) / sum by (foo) (down)`,
+		`sum by (foo) (up{foo!="bar"}) / sum by (foo) (down)`:                      `sum by (foo) (up{foo!="bar"}) / sum by (foo) (down{foo!="bar"})`,
+		`sum by (foo) (up) / sum by (foo) (down{boo="far"})`:                       `sum by (foo) (up) / sum by (foo) (down{boo="far"})`,
+		`sum by (foo) (up{foo!="bar", boo="far"}) / sum by (foo) (down)`:           `sum by (foo) (up{foo!="bar", boo="far"}) / sum by (foo) (down{foo!="bar"})`,
+		`sum by (foo) (up) / sum(down)`:                                            `sum by (foo) (up) / sum(down)`,
+		`sum by (foo) (up{foo!="bar"}) / sum(down)`:                                `sum by (foo) (up{foo!="bar"}) / sum(down)`,
+		`sum by (foo) (up{foo!="bar"}) / sum by (foo) (down{boo="far"})`:           `sum by (foo) (up{foo!="bar"}) / sum by (foo) (down{foo!="bar", boo="far"})`,
 	}
 
 	optimizer := &PropagateMatchers{}

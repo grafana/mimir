@@ -63,8 +63,8 @@ func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryE
 		return nil, nil, false
 	}
 
-	newMatchersL := mapper.getMatchersToPropagate(matchersR, e.VectorMatching)
-	newMatchersR := mapper.getMatchersToPropagate(matchersL, e.VectorMatching)
+	newMatchersL := mapper.getMatchersToPropagate(matchersR, e.VectorMatching.MatchingLabels, e.VectorMatching.On)
+	newMatchersR := mapper.getMatchersToPropagate(matchersL, e.VectorMatching.MatchingLabels, e.VectorMatching.On)
 	for _, vsL := range vssL {
 		vsL.LabelMatchers = combineMatchers(vsL.LabelMatchers, newMatchersL)
 	}
@@ -87,6 +87,20 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*pa
 		return mapper.extractVectorSelectors(pe.Expr)
 	}
 
+	agg, ok := expr.(*parser.AggregateExpr)
+	if ok {
+		if len(agg.Grouping) == 0 && !agg.Without {
+			// Shortcut if there are no labels allowed to propagate inwards or outwards.
+			return nil, nil, false
+		}
+		vss, labelMatchers, ok := mapper.extractVectorSelectors(agg.Expr)
+		if !ok {
+			return nil, nil, false
+		}
+		newMatchers := mapper.getMatchersToPropagate(labelMatchers, agg.Grouping, !agg.Without)
+		return vss, newMatchers, ok
+	}
+
 	be, ok := expr.(*parser.BinaryExpr)
 	if ok {
 		return mapper.propagateMatchersInBinaryExpr(be)
@@ -95,19 +109,19 @@ func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*pa
 	return nil, nil, false
 }
 
-func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, vectorMatching *parser.VectorMatching) []*labels.Matcher {
-	setLabels := make(map[string]struct{})
-	for _, m := range vectorMatching.MatchingLabels {
-		setLabels[m] = struct{}{}
+func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, labelsList []string, whitelist bool) []*labels.Matcher {
+	labelsSet := make(map[string]struct{})
+	for _, l := range labelsList {
+		labelsSet[l] = struct{}{}
 	}
 
-	matchersToAdd := make([]*labels.Matcher, 0, len(matchersSrc))
+	matchersToAdd := make([]*labels.Matcher, 0, len(labelsSet))
 	for _, m := range matchersSrc {
 		if isMetricNameMatcher(m) {
 			continue
 		}
-		_, exists := setLabels[m.Name]
-		if vectorMatching.On {
+		_, exists := labelsSet[m.Name]
+		if whitelist {
 			if !exists {
 				continue
 			}
