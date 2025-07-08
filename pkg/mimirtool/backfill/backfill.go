@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
@@ -75,7 +76,7 @@ type IteratorCreator func() Iterator
 
 // this is adapted from  https://github.com/prometheus/prometheus/blob/2f54aa060484a9a221eb227e1fb917ae66051c76/cmd/promtool/backfill.go#L68-L171
 func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable bool, output io.Writer) (returnErr error) {
-	blockDuration := tsdb.DefaultBlockDuration
+	blockDuration := tsdb.DefaultBlockDuration / 2
 	mint = blockDuration * (mint / blockDuration)
 
 	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
@@ -91,7 +92,8 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 
 	var wroteHeader bool
 
-	for t := mint; t <= maxt; t = t + blockDuration/2 {
+	for blockMinT := mint; blockMinT <= maxt; blockMinT = blockMinT + blockDuration {
+		blockMaxT := blockMinT + blockDuration
 		err := func() error {
 			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, blockDuration)
 			if err != nil {
@@ -107,7 +109,6 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 			ctx := context.Background()
 			app := w.Appender(ctx)
 			i := input()
-			tsUpper := t + blockDuration/2
 			samplesCount := 0
 			for {
 				err := i.Next()
@@ -119,7 +120,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 				}
 
 				ts, v, h, fh := i.Sample()
-				if ts < t || ts >= tsUpper {
+				if ts < blockMinT || ts >= blockMaxT {
 					continue
 				}
 
