@@ -127,7 +127,7 @@ func newPartitionHandler(
 
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 
-		eventFetchFailures: prometheus.NewCounter(prometheus.CounterOpts{
+		eventFetchFailures: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_usage_tracker_event_fetch_failures_total",
 			Help: "Total number of failures while fetching events from Kafka.",
 		}),
