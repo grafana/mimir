@@ -111,9 +111,9 @@ type LazyReaderLocalLabelsBucketChunks struct {
 	earlyValidation bool
 
 	// bkt to download the labels file to local disk and open the chunks file from the bucket
-	bkt       objstore.InstrumentedBucketReader
-	localDir  string
-	shardOpts []storage.ShardOption
+	bkt      objstore.InstrumentedBucketReader
+	localDir string
+	fileOpts []storage.FileOption
 
 	metrics         *LazyParquetReaderMetrics
 	onClosed        func(*LazyReaderLocalLabelsBucketChunks)
@@ -137,7 +137,7 @@ func NewLazyReaderLocalLabelsBucketChunks(
 	blockID ulid.ULID,
 	bkt objstore.InstrumentedBucketReader,
 	localDir string,
-	//shardOpts []storage.ShardOption,
+	//fileOpts []storage.FileOption,
 	metrics *LazyParquetReaderMetrics,
 	onClosed func(*LazyReaderLocalLabelsBucketChunks),
 	lazyLoadingGate gate.Gate,
@@ -151,6 +151,11 @@ func NewLazyReaderLocalLabelsBucketChunks(
 		earlyValidation: earlyValidation,
 		bkt:             bkt,
 		localDir:        localDir,
+		fileOpts: []storage.FileOption{
+			storage.WithFileOptions(
+				parquet.SkipBloomFilters(false),
+			),
+		},
 
 		metrics:  metrics,
 		usedAt:   atomic.NewInt64(0),
@@ -222,7 +227,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) convertLabelsFileToLocalDisk() error
 	labelsFileName := r.labelsFileName()
 	bucketFileOpener := storage.NewParquetBucketOpener(r.bkt)
 
-	bucketLabelsFile, err := bucketFileOpener.Open(r.ctx, labelsFileName, r.shardOpts...)
+	bucketLabelsFile, err := bucketFileOpener.Open(r.ctx, labelsFileName, r.fileOpts...)
 	if err != nil {
 		return errors.Wrap(err, "open bucket parquet labels file")
 	}
@@ -359,7 +364,7 @@ func (r *LazyReaderLocalLabelsBucketChunks) loadReader() (Reader, error) {
 		r.shardIdx,
 		labelsLocalFileOpener,
 		chunksBucketOpener,
-		r.shardOpts...,
+		r.fileOpts...,
 	)
 
 	if err != nil {
