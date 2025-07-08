@@ -580,7 +580,7 @@ func (am *Alertmanager) getFullState() (*clusterpb.FullState, error) {
 
 func (am *Alertmanager) wrapNotifier(integrationName string, notifier notify.Notifier) notify.Notifier {
 	if am.cfg.EnableNotifyHooks {
-		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
+		n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger, am.registry)
 		if err != nil {
 			// It's rare an error is returned, but in theory it can happen.
 			level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
