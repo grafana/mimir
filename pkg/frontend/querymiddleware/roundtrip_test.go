@@ -575,12 +575,14 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.ShardedQueries = true
 	cfg.PruneQueriesToggle = true
 	cfg.PruneQueriesMatcherPropagate = true
+	cfg.PruneQueriesHistogram = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
 	require.NotZero(t, cfg.PruneQueriesToggle)
 	require.NotZero(t, cfg.PruneQueriesMatcherPropagate)
+	require.NotZero(t, cfg.PruneQueriesHistogram)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 

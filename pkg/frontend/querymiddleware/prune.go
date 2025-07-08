@@ -82,6 +82,14 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 		}
 	}
 
+	if p.cfg.PruneQueriesHistogram {
+		mapperHistogram := astmapper.NewQueryPrunerHistogram(ctx, p.logger)
+		prunedQuery, err = mapperHistogram.Map(prunedQuery)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
 	prunedQueryString := prunedQuery.String()
 
 	return prunedQueryString, origQueryString != prunedQueryString, nil
