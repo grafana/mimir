@@ -11,6 +11,9 @@
     // How many zones ingesters should be deployed to.
     ingest_storage_ingester_zones: 3,
 
+    // The version of the Kafka record wire format.
+    ingest_storage_kafka_producer_record_version: 1,
+
     commonConfig+:: if !$._config.ingest_storage_enabled then {} else
       $.ingest_storage_args +
 
@@ -67,6 +70,7 @@
   ingest_storage_kafka_producer_args:: {
     'ingest-storage.kafka.address': $.ingest_storage_kafka_producer_address,
     'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_producer_client_id_settings),
+    'ingest-storage.kafka.producer-record-version': $._config.ingest_storage_kafka_producer_record_version,
   },
 
   // The configuration that should be applied to all Mimir components consuming from Kafka.
@@ -206,4 +210,7 @@
     else
       // Explicitly use null so that the CLI flag will not be set at all (instead of getting set to an empty string).
       null,
+
+  assert $._config.ingest_storage_kafka_producer_record_version >= 0 && $._config.ingest_storage_kafka_producer_record_version <= 1
+         : 'the Kafka record version must be in the range [0, 1]',
 }
