@@ -26,68 +26,72 @@ import (
 	"github.com/prometheus-community/parquet-common/schema"
 )
 
-var DefaultShardOptions = shardOptions{
-	optimisticReader: true,
+var DefaultFileOptions = ExtendedFileConfig{
+	FileConfig: &parquet.FileConfig{
+		SkipPageIndex:    parquet.DefaultSkipPageIndex,
+		ReadMode:         parquet.DefaultReadMode,
+		SkipMagicBytes:   true,
+		SkipBloomFilters: true,
+		ReadBufferSize:   4096,
+		OptimisticRead:   true,
+	},
+	PagePartitioningMaxGapSize: 10 * 1024,
 }
 
-type shardOptions struct {
-	fileOptions      []parquet.FileOption
-	optimisticReader bool
+type ExtendedFileConfig struct {
+	*parquet.FileConfig
+	PagePartitioningMaxGapSize int
 }
 
 type ParquetFile struct {
 	*parquet.File
 	ReadAtWithContextCloser
-	BloomFiltersLoaded bool
-
-	optimisticReader bool
+	Cfg ExtendedFileConfig
 }
 
-type ShardOption func(*shardOptions)
+type FileOption func(*ExtendedFileConfig)
 
-func WithFileOptions(fileOptions ...parquet.FileOption) ShardOption {
-	return func(opts *shardOptions) {
-		opts.fileOptions = append(opts.fileOptions, fileOptions...)
+func WithFileOptions(options ...parquet.FileOption) FileOption {
+	config := parquet.DefaultFileConfig()
+	config.Apply(options...)
+	return func(opts *ExtendedFileConfig) {
+		opts.FileConfig = config
 	}
 }
 
-func WithOptimisticReader(optimisticReader bool) ShardOption {
-	return func(opts *shardOptions) {
-		opts.optimisticReader = optimisticReader
+// WithPageMaxGapSize set the max gap size between pages that should be downloaded together in a single read call
+func WithPageMaxGapSize(pagePartitioningMaxGapSize int) FileOption {
+	return func(opts *ExtendedFileConfig) {
+		opts.PagePartitioningMaxGapSize = pagePartitioningMaxGapSize
 	}
 }
 
-func (f *ParquetFile) GetPages(ctx context.Context, cc parquet.ColumnChunk, pagesToRead ...int) (*parquet.FilePages, error) {
+func (f *ParquetFile) GetPages(ctx context.Context, cc parquet.ColumnChunk, minOffset, maxOffset int64) (*parquet.FilePages, error) {
 	colChunk := cc.(*parquet.FileColumnChunk)
 	reader := f.WithContext(ctx)
 
-	if len(pagesToRead) > 0 && f.optimisticReader {
-		offset, err := cc.OffsetIndex()
-		if err != nil {
-			return nil, err
-		}
-		minOffset := offset.Offset(pagesToRead[0])
-		maxOffset := offset.Offset(pagesToRead[len(pagesToRead)-1]) + offset.CompressedPageSize(pagesToRead[len(pagesToRead)-1])
-		reader = newOptimisticReaderAt(reader, minOffset, maxOffset)
+	if f.Cfg.OptimisticRead {
+		reader = NewOptimisticReaderAt(reader, minOffset, maxOffset)
 	}
 
 	pages := colChunk.PagesFrom(reader)
 	return pages, nil
 }
 
-func Open(ctx context.Context, r ReadAtWithContextCloser, size int64, opts ...ShardOption) (*ParquetFile, error) {
-	cfg := DefaultShardOptions
+func (f *ParquetFile) DictionaryPageBounds(rgIdx, colIdx int) (uint64, uint64) {
+	colMeta := f.Metadata().RowGroups[rgIdx].Columns[colIdx].MetaData
+
+	return uint64(colMeta.DictionaryPageOffset), uint64(colMeta.DataPageOffset - colMeta.DictionaryPageOffset)
+}
+
+func Open(ctx context.Context, r ReadAtWithContextCloser, size int64, opts ...FileOption) (*ParquetFile, error) {
+	cfg := DefaultFileOptions
 
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	c, err := parquet.NewFileConfig(cfg.fileOptions...)
-	if err != nil {
-		return nil, err
-	}
-
-	file, err := parquet.OpenFile(r.WithContext(ctx), size, cfg.fileOptions...)
+	file, err := parquet.OpenFile(r.WithContext(ctx), size, cfg.FileConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -95,12 +99,11 @@ func Open(ctx context.Context, r ReadAtWithContextCloser, size int64, opts ...Sh
 	return &ParquetFile{
 		File:                    file,
 		ReadAtWithContextCloser: r,
-		BloomFiltersLoaded:      !c.SkipBloomFilters,
-		optimisticReader:        cfg.optimisticReader,
+		Cfg:                     cfg,
 	}, nil
 }
 
-func OpenFromBucket(ctx context.Context, bkt objstore.BucketReader, name string, opts ...ShardOption) (*ParquetFile, error) {
+func OpenFromBucket(ctx context.Context, bkt objstore.BucketReader, name string, opts ...FileOption) (*ParquetFile, error) {
 	attr, err := bkt.Attributes(ctx, name)
 	if err != nil {
 		return nil, err
@@ -110,7 +113,7 @@ func OpenFromBucket(ctx context.Context, bkt objstore.BucketReader, name string,
 	return Open(ctx, r, attr.Size, opts...)
 }
 
-func OpenFromFile(ctx context.Context, path string, opts ...ShardOption) (*ParquetFile, error) {
+func OpenFromFile(ctx context.Context, path string, opts ...FileOption) (*ParquetFile, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -137,7 +140,7 @@ type ParquetShard interface {
 }
 
 type ParquetOpener interface {
-	Open(ctx context.Context, path string, opts ...ShardOption) (*ParquetFile, error)
+	Open(ctx context.Context, path string, opts ...FileOption) (*ParquetFile, error)
 }
 
 type ParquetBucketOpener struct {
@@ -150,7 +153,7 @@ func NewParquetBucketOpener(bkt objstore.BucketReader) *ParquetBucketOpener {
 	}
 }
 
-func (o *ParquetBucketOpener) Open(ctx context.Context, name string, opts ...ShardOption) (*ParquetFile, error) {
+func (o *ParquetBucketOpener) Open(ctx context.Context, name string, opts ...FileOption) (*ParquetFile, error) {
 	return OpenFromBucket(ctx, o.bkt, name, opts...)
 }
 
@@ -160,7 +163,7 @@ func NewParquetLocalFileOpener() *ParquetLocalFileOpener {
 	return &ParquetLocalFileOpener{}
 }
 
-func (o *ParquetLocalFileOpener) Open(ctx context.Context, name string, opts ...ShardOption) (*ParquetFile, error) {
+func (o *ParquetLocalFileOpener) Open(ctx context.Context, name string, opts ...FileOption) (*ParquetFile, error) {
 	return OpenFromFile(ctx, name, opts...)
 }
 
@@ -176,8 +179,14 @@ func NewParquetShardOpener(
 	labelsFileOpener ParquetOpener,
 	chunksFileOpener ParquetOpener,
 	shard int,
-	opts ...ShardOption,
+	opts ...FileOption,
 ) (*ParquetShardOpener, error) {
+	cfg := DefaultFileOptions
+
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	labelsFileName := schema.LabelsPfileNameForShard(name, shard)
 	chunksFileName := schema.ChunksPfileNameForShard(name, shard)
 
