@@ -83,38 +83,6 @@ func TestQueryPrunerHistogram(t *testing.T) {
 			`avg(histogram_count(rate(foo[5m])))`,
 		},
 		{
-			`histogram_avg(sum(foo))`,
-			`sum(histogram_avg(foo))`,
-		},
-		{
-			`sum(histogram_avg(foo))`,
-			`sum(histogram_avg(foo))`,
-		},
-		{
-			`histogram_avg(avg(foo))`,
-			`avg(histogram_avg(foo))`,
-		},
-		{
-			`avg(histogram_avg(foo))`,
-			`avg(histogram_avg(foo))`,
-		},
-		{
-			`histogram_avg(sum(rate(foo[5m])))`,
-			`sum(histogram_avg(rate(foo[5m])))`,
-		},
-		{
-			`sum(histogram_avg(rate(foo[5m])))`,
-			`sum(histogram_avg(rate(foo[5m])))`,
-		},
-		{
-			`histogram_avg(avg(rate(foo[5m])))`,
-			`avg(histogram_avg(rate(foo[5m])))`,
-		},
-		{
-			`avg(histogram_avg(rate(foo[5m])))`,
-			`avg(histogram_avg(rate(foo[5m])))`,
-		},
-		{
 			`(((histogram_sum(sum(foo)))))`,
 			`(((sum(histogram_sum(foo)))))`,
 		},

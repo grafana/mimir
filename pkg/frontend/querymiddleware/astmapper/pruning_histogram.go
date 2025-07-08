@@ -60,8 +60,7 @@ func (pruner *queryPrunerHistogram) MapExpr(expr parser.Expr) (mapped parser.Exp
 }
 
 func (pruner *queryPrunerHistogram) isSwitchableCall(callFunc *parser.Function) bool {
-	return callFunc.Name == "histogram_sum" || callFunc.Name == "histogram_count" ||
-		callFunc.Name == "histogram_avg"
+	return callFunc.Name == "histogram_sum" || callFunc.Name == "histogram_count"
 }
 
 func (pruner *queryPrunerHistogram) isSwitchableAgg(op parser.ItemType) bool {
