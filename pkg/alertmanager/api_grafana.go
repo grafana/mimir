@@ -28,6 +28,7 @@ import (
 )
 
 const (
+	errGettingFullState               = "error getting full state from the running Grafana Alertmanager"
 	errMalformedGrafanaConfigInStore  = "error unmarshalling Grafana configuration from storage"
 	errMarshallingState               = "error marshalling Grafana Alertmanager state"
 	errMarshallingStateJSON           = "error marshalling JSON Grafana Alertmanager state"
@@ -181,19 +182,36 @@ func (am *MultitenantAlertmanager) GetUserState(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	st, err := am.store.GetFullState(r.Context(), userID)
-	if err != nil {
-		if errors.Is(err, alertspb.ErrNotFound) {
-			w.WriteHeader(http.StatusNotFound)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
-		} else {
+	// Try to get the full state from the running Alertmanager, using the database as a fallback.
+	am.alertmanagersMtx.Lock()
+	userAM, ok := am.alertmanagers[userID]
+	am.alertmanagersMtx.Unlock()
+
+	var st *clusterpb.FullState
+	if ok {
+		st, err = userAM.state.GetFullState()
+		if err != nil {
+			level.Error(logger).Log("msg", errGettingFullState, "err", err, "user", userID)
 			w.WriteHeader(http.StatusInternalServerError)
-			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+			util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errGettingFullState, err.Error())})
+			return
 		}
-		return
+	} else {
+		desc, err := am.store.GetFullState(r.Context(), userID)
+		if err != nil {
+			if errors.Is(err, alertspb.ErrNotFound) {
+				w.WriteHeader(http.StatusNotFound)
+				util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+			}
+			return
+		}
+		st = desc.State
 	}
 
-	bytes, err := st.State.Marshal()
+	bytes, err := st.Marshal()
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingState, "err", err, "user", userID)
 		w.WriteHeader(http.StatusInternalServerError)
