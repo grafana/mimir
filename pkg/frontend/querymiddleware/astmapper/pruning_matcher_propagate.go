@@ -37,9 +37,8 @@ func (pruner *queryPrunerMatcherPropagate) MapExpr(expr parser.Expr) (mapped par
 		return expr, false, nil
 	}
 
-	pruner.propagateMatchersInBinaryExpr(e)
-
-	return e, false, nil
+	_, _, boolResult := pruner.propagateMatchersInBinaryExpr(e)
+	return e, boolResult, nil
 }
 
 func (pruner *queryPrunerMatcherPropagate) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
