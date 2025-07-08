@@ -363,7 +363,7 @@ func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv k
 
 	cfg.SnapshotsStorage.Filesystem.Directory = t.TempDir()
 
-	require.NoError(t, cfg.Validate())
+	require.NoError(t, cfg.ValidateForUsageTracker())
 	return cfg
 }
 

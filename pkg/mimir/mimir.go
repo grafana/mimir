@@ -326,8 +326,15 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
 	}
-	if err := c.UsageTracker.Validate(); err != nil {
-		return errors.Wrap(err, "invalid usage-tracker config")
+	if c.isAnyModuleEnabled(Distributor, Write, All) {
+		if err := c.UsageTracker.ValidateForClient(); err != nil {
+			return errors.Wrap(err, "invalid usage-tracker config")
+		}
+	}
+	if c.isAnyModuleEnabled(UsageTracker, All) {
+		if err := c.UsageTracker.ValidateForUsageTracker(); err != nil {
+			return errors.Wrap(err, "invalid usage-tracker config")
+		}
 	}
 	if err := c.Vault.Validate(); err != nil {
 		return errors.Wrap(err, "invalid vault config")

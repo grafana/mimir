@@ -115,14 +115,26 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
 }
 
-func (c *Config) Validate() error {
+func (c *Config) ValidateForClient() error {
 	// Skip validation if not enabled.
 	if !c.Enabled {
 		return nil
 	}
 
+	return c.validateCommon()
+}
+
+func (c *Config) validateCommon() error {
 	if !isPowerOfTwo(c.Partitions) {
 		return fmt.Errorf("invalid number of partitions %d, must be a power of 2", c.Partitions)
+	}
+
+	return nil
+}
+
+func (c *Config) ValidateForUsageTracker() error {
+	if err := c.validateCommon(); err != nil {
+		return err
 	}
 
 	if err := c.EventsStorageWriter.Validate(); err != nil {
