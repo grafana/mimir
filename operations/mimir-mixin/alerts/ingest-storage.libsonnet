@@ -298,7 +298,6 @@
             (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 60 * 60 * 4)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_blockbuilder_tsdb_last_successful_compact_and_upload_timestamp_seconds) > 0)
-            and
             # Only if blocks aren't shipped by ingesters.
             unless on (%(alert_aggregation_labels)s)
             (max by (%(alert_aggregation_labels)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
