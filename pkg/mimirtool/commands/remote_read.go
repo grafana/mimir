@@ -472,6 +472,7 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 
 	pipeR, pipeW := io.Pipe()
 	go func() {
+		defer pipeR.Close()
 		scanner := bufio.NewScanner(pipeR)
 		for scanner.Scan() {
 			log.Info(scanner.Text())
@@ -480,7 +481,7 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 			log.Error("reading block status:", err)
 		}
 	}()
-	defer pipeR.Close()
+	defer pipeW.Close()
 
 	log.Infof("Store TSDB blocks in '%s'", c.tsdbPath)
 	if err := backfill.CreateBlocks(iteratorCreator, int64(mint), int64(maxt), 1000, c.tsdbPath, true, pipeW); err != nil {
