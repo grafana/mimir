@@ -2004,6 +2004,12 @@ instance_limits:
 [reusable_ingester_push_workers: <int> | default = 2000]
 
 usage_tracker_client:
+  # The grpc_client block configures the gRPC client used to communicate between
+  # two Mimir components.
+  # The CLI flags prefix for this block configuration is:
+  # distributor.usage-tracker-client.grpc-client-config
+  [grpc: <grpc_client>]
+
   # Preferred availability zone to query usage-trackers.
   # CLI flag: -distributor.usage-tracker-client.prefer-availability-zone
   [prefer_availability_zone: <string> | default = ""]
@@ -2019,32 +2025,23 @@ usage_tracker_client:
   # CLI flag: -distributor.usage-tracker-client.reusable-workers
   [reusable_workers: <int> | default = 500]
 
-  # (advanced) Enable TLS for gRPC client connecting to usage-tracker.
-  # CLI flag: -distributor.usage-tracker-client.tls-enabled
-  [tls_enabled: <boolean> | default = false]
+  # (advanced)
+  [tls_enabled: <boolean> | default = ]
 
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -distributor.usage-tracker-client.tls-cert-path
+  # (advanced)
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
-  # CLI flag: -distributor.usage-tracker-client.tls-key-path
+  # (advanced)
   [tls_key_path: <string> | default = ""]
 
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -distributor.usage-tracker-client.tls-ca-path
+  # (advanced)
   [tls_ca_path: <string> | default = ""]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -distributor.usage-tracker-client.tls-server-name
+  # (advanced)
   [tls_server_name: <string> | default = ""]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -distributor.usage-tracker-client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+  # (advanced)
+  [tls_insecure_skip_verify: <boolean> | default = ]
 
   # (advanced) Override the default cipher suite list (separated by commas).
   # Allowed values:
@@ -2077,12 +2074,9 @@ usage_tracker_client:
   # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
   # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
   # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
-  # CLI flag: -distributor.usage-tracker-client.tls-cipher-suites
   [tls_cipher_suites: <string> | default = ""]
 
-  # (advanced) Override the default minimum TLS version. Allowed values:
-  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  # CLI flag: -distributor.usage-tracker-client.tls-min-version
+  # (advanced)
   [tls_min_version: <string> | default = ""]
 ```
 
@@ -3777,6 +3771,7 @@ The `ingester_client` block configures how the distributors connect to the inges
 
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
+- `distributor.usage-tracker-client.grpc-client-config`
 - `ingester.client`
 - `querier.frontend-client`
 - `querier.scheduler-client`

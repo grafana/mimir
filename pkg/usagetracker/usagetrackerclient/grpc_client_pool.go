@@ -20,18 +20,6 @@ import (
 )
 
 func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName string, clientConfig Config, logger log.Logger, registerer prometheus.Registerer) *client.Pool {
-	// We prefer sane defaults instead of exposing further config options.
-	clientCfg := grpcclient.Config{
-		MaxRecvMsgSize:      100 << 20,
-		MaxSendMsgSize:      16 << 20,
-		GRPCCompression:     "",
-		RateLimit:           0,
-		RateLimitBurst:      0,
-		BackoffOnRatelimits: false,
-		TLSEnabled:          clientConfig.TLSEnabled,
-		TLS:                 clientConfig.TLS,
-	}
-
 	poolCfg := client.PoolConfig{
 		CheckInterval:      10 * time.Second,
 		HealthCheckEnabled: true,
@@ -49,7 +37,7 @@ func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName
 	if clientConfig.ClientFactory != nil {
 		factory = clientConfig.ClientFactory
 	} else {
-		factory = newUsageTrackerClientFactory(clientName, clientCfg, registerer, logger)
+		factory = newUsageTrackerClientFactory(clientName, clientConfig.GRPCClientConfig, registerer, logger)
 	}
 
 	return client.NewPool("usage-tracker", poolCfg, discovery, factory, clientsCount, logger)
