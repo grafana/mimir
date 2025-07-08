@@ -183,12 +183,32 @@ func TestQueryPrunerMatcherPropagate(t *testing.T) {
 			`left + ignoring(foo) up{foo!="bar"} / on(foo) down{foo!="bar"}`,
 		},
 		{
-			`up and vector(3) or down{foo=~"bar"}`,
-			`up{foo=~"bar"} and vector(3) or down{foo=~"bar"}`,
+			`up and vector(3) / down{foo=~"bar"}`,
+			`up{foo=~"bar"} and vector(3) / down{foo=~"bar"}`,
 		},
 		{
-			`up and vector(3) or ignoring(foo) down{foo=~"bar"}`,
-			`up and vector(3) or ignoring(foo) down{foo=~"bar"}`,
+			`up and vector(3) / ignoring(foo) down{foo=~"bar"}`,
+			`up{foo=~"bar"} and vector(3) / ignoring(foo) down{foo=~"bar"}`,
+		},
+		{
+			`(up and vector(3)) / ignoring(foo) down{foo=~"bar"}`,
+			`(up and vector(3)) / ignoring(foo) down{foo=~"bar"}`,
+		},
+		{
+			`up and vector(3) or down{foo=~"bar"}`,
+			`up and vector(3) or down{foo=~"bar"}`,
+		},
+		{
+			`up{foo="bar"} or down`,
+			`up{foo="bar"} or down`,
+		},
+		{
+			`up{foo="bar"} unless down`,
+			`up{foo="bar"} unless down`,
+		},
+		{
+			`{__name__=~"left_side.*"} == ignoring(env) right_side`,
+			`{__name__=~"left_side.*"} == ignoring(env) right_side`,
 		},
 	} {
 		tt := tt

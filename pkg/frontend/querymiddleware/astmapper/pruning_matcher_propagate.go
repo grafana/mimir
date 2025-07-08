@@ -43,6 +43,10 @@ func (pruner *queryPrunerMatcherPropagate) MapExpr(expr parser.Expr) (mapped par
 }
 
 func (pruner *queryPrunerMatcherPropagate) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
+	if e.Op == parser.LOR || e.Op == parser.LUNLESS {
+		return nil, nil, false
+	}
+
 	vssL, matchersL, okL := pruner.extractVectorSelectors(e.LHS)
 	vssR, matchersR, okR := pruner.extractVectorSelectors(e.RHS)
 	switch {
@@ -130,7 +134,7 @@ func combineMatchers(matchers, matchersToAdd []*labels.Matcher) []*labels.Matche
 }
 
 func isMetricNameMatcher(m *labels.Matcher) bool {
-	return m.Name == labels.MetricName && m.Type == labels.MatchEqual
+	return m.Name == labels.MetricName
 }
 
 func makeMatchersMap(matchers []*labels.Matcher) map[string]*labels.Matcher {
