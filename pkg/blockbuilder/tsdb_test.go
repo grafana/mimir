@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -626,4 +627,315 @@ func defaultLimitsTestConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+// TestBuilderCreatedTimestamp tests the the Remote Write protocol
+// Created timestamp field is correctly handled.
+// The Created timestamp injects extra zero samples at the
+// specified timestamp - if it's before the next sample.
+func TestBuilderCreatedTimestamp(t *testing.T) {
+	var (
+		user1 = "user_ooo_disabled"
+		user2 = "user_all_enabled"
+	)
+
+	limits := map[string]*validation.Limits{
+		user1: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			OutOfOrderTimeWindow:                     0,
+		},
+		user2: {
+			NativeHistogramsIngestionEnabled:         true,
+			OTelCreatedTimestampZeroIngestionEnabled: true,
+			OutOfOrderTimeWindow:                     model.Duration(time.Hour),
+		},
+	}
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+
+	processingRange := int64(100000)
+	lastEnd := 2 * processingRange
+	currEnd := 3 * processingRange
+
+	simpleTestHistogram := func(ts int64, count uint64) mimirpb.Histogram {
+		return mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountInt{CountInt: count},
+			ZeroThreshold: 1e-128,
+			ZeroCount:     &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: count},
+			Timestamp:     ts,
+		}
+	}
+	expectedHistogram := func(ts int64, count uint64) test.Sample {
+		return test.Sample{
+			TS: ts,
+			Hist: &histogram.Histogram{
+				Count:         count,
+				ZeroThreshold: 1e-128,
+				ZeroCount:     count,
+			},
+		}
+	}
+	simpleTestFloatHistogram := func(ts int64, count float64) mimirpb.Histogram {
+		return mimirpb.Histogram{
+			Count:         &mimirpb.Histogram_CountFloat{CountFloat: count},
+			ZeroThreshold: 1e-128,
+			ZeroCount:     &mimirpb.Histogram_ZeroCountFloat{ZeroCountFloat: count},
+			Timestamp:     ts,
+		}
+	}
+	expectedFloatHistogram := func(ts int64, count float64) test.Sample {
+		return test.Sample{
+			TS: ts,
+			FloatHist: &histogram.FloatHistogram{
+				Count:         count,
+				ZeroThreshold: 1e-128,
+				ZeroCount:     count,
+			},
+		}
+	}
+
+	testCases := map[string]struct {
+		input         []mimirpb.TimeSeries // We'll generate the Labels, just set the samples and created timestamp.
+		expectSamples []test.Sample
+	}{
+		"float samples": {
+			input: []mimirpb.TimeSeries{
+				{
+					// Samples and Created timestamp (CT) outside the current block.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd - 50000 + 100, Value: 1},
+						{TimestampMs: lastEnd - 50000 + 300, Value: 2},
+					},
+					CreatedTimestamp: lastEnd - 50000 + 200,
+				},
+				{
+					// Sample inside the current block, but CT outside.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 100, Value: 3},
+					},
+					CreatedTimestamp: lastEnd - 50000 + 200,
+				},
+				{
+					// Samples and CT inside the current block.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 300, Value: 4},
+						{TimestampMs: lastEnd + 400, Value: 5},
+					},
+					CreatedTimestamp: lastEnd + 200,
+				},
+				{
+					// Repeated CT.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 500, Value: 6},
+					},
+					CreatedTimestamp: lastEnd + 200,
+				},
+				{
+					// Samples and CT mixed in in the current block.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 600, Value: 7},
+						{TimestampMs: lastEnd + 800, Value: 8},
+					},
+					CreatedTimestamp: lastEnd + 700,
+				},
+				{
+					// CT alone is ignored.
+					Samples:          []mimirpb.Sample{},
+					CreatedTimestamp: lastEnd + 1000,
+				},
+				{
+					// CT inside current block but some samples in the next block.
+					Samples: []mimirpb.Sample{
+						{TimestampMs: currEnd - 200, Value: 9},
+						{TimestampMs: currEnd + 200, Value: 10},
+					},
+					CreatedTimestamp: currEnd - 100,
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd - 50000 + 100, Val: 1},
+				{TS: lastEnd - 50000 + 200, Val: 0},
+				{TS: lastEnd - 50000 + 300, Val: 2},
+				{TS: lastEnd + 100, Val: 3},
+				{TS: lastEnd + 200, Val: 0},
+				{TS: lastEnd + 300, Val: 4},
+				{TS: lastEnd + 400, Val: 5},
+				{TS: lastEnd + 500, Val: 6},
+				{TS: lastEnd + 600, Val: 7},
+				{TS: lastEnd + 700, Val: 0},
+				{TS: lastEnd + 800, Val: 8},
+				{TS: currEnd - 200, Val: 9},
+				{TS: currEnd - 100, Val: 0},
+				{TS: currEnd + 200, Val: 10},
+			},
+		},
+		"histogram samples": {
+			input: []mimirpb.TimeSeries{
+				{
+					// Samples and Created timestamp (CT) outside the current block.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd-50000+100, 1),
+						simpleTestHistogram(lastEnd-50000+300, 2),
+					},
+					CreatedTimestamp: lastEnd - 50000 + 200,
+				},
+				{
+					// Sample inside the current block, but CT outside.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+100, 3),
+					},
+					CreatedTimestamp: lastEnd - 50000 + 200,
+				},
+				{
+					// Samples and CT inside the current block.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+300, 4),
+						simpleTestHistogram(lastEnd+400, 5),
+					},
+					CreatedTimestamp: lastEnd + 200,
+				},
+				{
+					// Repeated CT.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+500, 6),
+					},
+					CreatedTimestamp: lastEnd + 200,
+				},
+				{
+					// Samples and CT mixed in in the current block.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+600, 7),
+						simpleTestHistogram(lastEnd+800, 8),
+					},
+					CreatedTimestamp: lastEnd + 700,
+				},
+				{
+					// CT alone is ignored.
+					Histograms:       []mimirpb.Histogram{},
+					CreatedTimestamp: lastEnd + 900,
+				},
+				{
+					// Test float histogram produces the correct zero sample.
+					Histograms: []mimirpb.Histogram{
+						simpleTestFloatHistogram(lastEnd+1100, 8.5),
+					},
+					CreatedTimestamp: lastEnd + 1000,
+				},
+				{
+					// CT inside current block but some samples in the next block.
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(currEnd-200, 9),
+						simpleTestHistogram(currEnd+200, 10),
+					},
+					CreatedTimestamp: currEnd - 100,
+				},
+			},
+			expectSamples: []test.Sample{
+				expectedHistogram(lastEnd-50000+100, 1),
+				{TS: lastEnd - 50000 + 200, Hist: zeroHistogram},
+				expectedHistogram(lastEnd-50000+300, 2),
+				expectedHistogram(lastEnd+100, 3),
+				{TS: lastEnd + 200, Hist: zeroHistogram},
+				expectedHistogram(lastEnd+300, 4),
+				expectedHistogram(lastEnd+400, 5),
+				expectedHistogram(lastEnd+500, 6),
+				expectedHistogram(lastEnd+600, 7),
+				{TS: lastEnd + 700, Hist: zeroHistogram},
+				expectedHistogram(lastEnd+800, 8),
+				{TS: lastEnd + 1000, FloatHist: zeroFloatHistogram},
+				expectedFloatHistogram(lastEnd+1100, 8.5),
+				expectedHistogram(currEnd-200, 9),
+				{TS: currEnd - 100, Hist: zeroHistogram},
+				expectedHistogram(currEnd+200, 10),
+			},
+		},
+	}
+
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
+	builder := NewTSDBBuilder(logger, t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	tcNumber := 0
+	for name, tc := range testCases {
+		for _, user := range []string{user1, user2} {
+			tcName := fmt.Sprintf("number=%d tc=%s user=%s", tcNumber, name, user)
+			t.Run(tcName, func(t *testing.T) {
+				metricName := fmt.Sprintf("test_%s_%d", user, tcNumber)
+				// Process the write requests.
+				for _, input := range tc.input {
+					ts := &mimirpb.TimeSeries{
+						Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, metricName)),
+						Samples:          make([]mimirpb.Sample, len(input.Samples)),
+						Histograms:       make([]mimirpb.Histogram, len(input.Histograms)),
+						CreatedTimestamp: input.CreatedTimestamp,
+					}
+					copy(ts.Samples, input.Samples)
+					copy(ts.Histograms, input.Histograms)
+					writeReq := mimirpb.WriteRequest{
+						Timeseries: []mimirpb.PreallocTimeseries{
+							{
+								TimeSeries: ts,
+							},
+						},
+					}
+					data, err := writeReq.Marshal()
+					require.NoError(t, err)
+					rec := &kgo.Record{
+						Key:   []byte(user),
+						Value: data,
+					}
+					err = builder.Process(context.Background(), rec)
+					require.NoError(t, err)
+				}
+				// Verify.
+				db, err := builder.getOrCreateTSDB(tsdbTenant{tenantID: user})
+				require.NoError(t, err)
+
+				querier, err := db.Querier(math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+				ss := querier.Select(
+					context.Background(), true, nil,
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, metricName),
+				)
+
+				require.True(t, ss.Next(), "DB has a series matching %s{}", metricName)
+				series := ss.At()
+
+				it := series.Iterator(nil)
+				actual := []test.Sample{}
+				for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
+					switch typ {
+					case chunkenc.ValFloat:
+						ts, val := it.At()
+						actual = append(actual, test.Sample{
+							TS:  ts,
+							Val: val,
+						})
+					case chunkenc.ValHistogram:
+						ts, h := it.AtHistogram(nil)
+						h.CounterResetHint = histogram.UnknownCounterReset // Don't care.
+						actual = append(actual, test.Sample{
+							TS:   ts,
+							Hist: h,
+						})
+					case chunkenc.ValFloatHistogram:
+						ts, fh := it.AtFloatHistogram(nil)
+						fh.CounterResetHint = histogram.UnknownCounterReset // Don't care.
+						actual = append(actual, test.Sample{
+							TS:        ts,
+							FloatHist: fh,
+						})
+					default:
+						t.Fatalf("unexpected sample type %v", typ)
+					}
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, tc.expectSamples, actual)
+			})
+		}
+		tcNumber++
+	}
 }
