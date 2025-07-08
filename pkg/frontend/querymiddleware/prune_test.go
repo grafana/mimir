@@ -59,8 +59,7 @@ func TestQueryPruning(t *testing.T) {
 				pruningware := newPruneMiddleware(
 					log.NewNopLogger(),
 					Config{
-						PruneQueriesToggle:           true,
-						PruneQueriesMatcherPropagate: true,
+						PruneQueriesToggle: true,
 					},
 				)
 				downstream := &downstreamHandler{

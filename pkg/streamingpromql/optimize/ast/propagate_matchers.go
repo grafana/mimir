@@ -1,34 +1,36 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package astmapper
+package ast
 
 import (
 	"context"
 
-	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func NewQueryPrunerMatcherPropagate(ctx context.Context, logger log.Logger) ASTMapper {
-	pruner := newQueryPrunerMatcherPropagate(ctx, logger)
-	return NewASTExprMapper(pruner)
+// PropagateMatchers optimizes queries by propagating matchers across binary operations.
+type PropagateMatchers struct{}
+
+func (p *PropagateMatchers) Name() string {
+	return "Matcher propagation across binary operations"
 }
 
-type queryPrunerMatcherPropagate struct {
-	ctx    context.Context
-	logger log.Logger
-}
-
-func newQueryPrunerMatcherPropagate(ctx context.Context, logger log.Logger) *queryPrunerMatcherPropagate {
-	return &queryPrunerMatcherPropagate{
-		ctx:    ctx,
-		logger: logger,
+func (p *PropagateMatchers) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	mapper := &propagateMatchers{
+		ctx: ctx,
 	}
+	ASTExprMapper := astmapper.NewASTExprMapper(mapper)
+	return ASTExprMapper.Map(expr)
 }
 
-func (pruner *queryPrunerMatcherPropagate) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	if err := pruner.ctx.Err(); err != nil {
+type propagateMatchers struct {
+	ctx context.Context
+}
+
+func (mapper *propagateMatchers) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	if err := mapper.ctx.Err(); err != nil {
 		return nil, false, err
 	}
 
@@ -37,17 +39,17 @@ func (pruner *queryPrunerMatcherPropagate) MapExpr(expr parser.Expr) (mapped par
 		return expr, false, nil
 	}
 
-	_, _, boolResult := pruner.propagateMatchersInBinaryExpr(e)
+	_, _, boolResult := mapper.propagateMatchersInBinaryExpr(e)
 	return e, boolResult, nil
 }
 
-func (pruner *queryPrunerMatcherPropagate) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) propagateMatchersInBinaryExpr(e *parser.BinaryExpr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
 	if e.Op == parser.LOR || e.Op == parser.LUNLESS {
 		return nil, nil, false
 	}
 
-	vssL, matchersL, okL := pruner.extractVectorSelectors(e.LHS)
-	vssR, matchersR, okR := pruner.extractVectorSelectors(e.RHS)
+	vssL, matchersL, okL := mapper.extractVectorSelectors(e.LHS)
+	vssR, matchersR, okR := mapper.extractVectorSelectors(e.RHS)
 	switch {
 	case !okL && !okR:
 		return nil, nil, false
@@ -61,8 +63,8 @@ func (pruner *queryPrunerMatcherPropagate) propagateMatchersInBinaryExpr(e *pars
 		return nil, nil, false
 	}
 
-	newMatchersL := pruner.getMatchersToPropagate(matchersR, e.VectorMatching)
-	newMatchersR := pruner.getMatchersToPropagate(matchersL, e.VectorMatching)
+	newMatchersL := mapper.getMatchersToPropagate(matchersR, e.VectorMatching)
+	newMatchersR := mapper.getMatchersToPropagate(matchersL, e.VectorMatching)
 	for _, vsL := range vssL {
 		vsL.LabelMatchers = combineMatchers(vsL.LabelMatchers, newMatchersL)
 	}
@@ -74,7 +76,7 @@ func (pruner *queryPrunerMatcherPropagate) propagateMatchersInBinaryExpr(e *pars
 	return vss, matchers, true
 }
 
-func (pruner *queryPrunerMatcherPropagate) extractVectorSelectors(expr parser.Expr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
+func (mapper *propagateMatchers) extractVectorSelectors(expr parser.Expr) ([]*parser.VectorSelector, []*labels.Matcher, bool) {
 	vs, ok := expr.(*parser.VectorSelector)
 	if ok {
 		return []*parser.VectorSelector{vs}, vs.LabelMatchers, true
@@ -82,18 +84,18 @@ func (pruner *queryPrunerMatcherPropagate) extractVectorSelectors(expr parser.Ex
 
 	pe, ok := expr.(*parser.ParenExpr)
 	if ok {
-		return pruner.extractVectorSelectors(pe.Expr)
+		return mapper.extractVectorSelectors(pe.Expr)
 	}
 
 	be, ok := expr.(*parser.BinaryExpr)
 	if ok {
-		return pruner.propagateMatchersInBinaryExpr(be)
+		return mapper.propagateMatchersInBinaryExpr(be)
 	}
 
 	return nil, nil, false
 }
 
-func (pruner *queryPrunerMatcherPropagate) getMatchersToPropagate(matchersSrc []*labels.Matcher, vectorMatching *parser.VectorMatching) []*labels.Matcher {
+func (mapper *propagateMatchers) getMatchersToPropagate(matchersSrc []*labels.Matcher, vectorMatching *parser.VectorMatching) []*labels.Matcher {
 	setLabels := make(map[string]struct{})
 	for _, m := range vectorMatching.MatchingLabels {
 		setLabels[m] = struct{}{}

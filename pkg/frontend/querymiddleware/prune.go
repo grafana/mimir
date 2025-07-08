@@ -74,14 +74,6 @@ func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string,
 		}
 	}
 
-	if p.cfg.PruneQueriesMatcherPropagate {
-		mapperMatcherPropagate := astmapper.NewQueryPrunerMatcherPropagate(ctx, p.logger)
-		prunedQuery, err = mapperMatcherPropagate.Map(prunedQuery)
-		if err != nil {
-			return "", false, err
-		}
-	}
-
 	prunedQueryString := prunedQuery.String()
 
 	return prunedQueryString, origQueryString != prunedQueryString, nil
