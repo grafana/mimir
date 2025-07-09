@@ -2298,6 +2298,28 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "enable_prune_toggles",
+              "required": false,
+              "desc": "Enable pruning query expressions that are toggled off with constants.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-prune-toggles",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_propagate_matchers",
+              "required": false,
+              "desc": "Enable copying label matchers where relevant across binary expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-propagate-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_common_subexpression_elimination",
               "required": false,
               "desc": "Enable common subexpression elimination when evaluating queries.",

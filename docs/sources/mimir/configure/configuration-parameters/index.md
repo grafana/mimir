@@ -1644,6 +1644,16 @@ The `querier` block configures the querier.
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
+  # (experimental) Enable pruning query expressions that are toggled off with
+  # constants.
+  # CLI flag: -querier.mimir-query-engine.enable-prune-toggles
+  [enable_prune_toggles: <boolean> | default = true]
+
+  # (experimental) Enable copying label matchers where relevant across binary
+  # expressions.
+  # CLI flag: -querier.mimir-query-engine.enable-propagate-matchers
+  [enable_propagate_matchers: <boolean> | default = true]
+
   # (experimental) Enable common subexpression elimination when evaluating
   # queries.
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination

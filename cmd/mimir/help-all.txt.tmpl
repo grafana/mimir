@@ -2219,6 +2219,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
   -querier.mimir-query-engine.enable-common-subexpression-elimination
     	[experimental] Enable common subexpression elimination when evaluating queries. (default true)
+  -querier.mimir-query-engine.enable-propagate-matchers
+    	[experimental] Enable copying label matchers where relevant across binary expressions. (default true)
+  -querier.mimir-query-engine.enable-prune-toggles
+    	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
     	[experimental] Enable skipping decoding native histograms when evaluating queries that do not require full histograms. (default true)
   -querier.minimize-ingester-requests
