@@ -7,89 +7,24 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 )
-
-type mockSeriesSet struct {
-	idx    int
-	series []storage.Series
-
-	warnings annotations.Annotations
-	err      error
-}
-
-func NewMockSeriesSet(series ...storage.Series) storage.SeriesSet {
-	return &mockSeriesSet{
-		idx:    -1,
-		series: series,
-	}
-}
-
-func (m *mockSeriesSet) Next() bool {
-	if m.err != nil {
-		return false
-	}
-	m.idx++
-	return m.idx < len(m.series)
-}
-
-func (m *mockSeriesSet) At() storage.Series { return m.series[m.idx] }
-
-func (m *mockSeriesSet) Err() error { return m.err }
-
-func (m *mockSeriesSet) Warnings() annotations.Annotations { return m.warnings }
-
-// TestEarlyCommit writes samples of many series that don't fit into the same
-// append commit. It makes sure that batching the samples into many commits
-// doesn't cause the appends to advance the head block too far and make future
-// appends invalid.
-func TestEarlyCommit(t *testing.T) {
-	maxSamplesPerBlock := 1000
-	seriesCount := 100
-	samplesCount := 140
-
-	start := int64(time.Date(2023, 8, 30, 11, 42, 17, 0, time.UTC).UnixNano())
-	inc := int64(time.Minute / time.Millisecond)
-
-	samples := make([]float64, samplesCount)
-	for i := 0; i < samplesCount; i++ {
-		samples[i] = float64(i)
-	}
-	timestamps := make([]int64, samplesCount)
-	for i := 0; i < samplesCount; i++ {
-		timestamps[i] = start + (inc * int64(i))
-	}
-
-	series := make([]storage.Series, seriesCount)
-	for i := 0; i < seriesCount; i++ {
-		series[i] = storage.MockSeries(timestamps, samples, []string{"__name__", fmt.Sprintf("metric_%d", i)})
-	}
-
-	blockID, err := backfill.CreateBlock(NewMockSeriesSet(series...), maxSamplesPerBlock, t.TempDir(), time.Duration(tsdb.DefaultBlockDuration)*time.Millisecond)
-	require.NoError(t, err)
-	require.NotEqual(t, ulid.Zero, blockID)
-}
 
 type exportTestCase struct {
 	queryFrom      time.Time
@@ -210,6 +145,23 @@ func TestExport(t *testing.T) {
 			},
 			expectedBlocks: 2,
 		},
+		"empty block": {
+			queryFrom: alignedToBlockStart,
+			queryTo:   alignedToBlockStart.Add(6 * time.Hour),
+			series: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricName},
+						{Name: "idx", Value: "0"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(5 * time.Minute)), Value: 0.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(4*time.Hour + 5*time.Minute)), Value: 0.1},
+					},
+				},
+			},
+			expectedBlocks: 2,
+		},
 		"data over multiple blocks": {
 			queryFrom: offsetFromBlockStart,
 			queryTo:   offsetFromBlockStart.Add(8 * time.Hour),
@@ -281,6 +233,12 @@ func TestExport(t *testing.T) {
 			},
 			expectedBlocks: 4,
 		},
+		"large amount of data in single block": {
+			queryFrom:      alignedToBlockStart,
+			queryTo:        alignedToBlockStart.Add(2 * time.Hour),
+			series:         generateLargeDataset(alignedToBlockStart, metricName),
+			expectedBlocks: 1,
+		},
 	}
 
 	for name, sendChunks := range map[string]bool{"chunks": true, "samples": false} {
@@ -300,8 +258,8 @@ func TestExport(t *testing.T) {
 						address:       server.URL,
 						tsdbPath:      tsdbPath,
 						selector:      metricName,
-						from:          testCase.queryFrom.Format(time.RFC3339),
-						to:            testCase.queryTo.Format(time.RFC3339),
+						from:          testCase.queryFrom.Format(time.RFC3339Nano),
+						to:            testCase.queryTo.Format(time.RFC3339Nano),
 						readTimeout:   30 * time.Second,
 						readSizeLimit: DefaultChunkedReadLimit,
 						blockSize:     time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond,
@@ -325,6 +283,34 @@ func TestExport(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateLargeDataset(from time.Time, metricName string) []*prompb.TimeSeries {
+	startT := from.UnixMilli()
+	step := time.Millisecond.Milliseconds()
+
+	series := make([]*prompb.TimeSeries, 0, 100)
+
+	for seriesIdx := range cap(series) {
+		samples := make([]prompb.Sample, 0, 140)
+
+		for sampleIdx := range cap(samples) {
+			samples = append(samples, prompb.Sample{
+				Timestamp: startT + (step * int64(sampleIdx)),
+				Value:     float64(sampleIdx),
+			})
+		}
+
+		series = append(series, &prompb.TimeSeries{
+			Labels: []prompb.Label{
+				{Name: labels.MetricName, Value: metricName},
+				{Name: "idx", Value: strconv.Itoa(seriesIdx)},
+			},
+			Samples: samples,
+		})
+	}
+
+	return series
 }
 
 func serve(t *testing.T, testCase exportTestCase, sendChunks bool, r *http.Request, w http.ResponseWriter) {
