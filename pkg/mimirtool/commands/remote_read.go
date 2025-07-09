@@ -2,6 +2,12 @@
 // Provenance-includes-location: https://github.com/grafana/cortex-tools/blob/main/pkg/commands/remote_read.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+// Provenance-includes-location: https://github.com/grafana/cortex-tools/blob/main/pkg/backfill/backfill.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/cmd/promtool/tsdb.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package commands
 
@@ -10,6 +16,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -23,14 +30,18 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/alecthomas/units"
+	"github.com/oklog/ulid/v2"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	log "github.com/sirupsen/logrus"
 
@@ -57,6 +68,7 @@ type RemoteReadCommand struct {
 	from          string
 	to            string
 	readSizeLimit uint64
+	blockSize     time.Duration
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -95,10 +107,10 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Default("up").
 			StringVar(&c.selector)
 
-		cmd.Flag("from", "Start of the time window to select metrics.").
+		cmd.Flag("from", "Start of the time window to select metrics (inclusive).").
 			Default(now.Add(-time.Hour).Format(time.RFC3339)).
 			StringVar(&c.from)
-		cmd.Flag("to", "End of the time window to select metrics.").
+		cmd.Flag("to", "End of the time window to select metrics (inclusive).").
 			Default(now.Format(time.RFC3339)).
 			StringVar(&c.to)
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
@@ -109,6 +121,10 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
 		Default("").
 		StringVar(&c.tsdbPath)
+
+	exportCmd.Flag("block-size", "Maximum block size to create. Requests that span multiple blocks will be split.").
+		Default((time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond).String()).
+		DurationVar(&c.blockSize)
 }
 
 type setTenantIDTransport struct {
@@ -119,63 +135,6 @@ type setTenantIDTransport struct {
 func (s *setTenantIDTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("X-Scope-OrgID", s.tenantID)
 	return s.RoundTripper.RoundTrip(req)
-}
-
-type timeSeriesIterator struct {
-	seriesSet           storage.SeriesSet
-	currentSeriesChunks chunkenc.Iterator
-
-	ts int64
-	v  float64
-	h  *histogram.Histogram
-	fh *histogram.FloatHistogram
-}
-
-func newTimeSeriesIterator(seriesSet storage.SeriesSet) *timeSeriesIterator {
-	return &timeSeriesIterator{
-		seriesSet:           seriesSet,
-		currentSeriesChunks: chunkenc.NewNopIterator(),
-	}
-}
-
-func (i *timeSeriesIterator) Next() error {
-	// Find non empty chunk iterator.
-	var vt chunkenc.ValueType
-	for vt = i.currentSeriesChunks.Next(); vt == chunkenc.ValNone; vt = i.currentSeriesChunks.Next() {
-		if !i.seriesSet.Next() {
-			err := i.seriesSet.Err()
-			if err != nil {
-				return err
-			}
-			return io.EOF
-		}
-		i.currentSeriesChunks = i.seriesSet.At().Iterator(i.currentSeriesChunks)
-	}
-	switch vt {
-	case chunkenc.ValFloat:
-		i.ts, i.v = i.currentSeriesChunks.At()
-		i.h = nil
-		i.fh = nil
-	case chunkenc.ValHistogram:
-		i.ts, i.h = i.currentSeriesChunks.AtHistogram(nil)
-		i.v = i.h.Sum
-		i.fh = nil
-	case chunkenc.ValFloatHistogram:
-		i.ts, i.fh = i.currentSeriesChunks.AtFloatHistogram(nil)
-		i.v = i.fh.Sum
-		i.h = nil
-	default:
-		panic("unreachable")
-	}
-	return nil
-}
-
-func (i *timeSeriesIterator) Labels() (l labels.Labels) {
-	return i.seriesSet.At().Labels()
-}
-
-func (i *timeSeriesIterator) Sample() (ts int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
-	return i.ts, i.v, i.h, i.fh
 }
 
 // this is adapted from Go 1.15 for older versions
@@ -242,8 +201,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 	return readClient, nil
 }
 
-// prepare() validates the input and prepares the client to query remote read endpoints
-func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.SeriesSet, error), from, to time.Time, err error) {
+func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Context, time.Time, time.Time) (storage.SeriesSet, error), from, to time.Time, err error) {
 	from, err = time.Parse(time.RFC3339, c.from)
 	if err != nil {
 		return nil, time.Time{}, time.Time{}, fmt.Errorf("error parsing from: '%s' value: %w", c.from, err)
@@ -264,18 +222,18 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 		return nil, time.Time{}, time.Time{}, err
 	}
 
-	pbQuery, err := remote.ToQuery(
-		int64(model.TimeFromUnixNano(from.UnixNano())),
-		int64(model.TimeFromUnixNano(to.UnixNano())),
-		matchers,
-		nil,
-	)
-	if err != nil {
-		return nil, time.Time{}, time.Time{}, err
-	}
+	return func(ctx context.Context, from, to time.Time) (storage.SeriesSet, error) {
+		log.Infof("Querying time from=%s to=%s with selector=%s", from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano), c.selector)
+		pbQuery, err := remote.ToQuery(
+			int64(model.TimeFromUnixNano(from.UnixNano())),
+			int64(model.TimeFromUnixNano(to.UnixNano())),
+			matchers,
+			nil,
+		)
+		if err != nil {
+			return nil, err
+		}
 
-	return func(ctx context.Context) (storage.SeriesSet, error) {
-		log.Infof("Querying time from=%s to=%s with selector=%s", from.Format(time.RFC3339), to.Format(time.RFC3339), c.selector)
 		resp, err := readClient.Read(ctx, pbQuery, false)
 		if err != nil {
 			return nil, err
@@ -286,8 +244,20 @@ func (c *RemoteReadCommand) prepare() (query func(context.Context) (storage.Seri
 	}, from, to, nil
 }
 
+// prepare() validates the input and prepares the client to query remote read endpoints
+func (c *RemoteReadCommand) prepare() (func(context.Context) (storage.SeriesSet, error), error) {
+	query, from, to, err := c.parseArgsAndPrepareClient()
+	if err != nil {
+		return nil, err
+	}
+
+	return func(ctx context.Context) (storage.SeriesSet, error) {
+		return query(ctx, from, to)
+	}, nil
+}
+
 func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
-	query, _, _, err := c.prepare()
+	query, err := c.prepare()
 	if err != nil {
 		return err
 	}
@@ -340,7 +310,7 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 }
 
 func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
-	query, _, _, err := c.prepare()
+	query, err := c.prepare()
 	if err != nil {
 		return err
 	}
@@ -438,7 +408,11 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 }
 
 func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
-	query, from, to, err := c.prepare()
+	if c.blockSize <= 0 {
+		return errors.New("block size must be greater than zero")
+	}
+
+	query, from, to, err := c.parseArgsAndPrepareClient()
 	if err != nil {
 		return err
 	}
@@ -459,36 +433,32 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 		log.Infof("Using existing TSDB in path '%s'", c.tsdbPath)
 	}
 
-	mint := model.TimeFromUnixNano(from.UnixNano())
-	maxt := model.TimeFromUnixNano(to.UnixNano())
-
-	timeseries, err := query(context.Background())
-	if err != nil {
-		return err
-	}
-	iteratorCreator := func() backfill.Iterator {
-		return newTimeSeriesIterator(timeseries)
-	}
-
-	pipeR, pipeW := io.Pipe()
-	go func() {
-		defer pipeR.Close()
-		scanner := bufio.NewScanner(pipeR)
-		for scanner.Scan() {
-			log.Info(scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			log.Error("reading block status:", err)
-		}
-	}()
-	defer pipeW.Close()
-
 	log.Infof("Store TSDB blocks in '%s'", c.tsdbPath)
-	if err := backfill.CreateBlocks(iteratorCreator, int64(mint), int64(maxt), 1000, c.tsdbPath, true, pipeW); err != nil {
-		return err
+
+	ctx := context.Background()
+	var blocks []ulid.ULID
+
+	for blockStart := alignToStartOfBlock(from, c.blockSize); blockStart.Before(to) || blockStart.Equal(to); blockStart = blockStart.Add(c.blockSize) {
+		queryStart := maxTime(blockStart, from)
+		queryEnd := minTime(blockStart.Add(c.blockSize-time.Millisecond), to) // The query time range is inclusive at both ends, so don't query the first millisecond included in the next block.
+
+		timeseries, err := query(ctx, queryStart, queryEnd)
+		if err != nil {
+			return err
+		}
+
+		block, err := backfill.CreateBlock(timeseries, 1000, c.tsdbPath, c.blockSize)
+		if err != nil {
+			return err
+		}
+
+		if !block.IsZero() {
+			// If there were no samples for this block, no block will be created and the ULID will be 0, so skip it.
+			blocks = append(blocks, block)
+		}
 	}
 
-	// ensure that tsdb directory has WAL, otherwise 'promtool tsdb dump' fails
+	// Ensure that tsdb directory has WAL, otherwise 'promtool tsdb dump' fails.
 	walPath := filepath.Join(c.tsdbPath, "wal")
 	if _, err := os.Stat(walPath); err != nil && os.IsNotExist(err) {
 		if err := os.Mkdir(walPath, 0755); err != nil {
@@ -496,5 +466,89 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 		}
 	}
 
+	if err := c.printBlocks(blocks); err != nil {
+		return fmt.Errorf("print blocks: %w", err)
+	}
+
 	return nil
+}
+
+// Based on https://github.com/prometheus/prometheus/blob/2f54aa060484a9a221eb227e1fb917ae66051c76/cmd/promtool/tsdb.go#L361-L398
+func (c *RemoteReadCommand) printBlocks(blocks []ulid.ULID) error {
+	db, err := tsdb.OpenDBReadOnly(c.tsdbPath, "", promslog.NewNopLogger())
+	if err != nil {
+		return fmt.Errorf("open db: %w", err)
+	}
+
+	defer db.Close()
+
+	// Write block information to the logger, not directly to stdout.
+	pipeR, pipeW := io.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer pipeR.Close()
+		scanner := bufio.NewScanner(pipeR)
+		for scanner.Scan() {
+			log.Info(scanner.Text())
+		}
+	}()
+	defer func() { <-done }()
+	defer pipeW.Close()
+
+	tw := tabwriter.NewWriter(pipeW, 13, 0, 2, ' ', 0)
+	defer tw.Flush()
+
+	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+
+	for _, b := range blocks {
+		reader, err := db.Block(b.String(), nil)
+		if err != nil {
+			return fmt.Errorf("read block %s: %w", b, err)
+		}
+
+		meta := reader.Meta()
+
+		fmt.Fprintf(tw,
+			"%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
+			meta.ULID,
+			formatTime(meta.MinTime),
+			formatTime(meta.MaxTime),
+			time.Duration(meta.MaxTime-meta.MinTime)*time.Millisecond,
+			meta.Stats.NumSamples,
+			meta.Stats.NumChunks,
+			meta.Stats.NumSeries,
+			formatBytes(reader.Size()),
+		)
+	}
+
+	return nil
+}
+
+func formatTime(timestamp int64) string {
+	return time.Unix(timestamp/1000, 0).UTC().String()
+}
+
+func formatBytes(bytes int64) string {
+	return units.Base2Bytes(bytes).String()
+}
+
+func alignToStartOfBlock(t time.Time, blockSize time.Duration) time.Time {
+	return timestamp.Time(blockSize.Milliseconds() * (timestamp.FromTime(t) / blockSize.Milliseconds()))
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+
+	return b
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return b
+	}
+
+	return a
 }

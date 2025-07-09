@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/pkg/errors"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
@@ -25,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
@@ -60,92 +60,6 @@ func (m *mockSeriesSet) Err() error { return m.err }
 
 func (m *mockSeriesSet) Warnings() annotations.Annotations { return m.warnings }
 
-func TestTimeSeriesIterator(t *testing.T) {
-
-	for _, tc := range []struct {
-		name               string
-		seriesSet          storage.SeriesSet
-		expectedLabels     []string
-		expectedTimestamps []int64
-		expectedValues     []float64
-	}{
-		{
-			name:      "empty time series",
-			seriesSet: storage.EmptySeriesSet(),
-		},
-		{
-			name:      "simple",
-			seriesSet: NewMockSeriesSet(storage.MockSeries([]int64{1000, 2000}, []float64{1.23, 1.24}, []string{"__name__", "up"})),
-			expectedLabels: []string{
-				`{__name__="up"}`,
-				`{__name__="up"}`,
-			},
-			expectedTimestamps: []int64{
-				1000,
-				2000,
-			},
-			expectedValues: []float64{
-				1.23,
-				1.24,
-			},
-		},
-		{
-			name: "edge-cases",
-			seriesSet: NewMockSeriesSet(
-				storage.MockSeries([]int64{1000, 2000}, []float64{1.23, 1.24}, []string{}),
-				storage.MockSeries([]int64{1050}, []float64{2.34}, []string{"__name__", "upper"}),
-				storage.MockSeries([]int64{}, []float64{}, []string{"__name__", "uppest"}),
-			),
-			expectedLabels: []string{
-				`{}`,
-				`{}`,
-				`{__name__="upper"}`,
-			},
-			expectedTimestamps: []int64{
-				1000,
-				2000,
-				1050,
-			},
-			expectedValues: []float64{
-				1.23,
-				1.24,
-				2.34,
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-
-			iter := newTimeSeriesIterator(tc.seriesSet)
-
-			var (
-				labels     []string
-				timestamps []int64
-				values     []float64
-			)
-
-			for {
-				err := iter.Next()
-				if errors.Is(err, io.EOF) {
-					break
-				} else if err != nil {
-					assert.NoError(t, err, "unexpected error")
-					break
-				}
-
-				labels = append(labels, iter.Labels().String())
-				ts, v, _, _ := iter.Sample()
-				timestamps = append(timestamps, ts)
-				values = append(values, v)
-			}
-
-			assert.Equal(t, tc.expectedLabels, labels)
-			assert.Equal(t, tc.expectedTimestamps, timestamps)
-			assert.Equal(t, tc.expectedValues, values)
-		})
-	}
-
-}
-
 // TestEarlyCommit writes samples of many series that don't fit into the same
 // append commit. It makes sure that batching the samples into many commits
 // doesn't cause the appends to advance the head block too far and make future
@@ -157,7 +71,6 @@ func TestEarlyCommit(t *testing.T) {
 
 	start := int64(time.Date(2023, 8, 30, 11, 42, 17, 0, time.UTC).UnixNano())
 	inc := int64(time.Minute / time.Millisecond)
-	end := start + (inc * int64(samplesCount))
 
 	samples := make([]float64, samplesCount)
 	for i := 0; i < samplesCount; i++ {
@@ -173,27 +86,27 @@ func TestEarlyCommit(t *testing.T) {
 		series[i] = storage.MockSeries(timestamps, samples, []string{"__name__", fmt.Sprintf("metric_%d", i)})
 	}
 
-	iterator := func() backfill.Iterator {
-		return newTimeSeriesIterator(NewMockSeriesSet(series...))
-	}
-	err := backfill.CreateBlocks(iterator, start, end, maxSamplesPerBlock, t.TempDir(), true, io.Discard)
-	assert.NoError(t, err)
+	blockID, err := backfill.CreateBlock(NewMockSeriesSet(series...), maxSamplesPerBlock, t.TempDir(), time.Duration(tsdb.DefaultBlockDuration)*time.Millisecond)
+	require.NoError(t, err)
+	require.NotEqual(t, ulid.Zero, blockID)
 }
 
 type exportTestCase struct {
-	queryFrom time.Time
-	queryTo   time.Time
-	series    []*prompb.TimeSeries
+	queryFrom      time.Time
+	queryTo        time.Time
+	series         []*prompb.TimeSeries
+	expectedBlocks int
 }
 
 func TestExport(t *testing.T) {
-	start := time.Date(2025, 5, 1, 0, 5, 0, 0, time.UTC)
+	alignedToBlockStart := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	offsetFromBlockStart := time.Date(2025, 5, 1, 0, 5, 0, 0, time.UTC)
 	metricName := "some_metric"
 
 	testCases := map[string]exportTestCase{
 		"data entirely within single block": {
-			queryFrom: start,
-			queryTo:   start.Add(5 * time.Minute),
+			queryFrom: offsetFromBlockStart,
+			queryTo:   offsetFromBlockStart.Add(5 * time.Minute),
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
@@ -201,8 +114,8 @@ func TestExport(t *testing.T) {
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start), Value: 0.0},
-						{Timestamp: timestamp.FromTime(start.Add(time.Minute)), Value: 0.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart), Value: 0.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Minute)), Value: 0.1},
 					},
 				},
 				{
@@ -211,15 +124,17 @@ func TestExport(t *testing.T) {
 						{Name: "idx", Value: "1"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start), Value: 1.0},
-						{Timestamp: timestamp.FromTime(start.Add(time.Minute)), Value: 1.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart), Value: 1.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Minute)), Value: 1.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(5 * time.Minute)), Value: 1.2}, // Check that we correctly return samples on the end of the query time range.
 					},
 				},
 			},
+			expectedBlocks: 1,
 		},
 		"data entirely within second half of single block": {
-			queryFrom: start,
-			queryTo:   start.Add(5 * time.Minute),
+			queryFrom: offsetFromBlockStart,
+			queryTo:   offsetFromBlockStart.Add(time.Hour).Add(5 * time.Minute),
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
@@ -227,8 +142,8 @@ func TestExport(t *testing.T) {
 						{Name: "idx", Value: "0"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start.Add(time.Hour)), Value: 0.0},
-						{Timestamp: timestamp.FromTime(start.Add(time.Hour).Add(time.Minute)), Value: 0.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Hour)), Value: 0.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Hour).Add(time.Minute)), Value: 0.1},
 					},
 				},
 				{
@@ -237,15 +152,67 @@ func TestExport(t *testing.T) {
 						{Name: "idx", Value: "1"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start.Add(time.Hour)), Value: 1.0},
-						{Timestamp: timestamp.FromTime(start.Add(time.Hour).Add(time.Minute)), Value: 1.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Hour)), Value: 1.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Hour).Add(time.Minute)), Value: 1.1},
 					},
 				},
 			},
+			expectedBlocks: 1,
+		},
+		"data at extreme ends of a block, query range not including start of next block": {
+			queryFrom: alignedToBlockStart,
+			queryTo:   alignedToBlockStart.Add(2*time.Hour - time.Millisecond),
+			series: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricName},
+						{Name: "idx", Value: "0"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart), Value: 0.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(2*time.Hour - time.Millisecond)), Value: 0.1},
+					},
+				},
+			},
+			expectedBlocks: 1,
+		},
+		"data at extreme ends of a block, query range including start of next block": {
+			queryFrom: alignedToBlockStart,
+			queryTo:   alignedToBlockStart.Add(2 * time.Hour),
+			series: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricName},
+						{Name: "idx", Value: "0"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart), Value: 0.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(2*time.Hour - time.Millisecond)), Value: 0.1},
+					},
+				},
+			},
+			expectedBlocks: 1,
+		},
+		"query range and data aligned to end of block": {
+			queryFrom: alignedToBlockStart,
+			queryTo:   alignedToBlockStart.Add(2 * time.Hour),
+			series: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricName},
+						{Name: "idx", Value: "0"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(alignedToBlockStart), Value: 0.0},
+						{Timestamp: timestamp.FromTime(alignedToBlockStart.Add(2 * time.Hour)), Value: 0.1},
+					},
+				},
+			},
+			expectedBlocks: 2,
 		},
 		"data over multiple blocks": {
-			queryFrom: start,
-			queryTo:   start.Add(5 * time.Hour),
+			queryFrom: offsetFromBlockStart,
+			queryTo:   offsetFromBlockStart.Add(8 * time.Hour),
 			series: []*prompb.TimeSeries{
 				{
 					Labels: []prompb.Label{
@@ -253,8 +220,8 @@ func TestExport(t *testing.T) {
 						{Name: "case", Value: "entirely in first block"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start), Value: 0.0},
-						{Timestamp: timestamp.FromTime(start.Add(time.Minute)), Value: 0.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart), Value: 0.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Minute)), Value: 0.1},
 					},
 				},
 				{
@@ -263,8 +230,18 @@ func TestExport(t *testing.T) {
 						{Name: "case", Value: "entirely in second block"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start.Add(2 * time.Hour)), Value: 1.0},
-						{Timestamp: timestamp.FromTime(start.Add(2 * time.Hour).Add(time.Minute)), Value: 1.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(2 * time.Hour)), Value: 1.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(2 * time.Hour).Add(time.Minute)), Value: 1.1},
+					},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricName},
+						{Name: "case", Value: "entirely in last block"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(7 * time.Hour)), Value: 2.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(7 * time.Hour).Add(time.Minute)), Value: 2.1},
 					},
 				},
 				{
@@ -273,8 +250,8 @@ func TestExport(t *testing.T) {
 						{Name: "case", Value: "across multiple blocks"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start), Value: 2.0},
-						{Timestamp: timestamp.FromTime(start.Add(2 * time.Hour)), Value: 2.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart), Value: 3.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(2 * time.Hour)), Value: 3.1},
 					},
 				},
 				{
@@ -283,12 +260,26 @@ func TestExport(t *testing.T) {
 						{Name: "case", Value: "across multiple blocks, with sample on block boundary"},
 					},
 					Samples: []prompb.Sample{
-						{Timestamp: timestamp.FromTime(start), Value: 3.0},
-						{Timestamp: timestamp.FromTime(start.Add(55 * time.Minute)), Value: 3.1},
-						{Timestamp: timestamp.FromTime(start.Add(2 * time.Hour)), Value: 3.2},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart), Value: 4.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(time.Hour).Add(55 * time.Minute)), Value: 4.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(2 * time.Hour)), Value: 4.2},
+					},
+				},
+				{
+					Labels: []prompb.Label{
+						{Name: labels.MetricName, Value: metricName},
+						{Name: "case", Value: "across multiple blocks, from first to last"},
+					},
+					Samples: []prompb.Sample{
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart), Value: 5.0},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(5 * time.Minute)), Value: 5.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(3 * time.Hour).Add(5 * time.Minute)), Value: 5.1},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(7 * time.Hour).Add(5 * time.Minute)), Value: 5.2},
+						{Timestamp: timestamp.FromTime(offsetFromBlockStart.Add(8 * time.Hour)), Value: 5.3},
 					},
 				},
 			},
+			expectedBlocks: 4,
 		},
 	}
 
@@ -298,11 +289,7 @@ func TestExport(t *testing.T) {
 			for name, testCase := range testCases {
 				t.Run(name, func(t *testing.T) {
 					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						if sendChunks {
-							serveChunks(t, testCase, w)
-						} else {
-							serveSamples(t, testCase, w)
-						}
+						serve(t, testCase, sendChunks, r, w)
 					}))
 
 					t.Cleanup(server.Close)
@@ -317,6 +304,7 @@ func TestExport(t *testing.T) {
 						to:            testCase.queryTo.Format(time.RFC3339),
 						readTimeout:   30 * time.Second,
 						readSizeLimit: DefaultChunkedReadLimit,
+						blockSize:     time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond,
 					}
 
 					require.NoError(t, c.export(nil), "expected export to complete without error")
@@ -326,48 +314,76 @@ func TestExport(t *testing.T) {
 					require.NoError(t, err)
 					t.Cleanup(func() { require.NoError(t, db.Close()) })
 
-					querier, err := db.Querier(timestamp.FromTime(testCase.queryFrom), timestamp.FromTime(testCase.queryTo))
-					require.NoError(t, err)
-					t.Cleanup(func() { require.NoError(t, querier.Close()) })
-
-					ss := querier.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
-					writtenSeries := []*prompb.TimeSeries{}
-					for ss.Next() {
-						series := ss.At()
-						samples := []prompb.Sample{}
-						it := series.Iterator(nil)
-
-						for it.Next() != chunkenc.ValNone {
-							t, v := it.At()
-							samples = append(samples, prompb.Sample{
-								Timestamp: t,
-								Value:     v,
-							})
-						}
-
-						require.NoError(t, it.Err())
-
-						writtenSeries = append(writtenSeries, &prompb.TimeSeries{
-							Labels:  prompb.FromLabels(series.Labels(), nil),
-							Samples: samples,
-						})
-					}
-
-					require.NoError(t, ss.Err())
+					writtenSeries, totalExpectedSamples := queryAllSamples(t, db, metricName)
 					require.ElementsMatch(t, testCase.series, writtenSeries, "expected all samples to be written to TSDB")
+
+					blocks := db.Blocks()
+					require.Len(t, blocks, testCase.expectedBlocks, "expected number of blocks to be created")
+
+					require.Equal(t, totalExpectedSamples, int(sampleCountInAllBlocks(db)), "number of samples in blocks does not match the expected number of samples from source data, were some samples written in multiple blocks?")
 				})
 			}
 		})
 	}
 }
 
-func serveSamples(t *testing.T, testCase exportTestCase, w http.ResponseWriter) {
+func serve(t *testing.T, testCase exportTestCase, sendChunks bool, r *http.Request, w http.ResponseWriter) {
+	body, err := io.ReadAll(r.Body)
+	require.NoError(t, err)
+
+	decompressed, err := snappy.Decode(nil, body)
+	require.NoError(t, err)
+
+	msg := &prompb.ReadRequest{}
+	require.NoError(t, proto.Unmarshal(decompressed, msg))
+
+	require.Len(t, msg.GetQueries(), 1)
+	startT := msg.GetQueries()[0].GetStartTimestampMs()
+	endT := msg.GetQueries()[0].GetEndTimestampMs()
+
+	start := timestamp.Time(startT)
+	end := timestamp.Time(endT)
+
+	require.Truef(t, start.Equal(testCase.queryFrom) || start.After(testCase.queryFrom), "query request starts at %v, but query range is from %v to %v", start, testCase.queryFrom, testCase.queryTo)
+	require.Truef(t, end.Equal(testCase.queryTo) || end.Before(testCase.queryTo), "query request ends at %v, but query range is from %v to %v", end, testCase.queryFrom, testCase.queryTo)
+
+	if sendChunks {
+		serveChunks(t, testCase, startT, endT, w)
+	} else {
+		serveSamples(t, testCase, startT, endT, w)
+	}
+}
+
+func serveSamples(t *testing.T, testCase exportTestCase, startT, endT int64, w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
+
+	filteredSeries := []*prompb.TimeSeries{}
+
+	for _, series := range testCase.series {
+		samples := []prompb.Sample{}
+
+		for _, sample := range series.Samples {
+			if sample.Timestamp < startT || sample.Timestamp > endT {
+				continue
+			}
+
+			samples = append(samples, sample)
+		}
+
+		if len(samples) == 0 {
+			continue
+		}
+
+		filteredSeries = append(filteredSeries, &prompb.TimeSeries{
+			Labels:  series.Labels,
+			Samples: samples,
+		})
+	}
 
 	resp := &prompb.ReadResponse{
 		Results: []*prompb.QueryResult{
 			{
-				Timeseries: testCase.series,
+				Timeseries: filteredSeries,
 			},
 		},
 	}
@@ -378,7 +394,7 @@ func serveSamples(t *testing.T, testCase exportTestCase, w http.ResponseWriter) 
 	require.NoError(t, err)
 }
 
-func serveChunks(t *testing.T, testCase exportTestCase, w http.ResponseWriter) {
+func serveChunks(t *testing.T, testCase exportTestCase, startT, endT int64, w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
 
 	flusher, ok := w.(http.Flusher)
@@ -391,13 +407,24 @@ func serveChunks(t *testing.T, testCase exportTestCase, w http.ResponseWriter) {
 		a, err := chunk.Appender()
 		require.NoError(t, err)
 
-		minTime := s.Samples[0].Timestamp
-		maxTime := s.Samples[0].Timestamp
+		sampleCount := 0
+		minTime := int64(math.MaxInt64)
+		maxTime := int64(math.MinInt64)
 
 		for _, sample := range s.Samples {
-			a.Append(sample.Timestamp, sample.Value)
+			if sample.Timestamp < startT || sample.Timestamp > endT {
+				continue
+			}
+
+			sampleCount++
 			minTime = min(minTime, sample.Timestamp)
 			maxTime = max(maxTime, sample.Timestamp)
+
+			a.Append(sample.Timestamp, sample.Value)
+		}
+
+		if sampleCount == 0 {
+			continue
 		}
 
 		resp := prompb.ChunkedReadResponse{
@@ -421,4 +448,50 @@ func serveChunks(t *testing.T, testCase exportTestCase, w http.ResponseWriter) {
 		_, err = chunkedWriter.Write(msg)
 		require.NoError(t, err)
 	}
+}
+
+func queryAllSamples(t *testing.T, db *tsdb.DB, metricName string) ([]*prompb.TimeSeries, int) {
+	querier, err := db.Querier(0, math.MaxInt64) // Query all available data, to ensure there's no data outside the expected range.
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, querier.Close()) })
+
+	ss := querier.Select(context.Background(), true, nil, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+	var writtenSeries []*prompb.TimeSeries
+	totalSamples := 0
+
+	for ss.Next() {
+		series := ss.At()
+		var samples []prompb.Sample
+		it := series.Iterator(nil)
+
+		for it.Next() != chunkenc.ValNone {
+			t, v := it.At()
+			samples = append(samples, prompb.Sample{
+				Timestamp: t,
+				Value:     v,
+			})
+		}
+
+		require.NoError(t, it.Err())
+
+		writtenSeries = append(writtenSeries, &prompb.TimeSeries{
+			Labels:  prompb.FromLabels(series.Labels(), nil),
+			Samples: samples,
+		})
+
+		totalSamples += len(samples)
+	}
+
+	require.NoError(t, ss.Err())
+
+	return writtenSeries, totalSamples
+}
+
+func sampleCountInAllBlocks(db *tsdb.DB) uint64 {
+	total := uint64(0)
+	for _, b := range db.Blocks() {
+		total += b.Meta().Stats.NumSamples
+	}
+
+	return total
 }
