@@ -583,6 +583,7 @@ func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		t.instanceLifecycler.SetKeepInstanceInTheRingOnShutdown(false)
 		t.setAllPartitionsToRemoveOwnerOnShutdown(true)
 
 	case http.MethodDelete:
@@ -593,6 +594,7 @@ func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		t.instanceLifecycler.SetKeepInstanceInTheRingOnShutdown(true)
 		t.setAllPartitionsToRemoveOwnerOnShutdown(false)
 	}
 

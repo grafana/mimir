@@ -85,8 +85,8 @@ func (cfg *InstanceRingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.
 		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.HeartbeatTimeout,
 		TokensObservePeriod:             0,
-		NumTokens:                       1, // We just use the instance ring for service discovery.
-		KeepInstanceInTheRingOnShutdown: false,
+		NumTokens:                       1,    // We just use the instance ring for service discovery.
+		KeepInstanceInTheRingOnShutdown: true, // We want to stay in the ring unless prepare-downscale endpoint was called.
 	}, nil
 }
 
