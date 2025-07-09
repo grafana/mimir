@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2651,22 +2652,21 @@ func TestPartitionCommitter_commit(t *testing.T) {
 }
 
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
-	writeClient, err := kgo.NewClient(
-		kgo.SeedBrokers(addrs),
-		kgo.WithLogger(NewKafkaLogger(testingLogger.WithT(t))),
-		// We will choose the partition of each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	)
+	// Configure it close to the writer client we use in the real producers, but
+	// do not configure the linger to keep tests running fast.
+	cfg := KafkaConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.Address = addrs
+	cfg.disableLinger = true
+
+	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
+
 	require.NoError(t, err)
 	t.Cleanup(writeClient.Close)
 	return writeClient
 }
 
-func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
-	return produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, content, 1)
-}
-
-func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, version int) int64 {
+func createRecord(topicName string, partitionID int32, content []byte, version int) *kgo.Record {
 	rec := &kgo.Record{
 		Value:     content,
 		Topic:     topicName,
@@ -2678,6 +2678,15 @@ func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kg
 		rec.Headers = []kgo.RecordHeader{RecordVersionHeader(version)}
 	}
 
+	return rec
+}
+
+func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
+	return produceRecordWithVersion(ctx, t, writeClient, topicName, partitionID, content, 1)
+}
+
+func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, version int) int64 {
+	rec := createRecord(topicName, partitionID, content, version)
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
 
