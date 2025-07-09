@@ -447,7 +447,7 @@ losingPartitions:
 
 	added := 0
 	skipped := 0
-	started := make(chan error)
+	started := make(chan error, end-start)
 	for pid := start; pid < end; pid++ {
 		if _, ok := t.partitions[pid]; ok {
 			// We already have this partition.
@@ -482,17 +482,19 @@ losingPartitions:
 		added++
 	}
 
-	level.Info(logger).Log("msg", "waiting for partitions to start", "added", added)
+	if added > 0 {
+		level.Info(logger).Log("msg", "waiting for partitions to start", "added", added)
 
-	// Wait until all partitions have started.
-	for range added {
-		select {
-		case err := <-started:
-			if err != nil {
-				return err
+		// Wait until all partitions have started.
+		for range added {
+			select {
+			case err := <-started:
+				if err != nil {
+					return err
+				}
+			case <-ctx.Done():
+				return ctx.Err()
 			}
-		case <-ctx.Done():
-			return ctx.Err()
 		}
 	}
 
@@ -506,7 +508,13 @@ losingPartitions:
 		}
 	}
 
-	level.Info(logger).Log(
+	logLevel := level.Debug
+	if added+skipped+markedAsLost+unmarkedAsLost+deleted > 0 {
+		// Only log at info level if something happened.
+		logLevel = level.Info
+	}
+
+	logLevel(logger).Log(
 		"msg", "partitions reconciled",
 		"start", start, "end", end,
 		"instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions,
