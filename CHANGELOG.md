@@ -205,6 +205,7 @@
 * [ENHANCEMENT] `listblocks`: Output can now also be JSON or YAML for easier parsing. #11184
 * [ENHANCEMENT] `mark-blocks`: Allow specifying blocks from multiple tenants. #11343
 * [ENHANCEMENT] `undelete-blocks`: Support removing S3 delete markers to avoid copying data when recovering blocks. #11256
+* [BUGFIX] `screenshots`: Update to tar-fs v3.1.0 to address [CVE-2025-48387](https://nvd.nist.gov/vuln/detail/CVE-2025-48387). #12030
 
 ## 2.16.1
 
