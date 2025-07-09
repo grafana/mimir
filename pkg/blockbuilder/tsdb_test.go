@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -695,8 +696,9 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		input         []mimirpb.TimeSeries // We'll generate the Labels, just set the samples and created timestamp.
-		expectSamples []test.Sample
+		input           []mimirpb.TimeSeries // We'll generate the Labels, just set the samples and created timestamp.
+		expectSamples   []test.Sample
+		expectDiscarded int
 	}{
 		"float samples": {
 			input: []mimirpb.TimeSeries{
@@ -849,9 +851,50 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				expectedHistogram(currEnd+200, 10),
 			},
 		},
+		"float created sample duplicates previous sample": {
+			input: []mimirpb.TimeSeries{
+				{
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 100, Value: 7},
+					},
+				},
+				{
+					Samples: []mimirpb.Sample{
+						{TimestampMs: lastEnd + 200, Value: 8},
+					},
+					CreatedTimestamp: lastEnd + 100, // Duplicate the previous sample.
+				},
+			},
+			expectSamples: []test.Sample{
+				{TS: lastEnd + 100, Val: 7},
+				{TS: lastEnd + 200, Val: 8},
+			},
+			expectDiscarded: 1,
+		},
+		"histogram created sample duplicates previous sample": {
+			input: []mimirpb.TimeSeries{
+				{
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+100, 7),
+					},
+				},
+				{
+					Histograms: []mimirpb.Histogram{
+						simpleTestHistogram(lastEnd+200, 8),
+					},
+					CreatedTimestamp: lastEnd + 100, // Duplicate the previous sample.
+				},
+			},
+			expectSamples: []test.Sample{
+				expectedHistogram(lastEnd+100, 7),
+				expectedHistogram(lastEnd+200, 8),
+			},
+			expectDiscarded: 1,
+		},
 	}
 
-	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	registry := prometheus.NewPedanticRegistry()
+	metrics := newTSDBBBuilderMetrics(registry)
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stdout))
 	builder := NewTSDBBuilder(logger, t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 	t.Cleanup(func() {
@@ -859,6 +902,7 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 	})
 
 	tcNumber := 0
+	discarded := 0
 	for name, tc := range testCases {
 		for _, user := range []string{user1, user2} {
 			tcName := fmt.Sprintf("number=%d tc=%s user=%s", tcNumber, name, user)
@@ -934,6 +978,15 @@ func TestBuilderCreatedTimestamp(t *testing.T) {
 				}
 				require.NoError(t, it.Err())
 				require.Equal(t, tc.expectSamples, actual)
+				discarded += tc.expectDiscarded
+				expectMetrics := ""
+				if discarded > 0 {
+					expectMetrics = fmt.Sprintf(`# HELP cortex_blockbuilder_tsdb_process_samples_discarded_total The total number of samples that were discarded while processing records in one partition.
+					# TYPE cortex_blockbuilder_tsdb_process_samples_discarded_total counter
+					cortex_blockbuilder_tsdb_process_samples_discarded_total{partition="0"} %d
+				`, discarded)
+				}
+				require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectMetrics), "cortex_blockbuilder_tsdb_process_samples_discarded_total"))
 			})
 		}
 		tcNumber++
