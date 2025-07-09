@@ -447,7 +447,7 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 			return err
 		}
 
-		block, err := backfill.CreateBlock(timeseries, 1000, c.tsdbPath, c.blockSize)
+		block, err := backfill.CreateBlock(timeseries, c.tsdbPath, c.blockSize)
 		if err != nil {
 			return err
 		}

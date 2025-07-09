@@ -20,7 +20,7 @@ import (
 )
 
 // this is adapted from  https://github.com/prometheus/prometheus/blob/2f54aa060484a9a221eb227e1fb917ae66051c76/cmd/promtool/backfill.go#L68-L171
-func CreateBlock(input storage.SeriesSet, maxSamplesInAppender int, outputDir string, blockDuration time.Duration) (blockID ulid.ULID, returnErr error) {
+func CreateBlock(input storage.SeriesSet, outputDir string, blockDuration time.Duration) (blockID ulid.ULID, returnErr error) {
 	blockWriter, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, blockDuration.Milliseconds()*2) // Multiply by 2 so that we can append samples anywhere in the original time window.
 	if err != nil {
 		return ulid.Zero, errors.Wrap(err, "create block writer")
@@ -46,22 +46,7 @@ func CreateBlock(input storage.SeriesSet, maxSamplesInAppender int, outputDir st
 		app := blockWriter.Appender(ctx)
 
 		var seriesRef storage.SeriesRef
-		samplesCount := 0
-
-		commit := func() error {
-			if samplesCount == 0 {
-				return nil
-			}
-
-			if err := app.Commit(); err != nil {
-				return errors.Wrap(err, "commit")
-			}
-
-			app = blockWriter.Appender(ctx)
-			samplesCount = 0
-			seriesRef = 0
-			return nil
-		}
+		wroteAny := false
 
 		for {
 			valueType := it.Next()
@@ -89,20 +74,19 @@ func CreateBlock(input storage.SeriesSet, maxSamplesInAppender int, outputDir st
 				return ulid.Zero, errors.Wrap(err, "append sample")
 			}
 
-			samplesCount++
-			if samplesCount > maxSamplesInAppender {
-				if err := commit(); err != nil {
-					return ulid.Zero, err
-				}
-			}
+			wroteAny = true
 		}
 
 		if err := it.Err(); err != nil {
 			return ulid.Zero, errors.Wrap(err, "read series data")
 		}
 
-		if err := commit(); err != nil {
-			return ulid.Zero, err
+		if !wroteAny {
+			continue
+		}
+
+		if err := app.Commit(); err != nil {
+			return ulid.Zero, errors.Wrap(err, "commit")
 		}
 	}
 
