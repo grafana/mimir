@@ -260,7 +260,7 @@ func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 			"Number of times a pre-notify was attempted but failed.",
 			[]string{"status_code"}, nil),
 		notifyHookDuration: prometheus.NewDesc(
-			"alertmanager_notify_hook_duration_seconds",
+			"cortex_alertmanager_notify_hook_duration_seconds",
 			"Time spent invoking pre-notify hooks.",
 			nil, nil),
 		dispatcherAggrGroups: prometheus.NewDesc(
@@ -409,8 +409,8 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCounters(out, m.notifyHookTotal, "alertmanager_notify_hook_total")
 	data.SendSumOfCounters(out, m.notifyHookNoop, "alertmanager_notify_hook_noop_total")
-	data.SendSumOfCounters(out, m.notifyHookFailed, "alertmanager_notify_hook_failed_total")
-	data.SendSumOfCounters(out, m.notifyHookDuration, "alertmanager_notify_hook_duration_seconds")
+	data.SendSumOfCountersWithLabels(out, m.notifyHookFailed, "alertmanager_notify_hook_failed_total", "status_code")
+	data.SendSumOfHistograms(out, m.notifyHookDuration, "alertmanager_notify_hook_duration_seconds")
 
 	data.SendSumOfGauges(out, m.dispatcherAggrGroups, "alertmanager_dispatcher_aggregation_groups")
 	data.SendSumOfSummaries(out, m.dispatcherProcessingDuration, "alertmanager_dispatcher_alert_processing_duration_seconds")
