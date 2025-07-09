@@ -429,11 +429,10 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 				return err
 			}
 			log.Infof("Created TSDB in path '%s'", c.tsdbPath)
+		} else {
+			log.Infof("Using existing TSDB in path '%s'", c.tsdbPath)
 		}
-		log.Infof("Using existing TSDB in path '%s'", c.tsdbPath)
 	}
-
-	log.Infof("Store TSDB blocks in '%s'", c.tsdbPath)
 
 	ctx := context.Background()
 	var blocks []ulid.ULID
