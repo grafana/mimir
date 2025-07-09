@@ -47,7 +47,7 @@ type haTracker interface {
 	services.Service
 	http.Handler
 
-	checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error
+	checkReplica(ctx context.Context, userID, cluster, replica string, now, sampleTime time.Time) error
 	cleanupHATrackerMetricsForUser(userID string)
 }
 
@@ -150,7 +150,8 @@ type HATrackerConfig struct {
 	// other than the replica written in the KVStore if the difference
 	// between the stored timestamp and the time we received a sample is
 	// more than this duration
-	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
+	FailoverTimeout          time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
+	UseSampleTimeForFailover bool          `yaml:"ha_tracker_use_sample_time_for_failover" category:"advanced"`
 
 	// This is a potentially high cardinality metric, so it is disabled by default.
 	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
@@ -164,6 +165,7 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
 	f.DurationVar(&cfg.UpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
 	f.DurationVar(&cfg.FailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
+	f.BoolVar(&cfg.UseSampleTimeForFailover, "distributor.ha-tracker.use-sample-time-for-failover", false, "Use the sample time for failover instead of the current time. This is useful to prevent samples being too close together during failover when write requests are delayed such that the sample time is earlier than the current time.")
 	f.BoolVar(&cfg.EnableElectedReplicaMetric, "distributor.ha-tracker.enable-elected-replica-metric", false, "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.")
 
 	// We want the ability to use different instances for the ring and
@@ -222,10 +224,11 @@ type defaultHaTracker struct {
 
 // For one cluster, the information we need to do ha-tracking.
 type haClusterInfo struct {
-	elected                     ReplicaDesc // latest info from KVStore
-	electedLastSeenTimestamp    int64       // timestamp in milliseconds
-	nonElectedLastSeenReplica   string
-	nonElectedLastSeenTimestamp int64 // timestamp in milliseconds
+	elected                      ReplicaDesc // latest info from KVStore
+	electedLastSeenTimestamp     int64       // timestamp in milliseconds
+	nonElectedLastSeenReplica    string
+	nonElectedLastSeenTimestamp  int64 // timestamp in milliseconds
+	nonElectedLastSeenSampleTime int64 // last seen earliest sample time in milliseconds
 }
 
 // newHaTracker returns a new HA cluster tracker using either Consul,
@@ -465,20 +468,27 @@ func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) 
 			}
 			var replica string
 			var receivedAt int64
+			var sampleTime time.Time
 			if h.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
 				// We have seen the elected replica recently; carry on with that choice.
 				replica = entry.elected.Replica
 				receivedAt = entry.electedLastSeenTimestamp
+				sampleTime = now
 			} else if h.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
 				// Not seen elected but have seen another: attempt to fail over.
 				replica = entry.nonElectedLastSeenReplica
 				receivedAt = entry.nonElectedLastSeenTimestamp
+				if h.cfg.UseSampleTimeForFailover {
+					sampleTime = timestamp.Time(entry.nonElectedLastSeenSampleTime)
+				} else {
+					sampleTime = now
+				}
 			} else {
 				continue // we don't have any recent timestamps
 			}
 			// Release lock while we talk to KVStore, which could take a while.
 			h.electedLock.RUnlock()
-			err := h.updateKVStore(ctx, userID, cluster, replica, now, receivedAt)
+			err := h.updateKVStore(ctx, userID, cluster, replica, now, sampleTime, receivedAt, true)
 			h.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
@@ -568,7 +578,7 @@ func (h *defaultHaTracker) cleanupOldReplicas(ctx context.Context, deadline time
 // Updates to and from the KV store are handled in the background, except
 // if we have no cached data for this cluster in which case we create the
 // record and store it in-band.
-func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now, sampleTime time.Time) error {
 	h.electedLock.Lock()
 	if entry := h.clusters[userID][cluster]; entry != nil {
 		var err error
@@ -579,6 +589,7 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 			// Sample received is from non-elected replica: record details and reject.
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
+			entry.nonElectedLastSeenSampleTime = timestamp.FromTime(sampleTime)
 			err = newReplicasDidNotMatchError(replica, entry.elected.Replica)
 		}
 		h.electedLock.Unlock()
@@ -593,13 +604,13 @@ func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, re
 		return newTooManyClustersError(limit)
 	}
 
-	err := h.updateKVStore(ctx, userID, cluster, replica, now, now.UnixMilli())
+	err := h.updateKVStore(ctx, userID, cluster, replica, now, sampleTime, now.UnixMilli(), false)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
 	}
 	// Cache will now have the value - recurse to check it again.
-	return h.checkReplica(ctx, userID, cluster, replica, now)
+	return h.checkReplica(ctx, userID, cluster, replica, now, sampleTime)
 }
 
 func (h *defaultHaTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
@@ -638,7 +649,7 @@ func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time, receivedAt int64) error {
+func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now, sampleTime time.Time, receivedAt int64, fromAll bool) error {
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
 	var electedAtTime, electedChanges int64
@@ -661,11 +672,17 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 
 			// If our replica is different, wait until the failover time
 			if desc.Replica != replica {
-				if now.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
-					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				var currentTime time.Time
+				if h.cfg.UseSampleTimeForFailover {
+					currentTime = sampleTime
+				} else {
+					currentTime = now
+				}
+				if currentTime.Sub(timestamp.Time(desc.ReceivedAt)) < h.cfg.FailoverTimeout {
+					level.Info(h.logger).Log("msg", "replica differs, but it's too early to failover", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "current_time", currentTime, "use_sample_time_for_failover", h.cfg.UseSampleTimeForFailover, "from_all", fromAll)
 					return nil, false, nil
 				}
-				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt))
+				level.Info(h.logger).Log("msg", "replica differs, attempting to update kv", "user", userID, "cluster", cluster, "replica", replica, "elected", desc.Replica, "received_at", timestamp.Time(desc.ReceivedAt), "current_time", currentTime, "use_sample_time_for_failover", h.cfg.UseSampleTimeForFailover, "from_all", fromAll)
 				electedAtTime = timestamp.FromTime(now)
 				electedChanges = desc.ElectedChanges + 1
 			}
