@@ -750,12 +750,7 @@ func rewrite(
 			return errors.Wrap(err, "add series")
 		}
 
-		meta.Stats.NumChunks += uint64(len(s.chks))
-		meta.Stats.NumSeries++
-
-		for _, chk := range s.chks {
-			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
-		}
+		updateStats(&meta.Stats, 1, s.chks)
 
 		s.lset.Range(func(l labels.Label) {
 			valset, ok := values[l.Name]
@@ -770,6 +765,21 @@ func rewrite(
 		lastSet = s.lset
 	}
 	return nil
+}
+
+func updateStats(stats *tsdb.BlockStats, series uint64, chks []chunks.Meta) {
+	stats.NumSeries += series
+	stats.NumChunks += uint64(len(chks))
+	for _, chk := range chks {
+		numSamples := uint64(chk.Chunk.NumSamples())
+		stats.NumSamples += numSamples
+		switch chk.Chunk.Encoding() {
+		case chunkenc.EncHistogram, chunkenc.EncFloatHistogram:
+			stats.NumHistogramSamples += numSamples
+		case chunkenc.EncXOR:
+			stats.NumFloatSamples += numSamples
+		}
+	}
 }
 
 // clampChunk returns a chunk that contains only samples within [mint, maxt),
