@@ -52,12 +52,14 @@ func (mapper *reorderHistogramAgg) MapExpr(expr parser.Expr) (mapped parser.Expr
 	newExpr := &parser.AggregateExpr{
 		Op: agg.Op,
 		Expr: &parser.Call{
-			Func: call.Func,
-			Args: []parser.Expr{agg.Expr},
+			Func:     call.Func,
+			Args:     []parser.Expr{agg.Expr},
+			PosRange: call.PosRange,
 		},
 		Param:    agg.Param,
 		Grouping: agg.Grouping,
 		Without:  agg.Without,
+		PosRange: agg.PosRange,
 	}
 
 	return newExpr, false, nil
