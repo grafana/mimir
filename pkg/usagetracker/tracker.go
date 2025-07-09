@@ -501,6 +501,9 @@ losingPartitions:
 	} else if !t.ready.Load() {
 		level.Info(logger).Log("msg", "all partitions created, marking as ready")
 		t.ready.Store(true)
+		if err := t.instanceLifecycler.ChangeState(ctx, ring.ACTIVE); err != nil {
+			return errors.Wrap(err, "unable to change instance lifecycler state to ACTIVE")
+		}
 	}
 
 	level.Info(logger).Log(

@@ -117,7 +117,8 @@ func NewInstanceRingLifecycler(cfg InstanceRingConfig, logger log.Logger, reg pr
 	}
 
 	var delegate ring.BasicLifecyclerDelegate
-	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, 1)
+	// We start in PENDING state until we load all partitions.
+	delegate = ring.NewInstanceRegisterDelegate(ring.JOINING, 1)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	if cfg.AutoForgetUnhealthyPeriods > 0 {
 		delegate = ring.NewAutoForgetDelegate(time.Duration(cfg.AutoForgetUnhealthyPeriods)*cfg.HeartbeatTimeout, delegate, logger)
