@@ -510,3 +510,7 @@ func (r *ActivePartitionBatchRing) Get(key uint32, _ Operation, bufInstances []I
 		ZoneAwarenessEnabled: false,
 	}, nil
 }
+
+func multiPartitionOwnerInstanceID(instanceID string, partitionID int32) string {
+	return instanceID + "/" + strconv.Itoa(int(partitionID))
+}

@@ -838,7 +838,7 @@ type Mimir struct {
 	Vault                            *vault.Vault
 	UsageStatsReporter               *usagestats.Reporter
 	UsageTracker                     *usagetracker.UsageTracker
-	UsageTrackerPartitionRing        *ring.PartitionInstanceRing
+	UsageTrackerPartitionRing        *ring.MultiPartitionInstanceRing
 	UsageTrackerInstanceRing         *ring.Ring
 	BlockBuilder                     *blockbuilder.BlockBuilder
 	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler

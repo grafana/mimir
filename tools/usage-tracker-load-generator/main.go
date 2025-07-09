@@ -96,7 +96,7 @@ func main() {
 	partitionRingWatcher := usagetracker.NewPartitionRingWatcher(partitionKVClient, logger, nil)
 	assertNoError(services.StartAndAwaitRunning(ctx, partitionRingWatcher))
 
-	partitionRing := ring.NewPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
+	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
 
 	// Create the usage-tracker client.
 	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, logger, nil)

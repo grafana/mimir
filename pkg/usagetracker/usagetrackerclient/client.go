@@ -62,7 +62,7 @@ type UsageTrackerClient struct {
 	cfg    Config
 	logger log.Logger
 
-	partitionRing *ring.PartitionInstanceRing
+	partitionRing *ring.MultiPartitionInstanceRing
 
 	clientsPool *client.Pool
 
@@ -73,7 +73,7 @@ type UsageTrackerClient struct {
 	trackSeriesDuration *prometheus.HistogramVec
 }
 
-func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.PartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
+func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
 	c := &UsageTrackerClient{
 		cfg:                    clientCfg,
 		logger:                 logger,
@@ -183,7 +183,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 
 func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
 	// Get the usage-tracker instances for the input partition.
-	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp, true)
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
 		return nil, err
 	}

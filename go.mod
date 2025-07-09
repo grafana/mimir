@@ -379,7 +379,7 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
 
 // TODO: usage-tracker specific: Vendoring the "usage-tracker" branch in dskit.
-replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250707125229-fe077dc142e8
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250709093418-14c74dea8ef3
 
 // TODO: usage-tracker specific: Replacing client_golang with https://github.com/prometheus/client_golang/pull/1766
 replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e

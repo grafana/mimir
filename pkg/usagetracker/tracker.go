@@ -186,7 +186,7 @@ type UsageTracker struct {
 	// Partition and instance ring.
 	partitionKVClient  kv.Client
 	instanceRing       *ring.Ring
-	partitionRing      *ring.PartitionInstanceRing
+	partitionRing      *ring.MultiPartitionInstanceRing
 	instanceLifecycler *ring.BasicLifecycler
 
 	// Events storage (Kafka).
@@ -214,7 +214,7 @@ type UsageTracker struct {
 	snapshotsRemainingInTheBucket prometheus.Gauge
 }
 
-func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.MultiPartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
 	t := &UsageTracker{
 		cfg:           cfg,
 		instanceRing:  instanceRing,
@@ -420,7 +420,7 @@ losingPartitions:
 			continue
 		}
 
-		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp, true)
+		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp)
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to get replication set for partition", "err", err)
 			continue

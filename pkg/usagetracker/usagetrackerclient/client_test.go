@@ -36,7 +36,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		userID = "user-1"
 	)
 
-	prepareTest := func() (*ring.PartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
+	prepareTest := func() (*ring.MultiPartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
 		registerer := prometheus.NewPedanticRegistry()
 
 		// Setup the in-memory KV store used for the ring.
@@ -94,7 +94,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, partitionRingWatcher))
 		})
 
-		partitionRing := ring.NewPartitionInstanceRing(partitionRingWatcher, instanceRing, serverCfg.InstanceRing.HeartbeatTimeout)
+		partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, serverCfg.InstanceRing.HeartbeatTimeout)
 
 		// Pre-condition check: all partitions should be active.
 		require.Equal(t, []int32{1, 2}, partitionRingWatcher.PartitionRing().ActivePartitionIDs())
