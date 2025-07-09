@@ -43,10 +43,18 @@ func IsEnabled(ctx context.Context) bool {
 	return FromContext(ctx) != nil
 }
 
+// gateTiming holds concurrency gate timing information for a single store-gateway.
+type gateTiming struct {
+	Address    string
+	RequestTime  time.Time
+	AcquiredTime time.Time
+}
+
 // SafeStats is a concurrent safe wrapper around the Stats struct.
 type SafeStats struct {
 	Stats
-	mx sync.Mutex
+	mx          sync.Mutex
+	gateTimings []gateTiming
 }
 
 // AddWallTime adds some time to the counter.
@@ -255,6 +263,32 @@ func (s *SafeStats) LoadSamplesProcessedPerStep() []StepStat {
 	return s.SamplesProcessedPerStep
 }
 
+// AddGateTiming adds concurrency gate timing information for a store-gateway.
+func (s *SafeStats) AddGateTiming(address string, requestTime, acquiredTime time.Time) {
+	if s == nil {
+		return
+	}
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.gateTimings = append(s.gateTimings, gateTiming{
+		Address:      address,
+		RequestTime:  requestTime,
+		AcquiredTime: acquiredTime,
+	})
+}
+
+// LoadGateTimings returns a copy of the gate timings.
+func (s *SafeStats) LoadGateTimings() []gateTiming {
+	if s == nil {
+		return nil
+	}
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	result := make([]gateTiming, len(s.gateTimings))
+	copy(result, s.gateTimings)
+	return result
+}
+
 // Merge the provided Stats into this one.
 func (s *SafeStats) Merge(other *SafeStats) {
 	if s == nil || other == nil {
@@ -273,6 +307,9 @@ func (s *SafeStats) Merge(other *SafeStats) {
 	s.AddSamplesProcessed(other.LoadSamplesProcessed())
 	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 	s.mergeSamplesProcessedPerStep(other.LoadSamplesProcessedPerStep())
+
+	// Merge gate timings
+	s.mergeGateTimings(other.LoadGateTimings())
 }
 
 func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
@@ -327,6 +364,15 @@ func (s *SafeStats) mergeSamplesProcessedPerStep(other []StepStat) {
 		sum += other[j].Value
 	}
 	s.SamplesProcessedPerStep = merged // Set directly since we hold the lock
+}
+
+func (s *SafeStats) mergeGateTimings(other []gateTiming) {
+	if s == nil {
+		return
+	}
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.gateTimings = append(s.gateTimings, other...)
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

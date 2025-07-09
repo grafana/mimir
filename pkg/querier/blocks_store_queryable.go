@@ -105,6 +105,10 @@ type blocksStoreQueryableMetrics struct {
 	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
+
+	// Concurrency gate timing metrics
+	concurrencyWait              prometheus.Histogram
+	concurrencyEfficiency prometheus.Histogram
 }
 
 func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
@@ -136,7 +140,51 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 			Name: "cortex_querier_query_storegateway_chunks_total",
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
+
+		concurrencyWait: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_querier_storegateway_concurrency_wait_seconds",
+			Help:                            "Time from query start until the last store-gateway started processing the query.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}),
+		concurrencyEfficiency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                            "cortex_querier_storegateway_concurrency_efficiency",
+			Help:                            "Query efficiency: 1 - (blocked_time / total_time).",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}),
 	}
+}
+
+// reportConcurrencyBottlenecks reports gate timing data to detect concurrency bottlenecks.
+func (m *blocksStoreQueryableMetrics) reportConcurrencyBottlenecks(reqStats *stats.SafeStats, queryStartTime time.Time) {
+	if m == nil || reqStats == nil {
+		return
+	}
+
+	timings := reqStats.LoadGateTimings()
+	if len(timings) == 0 {
+		return // No gate timing data available
+	}
+
+	// Find the longest wait time (difference between acquired and requested time)
+	var longestWait time.Duration
+	for _, timing := range timings {
+		waitTime := timing.AcquiredTime.Sub(timing.RequestTime)
+		longestWait = max(longestWait, waitTime)
+	}
+
+	// Calculate metrics
+	queryDuration := time.Since(queryStartTime)
+
+	// Histogram 1: Longest wait duration
+	m.concurrencyWait.Observe(longestWait.Seconds())
+
+	// Efficiency: blocked time vs total query time
+	efficiency := max(0, 1.0-(float64(longestWait)/float64(queryDuration)))
+	m.concurrencyEfficiency.Observe(efficiency)
 }
 
 // BlocksStoreQueryable is a queryable which queries blocks storage via
@@ -775,16 +823,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
 		reqCtx, cancelReqCtx = context.WithCancelCause(grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)) //nolint:govet
 
-		g, gCtx       = errgroup.WithContext(reqCtx)
-		mtx           = sync.Mutex{}
-		seriesSets    = []storage.SeriesSet(nil)
-		warnings      annotations.Annotations
-		queriedBlocks = []ulid.ULID(nil)
-		spanLog       = spanlogger.FromContext(ctx, q.logger)
-		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
-		reqStats      = stats.FromContext(ctx)
-		streams       []storegatewaypb.StoreGateway_SeriesClient
-		memoryTracker = limiter.MemoryTrackerFromContextWithFallback(ctx)
+		g, gCtx          = errgroup.WithContext(reqCtx)
+		mtx              = sync.Mutex{}
+		seriesSets       = []storage.SeriesSet(nil)
+		warnings         annotations.Annotations
+		queriedBlocks    = []ulid.ULID(nil)
+		spanLog          = spanlogger.FromContext(ctx, q.logger)
+		queryLimiter     = limiter.QueryLimiterFromContextWithFallback(ctx)
+		reqStats         = stats.FromContext(ctx)
+		streams          []storegatewaypb.StoreGateway_SeriesClient
+		memoryTracker    = limiter.MemoryTrackerFromContextWithFallback(ctx)
 	)
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
@@ -841,7 +889,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				var isEOS bool
 				var shouldRetry bool
 				mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, reqStats, mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
@@ -951,6 +999,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return nil, nil, nil, nil, nil, err
 	}
 
+
 	estimateChunks = func() int {
 		totalChunks := 0
 
@@ -964,7 +1013,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, reqStats *stats.SafeStats, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -1022,6 +1071,13 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 	if s := resp.GetStats(); s != nil {
 		indexBytesFetched += s.FetchedIndexBytes
+
+		// Collect concurrency gate timing if available
+		if s.ConcurrencyGateRequestTimeNs > 0 && s.ConcurrencyGateAcquiredTimeNs > 0 {
+			requestTime := time.Unix(0, s.ConcurrencyGateRequestTimeNs)
+			acquiredTime := time.Unix(0, s.ConcurrencyGateAcquiredTimeNs)
+			reqStats.AddGateTiming(c.RemoteAddress(), requestTime, acquiredTime)
+		}
 	}
 
 	if ss := resp.GetStreamingSeries(); ss != nil {

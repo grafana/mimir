@@ -739,9 +739,14 @@ func (s *BucketStore) recordRequestAmbientTime(stats *safeQueryStats, requestSta
 func (s *BucketStore) limitConcurrentQueries(ctx context.Context, stats *safeQueryStats) (done func(), err error) {
 	waitStart := time.Now()
 	err = s.queryGate.Start(ctx)
-	waited := time.Since(waitStart)
+	acquiredTime := time.Now()
+	waited := acquiredTime.Sub(waitStart)
 
-	stats.update(func(stats *queryStats) { stats.streamingSeriesConcurrencyLimitWaitDuration = waited })
+	stats.update(func(stats *queryStats) {
+		stats.streamingSeriesConcurrencyLimitWaitDuration = waited
+		stats.concurrencyGateRequestTime = waitStart
+		stats.concurrencyGateAcquiredTime = acquiredTime
+	})
 	level.Debug(spanlogger.FromContext(ctx, s.logger)).Log("msg", "waited for turn on query concurrency gate", "duration", waited)
 
 	if err != nil {
@@ -1006,7 +1011,9 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 		stats.streamingSeriesEncodeResponseDuration += encodeDuration
 	})
 	unsafeStats := stats.export()
-	if err := s.sendMessage("series response stats", srv, storepb.NewStatsResponse(unsafeStats.postingsTouchedSizeSum+unsafeStats.seriesProcessedSizeSum), &encodeDuration, &sendDuration); err != nil {
+	indexBytes := unsafeStats.postingsTouchedSizeSum + unsafeStats.seriesProcessedSizeSum
+	response := storepb.NewStatsResponse(indexBytes, unsafeStats.concurrencyGateRequestTime.UnixNano(), unsafeStats.concurrencyGateAcquiredTime.UnixNano())
+	if err := s.sendMessage("series response stats", srv, response, &encodeDuration, &sendDuration); err != nil {
 		return err
 	}
 	return nil
