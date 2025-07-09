@@ -637,8 +637,13 @@ func (p *partitionHandler) publishSeriesCreatedEvents(ctx context.Context) {
 				res := p.eventsKafkaWriter.ProduceSync(ctx, batch...)
 				for _, r := range res {
 					if r.Err != nil {
+						lvl := level.Error
+						if errors.Is(r.Err, context.Canceled) {
+							lvl = level.Debug
+						}
+
 						p.seriesCreatedEventsPublishFailures.Inc()
-						level.Error(p.logger).Log("msg", "failed to publish series created event", "err", r.Err)
+						lvl(p.logger).Log("msg", "failed to publish series created event", "err", r.Err)
 						continue
 					}
 					level.Debug(p.logger).Log("msg", "produced series created event", "offset", r.Record.Offset)
