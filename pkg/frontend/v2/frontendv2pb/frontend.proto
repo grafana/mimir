@@ -8,6 +8,7 @@ syntax = "proto3";
 package frontendv2pb;
 
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
+import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
 import "gogoproto/gogo.proto";
 
@@ -32,9 +33,14 @@ message QueryResultRequest {
 
 message QueryResultStreamRequest {
   uint64 queryID = 1;
+
   oneof data {
+    // Used for streaming httpgrpc responses:
     QueryResultMetadata metadata = 2;
     QueryResultBody body = 3;
+
+    // Used for streaming non-httpgrpc responses (one message per request kind):
+    querierpb.EvaluateQueryResponse evaluateQueryResponse = 5;
   }
 }
 
