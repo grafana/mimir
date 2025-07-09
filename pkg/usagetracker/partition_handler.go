@@ -58,7 +58,6 @@ type partitionHandler struct {
 
 	// Partition and instance ring.
 	partitionLifecycler *ring.PartitionInstanceLifecycler
-	partitionRing       *ring.PartitionInstanceRing
 
 	// Events storage (Kafka).
 	eventsKafkaWriter *kgo.Client
@@ -100,7 +99,6 @@ func newPartitionHandler(
 	partitionID int32,
 	cfg Config,
 	partitionKVClient kv.Client,
-	partitionRing *ring.PartitionInstanceRing,
 	eventsKafkaWriter *kgo.Client,
 	snapshotsKafkaWriter *kgo.Client,
 	snapshotsBucket objstore.InstrumentedBucket,
@@ -111,11 +109,10 @@ func newPartitionHandler(
 	reg := prometheus.NewRegistry()
 	logger = log.With(logger, "partition", partitionID)
 	p := &partitionHandler{
-		cfg:           cfg,
-		partitionRing: partitionRing,
-		logger:        logger,
-		registerer:    registerer,
-		collector:     prometheus.WrapCollectorWith(prometheus.Labels{"partition": strconv.FormatInt(int64(partitionID), 10)}, reg),
+		cfg:        cfg,
+		logger:     logger,
+		registerer: registerer,
+		collector:  prometheus.WrapCollectorWith(prometheus.Labels{"partition": strconv.FormatInt(int64(partitionID), 10)}, reg),
 
 		partitionID: partitionID,
 

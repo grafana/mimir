@@ -458,11 +458,7 @@ func (h *partitionHandlerTestHelper) newHandler(t *testing.T, maybeConfigure ...
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)
 
-	partitionRingWatcher := NewPartitionRingWatcher(h.pkv, logger, reg)
-	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
-	startServiceAndStopOnCleanup(t, partitionRingWatcher)
-
-	p, err := newPartitionHandler(0, cfg, h.pkv, partitionRing, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
+	p, err := newPartitionHandler(0, cfg, h.pkv, h.eventsKafkaWriter, h.snapshotsKafkaWriter, h.snapshotsBucket, h.limiter, logger, reg)
 	require.NoError(t, err)
 	return p
 }

@@ -453,7 +453,7 @@ losingPartitions:
 		logger := log.With(logger, "action", "adding", "partition", pid)
 
 		level.Info(logger).Log("msg", "creating new partition handler")
-		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
+		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create partition handler %d", pid)
 		}
