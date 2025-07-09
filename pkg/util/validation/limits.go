@@ -743,7 +743,7 @@ func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
 	// TODO temporary to simplify testing.
 	if limit == 0 {
 		// Fallback to MaxGlobalSeriesPerUser if no per-user active series limit is set.
-		limit = o.defaultLimits.MaxGlobalSeriesPerUser
+		limit = overrides.MaxGlobalSeriesPerUser
 	}
 	return limit
 }
