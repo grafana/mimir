@@ -196,6 +196,71 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		}, 5*lostPartitionsShutdownGracePeriod, 100*time.Millisecond)
 	})
 
+	t.Run("new instance took partitions, restarted old instance should remove stale ownership", func(t *testing.T) {
+		// This test simulates a scenario where an instance is supposed to lose partitions because a higher one started and now owns them
+		// but in the meantime it crashed.
+		// In this case the new instance should check that it's not owning the partitions it's not handling anymore.
+		t.Parallel()
+
+		// lostPartitionsShutdownGracePeriod should be long enough for this test not to be flaky,
+		// but also short enough to keep the test fast
+		const lostPartitionsShutdownGracePeriod = time.Second
+		configure := func(cfg *Config) {
+			cfg.LostPartitionsShutdownGracePeriod = lostPartitionsShutdownGracePeriod
+			cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
+		}
+
+		ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
+		a0 := newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster, configure)
+		trackers := map[string]*UsageTracker{
+			"a0": a0,
+		}
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
+
+		// Create trackers and check that they're ready.
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		requireAllTrackersReady(t, trackers)
+
+		// Start zone-a-1.
+		a1 := newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster, configure)
+		trackers["a1"] = a1
+
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
+
+		// Reconcile both, they will create all the needed partitions.
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		require.NoError(t, a1.reconcilePartitions(context.Background()))
+
+		// All trackers should be ready.
+		requireAllTrackersReady(t, trackers)
+
+		// zone-a-0 should have 16 partitions, zone-a-1 should have 8, this is deterministic at this point.
+		withRLock(&a0.partitionsMtx, func() { require.Len(t, a0.partitions, 16) })
+		withRLock(&a1.partitionsMtx, func() { require.Len(t, a1.partitions, 8) })
+
+		// At this point last partition is still owned by both zone-a-0 (who's prepared to lose them) and zone-a-1 (who just took them).
+		// Ring should say that last partition is owned by zone-a-1.
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			require.Equal(t, []string{"usage-tracker-zone-a-0", "usage-tracker-zone-a-1"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
+		}, 5*time.Second, 100*time.Millisecond)
+
+		// Let's forget about a0 for a second, let's say it crashed (even though we didn't stop it, but it's easier for sake of tests).
+		// a0 starts again.
+		newA0 := newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster, configure)
+		trackers["a0"] = newA0 // Overwrite it so waitUntilAllTrackersSeeAllInstancesInTheirZones works correctly.
+
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
+		require.NoError(t, newA0.reconcilePartitions(context.Background()))
+
+		// New zone-a-0 should have 8 partitions.
+		withRLock(&newA0.partitionsMtx, func() { require.Len(t, newA0.partitions, 8) })
+
+		// Ring should say that last partition is owned by zone-a-1.
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			require.Equal(t, []string{"usage-tracker-zone-a-1"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
+		}, 5*time.Second, 100*time.Millisecond)
+	})
+
 	t.Run("respects MaxPartitionsToCreatePerReconcile", func(t *testing.T) {
 		t.Parallel()
 
@@ -300,7 +365,7 @@ func newTestUsageTracker(t *testing.T, index int, zone string, ikv, pkv kv.Clien
 		option(&cfg)
 	}
 	reg := prometheus.NewPedanticRegistry()
-	logger := log.NewNopLogger()
+	logger := utiltest.NewTestingLogger(t)
 	instanceRing, err := NewInstanceRingClient(cfg.InstanceRing, logger, reg)
 	require.NoError(t, err)
 	startServiceAndStopOnCleanup(t, instanceRing)

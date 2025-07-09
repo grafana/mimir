@@ -734,7 +734,7 @@ github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20250703125411-00229f5b510c => github.com/grafana/dskit v0.0.0-20250709093418-14c74dea8ef3
+# github.com/grafana/dskit v0.0.0-20250703125411-00229f5b510c => github.com/grafana/dskit v0.0.0-20250709094449-4da2c2a3f190
 ## explicit; go 1.23.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -2134,6 +2134,6 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250604130045-92c8f6389b36
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20250703083430-c31a9568ad96
-# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250709093418-14c74dea8ef3
+# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250709094449-4da2c2a3f190
 # github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e
 # github.com/thanos-io/objstore => github.com/charleskorn/objstore v0.0.0-20250527065533-21d4c0c463eb

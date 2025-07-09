@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -371,6 +372,12 @@ func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 		level.Error(logger).Log("msg", "unable to calculate partitions, skipping reconcile", "err", err)
 		return nil
 	}
+
+	if err := t.removeStalePartitionOwnership(ctx, start, end); err != nil {
+		level.Error(logger).Log("msg", "unable to remove stale partition ownership, cannot reconcile", "err", err)
+		return err
+	}
+
 	current := int32(len(t.partitions))
 
 	level.Info(logger).Log("msg", "serving partitions", "current", current, "new", end-start, "start", start, "end", end, "instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions)
@@ -503,6 +510,38 @@ losingPartitions:
 		"marked_as_lost", markedAsLost, "deleted", deleted,
 		"unmarked_as_lost", unmarkedAsLost,
 	)
+	return nil
+}
+
+func (t *UsageTracker) removeStalePartitionOwnership(ctx context.Context, start, end int32) error {
+	partitionRing := t.partitionRing.PartitionRing()
+	partitionRingEditor := ring.NewPartitionRingEditor(PartitionRingKey, t.partitionKVClient)
+
+	var partitionOwners []string
+	for p := int32(0); p < int32(t.cfg.Partitions); p++ {
+		if p >= start && p < end {
+			// We (are supposed to) own this one, no need to remove it.
+			continue
+		}
+		// We are not supposed to own this partition.
+		if _, ok := t.partitions[p]; ok {
+			// We have a lifecycler running for this partition, it will take care of removing the ownership.
+			continue
+		}
+
+		partitionOwners = partitionRing.MultiPartitionOwnerIDs(p, partitionOwners[:0])
+		if !slices.Contains(partitionOwners, t.cfg.InstanceRing.InstanceID) {
+			// We are not the owner of this partition, all ok.
+			continue
+		}
+
+		level.Warn(t.logger).Log("msg", "removing stale partition ownership", "partition", p, "instance_id", t.cfg.InstanceRing.InstanceID)
+		err := partitionRingEditor.RemoveMultiPartitionOwner(ctx, t.cfg.InstanceRing.InstanceID, p)
+		if err != nil {
+			return errors.Wrapf(err, "unable to remove stale partition ownership for partition %d", p)
+		}
+	}
+
 	return nil
 }
 
