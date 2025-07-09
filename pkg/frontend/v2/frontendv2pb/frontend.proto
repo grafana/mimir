@@ -12,6 +12,7 @@ option go_package = "frontendv2pb";
 import "gogoproto/gogo.proto";
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
+import "github.com/grafana/mimir/pkg/querier/querierpb/querier.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -33,9 +34,21 @@ message QueryResultRequest {
 
 message QueryResultStreamRequest {
   uint64 queryID = 1;
+
   oneof data {
+    // Used for streaming httpgrpc responses:
     QueryResultMetadata metadata = 2;
     QueryResultBody body = 3;
+
+    // Used for all non-httpgrpc streaming responses:
+    querierpb.Error error = 4;
+
+    // Used for streaming query results:
+    querierpb.EvaluateQueryResponse_SeriesMetadata evaluateResponseSeriesMetadata = 5;
+    querierpb.EvaluateQueryResponse_StringValue evaluateResponseStringValue = 6;
+    querierpb.EvaluateQueryResponse_ScalarValue evaluateResponseScalarValue = 7;
+    querierpb.EvaluateQueryResponse_InstantVectorSeriesData evaluateResponseInstantVectorSeriesData = 8;
+    querierpb.EvaluateQueryResponse_RangeVectorSeriesData evaluateResponseRangeVectorData = 9;
   }
 }
 

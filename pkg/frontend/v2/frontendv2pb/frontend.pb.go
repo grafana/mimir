@@ -10,6 +10,7 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	httpgrpc "github.com/grafana/dskit/httpgrpc"
+	querierpb "github.com/grafana/mimir/pkg/querier/querierpb"
 	_ "github.com/grafana/mimir/pkg/querier/stats"
 	github_com_grafana_mimir_pkg_querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	grpc "google.golang.org/grpc"
@@ -90,6 +91,12 @@ type QueryResultStreamRequest struct {
 	// Types that are valid to be assigned to Data:
 	//	*QueryResultStreamRequest_Metadata
 	//	*QueryResultStreamRequest_Body
+	//	*QueryResultStreamRequest_Error
+	//	*QueryResultStreamRequest_EvaluateResponseSeriesMetadata
+	//	*QueryResultStreamRequest_EvaluateResponseStringValue
+	//	*QueryResultStreamRequest_EvaluateResponseScalarValue
+	//	*QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData
+	//	*QueryResultStreamRequest_EvaluateResponseRangeVectorData
 	Data isQueryResultStreamRequest_Data `protobuf_oneof:"data"`
 }
 
@@ -138,9 +145,34 @@ type QueryResultStreamRequest_Metadata struct {
 type QueryResultStreamRequest_Body struct {
 	Body *QueryResultBody `protobuf:"bytes,3,opt,name=body,proto3,oneof" json:"body,omitempty"`
 }
+type QueryResultStreamRequest_Error struct {
+	Error *querierpb.Error `protobuf:"bytes,4,opt,name=error,proto3,oneof" json:"error,omitempty"`
+}
+type QueryResultStreamRequest_EvaluateResponseSeriesMetadata struct {
+	EvaluateResponseSeriesMetadata *querierpb.EvaluateQueryResponse_SeriesMetadata `protobuf:"bytes,5,opt,name=evaluateResponseSeriesMetadata,proto3,oneof" json:"evaluateResponseSeriesMetadata,omitempty"`
+}
+type QueryResultStreamRequest_EvaluateResponseStringValue struct {
+	EvaluateResponseStringValue *querierpb.EvaluateQueryResponse_StringValue `protobuf:"bytes,6,opt,name=evaluateResponseStringValue,proto3,oneof" json:"evaluateResponseStringValue,omitempty"`
+}
+type QueryResultStreamRequest_EvaluateResponseScalarValue struct {
+	EvaluateResponseScalarValue *querierpb.EvaluateQueryResponse_ScalarValue `protobuf:"bytes,7,opt,name=evaluateResponseScalarValue,proto3,oneof" json:"evaluateResponseScalarValue,omitempty"`
+}
+type QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData struct {
+	EvaluateResponseInstantVectorSeriesData *querierpb.EvaluateQueryResponse_InstantVectorSeriesData `protobuf:"bytes,8,opt,name=evaluateResponseInstantVectorSeriesData,proto3,oneof" json:"evaluateResponseInstantVectorSeriesData,omitempty"`
+}
+type QueryResultStreamRequest_EvaluateResponseRangeVectorData struct {
+	EvaluateResponseRangeVectorData *querierpb.EvaluateQueryResponse_RangeVectorSeriesData `protobuf:"bytes,9,opt,name=evaluateResponseRangeVectorData,proto3,oneof" json:"evaluateResponseRangeVectorData,omitempty"`
+}
 
-func (*QueryResultStreamRequest_Metadata) isQueryResultStreamRequest_Data() {}
-func (*QueryResultStreamRequest_Body) isQueryResultStreamRequest_Data()     {}
+func (*QueryResultStreamRequest_Metadata) isQueryResultStreamRequest_Data()                       {}
+func (*QueryResultStreamRequest_Body) isQueryResultStreamRequest_Data()                           {}
+func (*QueryResultStreamRequest_Error) isQueryResultStreamRequest_Data()                          {}
+func (*QueryResultStreamRequest_EvaluateResponseSeriesMetadata) isQueryResultStreamRequest_Data() {}
+func (*QueryResultStreamRequest_EvaluateResponseStringValue) isQueryResultStreamRequest_Data()    {}
+func (*QueryResultStreamRequest_EvaluateResponseScalarValue) isQueryResultStreamRequest_Data()    {}
+func (*QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) isQueryResultStreamRequest_Data() {
+}
+func (*QueryResultStreamRequest_EvaluateResponseRangeVectorData) isQueryResultStreamRequest_Data() {}
 
 func (m *QueryResultStreamRequest) GetData() isQueryResultStreamRequest_Data {
 	if m != nil {
@@ -170,11 +202,59 @@ func (m *QueryResultStreamRequest) GetBody() *QueryResultBody {
 	return nil
 }
 
+func (m *QueryResultStreamRequest) GetError() *querierpb.Error {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_Error); ok {
+		return x.Error
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetEvaluateResponseSeriesMetadata() *querierpb.EvaluateQueryResponse_SeriesMetadata {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_EvaluateResponseSeriesMetadata); ok {
+		return x.EvaluateResponseSeriesMetadata
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetEvaluateResponseStringValue() *querierpb.EvaluateQueryResponse_StringValue {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_EvaluateResponseStringValue); ok {
+		return x.EvaluateResponseStringValue
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetEvaluateResponseScalarValue() *querierpb.EvaluateQueryResponse_ScalarValue {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_EvaluateResponseScalarValue); ok {
+		return x.EvaluateResponseScalarValue
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetEvaluateResponseInstantVectorSeriesData() *querierpb.EvaluateQueryResponse_InstantVectorSeriesData {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData); ok {
+		return x.EvaluateResponseInstantVectorSeriesData
+	}
+	return nil
+}
+
+func (m *QueryResultStreamRequest) GetEvaluateResponseRangeVectorData() *querierpb.EvaluateQueryResponse_RangeVectorSeriesData {
+	if x, ok := m.GetData().(*QueryResultStreamRequest_EvaluateResponseRangeVectorData); ok {
+		return x.EvaluateResponseRangeVectorData
+	}
+	return nil
+}
+
 // XXX_OneofWrappers is for the internal use of the proto package.
 func (*QueryResultStreamRequest) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
 		(*QueryResultStreamRequest_Metadata)(nil),
 		(*QueryResultStreamRequest_Body)(nil),
+		(*QueryResultStreamRequest_Error)(nil),
+		(*QueryResultStreamRequest_EvaluateResponseSeriesMetadata)(nil),
+		(*QueryResultStreamRequest_EvaluateResponseStringValue)(nil),
+		(*QueryResultStreamRequest_EvaluateResponseScalarValue)(nil),
+		(*QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData)(nil),
+		(*QueryResultStreamRequest_EvaluateResponseRangeVectorData)(nil),
 	}
 }
 
@@ -319,39 +399,50 @@ func init() {
 func init() { proto.RegisterFile("frontend.proto", fileDescriptor_eca3873955a29cfe) }
 
 var fileDescriptor_eca3873955a29cfe = []byte{
-	// 501 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x54, 0xb1, 0x8e, 0xd3, 0x4c,
-	0x10, 0xde, 0xbd, 0x4b, 0xee, 0x7e, 0x6d, 0xa2, 0x1f, 0x58, 0x0e, 0x64, 0x45, 0x62, 0xc9, 0xb9,
-	0x80, 0x88, 0xc2, 0x46, 0x39, 0x84, 0x10, 0x0d, 0x92, 0x85, 0x4e, 0xa1, 0x40, 0xe2, 0x36, 0xa9,
-	0x10, 0xcd, 0x3a, 0xde, 0x38, 0x56, 0xb0, 0xd7, 0xb7, 0x5e, 0x23, 0xa5, 0xe3, 0x11, 0x78, 0x0c,
-	0x6a, 0x78, 0x89, 0xab, 0x50, 0xca, 0x13, 0x05, 0x22, 0x4e, 0x43, 0x79, 0x8f, 0x80, 0xbc, 0xb6,
-	0x23, 0x07, 0x2e, 0x70, 0x0d, 0xcd, 0x6a, 0x46, 0xf3, 0x7d, 0xfb, 0xcd, 0x37, 0x3b, 0x36, 0xfa,
-	0x7f, 0x22, 0x45, 0xa4, 0x78, 0xe4, 0x59, 0xb1, 0x14, 0x4a, 0xe0, 0x76, 0x95, 0xbf, 0xeb, 0xc7,
-	0x6e, 0xe7, 0xc0, 0x17, 0xbe, 0xd0, 0x05, 0x3b, 0x8f, 0x0a, 0x4c, 0xe7, 0xa1, 0x1f, 0xa8, 0x69,
-	0xea, 0x5a, 0x63, 0x11, 0xda, 0xbe, 0x64, 0x13, 0x16, 0x31, 0xdb, 0x4b, 0x66, 0x81, 0xb2, 0xa7,
-	0x4a, 0xc5, 0xbe, 0x8c, 0xc7, 0xeb, 0xa0, 0x64, 0x3c, 0xbe, 0x84, 0x11, 0x06, 0x61, 0x20, 0xed,
-	0x78, 0xe6, 0xdb, 0xa7, 0x29, 0x97, 0x01, 0x97, 0x76, 0xa2, 0x98, 0x4a, 0x8a, 0xb3, 0xe0, 0x99,
-	0x67, 0x10, 0xe1, 0x93, 0x94, 0xcb, 0x39, 0xe5, 0x49, 0xfa, 0x56, 0x51, 0x7e, 0x9a, 0xf2, 0x44,
-	0x61, 0x03, 0xed, 0xe7, 0x9c, 0xf9, 0x8b, 0xe7, 0x06, 0xec, 0xc2, 0x5e, 0x83, 0x56, 0x29, 0x7e,
-	0x8a, 0xda, 0xb9, 0x34, 0xe5, 0x49, 0x2c, 0xa2, 0x84, 0x1b, 0x3b, 0x5d, 0xd8, 0x6b, 0xf5, 0x6f,
-	0x5b, 0xeb, 0x7e, 0x06, 0xa3, 0xd1, 0xab, 0xaa, 0x4a, 0x37, 0xb0, 0xf8, 0x0d, 0x6a, 0x6a, 0x6d,
-	0x63, 0x57, 0x93, 0xda, 0x56, 0xd1, 0xc9, 0x30, 0x3f, 0x9d, 0x27, 0x5f, 0xbf, 0xdd, 0x7d, 0x74,
-	0x75, 0x17, 0xd6, 0x90, 0x4d, 0xb8, 0x66, 0xd2, 0xe2, 0x52, 0xf3, 0x13, 0x44, 0x46, 0xcd, 0xca,
-	0x50, 0x49, 0xce, 0xc2, 0xbf, 0x1b, 0x7a, 0x86, 0xfe, 0x0b, 0xb9, 0x62, 0x1e, 0x53, 0xac, 0x34,
-	0x73, 0x68, 0xd5, 0x9f, 0xc8, 0xaa, 0xdd, 0xf9, 0xb2, 0x04, 0x0e, 0x00, 0x5d, 0x93, 0xf0, 0x11,
-	0x6a, 0xb8, 0xc2, 0x9b, 0x97, 0xa6, 0xee, 0x6c, 0x25, 0x3b, 0xc2, 0x9b, 0x0f, 0x00, 0xd5, 0x60,
-	0x67, 0x0f, 0x35, 0x72, 0xb2, 0xf9, 0x19, 0xa2, 0x9b, 0x97, 0x08, 0x60, 0x8c, 0x1a, 0x63, 0xe1,
-	0x71, 0xdd, 0x6c, 0x93, 0xea, 0x18, 0x3f, 0x40, 0xfb, 0x53, 0xce, 0x3c, 0x2e, 0x13, 0x63, 0xa7,
-	0xbb, 0xdb, 0x6b, 0xf5, 0xaf, 0xd7, 0xa6, 0xae, 0x0b, 0xb4, 0x02, 0xfc, 0xe3, 0x51, 0xdf, 0x47,
-	0xd7, 0x7e, 0x31, 0x86, 0x0f, 0x50, 0x73, 0x3c, 0x4d, 0xa3, 0x99, 0xee, 0xb8, 0x4d, 0x8b, 0xc4,
-	0xbc, 0xb5, 0xe1, 0xae, 0x5a, 0x84, 0xfe, 0x17, 0x88, 0xf0, 0x71, 0x39, 0xa6, 0x63, 0x21, 0x4f,
-	0x0a, 0x35, 0x3c, 0x42, 0xad, 0x1a, 0x1a, 0x77, 0xb7, 0x8e, 0xb2, 0x7c, 0xd5, 0xce, 0xe1, 0x1f,
-	0x10, 0x85, 0x94, 0x09, 0xb0, 0x8b, 0x6e, 0xfc, 0xb6, 0x16, 0xf8, 0xde, 0x56, 0xe6, 0xc6, 0xde,
-	0x5c, 0x49, 0xa1, 0x07, 0x1d, 0x67, 0xb1, 0x24, 0xe0, 0x7c, 0x49, 0xc0, 0xc5, 0x92, 0xc0, 0xf7,
-	0x19, 0x81, 0x1f, 0x33, 0x02, 0xcf, 0x32, 0x02, 0x17, 0x19, 0x81, 0xdf, 0x33, 0x02, 0x7f, 0x64,
-	0x04, 0x5c, 0x64, 0x04, 0x7e, 0x58, 0x11, 0xb0, 0x58, 0x11, 0x70, 0xbe, 0x22, 0xe0, 0xf5, 0xc6,
-	0xaf, 0xc0, 0xdd, 0xd3, 0x5f, 0xe4, 0xd1, 0xcf, 0x00, 0x00, 0x00, 0xff, 0xff, 0x47, 0x86, 0x6e,
-	0x83, 0x31, 0x04, 0x00, 0x00,
+	// 677 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0xcd, 0x6e, 0xd3, 0x40,
+	0x10, 0xde, 0x6d, 0x93, 0xb4, 0x6c, 0x23, 0x7e, 0x96, 0x82, 0xac, 0x22, 0xb6, 0x69, 0x0e, 0x34,
+	0x42, 0xc8, 0x46, 0x2d, 0xaa, 0x2a, 0x84, 0x84, 0x14, 0x95, 0xca, 0x3d, 0x20, 0xd1, 0x4d, 0xd5,
+	0x03, 0x42, 0x42, 0x9b, 0x78, 0xeb, 0x44, 0x4d, 0xbc, 0xee, 0x7a, 0x5d, 0x29, 0x37, 0xc4, 0x13,
+	0x70, 0xe0, 0x21, 0xb8, 0xf3, 0x12, 0x3d, 0xa1, 0xde, 0xa8, 0x38, 0x20, 0xea, 0x5e, 0x38, 0xf6,
+	0x11, 0x90, 0xd7, 0x76, 0x7e, 0xda, 0xa4, 0xc9, 0x85, 0x8b, 0x33, 0x9b, 0xf9, 0xbe, 0xf9, 0x66,
+	0xc6, 0x9e, 0x59, 0x74, 0xfb, 0x40, 0x0a, 0x4f, 0x71, 0xcf, 0x31, 0x7d, 0x29, 0x94, 0xc0, 0xc5,
+	0xec, 0x7c, 0xbc, 0xe6, 0xd7, 0x97, 0x16, 0x5d, 0xe1, 0x0a, 0xed, 0xb0, 0x62, 0x2b, 0xc1, 0x2c,
+	0x3d, 0x77, 0x5b, 0xaa, 0x19, 0xd6, 0xcd, 0x86, 0xe8, 0x58, 0xae, 0x64, 0x07, 0xcc, 0x63, 0x96,
+	0x13, 0x1c, 0xb6, 0x94, 0xd5, 0x54, 0xca, 0x77, 0xa5, 0xdf, 0xe8, 0x19, 0x29, 0x63, 0x63, 0x04,
+	0xa3, 0xd3, 0xea, 0xb4, 0xa4, 0xe5, 0x1f, 0xba, 0xd6, 0x51, 0xc8, 0x65, 0x8b, 0x4b, 0x2b, 0x50,
+	0x4c, 0x05, 0xc9, 0x33, 0xe5, 0xbd, 0x9a, 0x8a, 0x97, 0xfe, 0xfa, 0xf5, 0xcc, 0x4a, 0xd8, 0xe5,
+	0x13, 0x88, 0xf0, 0x6e, 0xc8, 0x65, 0x97, 0xf2, 0x20, 0x6c, 0x2b, 0xca, 0x8f, 0x42, 0x1e, 0x28,
+	0x6c, 0xa0, 0xb9, 0x18, 0xd7, 0xdd, 0xd9, 0x32, 0x60, 0x09, 0x56, 0x72, 0x34, 0x3b, 0xe2, 0x97,
+	0xa8, 0x18, 0x27, 0x4e, 0x79, 0xe0, 0x0b, 0x2f, 0xe0, 0xc6, 0x4c, 0x09, 0x56, 0x16, 0xd6, 0x1e,
+	0x9a, 0xbd, 0x6a, 0xec, 0xbd, 0xbd, 0x77, 0x99, 0x97, 0x0e, 0x61, 0xf1, 0x07, 0x94, 0xd7, 0x99,
+	0x1b, 0xb3, 0x9a, 0x54, 0x34, 0x93, 0x3a, 0x6a, 0xf1, 0xb3, 0xba, 0xf9, 0xeb, 0xf7, 0xf2, 0x8b,
+	0xe9, 0x7b, 0x60, 0xd6, 0xd8, 0x01, 0xd7, 0x4c, 0x9a, 0x04, 0x2d, 0xff, 0x2c, 0x20, 0x63, 0xa0,
+	0x94, 0x9a, 0x92, 0x9c, 0x75, 0x26, 0x17, 0xf4, 0x1a, 0xcd, 0x77, 0xb8, 0x62, 0x0e, 0x53, 0x2c,
+	0x2d, 0x66, 0xc5, 0x1c, 0x7c, 0xc1, 0xe6, 0x40, 0xcc, 0xb7, 0x29, 0xd0, 0x06, 0xb4, 0x47, 0xc2,
+	0xeb, 0x28, 0x57, 0x17, 0x4e, 0x37, 0x2d, 0xea, 0xf1, 0x58, 0x72, 0x55, 0x38, 0x5d, 0x1b, 0x50,
+	0x0d, 0xc6, 0x15, 0x94, 0xe7, 0x52, 0x0a, 0x69, 0xe4, 0x34, 0xeb, 0xae, 0xd9, 0x7b, 0x41, 0xe6,
+	0x9b, 0xf8, 0x7f, 0x1b, 0xd0, 0x04, 0x80, 0xbb, 0x88, 0xf0, 0x63, 0xd6, 0x0e, 0x99, 0xe2, 0x59,
+	0x23, 0x6b, 0x31, 0x34, 0xc8, 0x92, 0x31, 0xf2, 0x3a, 0x84, 0x35, 0x18, 0x22, 0x25, 0x64, 0xea,
+	0x9a, 0xf5, 0x71, 0x98, 0x66, 0x03, 0x3a, 0x21, 0x30, 0xf6, 0xd1, 0xa3, 0x6b, 0x08, 0x25, 0x5b,
+	0x9e, 0xbb, 0xcf, 0xda, 0x21, 0x37, 0x0a, 0x5a, 0xf7, 0xd9, 0x64, 0xdd, 0x3e, 0xc7, 0x06, 0xf4,
+	0xa6, 0x90, 0x23, 0x15, 0x1b, 0xac, 0xcd, 0x64, 0xa2, 0x38, 0x37, 0xad, 0x62, 0x9f, 0x33, 0x52,
+	0xb1, 0xef, 0xc6, 0x5f, 0x21, 0x5a, 0xbd, 0xea, 0xdf, 0xf1, 0x02, 0xc5, 0x3c, 0xb5, 0xcf, 0x1b,
+	0x4a, 0xc8, 0xa4, 0x27, 0x5b, 0x71, 0xa3, 0xe7, 0xb5, 0xfc, 0xe6, 0x44, 0xf9, 0x31, 0x7c, 0x1b,
+	0xd0, 0x69, 0xa5, 0xf0, 0x67, 0x88, 0x96, 0xaf, 0x62, 0x29, 0xf3, 0x5c, 0x9e, 0x20, 0x75, 0x3a,
+	0xb7, 0x74, 0x3a, 0x1b, 0x13, 0xd3, 0x19, 0xe0, 0x0d, 0x25, 0x33, 0x49, 0xa0, 0x5a, 0x40, 0xb9,
+	0xf8, 0x3b, 0x28, 0x7f, 0x87, 0xe8, 0xfe, 0x88, 0x29, 0xc0, 0x18, 0xe5, 0x1a, 0xc2, 0xe1, 0x7a,
+	0xa2, 0xf2, 0x54, 0xdb, 0xf8, 0x29, 0x9a, 0x6b, 0x72, 0xe6, 0x70, 0x19, 0x18, 0x33, 0xa5, 0x59,
+	0xfd, 0x69, 0xf7, 0x57, 0x83, 0x76, 0xd0, 0x0c, 0xf0, 0x9f, 0xf7, 0xc1, 0x2a, 0xba, 0x73, 0x65,
+	0xfa, 0xf0, 0x22, 0xca, 0x37, 0x9a, 0xa1, 0x77, 0xa8, 0x33, 0x2e, 0xd2, 0xe4, 0x50, 0x7e, 0x30,
+	0x54, 0x5d, 0xd6, 0x8c, 0xb5, 0x1f, 0x10, 0xe1, 0xed, 0x74, 0x96, 0xb7, 0x85, 0xdc, 0x4d, 0xd4,
+	0xf0, 0x1e, 0x5a, 0x18, 0x40, 0xe3, 0xd2, 0xd8, 0x79, 0x4f, 0x57, 0xcf, 0xd2, 0xca, 0x0d, 0x88,
+	0x44, 0xaa, 0x0c, 0x70, 0x1d, 0xdd, 0xbb, 0xb6, 0xbb, 0xf0, 0x93, 0xb1, 0xcc, 0xa1, 0xe5, 0x36,
+	0x95, 0x42, 0x05, 0x56, 0xab, 0xa7, 0xe7, 0x04, 0x9c, 0x9d, 0x13, 0x70, 0x79, 0x4e, 0xe0, 0xa7,
+	0x88, 0xc0, 0x6f, 0x11, 0x81, 0x27, 0x11, 0x81, 0xa7, 0x11, 0x81, 0x7f, 0x22, 0x02, 0xff, 0x46,
+	0x04, 0x5c, 0x46, 0x04, 0x7e, 0xb9, 0x20, 0xe0, 0xf4, 0x82, 0x80, 0xb3, 0x0b, 0x02, 0xde, 0x0f,
+	0xdd, 0x76, 0xf5, 0x82, 0xbe, 0x36, 0xd6, 0xff, 0x05, 0x00, 0x00, 0xff, 0xff, 0x95, 0x3b, 0x16,
+	0x0f, 0x14, 0x07, 0x00, 0x00,
 }
 
 func (this *QueryResultRequest) Equal(that interface{}) bool {
@@ -469,6 +560,150 @@ func (this *QueryResultStreamRequest_Body) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *QueryResultStreamRequest_Error) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_Error)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_Error)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_EvaluateResponseSeriesMetadata) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_EvaluateResponseSeriesMetadata)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_EvaluateResponseSeriesMetadata)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.EvaluateResponseSeriesMetadata.Equal(that1.EvaluateResponseSeriesMetadata) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_EvaluateResponseStringValue) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_EvaluateResponseStringValue)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_EvaluateResponseStringValue)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.EvaluateResponseStringValue.Equal(that1.EvaluateResponseStringValue) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_EvaluateResponseScalarValue) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_EvaluateResponseScalarValue)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_EvaluateResponseScalarValue)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.EvaluateResponseScalarValue.Equal(that1.EvaluateResponseScalarValue) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.EvaluateResponseInstantVectorSeriesData.Equal(that1.EvaluateResponseInstantVectorSeriesData) {
+		return false
+	}
+	return true
+}
+func (this *QueryResultStreamRequest_EvaluateResponseRangeVectorData) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*QueryResultStreamRequest_EvaluateResponseRangeVectorData)
+	if !ok {
+		that2, ok := that.(QueryResultStreamRequest_EvaluateResponseRangeVectorData)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.EvaluateResponseRangeVectorData.Equal(that1.EvaluateResponseRangeVectorData) {
+		return false
+	}
+	return true
+}
 func (this *QueryResultMetadata) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -571,7 +806,7 @@ func (this *QueryResultStreamRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 13)
 	s = append(s, "&frontendv2pb.QueryResultStreamRequest{")
 	s = append(s, "QueryID: "+fmt.Sprintf("%#v", this.QueryID)+",\n")
 	if this.Data != nil {
@@ -594,6 +829,54 @@ func (this *QueryResultStreamRequest_Body) GoString() string {
 	}
 	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_Body{` +
 		`Body:` + fmt.Sprintf("%#v", this.Body) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_Error) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_Error{` +
+		`Error:` + fmt.Sprintf("%#v", this.Error) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseSeriesMetadata) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_EvaluateResponseSeriesMetadata{` +
+		`EvaluateResponseSeriesMetadata:` + fmt.Sprintf("%#v", this.EvaluateResponseSeriesMetadata) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseStringValue) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_EvaluateResponseStringValue{` +
+		`EvaluateResponseStringValue:` + fmt.Sprintf("%#v", this.EvaluateResponseStringValue) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseScalarValue) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_EvaluateResponseScalarValue{` +
+		`EvaluateResponseScalarValue:` + fmt.Sprintf("%#v", this.EvaluateResponseScalarValue) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData{` +
+		`EvaluateResponseInstantVectorSeriesData:` + fmt.Sprintf("%#v", this.EvaluateResponseInstantVectorSeriesData) + `}`}, ", ")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseRangeVectorData) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&frontendv2pb.QueryResultStreamRequest_EvaluateResponseRangeVectorData{` +
+		`EvaluateResponseRangeVectorData:` + fmt.Sprintf("%#v", this.EvaluateResponseRangeVectorData) + `}`}, ", ")
 	return s
 }
 func (this *QueryResultMetadata) GoString() string {
@@ -920,6 +1203,132 @@ func (m *QueryResultStreamRequest_Body) MarshalToSizedBuffer(dAtA []byte) (int, 
 	}
 	return len(dAtA) - i, nil
 }
+func (m *QueryResultStreamRequest_Error) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest_Error) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultStreamRequest_EvaluateResponseSeriesMetadata) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest_EvaluateResponseSeriesMetadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.EvaluateResponseSeriesMetadata != nil {
+		{
+			size, err := m.EvaluateResponseSeriesMetadata.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x2a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultStreamRequest_EvaluateResponseStringValue) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest_EvaluateResponseStringValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.EvaluateResponseStringValue != nil {
+		{
+			size, err := m.EvaluateResponseStringValue.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x32
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultStreamRequest_EvaluateResponseScalarValue) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest_EvaluateResponseScalarValue) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.EvaluateResponseScalarValue != nil {
+		{
+			size, err := m.EvaluateResponseScalarValue.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x3a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.EvaluateResponseInstantVectorSeriesData != nil {
+		{
+			size, err := m.EvaluateResponseInstantVectorSeriesData.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x42
+	}
+	return len(dAtA) - i, nil
+}
+func (m *QueryResultStreamRequest_EvaluateResponseRangeVectorData) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryResultStreamRequest_EvaluateResponseRangeVectorData) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.EvaluateResponseRangeVectorData != nil {
+		{
+			size, err := m.EvaluateResponseRangeVectorData.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintFrontend(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x4a
+	}
+	return len(dAtA) - i, nil
+}
 func (m *QueryResultMetadata) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1097,6 +1506,78 @@ func (m *QueryResultStreamRequest_Body) Size() (n int) {
 	}
 	return n
 }
+func (m *QueryResultStreamRequest_Error) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultStreamRequest_EvaluateResponseSeriesMetadata) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EvaluateResponseSeriesMetadata != nil {
+		l = m.EvaluateResponseSeriesMetadata.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultStreamRequest_EvaluateResponseStringValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EvaluateResponseStringValue != nil {
+		l = m.EvaluateResponseStringValue.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultStreamRequest_EvaluateResponseScalarValue) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EvaluateResponseScalarValue != nil {
+		l = m.EvaluateResponseScalarValue.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EvaluateResponseInstantVectorSeriesData != nil {
+		l = m.EvaluateResponseInstantVectorSeriesData.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
+func (m *QueryResultStreamRequest_EvaluateResponseRangeVectorData) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EvaluateResponseRangeVectorData != nil {
+		l = m.EvaluateResponseRangeVectorData.Size()
+		n += 1 + l + sovFrontend(uint64(l))
+	}
+	return n
+}
 func (m *QueryResultMetadata) Size() (n int) {
 	if m == nil {
 		return 0
@@ -1186,6 +1667,66 @@ func (this *QueryResultStreamRequest_Body) String() string {
 	}
 	s := strings.Join([]string{`&QueryResultStreamRequest_Body{`,
 		`Body:` + strings.Replace(fmt.Sprintf("%v", this.Body), "QueryResultBody", "QueryResultBody", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_Error) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_Error{`,
+		`Error:` + strings.Replace(fmt.Sprintf("%v", this.Error), "Error", "querierpb.Error", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseSeriesMetadata) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_EvaluateResponseSeriesMetadata{`,
+		`EvaluateResponseSeriesMetadata:` + strings.Replace(fmt.Sprintf("%v", this.EvaluateResponseSeriesMetadata), "EvaluateQueryResponse_SeriesMetadata", "querierpb.EvaluateQueryResponse_SeriesMetadata", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseStringValue) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_EvaluateResponseStringValue{`,
+		`EvaluateResponseStringValue:` + strings.Replace(fmt.Sprintf("%v", this.EvaluateResponseStringValue), "EvaluateQueryResponse_StringValue", "querierpb.EvaluateQueryResponse_StringValue", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseScalarValue) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_EvaluateResponseScalarValue{`,
+		`EvaluateResponseScalarValue:` + strings.Replace(fmt.Sprintf("%v", this.EvaluateResponseScalarValue), "EvaluateQueryResponse_ScalarValue", "querierpb.EvaluateQueryResponse_ScalarValue", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData{`,
+		`EvaluateResponseInstantVectorSeriesData:` + strings.Replace(fmt.Sprintf("%v", this.EvaluateResponseInstantVectorSeriesData), "EvaluateQueryResponse_InstantVectorSeriesData", "querierpb.EvaluateQueryResponse_InstantVectorSeriesData", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *QueryResultStreamRequest_EvaluateResponseRangeVectorData) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&QueryResultStreamRequest_EvaluateResponseRangeVectorData{`,
+		`EvaluateResponseRangeVectorData:` + strings.Replace(fmt.Sprintf("%v", this.EvaluateResponseRangeVectorData), "EvaluateQueryResponse_RangeVectorSeriesData", "querierpb.EvaluateQueryResponse_RangeVectorSeriesData", 1) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1492,6 +2033,216 @@ func (m *QueryResultStreamRequest) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			m.Data = &QueryResultStreamRequest_Body{v}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &querierpb.Error{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_Error{v}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EvaluateResponseSeriesMetadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &querierpb.EvaluateQueryResponse_SeriesMetadata{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_EvaluateResponseSeriesMetadata{v}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EvaluateResponseStringValue", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &querierpb.EvaluateQueryResponse_StringValue{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_EvaluateResponseStringValue{v}
+			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EvaluateResponseScalarValue", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &querierpb.EvaluateQueryResponse_ScalarValue{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_EvaluateResponseScalarValue{v}
+			iNdEx = postIndex
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EvaluateResponseInstantVectorSeriesData", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_EvaluateResponseInstantVectorSeriesData{v}
+			iNdEx = postIndex
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EvaluateResponseRangeVectorData", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowFrontend
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &querierpb.EvaluateQueryResponse_RangeVectorSeriesData{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Data = &QueryResultStreamRequest_EvaluateResponseRangeVectorData{v}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
