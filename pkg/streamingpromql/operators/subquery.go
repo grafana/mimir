@@ -73,7 +73,9 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	s.floats.Release()
 	s.histograms.Release()
 	// Clear the subquery stats to not double count samples from previous series in a next series.
-	s.subqueryStats.Clear()
+	if s.subqueryStats != nil {
+		s.subqueryStats.Clear()
+	}
 
 	data, err := s.Inner.NextSeries(ctx)
 	if err != nil {
@@ -148,7 +150,9 @@ func (s *Subquery) samplesProcessedInSubqueryPerParentStep(step *types.RangeVect
 	endIndex := (step.RangeEnd - s.SubqueryTimeRange.StartT) / s.SubqueryTimeRange.IntervalMilliseconds
 
 	for i := startIndex; i <= endIndex; i++ {
-		sum += s.subqueryStats.TotalSamplesPerStep[i]
+		if s.subqueryStats != nil && s.subqueryStats.TotalSamplesPerStep != nil {
+			sum += s.subqueryStats.TotalSamplesPerStep[i]
+		}
 	}
 
 	return sum
@@ -185,5 +189,7 @@ func (s *Subquery) Close() {
 	s.Inner.Close()
 	s.histograms.Close()
 	s.floats.Close()
-	s.subqueryStats.Close()
+	if s.subqueryStats != nil {
+		s.subqueryStats.Close()
+	}
 }
