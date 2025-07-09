@@ -54,35 +54,41 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		// First checks, we haven't done any kind of reconciliation yet, so no partitions should be active yet, no partitions have owners.
 		requireAllTrackersNotReady(t, trackers)
 
-		// Take partitionRing from one of the usage-trackers for convenience.
-		partitionRing := trackers["a0"].partitionRing
-		require.Empty(t, partitionRing.PartitionRing().ActivePartitionIDs(), "No partitions should be active yet.")
-		for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
-			require.Empty(t, partitionRing.PartitionRing().MultiPartitionOwnerIDs(partitionID, nil), "Partition %d should have no owners yet.")
+		{
+			partitionRing := getPartitionRing(t, pkv)
+			require.Empty(t, partitionRing.ActivePartitionIDs(), "No partitions should be active yet.")
+			for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
+				require.Empty(t, partitionRing.MultiPartitionOwnerIDs(partitionID, nil), "Partition %d should have no owners yet.")
+			}
 		}
 
 		// All usage-trackers have started now, run partition handler reconciliations.
 		reconcileAllTrackersPartitionCountTimes(t, trackers)
 
 		// Check that every partition has two owners.
-		ownedPartitions := map[string]int{}
-		for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
-			owners := partitionRing.PartitionRing().MultiPartitionOwnerIDs(0, nil)
-			require.Len(t, owners, 2, "Partition %d should have 2 owners", partitionID)
-			for _, o := range owners {
-				ownedPartitions[o]++
+		{
+			ownedPartitions := map[string]int{}
+
+			partitionRing := getPartitionRing(t, pkv)
+			for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
+				owners := partitionRing.MultiPartitionOwnerIDs(0, nil)
+				require.Len(t, owners, 2, "Partition %d should have 2 owners", partitionID)
+				for _, o := range owners {
+					ownedPartitions[o]++
+				}
+			}
+
+			// Check that each owner owns testParitionsCount / (len(trackers) / 2 zones) partitions.
+			for owner, partitions := range ownedPartitions {
+				require.Equal(t, testPartitionsCount/(len(trackers)/2), partitions, "Usage-Tracker %q should own exactly %d partitions.", owner, partitions)
 			}
 		}
 
-		// Check that each owner owns testParitionsCount / (len(trackers) / 2 zones) partitions.
-		for owner, partitions := range ownedPartitions {
-			require.Equal(t, testPartitionsCount/(len(trackers)/2), partitions, "Usage-Tracker %q should own exactly %d partitions.", owner, partitions)
-		}
-
-		// We should have all partitions active by this point.
+		// We should become active now.
+		// This happens asynchronously in the partition lifecycler.
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
-			require.Len(t, partitionRing.PartitionRing().ActivePartitionIDs(), testPartitionsCount)
-		}, 5*time.Second, 100*time.Millisecond)
+			require.Len(t, getPartitionRing(t, pkv).ActivePartitionIDs(), testPartitionsCount)
+		}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
 
 		// Usage-Trackers should be ready now.
 		requireAllTrackersReady(t, trackers)
@@ -163,21 +169,23 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		withRLock(&a0.partitionsMtx, func() { require.Len(t, a0.partitions, 16) })
 		withRLock(&a1.partitionsMtx, func() { require.Len(t, a1.partitions, 8) })
 
-		// Check eventually because partitionRing update might be delayed.
-		partitionRing := a0.partitionRing
-		require.EventuallyWithT(t, func(t *assert.CollectT) {
-			// First half still has 2 owners.
-			for partitionID := int32(0); partitionID < testPartitionsCount/2; partitionID++ {
-				require.Len(t, partitionRing.PartitionRing().MultiPartitionOwnerIDs(partitionID, nil), 2, "Partition %d should have 2 owners.", partitionID)
-			}
-			// Second half of partitions should have 3 owners now (zone-a-0, zone-a-1, zone-b-1)
-			for partitionID := int32(testPartitionsCount / 2); partitionID < testPartitionsCount; partitionID++ {
-				require.Len(t, partitionRing.PartitionRing().MultiPartitionOwnerIDs(partitionID, nil), 3, "Partition %d should have 2 owners.", partitionID)
-			}
-		}, time.Second, 100*time.Millisecond)
+		partitionRing := getPartitionRing(t, pkv)
+		// First half still has 2 owners.
+		for partitionID := int32(0); partitionID < testPartitionsCount/2; partitionID++ {
+			require.Len(t, partitionRing.MultiPartitionOwnerIDs(partitionID, nil), 2, "Partition %d should have 2 owners.", partitionID)
+		}
+		// Second half of partitions should have 3 owners now (zone-a-0, zone-a-1, zone-b-1)
+		for partitionID := int32(testPartitionsCount / 2); partitionID < testPartitionsCount; partitionID++ {
+			require.Len(t, partitionRing.MultiPartitionOwnerIDs(partitionID, nil), 3, "Partition %d should have 2 owners.", partitionID)
+		}
+
+		// Wait until ring changes propagate so a0 sees that a1 took partitions.
+		time.Sleep(time.Second)
 
 		// Reconcile zone-a-0 once more after ring is updated to make sure that it notes all the lost partitions with their times.
 		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		// We should've lost 8 partitions, because zone-a-1 took them.
+		withRLock(&a0.partitionsMtx, func() { require.Len(t, a0.lostPartitions, 8) })
 
 		// Wait until old partitions are lost.
 		time.Sleep(lostPartitionsShutdownGracePeriod)
@@ -190,12 +198,11 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		withRLock(&a0.partitionsMtx, func() { require.Len(t, a0.partitions, 8) })
 		withRLock(&a1.partitionsMtx, func() { require.Len(t, a1.partitions, 8) })
 
-		// Check eventually that owners are updated in the ring.
-		require.EventuallyWithT(t, func(t *assert.CollectT) {
-			for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
-				require.Len(t, partitionRing.PartitionRing().MultiPartitionOwnerIDs(partitionID, nil), 2, "Partition %d should have 2 owners.", partitionID)
-			}
-		}, 5*lostPartitionsShutdownGracePeriod, 100*time.Millisecond)
+		// Check that owners are updated in the ring.
+		partitionRing = getPartitionRing(t, pkv)
+		for partitionID := int32(0); partitionID < testPartitionsCount; partitionID++ {
+			require.Len(t, partitionRing.MultiPartitionOwnerIDs(partitionID, nil), 2, "Partition %d should have 2 owners.", partitionID)
+		}
 	})
 
 	t.Run("new instance took partitions, restarted old instance should remove stale ownership", func(t *testing.T) {
@@ -242,9 +249,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 
 		// At this point last partition is still owned by both zone-a-0 (who's prepared to lose them) and zone-a-1 (who just took them).
 		// Ring should say that last partition is owned by zone-a-1.
-		require.EventuallyWithT(t, func(t *assert.CollectT) {
-			require.Equal(t, []string{"usage-tracker-zone-a-0", "usage-tracker-zone-a-1"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
-		}, 5*time.Second, 100*time.Millisecond)
+		require.Equal(t, []string{"usage-tracker-zone-a-0", "usage-tracker-zone-a-1"}, getPartitionRing(t, pkv).MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
 
 		// Let's forget about a0 for a second, let's say it crashed (even though we didn't stop it, but it's easier for sake of tests).
 		// a0 starts again.
@@ -258,9 +263,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		withRLock(&newA0.partitionsMtx, func() { require.Len(t, newA0.partitions, 8) })
 
 		// Ring should say that last partition is owned by zone-a-1.
-		require.EventuallyWithT(t, func(t *assert.CollectT) {
-			require.Equal(t, []string{"usage-tracker-zone-a-1"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
-		}, 5*time.Second, 100*time.Millisecond)
+		require.Equal(t, []string{"usage-tracker-zone-a-1"}, getPartitionRing(t, pkv).MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
 	})
 
 	prepareTwoUsageTrackersWithPartitionsReconciled := func(t *testing.T) (map[string]*UsageTracker, kv.Client) {
@@ -283,11 +286,8 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		require.NoError(t, a1.reconcilePartitions(context.Background()))
 		requireAllTrackersReady(t, trackers)
 
-		require.EventuallyWithT(t, func(t *assert.CollectT) {
-			require.Equal(t, []string{"usage-tracker-zone-a-0"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(0, nil))
-			require.Equal(t, []string{"usage-tracker-zone-a-1"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
-		}, 5*time.Second, 100*time.Millisecond)
-
+		require.Equal(t, []string{"usage-tracker-zone-a-0"}, getPartitionRing(t, pkv).MultiPartitionOwnerIDs(0, nil))
+		require.Equal(t, []string{"usage-tracker-zone-a-1"}, getPartitionRing(t, pkv).MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
 		return trackers, pkv
 	}
 
@@ -473,7 +473,7 @@ func getInstanceRingDesc(t *testing.T, kvStore kv.Client) *ring.Desc {
 	return ring.GetOrCreateRingDesc(val)
 }
 
-func getPartitionRing(t *testing.T, kvStore kv.Client) *ring.PartitionRing {
+func getPartitionRing(t require.TestingT, kvStore kv.Client) *ring.PartitionRing {
 	val, err := kvStore.Get(context.Background(), PartitionRingKey)
 	require.NoError(t, err)
 	desc := ring.GetOrCreatePartitionRingDesc(val)
