@@ -19,11 +19,15 @@ func (r *ReorderHistogramAgg) Name() string {
 }
 
 func (r *ReorderHistogramAgg) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	ASTExprMapper := NewMapperReorderHistogramAgg(ctx)
+	return ASTExprMapper.Map(expr)
+}
+
+func NewMapperReorderHistogramAgg(ctx context.Context) astmapper.ASTMapper {
 	mapper := &reorderHistogramAgg{
 		ctx: ctx,
 	}
-	ASTExprMapper := astmapper.NewASTExprMapper(mapper)
-	return ASTExprMapper.Map(expr)
+	return astmapper.NewASTExprMapper(mapper)
 }
 
 type reorderHistogramAgg struct {
