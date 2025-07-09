@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package querierpb;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/planning/plan.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "querierpb";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message EvaluateQueryRequest {
+  planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
+  repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
+}
+
+message EvaluationNode {
+  int64 nodeIndex = 1;
+  planning.EncodedQueryTimeRange timeRange = 2 [(gogoproto.nullable) = false];
+}
+
+message EvaluateQueryResponse {
+  oneof message {
+    Error error = 1;
+    EvaluateQueryResponseSeriesMetadata seriesMetadata = 2;
+    EvaluateQueryResponseStringValue stringValue = 3;
+    EvaluateQueryResponseScalarValue scalarValue = 4;
+    EvaluateQueryResponseInstantVectorSeriesData instantVectorSeriesData = 5;
+    EvaluateQueryResponseRangeVectorSeriesData rangeVectorData = 6;
+  }
+}
+
+message EvaluateQueryResponseSeriesMetadata {
+  int64 nodeIndex = 1;
+  repeated SeriesMetadata series = 2 [(gogoproto.nullable) = false];
+}
+
+message SeriesMetadata {
+  repeated cortexpb.LabelPair labels = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
+  ];
+}
+
+message EvaluateQueryResponseStringValue {
+  int64 nodeIndex = 1;
+  string value = 2;
+}
+
+message EvaluateQueryResponseScalarValue {
+  int64 nodeIndex = 1;
+  double value = 2;
+}
+
+message EvaluateQueryResponseInstantVectorSeriesData {
+  int64 nodeIndex = 1;
+  repeated InstantVectorSeriesData data = 2 [(gogoproto.nullable) = false];
+}
+
+message InstantVectorSeriesData {
+  repeated cortexpb.Sample floats = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb.FloatHistogramPair histograms = 2 [(gogoproto.nullable) = false];
+}
+
+message EvaluateQueryResponseRangeVectorSeriesData {
+  int64 nodeIndex = 1;
+  // TODO: series data - should we support multiple steps?
+}
+
+message Error {
+  // TODO: some kind of error code?
+  string message = 1;
+}
