@@ -418,6 +418,7 @@ losingPartitions:
 			// Delete it first, so it doesn't receive any requests while we're shutting it down.
 			locked(func() { delete(t.partitions, pid) })
 			delete(t.lostPartitions, pid)
+			p.setRemoveOwnerOnShutdown(true)
 			if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
 				level.Error(logger).Log("msg", "unable to stop partition handler", "err", err)
 				return errors.Wrapf(err, "unable to stop partition handler %d", pid)
@@ -579,6 +580,7 @@ func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		t.setAllPartitionsToRemoveOwnerOnShutdown(true)
 
 	case http.MethodDelete:
 		// Clear the read-only status.
@@ -588,6 +590,7 @@ func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		t.setAllPartitionsToRemoveOwnerOnShutdown(false)
 	}
 
 	ro, rots := t.instanceLifecycler.GetReadOnlyState()
@@ -595,6 +598,14 @@ func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 		util.WriteJSONResponse(w, map[string]any{"timestamp": rots.Unix()})
 	} else {
 		util.WriteJSONResponse(w, map[string]any{"timestamp": 0})
+	}
+}
+
+func (t *UsageTracker) setAllPartitionsToRemoveOwnerOnShutdown(removeOwnerOnShutdown bool) {
+	t.partitionsMtx.RLock()
+	defer t.partitionsMtx.RUnlock()
+	for _, p := range t.partitions {
+		p.setRemoveOwnerOnShutdown(removeOwnerOnShutdown)
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -261,6 +263,108 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		}, 5*time.Second, 100*time.Millisecond)
 	})
 
+	prepareTwoUsageTrackersWithPartitionsReconciled := func(t *testing.T) map[string]*UsageTracker {
+		// lostPartitionsShutdownGracePeriod should be long enough for this test not to be flaky,
+		// but also short enough to keep the test fast
+		const lostPartitionsShutdownGracePeriod = time.Second
+		configure := func(cfg *Config) {
+			cfg.LostPartitionsShutdownGracePeriod = lostPartitionsShutdownGracePeriod
+			cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
+		}
+
+		ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
+		a0 := newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster, configure)
+		a1 := newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster, configure)
+		trackers := map[string]*UsageTracker{"a0": a0, "a1": a1}
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
+
+		// Create trackers and check that they're ready.
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		require.NoError(t, a1.reconcilePartitions(context.Background()))
+		requireAllTrackersReady(t, trackers)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			require.Equal(t, []string{"usage-tracker-zone-a-0"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(0, nil))
+			require.Equal(t, []string{"usage-tracker-zone-a-1"}, a1.partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
+		}, 5*time.Second, 100*time.Millisecond)
+
+		return trackers
+	}
+
+	t.Run("partitions ownership should be kept during restarts", func(t *testing.T) {
+		// This test simulates a scenario where an instance is supposed to lose partitions because a higher one started and now owns them
+		// but in the meantime it crashed.
+		// In this case the new instance should check that it's not owning the partitions it's not handling anymore.
+		t.Parallel()
+
+		trackers := prepareTwoUsageTrackersWithPartitionsReconciled(t)
+
+		// We "restart" a0, which is just a graceful shutdown and start another one.
+		// We don't even start it again.
+		stopService(t, trackers["a0"])
+
+		// Wait until the partition ring is updated.
+		time.Sleep(time.Second)
+
+		// Ownership shouldn't have changed.
+		partitionRing := trackers["a1"].partitionRing
+		require.ElementsMatch(t, []string{"usage-tracker-zone-a-0"}, partitionRing.PartitionRing().MultiPartitionOwnerIDs(0, nil))
+		require.ElementsMatch(t, []string{"usage-tracker-zone-a-1"}, partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
+	})
+
+	t.Run("scale down should lose partitions", func(t *testing.T) {
+		t.Parallel()
+
+		trackers := prepareTwoUsageTrackersWithPartitionsReconciled(t)
+
+		// We're scaling down, so we need to call the prepare downscale endpoint first.
+		req, err := http.NewRequest(http.MethodPost, "/usage-tracker/prepare-instance-ring-downscale", nil)
+		require.NoError(t, err)
+		trackers["a1"].PrepareInstanceRingDownscaleHandler(httptest.NewRecorder(), req)
+		stopService(t, trackers["a1"])
+
+		// We don't even reconcile a0, ownership should be lost anyway.
+		// Wait until the partition ring is updated.
+		time.Sleep(time.Second)
+
+		// a1 shouldn't own the partitions anymore.
+		partitionRing := trackers["a0"].partitionRing
+		require.ElementsMatch(t, []string{"usage-tracker-zone-a-0"}, partitionRing.PartitionRing().MultiPartitionOwnerIDs(0, nil))
+		// Since we didn't reconcile, last partition has no owners anymore.
+		require.ElementsMatch(t, nil, partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
+	})
+
+	t.Run("aborted scale down should not lose partitions", func(t *testing.T) {
+		t.Parallel()
+
+		trackers := prepareTwoUsageTrackersWithPartitionsReconciled(t)
+
+		// Call the prepare downscale endpoint, but don't stop the service.
+		{
+			req, err := http.NewRequest(http.MethodPost, "/usage-tracker/prepare-instance-ring-downscale", nil)
+			require.NoError(t, err)
+			trackers["a1"].PrepareInstanceRingDownscaleHandler(httptest.NewRecorder(), req)
+		}
+
+		// Call the prepare downscale endpoint with DELETE method, i.e., cancel the downscale.
+		{
+			req, err := http.NewRequest(http.MethodDelete, "/usage-tracker/prepare-instance-ring-downscale", nil)
+			require.NoError(t, err)
+			trackers["a1"].PrepareInstanceRingDownscaleHandler(httptest.NewRecorder(), req)
+		}
+
+		// Now do a graceful shutdown because a1 is restarting.
+		stopService(t, trackers["a1"])
+
+		// Wait until the partition ring is updated.
+		time.Sleep(time.Second)
+
+		// Ownership shouldn't have changed.
+		partitionRing := trackers["a0"].partitionRing
+		require.ElementsMatch(t, []string{"usage-tracker-zone-a-0"}, partitionRing.PartitionRing().MultiPartitionOwnerIDs(0, nil))
+		require.ElementsMatch(t, []string{"usage-tracker-zone-a-1"}, partitionRing.PartitionRing().MultiPartitionOwnerIDs(testPartitionsCount-1, nil))
+	})
+
 	t.Run("respects MaxPartitionsToCreatePerReconcile", func(t *testing.T) {
 		t.Parallel()
 
@@ -386,12 +490,14 @@ func newTestUsageTracker(t *testing.T, index int, zone string, ikv, pkv kv.Clien
 func startServiceAndStopOnCleanup(t *testing.T, svc services.Service) {
 	t.Helper()
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), svc))
-	t.Cleanup(func() {
-		err := services.StopAndAwaitTerminated(context.Background(), svc)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			t.Errorf("Unexpected error stopping service %T: %s", svc, err)
-		}
-	})
+	t.Cleanup(func() { stopService(t, svc) })
+}
+
+func stopService(t *testing.T, svc services.Service) {
+	err := services.StopAndAwaitTerminated(context.Background(), svc)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Errorf("Unexpected error stopping service %T: %s", svc, err)
+	}
 }
 
 func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster) Config {

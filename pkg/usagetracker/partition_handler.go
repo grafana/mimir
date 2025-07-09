@@ -166,7 +166,6 @@ func newPartitionHandler(
 	if err != nil {
 		return nil, err
 	}
-	p.partitionLifecycler.SetRemoveOwnerOnShutdown(true)
 
 	// Create Kafka reader for events storage.
 	p.eventsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.EventsStorageReader, ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, eventsKafkaReaderComponent, reg), p.logger)
@@ -190,6 +189,10 @@ func newPartitionHandler(
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
 
 	return p, nil
+}
+
+func (p *partitionHandler) setRemoveOwnerOnShutdown(removeOwnerOnShutdown bool) {
+	p.partitionLifecycler.SetRemoveOwnerOnShutdown(removeOwnerOnShutdown)
 }
 
 // start implements services.StartingFn.
