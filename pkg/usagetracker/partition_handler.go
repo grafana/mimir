@@ -174,8 +174,9 @@ func newPartitionHandler(
 	}
 
 	p.snapshotsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.SnapshotsMetadataReader, ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, snapshotsKafkaReaderComponent, reg), p.logger,
-		kgo.ConsumeTopics(p.cfg.SnapshotsMetadataReader.Topic),
-		kgo.ConsumeStartOffset(kgo.NewOffset().AtEnd().Relative(-1)),
+		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+			p.cfg.SnapshotsMetadataReader.Topic: {p.partitionID: kgo.NewOffset().AtEnd().Relative(-1)},
+		}),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker snapshots")
