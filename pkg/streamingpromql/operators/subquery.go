@@ -47,7 +47,13 @@ func NewSubquery(
 	subqueryRange time.Duration,
 	expressionPosition posrange.PositionRange,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) *Subquery {
+) (*Subquery, error) {
+	// Final aggregation into parent stats happens in samplesProcessedInSubquery().
+	// Child samples always counted per step to count parent stats correctly.
+	childStats, err := types.NewQueryStats(subqueryTimeRange, true, memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
+	}
 	return &Subquery{
 		Inner:                    inner,
 		ParentQueryTimeRange:     parentQueryTimeRange,
@@ -61,7 +67,8 @@ func NewSubquery(
 		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:                 &types.RangeVectorStepData{},
 		memoryConsumptionTracker: memoryConsumptionTracker,
-	}
+		subqueryStats:            childStats,
+	}, nil
 }
 
 func (s *Subquery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
@@ -168,15 +175,8 @@ func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 
 func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	s.parentQueryStats = params.QueryStats
-	// Final aggregation into parent stats happens in samplesProcessedInSubquery().
-	// Child samples always counted per step to count parent stats correctly.
-	childStats, err := types.NewQueryStats(s.SubqueryTimeRange, true, s.memoryConsumptionTracker)
-	if err != nil {
-		return err
-	}
-	s.subqueryStats = childStats
 	childParams := types.PrepareParams{
-		QueryStats: childStats,
+		QueryStats: s.subqueryStats,
 	}
 	return s.Inner.Prepare(ctx, &childParams)
 }

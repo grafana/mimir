@@ -609,3 +609,32 @@ func (pgr *PostableGrafanaReceiver) DecryptSecureSettings(decryptFn func(payload
 	}
 	return decrypted, nil
 }
+
+// nolint:revive
+type PostableApiTemplate struct {
+	Name    string       `yaml:"name" json:"name"`
+	Content string       `yaml:"content" json:"content"`
+	Kind    TemplateKind `yaml:"kind" json:"kind"`
+}
+
+func (t *PostableApiTemplate) Validate() error {
+	if t.Name == "" {
+		return fmt.Errorf("template name is required")
+	}
+	if t.Content == "" {
+		return fmt.Errorf("template content is required")
+	}
+	if t.Kind == "" {
+		return fmt.Errorf("template kind is required")
+	}
+	k := strings.ToLower(string(t.Kind))
+	if k != string(GrafanaTemplateKind) && k != string(MimirTemplateKind) {
+		return fmt.Errorf("invalid template kind, must be either '%s' or '%s'", GrafanaTemplateKind, MimirTemplateKind)
+	}
+	return nil
+}
+
+type TemplateKind string
+
+const GrafanaTemplateKind TemplateKind = "grafana"
+const MimirTemplateKind TemplateKind = "mimir"

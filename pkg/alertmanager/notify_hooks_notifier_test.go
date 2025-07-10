@@ -141,7 +141,7 @@ func newTestHooksFixture(t *testing.T, handlerStatus int, handlerResponse string
 	upstream := &fakeNotifier{}
 
 	reg := prometheus.NewPedanticRegistry()
-	notifier, err := newNotifyHooksNotifier(upstream, limits, "user", log.NewLogfmtLogger(os.Stdout), reg)
+	notifier, err := newNotifyHooksNotifier(upstream, limits, "user", log.NewLogfmtLogger(os.Stdout), newNotifyHooksMetrics(reg))
 	require.NoError(t, err)
 
 	return &testHooksFixture{

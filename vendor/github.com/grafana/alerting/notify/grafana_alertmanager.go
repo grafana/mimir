@@ -309,6 +309,14 @@ func NewGrafanaAlertmanager(opts GrafanaAlertmanagerOpts) (*GrafanaAlertmanager,
 	return am, nil
 }
 
+func (am *GrafanaAlertmanager) MergeSilences(sil []byte) error {
+	return am.silences.Merge(sil)
+}
+
+func (am *GrafanaAlertmanager) MergeNflog(nflog []byte) error {
+	return am.notificationLog.Merge(nflog)
+}
+
 func (am *GrafanaAlertmanager) TenantID() int64 {
 	return am.opts.TenantID
 }
