@@ -42,14 +42,17 @@ type notifyHooksNotifier struct {
 	user     string
 	logger   log.Logger
 	client   *http.Client
+	metrics  *notifyHooksMetrics
+}
 
+type notifyHooksMetrics struct {
 	hookTotal    prometheus.Counter
 	hookNoop     prometheus.Counter
 	hookFailed   *prometheus.CounterVec
 	hookDuration prometheus.Histogram
 }
 
-func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger, reg prometheus.Registerer) (*notifyHooksNotifier, error) {
+func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, userID string, logger log.Logger, metrics *notifyHooksMetrics) (*notifyHooksNotifier, error) {
 	clientCfg := commoncfg.DefaultHTTPClientConfig
 
 	// Inject user as X-Scope-OrgID into requests to hooks.
@@ -72,7 +75,12 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 		user:     userID,
 		logger:   logger,
 		client:   client,
+		metrics:  metrics,
+	}, nil
+}
 
+func newNotifyHooksMetrics(reg prometheus.Registerer) *notifyHooksMetrics {
+	return &notifyHooksMetrics{
 		hookTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "alertmanager_notify_hook_total",
 			Help: "Number of times a pre-notify hook was invoked.",
@@ -90,7 +98,7 @@ func newNotifyHooksNotifier(upstream notify.Notifier, limits notifyHooksLimits, 
 			Help:    "Time spent invoking pre-notify hooks.",
 			Buckets: prometheus.DefBuckets,
 		}),
-	}, nil
+	}
 }
 
 func (n *notifyHooksNotifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
@@ -126,13 +134,13 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 	newAlerts, code, err := n.invoke(ctx, l, url, timeout, alerts)
 
 	duration := time.Since(start)
-	n.hookDuration.Observe(float64(duration))
+	n.metrics.hookDuration.Observe(float64(duration))
 	l = log.With(l, "duration", duration)
 
-	n.hookTotal.Inc()
+	n.metrics.hookTotal.Inc()
 	if err != nil {
 		if errors.Is(err, ErrNoContent) {
-			n.hookNoop.Inc()
+			n.metrics.hookNoop.Inc()
 			level.Debug(l).Log("msg", "Notify hooks applied but returned no content")
 		} else {
 			status := "error"
@@ -142,7 +150,7 @@ func (n *notifyHooksNotifier) apply(ctx context.Context, alerts []*types.Alert) 
 			if code > 0 {
 				status = fmt.Sprint(code)
 			}
-			n.hookFailed.WithLabelValues(status).Inc()
+			n.metrics.hookFailed.WithLabelValues(status).Inc()
 			level.Error(l).Log("msg", "Notify hooks failed", "err", err)
 		}
 		return alerts
