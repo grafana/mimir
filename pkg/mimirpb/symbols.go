@@ -15,11 +15,18 @@ type StringSymbolizer interface {
 var _ StringSymbolizer = &writev2.SymbolsTable{}
 
 var (
-	baseSymbolsMapCapacity = 0
+	baseSymbolsMapCapacity   = 0
+	baseSymbolsSliceCapacity = 40
 
 	symbolsTablePool = sync.Pool{
 		New: func() interface{} {
 			return NewFastSymbolsTable(baseSymbolsMapCapacity)
+		},
+	}
+	symbolsSlicePool = sync.Pool{
+		New: func() interface{} {
+			val := make([]string, 0, baseSymbolsSliceCapacity)
+			return &val
 		},
 	}
 )
@@ -28,15 +35,24 @@ func symbolsTableFromPool() *FastSymbolsTable {
 	return symbolsTablePool.Get().(*FastSymbolsTable)
 }
 
-func reuseSymbolsMap(t *FastSymbolsTable) {
+func reuseSymbolsTable(t *FastSymbolsTable) {
 	t.Reset()
 	symbolsTablePool.Put(t)
+}
+
+func symbolsSliceFromPool() *[]string {
+	return symbolsSlicePool.Get().(*[]string)
+}
+
+func reuseSymbolsSlice(s *[]string) {
+	*s = (*s)[:0]
+	symbolsSlicePool.Put(s)
 }
 
 // FastSymbolsTable is an optimized, alternate implementation of writev2.SymbolsTable.
 type FastSymbolsTable struct {
 	symbolsMap     map[string]uint32
-	cachedSymbols  []string
+	cachedSymbols  *[]string
 	usedSymbolRefs int
 }
 
@@ -56,24 +72,37 @@ func (t *FastSymbolsTable) Symbolize(str string) uint32 {
 	}
 	ref := uint32(len(t.symbolsMap)) + 1
 	t.symbolsMap[str] = ref
-	t.cachedSymbols = nil
+	if t.cachedSymbols != nil {
+		reuseSymbolsSlice(t.cachedSymbols)
+		t.cachedSymbols = nil
+	}
 	return ref
 }
 
 func (t *FastSymbolsTable) Symbols() []string {
 	if t.cachedSymbols != nil {
-		return t.cachedSymbols
+		return *t.cachedSymbols
 	}
-	t.cachedSymbols = make([]string, len(t.symbolsMap)+1)
-	t.cachedSymbols[0] = ""
+	syms := symbolsSliceFromPool()
+	if cap(*syms) < len(t.symbolsMap)+1 {
+		*syms = make([]string, 0, len(t.symbolsMap)+1)
+	}
+	for range len(t.symbolsMap) + 1 {
+		*syms = append(*syms, "")
+	}
+
 	for k, v := range t.symbolsMap {
-		t.cachedSymbols[v] = k
+		(*syms)[v] = k
 	}
-	return t.cachedSymbols
+	t.cachedSymbols = syms
+	return *t.cachedSymbols
 }
 
 func (t *FastSymbolsTable) Reset() {
 	clear(t.symbolsMap)
-	t.cachedSymbols = nil
+	if t.cachedSymbols != nil {
+		reuseSymbolsSlice(t.cachedSymbols)
+		t.cachedSymbols = nil
+	}
 	t.usedSymbolRefs = 0
 }
