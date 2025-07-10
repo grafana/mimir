@@ -1296,7 +1296,7 @@ func simpleHistogramFunc(vals []parser.Value, enh *EvalNodeHelper, f func(h *his
 	for _, el := range vals[0].(Vector) {
 		if el.H != nil { // Process only histogram samples.
 			if !enh.enableDelayedNameRemoval {
-				el.Metric = el.Metric.DropMetricName()
+				el.Metric = el.Metric.DropReserved(schema.IsMetadataLabel)
 			}
 			enh.Out = append(enh.Out, Sample{
 				Metric:   el.Metric,
