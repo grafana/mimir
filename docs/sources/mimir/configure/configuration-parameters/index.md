@@ -4191,6 +4191,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -distributor.otel-promote-scope-metadata
 [otel_promote_scope_metadata: <boolean> | default = false]
 
+# (experimental) Whether to enable native ingestion of delta OTLP metrics, which
+# will store the raw delta sample values without conversion. If disabled, delta
+# metrics will be rejected. Delta support is in an early stage of development.
+# The ingestion and querying process is likely to change over time.
+# CLI flag: -distributor.otel-native-delta-ingestion
+[otel_native_delta_ingestion: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
@@ -5666,7 +5673,8 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING,
-# GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+# GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE,
+# FSX_OPENZFS
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 

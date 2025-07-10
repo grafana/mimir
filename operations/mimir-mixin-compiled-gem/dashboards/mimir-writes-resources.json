@@ -74,7 +74,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester|mimir-write\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -122,7 +122,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester|mimir-write\"})",
+                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -170,7 +170,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester|mimir-write\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"distributor|ingester\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null
@@ -794,7 +794,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "legendFormat": "{{pod}}",
                         "legendLink": null

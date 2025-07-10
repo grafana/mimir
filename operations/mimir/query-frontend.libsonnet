@@ -66,19 +66,19 @@
     // Leave enough time to finish serving a 5m query after the shutdown delay expired.
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(shutdown_delay_seconds + 300),
 
-  query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_deployment:
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),
 
-  query_frontend_service: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),
 
-  query_frontend_discovery_service: if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
+  query_frontend_discovery_service: if $._config.query_scheduler_enabled then null else
     // Make sure that query frontend worker, running in the querier, do resolve
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
     $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
 
-  query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
+  query_frontend_pdb:
     $.newMimirPdb('query-frontend'),
 }

@@ -55,6 +55,7 @@ var (
 func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
+	parser.EnableExperimentalFunctions = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -66,15 +67,11 @@ func init() {
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	parser.Functions["info"].Experimental = false
-	parser.Functions["sort_by_label"].Experimental = false
-	parser.Functions["sort_by_label_desc"].Experimental = false
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"info(metric{})":                       "'info' function",
-		`sort_by_label(metric{}, "test")`:      "'sort_by_label' function",
-		`sort_by_label_desc(metric{}, "test")`: "'sort_by_label_desc' function",
+		"info(metric{})": "'info' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -4081,4 +4078,37 @@ func (s *synchronisingQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 func (s *synchronisingQuerier) Close() error {
 	return s.inner.Close()
+}
+
+func TestInstantQueryDurationExpression(t *testing.T) {
+	// promqltest's "check an instant query works as a range query" behaviour makes it difficult to test step() in an instant query, so we do it here instead.
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1ms
+			some_metric 0+1x300
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	opts := NewTestEngineOpts()
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), NewQueryPlanner(opts), log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	expr := "count_over_time(some_metric[step()+1ms])"
+	ts := timestamp.Time(0).Add(5 * time.Millisecond)
+
+	prometheusQuery, err := prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, ts)
+	require.NoError(t, err)
+	prometheusResult := prometheusQuery.Exec(ctx)
+	require.NoError(t, prometheusResult.Err)
+	t.Cleanup(prometheusQuery.Close)
+
+	mimirQuery, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, ts)
+	require.NoError(t, err)
+	mimirResult := mimirQuery.Exec(ctx)
+	require.NoError(t, mimirResult.Err)
+	t.Cleanup(mimirQuery.Close)
+
+	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
 }

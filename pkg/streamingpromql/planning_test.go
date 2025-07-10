@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -260,7 +261,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName:       "rate",
+							Function:           functions.FUNCTION_RATE,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 30},
 						}),
 						Type:           "FunctionCall",
@@ -295,7 +296,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName:       "rate",
+							Function:           functions.FUNCTION_RATE,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 28},
 						}),
 						Type:           "FunctionCall",
@@ -379,7 +380,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName:       "time",
+							Function:           functions.FUNCTION_TIME,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 6},
 						}),
 						Type:        "FunctionCall",
@@ -399,7 +400,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName:       "year",
+							Function:           functions.FUNCTION_YEAR,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 6},
 						}),
 						Type:        "FunctionCall",
@@ -430,7 +431,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName:       "year",
+							Function:           functions.FUNCTION_YEAR,
 							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
 						}),
 						Type:           "FunctionCall",
@@ -1536,7 +1537,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName: "abs",
+							Function: functions.FUNCTION_ABS,
 						}),
 						Children: []int64{1},
 					},
@@ -1552,7 +1553,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 					{
 						NodeType: planning.NODE_TYPE_FUNCTION_CALL,
 						Details: marshalDetails(&core.FunctionCallDetails{
-							FunctionName: "abs",
+							Function: functions.FUNCTION_ABS,
 						}),
 						Children: []int64{-1},
 					},

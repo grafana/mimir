@@ -29,6 +29,12 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kprom.Registerer(reg),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
+	// Allow to disable linger in tests.
+	linger := 50 * time.Millisecond
+	if kafkaCfg.disableLinger {
+		linger = 0
+	}
+
 	opts := append(
 		commonKafkaClientOptions(kafkaCfg, metrics, logger),
 
@@ -56,7 +62,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
 		// issuing new Produce requests until some previous ones complete).
 		kgo.DisableIdempotentWrite(),
-		kgo.ProducerLinger(50*time.Millisecond),
+		kgo.ProducerLinger(linger),
 		kgo.MaxProduceRequestsInflightPerBroker(maxInflightProduceRequests),
 
 		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.

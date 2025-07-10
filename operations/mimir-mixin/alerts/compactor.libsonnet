@@ -93,8 +93,7 @@
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           ||| % $._config,
           labels: {
@@ -112,8 +111,7 @@
           expr: |||
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           ||| % $._config,
           labels: {
