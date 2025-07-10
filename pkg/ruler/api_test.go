@@ -1423,6 +1423,19 @@ rules:
 			status: 400,
 			err:    errors.New("invalid rules configuration: rule group 'test' has both query_offset and (deprecated) evaluation_delay set, but to different values; please remove the deprecated evaluation_delay and use query_offset instead"),
 		},
+		{
+			name: "stable expression with block indentation indicator",
+			cfg:  defaultCfg,
+			input: `
+name: test
+interval: 15s
+rules:
+- record: up_rule
+  expr: |2
+        up{}
+`,
+			status: 202,
+		},
 	}
 
 	for _, tt := range tc {
