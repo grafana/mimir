@@ -73,7 +73,7 @@ type distributorTestCase struct {
 func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataEnabled bool) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
-	queryStep := 10 * time.Minute
+	queryStep := 5 * time.Minute
 
 	overridesWithExemplars := func(maxExemplars int) string {
 		return fmt.Sprintf("overrides:\n  \"%s\":\n    max_global_exemplars_per_user: %d\n", userID, maxExemplars)
@@ -129,6 +129,55 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 							Type: "counter",
 							Help: "some helpC",
 							Unit: "someunitC",
+						}},
+					},
+				},
+			},
+			expectedStats: []promRemote.WriteResponseStats{
+				{
+					Samples:    1,
+					Histograms: 0,
+					Exemplars:  0,
+				},
+			},
+		},
+
+		"simple counter with created timestamp": {
+			rw1request: nil, // Not supported in RW1
+			rw2request: []promRW2.Request{
+				{
+					Timeseries: []promRW2.TimeSeries{
+						{
+							LabelsRefs: []uint32{1, 2},
+							Samples:    []promRW2.Sample{{Timestamp: queryStart.Add(1 * time.Second).UnixMilli(), Value: 100}},
+							Metadata: promRW2.Metadata{
+								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
+								HelpRef: 3,
+								UnitRef: 4,
+							},
+							CreatedTimestamp: queryStart.UnixMilli(),
+						},
+					},
+					Symbols: []string{"", "__name__", "foobarC_CT_total", "some helpC_CT", "someunitC_CT"},
+				},
+			},
+			queries: map[string]model.Matrix{
+				"foobarC_CT_total": {{
+					Metric: model.Metric{"__name__": "foobarC_CT_total"},
+					Values: []model.SamplePair{
+						{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(0)},
+						{Timestamp: model.Time(queryStart.Add(5 * time.Minute).UnixMilli()), Value: model.SampleValue(100)},
+					},
+				}},
+			},
+			metadataQueries: map[string]metadataResponse{
+				"foobarC_CT_total": {
+					Status: "success",
+					Data: map[string][]metadataResponseItem{
+						"foobarC_CT_total": {{
+							Type: "counter",
+							Help: "some helpC_CT",
+							Unit: "someunitC_CT",
 						}},
 					},
 				},
