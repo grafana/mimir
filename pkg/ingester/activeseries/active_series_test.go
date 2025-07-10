@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/costattribution"
 	catestutils "github.com/grafana/mimir/pkg/costattribution/testutils"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func MustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]string) asmodel.CustomTrackersConfig {
@@ -927,7 +928,7 @@ func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	assert.True(t, valid)
 
 	// Change the cost attribution tracker, and make sure it's reloaded, purge result not valid.
-	cat := costattribution.NewActiveSeriesTracker("a", []string{"a", "b"}, 4, 5*time.Minute, log.NewNopLogger())
+	cat := costattribution.NewActiveSeriesTracker("a", []validation.CostAttributionLabel{{InputLabel: "a"}, {InputLabel: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
 	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
 	valid = c.Purge(currentTime, nil)
 	assert.False(t, valid)
@@ -940,7 +941,7 @@ func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	assert.True(t, valid)
 	assert.NotNil(t, c.cat)
 
-	cat = costattribution.NewActiveSeriesTracker("a", []string{"a"}, 4, 5*time.Minute, log.NewNopLogger())
+	cat = costattribution.NewActiveSeriesTracker("a", []validation.CostAttributionLabel{{InputLabel: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
 	valid = c.Purge(currentTime, nil)
 	assert.False(t, valid)
@@ -1027,7 +1028,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 		"bar": `{a=~.+}`,
 	}))
 
-	cat := costattribution.NewActiveSeriesTracker("a", []string{"a", "b"}, 4, 5*time.Minute, log.NewNopLogger())
+	cat := costattribution.NewActiveSeriesTracker("a", []validation.CostAttributionLabel{{InputLabel: "a"}, {InputLabel: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
 	currentTime := time.Now()
 	c := NewActiveSeries(asm, DefaultTimeout, cat)
 	valid := c.Purge(currentTime, nil)
