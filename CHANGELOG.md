@@ -1,7 +1,5 @@
 # Changelog
 
-## main / unreleased
-
 ## 2.17.0-rc.0
 
 ### Grafana Mimir
