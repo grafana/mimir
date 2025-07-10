@@ -443,7 +443,10 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 
 func (m *ingesterMetrics) recordRequestStageLatencies(ctx context.Context, userID string, regexDuration *atomic.Duration, requestStart time.Time) {
 	totalDuration := time.Since(requestStart)
-	regexDurationSnapshot := regexDuration.Load()
+	var regexDurationSnapshot time.Duration
+	if regexDuration != nil {
+		regexDurationSnapshot = regexDuration.Load()
+	}
 
 	traceID, ok := tracing.ExtractSampledTraceID(ctx)
 	var exemplarLabels prometheus.Labels = nil
